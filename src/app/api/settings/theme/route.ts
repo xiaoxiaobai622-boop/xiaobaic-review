@@ -12,16 +12,17 @@ export async function GET() {
   try {
     const settings = await prisma.settings.findUnique({
       where: { id: 'default' },
-      select: { defaultTheme: true, accentColor: true, brandingLogoPath: true },
+      select: { defaultTheme: true, accentColor: true, brandingLogoPath: true, companyName: true },
     })
 
     return NextResponse.json({
       defaultTheme: settings?.defaultTheme || 'auto',
       accentColor: settings?.accentColor || 'blue',
       brandingLogoPath: settings?.brandingLogoPath || null,
+      companyName: settings?.companyName || '工作室',
     })
   } catch (error) {
     // Default values on error
-    return NextResponse.json({ defaultTheme: 'auto', accentColor: 'blue', brandingLogoPath: null })
+    return NextResponse.json({ defaultTheme: 'auto', accentColor: 'blue', brandingLogoPath: null, companyName: '工作室' })
   }
 }

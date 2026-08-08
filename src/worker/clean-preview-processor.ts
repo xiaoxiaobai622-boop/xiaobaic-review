@@ -82,6 +82,7 @@ async function processCleanPreview(job: Job<CleanPreviewJob>): Promise<void> {
       outputPath: tempOutputPath,
       width: dimensions.width,
       height: dimensions.height,
+      quality: resolution === '720p' ? '720p' : '1080p',
       watermarkText: undefined, // No watermark for clean preview!
       applyLut: video.project?.applyPreviewLut ?? true,
       onProgress: async (progress) => {

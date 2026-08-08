@@ -41,7 +41,7 @@ export async function GET(
 
     const serialized = uploads.map((u) => ({
       id: u.id,
-      fileName: u.fileName,
+      fileName: u.originalFileName || u.fileName,
       fileSize: u.fileSize.toString(),
       fileType: u.fileType,
       category: u.category,

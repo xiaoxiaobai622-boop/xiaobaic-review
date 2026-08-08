@@ -36,6 +36,33 @@ function renderShape(shape: Shape, renderWidth: number, renderHeight: number, ke
     )
   }
 
+  if (shape.type === 'rectangle') {
+    const x = Math.min(shape.start.x, shape.end.x) * renderWidth
+    const y = Math.min(shape.start.y, shape.end.y) * renderHeight
+    const width = Math.abs(shape.end.x - shape.start.x) * renderWidth
+    const height = Math.abs(shape.end.y - shape.start.y) * renderHeight
+    return <rect key={key} x={x} y={y} width={width} height={height} fill="none" stroke={shape.color} strokeWidth={sw} opacity={shapeOpacity} />
+  }
+
+  if (shape.type === 'arrow') {
+    const x1 = shape.start.x * renderWidth
+    const y1 = shape.start.y * renderHeight
+    const x2 = shape.end.x * renderWidth
+    const y2 = shape.end.y * renderHeight
+    const angle = Math.atan2(y2 - y1, x2 - x1)
+    const head = Math.max(10, sw * 4)
+    const leftX = x2 - head * Math.cos(angle - Math.PI / 6)
+    const leftY = y2 - head * Math.sin(angle - Math.PI / 6)
+    const rightX = x2 - head * Math.cos(angle + Math.PI / 6)
+    const rightY = y2 - head * Math.sin(angle + Math.PI / 6)
+    return (
+      <g key={key} fill="none" stroke={shape.color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" opacity={shapeOpacity}>
+        <line x1={x1} y1={y1} x2={x2} y2={y2} />
+        <polyline points={`${leftX},${leftY} ${x2},${y2} ${rightX},${rightY}`} />
+      </g>
+    )
+  }
+
   return null
 }
 

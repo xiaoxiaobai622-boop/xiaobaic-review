@@ -11,6 +11,7 @@ import { Monitor, Fingerprint, LogIn, CheckCircle2, XCircle } from 'lucide-react
 import { startAuthentication } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 import { getAccessToken, setTokens } from '@/lib/token-store'
+import { getDeviceAuthHeaders } from '@/lib/device-id'
 import BrandLogo from '@/components/BrandLogo'
 import { useTranslations } from 'next-intl'
 
@@ -49,7 +50,7 @@ function DeviceAuthForm() {
     try {
       const optionsRes = await fetch('/api/auth/passkey/authenticate/options', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getDeviceAuthHeaders() },
         body: JSON.stringify({}),
       })
 
@@ -64,7 +65,7 @@ function DeviceAuthForm() {
 
       const verifyRes = await fetch('/api/auth/passkey/authenticate/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getDeviceAuthHeaders() },
         body: JSON.stringify({ response: assertion, sessionId }),
       })
 
@@ -101,7 +102,10 @@ function DeviceAuthForm() {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getDeviceAuthHeaders(),
+        },
         body: JSON.stringify({ email, password }),
       })
 

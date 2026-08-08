@@ -12,15 +12,25 @@ import { apiDelete, apiFetch, apiPost, apiPatch } from '@/lib/api-client'
 import { PasswordRequirements } from '@/components/PasswordRequirements'
 import { startRegistration } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
+import { getDisplayEmail } from '@/lib/user-contact'
 
 interface UserData {
   id: string
   email: string
+  phone: string | null
   username: string | null
   name: string | null
   role: string
+  projectAccessScope: 'ALL_PROJECTS' | 'ASSIGNED_ONLY'
+  projectMemberships: Array<{ project: { id: string; title: string; projectCode: string } }>
   createdAt: string
   updatedAt: string
+}
+
+interface ProjectOption {
+  id: string
+  title: string
+  projectCode: string
 }
 
 export default function UsersPage() {
@@ -30,6 +40,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [loggedInUser, setLoggedInUser] = useState<UserData | null>(null)
+  const [projects, setProjects] = useState<ProjectOption[]>([])
 
   // Modal states
   const [showAddUserModal, setShowAddUserModal] = useState(false)
@@ -45,17 +56,25 @@ export default function UsersPage() {
   // New user form
   const [newUserData, setNewUserData] = useState({
     email: '',
+    phone: '',
     username: '',
     name: '',
     password: '',
     confirmPassword: '',
+    role: 'MEMBER',
+    projectAccessScope: 'ALL_PROJECTS',
+    projectIds: [] as string[],
   })
 
   // Edit user form
   const [editFormData, setEditFormData] = useState({
     email: '',
+    phone: '',
     username: '',
     name: '',
+    role: 'MEMBER',
+    projectAccessScope: 'ALL_PROJECTS',
+    projectIds: [] as string[],
   })
 
   // Password form
@@ -129,6 +148,10 @@ export default function UsersPage() {
     fetchUsers()
     fetchLoggedInUser()
     fetchPasskeyStatus()
+    apiFetch('/api/projects')
+      .then((response) => response.ok ? response.json() : { projects: [] })
+      .then((data) => setProjects((data.projects || []).map((project: ProjectOption) => ({ id: project.id, title: project.title, projectCode: project.projectCode }))))
+      .catch(() => setProjects([]))
   }, [fetchUsers, fetchLoggedInUser, fetchPasskeyStatus])
 
   // Filter users by search
@@ -136,7 +159,8 @@ export default function UsersPage() {
     if (!searchQuery) return true
     const query = searchQuery.toLowerCase()
     return (
-      user.email.toLowerCase().includes(query) ||
+      getDisplayEmail(user.email).toLowerCase().includes(query) ||
+      user.phone?.includes(query) ||
       user.name?.toLowerCase().includes(query) ||
       user.username?.toLowerCase().includes(query)
     )
@@ -144,35 +168,9 @@ export default function UsersPage() {
 
   // Password generation
   const generateRandomPassword = (forNewUser = false) => {
-    const length = 16
-    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    const lowercase = 'abcdefghijklmnopqrstuvwxyz'
-    const numbers = '0123456789'
-    const special = '!@#$%^&*'
-    const all = uppercase + lowercase + numbers + special
-
-    const getRandomInt = (max: number) => {
-      const array = new Uint32Array(1)
-      crypto.getRandomValues(array)
-      return array[0] % max
-    }
-
-    let password = ''
-    password += uppercase[getRandomInt(uppercase.length)]
-    password += lowercase[getRandomInt(lowercase.length)]
-    password += numbers[getRandomInt(numbers.length)]
-    password += special[getRandomInt(special.length)]
-
-    for (let i = password.length; i < length; i++) {
-      password += all[getRandomInt(all.length)]
-    }
-
-    const chars = password.split('')
-    for (let i = chars.length - 1; i > 0; i--) {
-      const j = getRandomInt(i + 1)
-      ;[chars[i], chars[j]] = [chars[j], chars[i]]
-    }
-    password = chars.join('')
+    const values = new Uint32Array(6)
+    crypto.getRandomValues(values)
+    const password = Array.from(values, value => String(value % 10)).join('')
 
     if (forNewUser) {
       setNewUserData(prev => ({ ...prev, password, confirmPassword: password }))
@@ -191,8 +189,16 @@ export default function UsersPage() {
 
   // Add user
   async function handleAddUser() {
-    if (!newUserData.email || !newUserData.password) {
-      setError(t('emailAndPasswordRequired'))
+    if ((!newUserData.email && !newUserData.phone) || !newUserData.password) {
+      setError('邮箱或手机号至少填写一项，并设置密码')
+      return
+    }
+    if (!/^\d{6}$/.test(newUserData.password)) {
+      setError('密码必须是 6 位数字')
+      return
+    }
+    if (newUserData.username && newUserData.username.trim().length < 3) {
+      setError('用户名至少需要 3 个字符')
       return
     }
     if (newUserData.password !== newUserData.confirmPassword) {
@@ -205,13 +211,17 @@ export default function UsersPage() {
 
     try {
       await apiPost('/api/users', {
-        email: newUserData.email,
+        email: newUserData.email || undefined,
+        phone: newUserData.phone || undefined,
         username: newUserData.username || undefined,
         name: newUserData.name || undefined,
         password: newUserData.password,
+        role: newUserData.role,
+        projectAccessScope: newUserData.projectAccessScope,
+        projectIds: newUserData.projectIds,
       })
       await fetchUsers()
-      setNewUserData({ email: '', username: '', name: '', password: '', confirmPassword: '' })
+      setNewUserData({ email: '', phone: '', username: '', name: '', password: '', confirmPassword: '', role: 'MEMBER', projectAccessScope: 'ALL_PROJECTS', projectIds: [] })
       setShowAddUserModal(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('failedToCreateUser'))
@@ -224,17 +234,21 @@ export default function UsersPage() {
   function openEditModal(user: UserData) {
     setEditingUser(user)
     setEditFormData({
-      email: user.email,
+      email: getDisplayEmail(user.email),
+      phone: user.phone || '',
       username: user.username || '',
       name: user.name || '',
+      role: user.role,
+      projectAccessScope: user.projectAccessScope,
+      projectIds: user.projectMemberships.map((membership) => membership.project.id),
     })
     setError('')
     setShowEditUserModal(true)
   }
 
   async function handleEditUser() {
-    if (!editingUser || !editFormData.email) {
-      setError(t('emailIsRequired'))
+    if (!editingUser || (!editFormData.email && !editFormData.phone)) {
+      setError('邮箱和手机号至少保留一项')
       return
     }
 
@@ -244,8 +258,12 @@ export default function UsersPage() {
     try {
       await apiPatch(`/api/users/${editingUser.id}`, {
         email: editFormData.email,
+        phone: editFormData.phone || null,
         username: editFormData.username || null,
         name: editFormData.name || null,
+        role: editFormData.role,
+        projectAccessScope: editFormData.projectAccessScope,
+        projectIds: editFormData.projectIds,
       })
       await fetchUsers()
       setShowEditUserModal(false)
@@ -275,6 +293,10 @@ export default function UsersPage() {
     }
     if (!passwordData.password) {
       setError(t('newPasswordRequired'))
+      return
+    }
+    if (!/^\d{6}$/.test(passwordData.password)) {
+      setError('密码必须是 6 位数字')
       return
     }
     if (passwordData.password !== passwordData.confirmPassword) {
@@ -384,17 +406,17 @@ export default function UsersPage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
               <Users className="w-7 h-7 sm:w-8 sm:h-8" />
-              {t('title')}
+              团队成员
             </h1>
             <p className="text-muted-foreground mt-1 text-sm sm:text-base">
-              {t('description')}
+              管理成员身份，以及他们可以查看的团队项目
             </p>
           </div>
           <Button
             variant="default"
             size="default"
             onClick={() => {
-              setNewUserData({ email: '', username: '', name: '', password: '', confirmPassword: '' })
+              setNewUserData({ email: '', phone: '', username: '', name: '', password: '', confirmPassword: '', role: 'MEMBER', projectAccessScope: 'ALL_PROJECTS', projectIds: [] })
               setShowPassword(false)
               setShowConfirmPassword(false)
               setError('')
@@ -402,7 +424,7 @@ export default function UsersPage() {
             }}
           >
             <UserPlus className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">{t('addUser')}</span>
+            <span className="hidden sm:inline">添加成员</span>
           </Button>
         </div>
 
@@ -448,9 +470,9 @@ export default function UsersPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-medium truncate">{user.name || user.username || user.email}</p>
+                      <p className="font-medium truncate">{user.name || user.username || user.phone || getDisplayEmail(user.email)}</p>
                       <span className="px-2 py-0.5 text-xs rounded-full bg-info-visible text-info border border-info-visible flex-shrink-0">
-                        {t('admin')}
+                        {user.role === 'ADMIN' ? '管理员' : '团队成员'}
                       </span>
                       {loggedInUser?.id === user.id && (
                         <span className="px-2 py-0.5 text-xs rounded-full bg-success-visible text-success border border-success-visible flex-shrink-0">
@@ -461,10 +483,13 @@ export default function UsersPage() {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
                       <span className="flex items-center gap-1">
                         <Mail className="w-3 h-3" />
-                        <span className="truncate">{user.email}</span>
+                        <span className="truncate">{getDisplayEmail(user.email) || user.phone}</span>
                       </span>
                       {user.username && (
                         <span>@{user.username}</span>
+                      )}
+                      {user.role === 'MEMBER' && (
+                        <span>{user.projectAccessScope === 'ALL_PROJECTS' ? '可查看团队全部项目' : `指定 ${user.projectMemberships.length} 个项目`}</span>
                       )}
                     </div>
                   </div>
@@ -523,10 +548,10 @@ export default function UsersPage() {
           <DialogHeader className="pb-2">
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-primary" />
-              {t('addNewUser')}
+              添加团队成员
             </DialogTitle>
             <DialogDescription>
-              {t('addNewUserDescription')}
+              创建登录账号并设置项目访问范围
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto space-y-2 py-1">
@@ -537,7 +562,7 @@ export default function UsersPage() {
               </div>
             )}
             <div className="space-y-1">
-              <Label htmlFor="newEmail" className="text-xs">{t('emailRequired')}</Label>
+              <Label htmlFor="newEmail" className="text-xs">邮箱（与手机号二选一）</Label>
               <Input
                 id="newEmail"
                 type="email"
@@ -550,6 +575,10 @@ export default function UsersPage() {
                 data-lpignore="true"
                 data-1p-ignore
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="newPhone" className="text-xs">手机号（与邮箱二选一）</Label>
+              <Input id="newPhone" type="tel" inputMode="numeric" maxLength={11} placeholder="用于手机号登录" value={newUserData.phone} onChange={(e) => setNewUserData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))} className="h-8" autoComplete="off" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -580,6 +609,39 @@ export default function UsersPage() {
                   data-1p-ignore
                 />
               </div>
+            </div>
+            <div className="space-y-2 border-t border-border pt-3">
+              <Label className="text-xs">团队权限</Label>
+              <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+                {(['ADMIN', 'MEMBER'] as const).map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => setNewUserData(prev => ({ ...prev, role, projectAccessScope: role === 'ADMIN' ? 'ALL_PROJECTS' : prev.projectAccessScope }))}
+                    className={`h-8 rounded-sm text-xs font-medium transition-colors ${newUserData.role === role ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {role === 'ADMIN' ? '管理员' : '团队成员'}
+                  </button>
+                ))}
+              </div>
+              {newUserData.role === 'MEMBER' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setNewUserData(prev => ({ ...prev, projectAccessScope: 'ALL_PROJECTS' }))} className={`rounded-md border p-2 text-left text-xs ${newUserData.projectAccessScope === 'ALL_PROJECTS' ? 'border-primary bg-primary/5' : 'border-border'}`}>团队全部项目</button>
+                    <button type="button" onClick={() => setNewUserData(prev => ({ ...prev, projectAccessScope: 'ASSIGNED_ONLY' }))} className={`rounded-md border p-2 text-left text-xs ${newUserData.projectAccessScope === 'ASSIGNED_ONLY' ? 'border-primary bg-primary/5' : 'border-border'}`}>仅指定项目</button>
+                  </div>
+                  {newUserData.projectAccessScope === 'ASSIGNED_ONLY' && (
+                    <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-border p-2" aria-label="选择允许访问的项目">
+                      {projects.length === 0 ? <p className="text-xs text-muted-foreground">暂无可分配项目</p> : projects.map((project) => (
+                        <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-muted">
+                          <input type="checkbox" checked={newUserData.projectIds.includes(project.id)} onChange={(event) => setNewUserData(prev => ({ ...prev, projectIds: event.target.checked ? [...prev.projectIds, project.id] : prev.projectIds.filter((id) => id !== project.id) }))} />
+                          <span className="font-mono text-muted-foreground">{project.projectCode}</span><span className="truncate">{project.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between">
@@ -613,7 +675,9 @@ export default function UsersPage() {
                   id="newPassword"
                   type={showPassword ? 'text' : 'password'}
                   value={newUserData.password}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                  inputMode="numeric"
+                  maxLength={6}
                   className="pr-8 h-8"
                   autoComplete="new-password"
                   data-form-type="other"
@@ -636,7 +700,9 @@ export default function UsersPage() {
                   id="newConfirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={newUserData.confirmPassword}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, confirmPassword: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                  inputMode="numeric"
+                  maxLength={6}
                   className="pr-8 h-8"
                   autoComplete="new-password"
                   data-form-type="other"
@@ -685,7 +751,7 @@ export default function UsersPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="editEmail">{t('emailRequired')}</Label>
+              <Label htmlFor="editEmail">邮箱（与手机号二选一）</Label>
               <Input
                 id="editEmail"
                 type="email"
@@ -696,6 +762,10 @@ export default function UsersPage() {
                 data-lpignore="true"
                 data-1p-ignore
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editPhone">手机号</Label>
+              <Input id="editPhone" type="tel" inputMode="numeric" maxLength={11} placeholder="用于手机号登录" value={editFormData.phone} onChange={(e) => setEditFormData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))} autoComplete="off" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="editUsername">{t('username')}</Label>
@@ -720,6 +790,40 @@ export default function UsersPage() {
                 data-lpignore="true"
                 data-1p-ignore
               />
+            </div>
+            <div className="space-y-3 border-t border-border pt-4">
+              <Label>团队权限</Label>
+              <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+                {(['ADMIN', 'MEMBER'] as const).map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    disabled={loggedInUser?.id === editingUser?.id}
+                    onClick={() => setEditFormData(prev => ({ ...prev, role, projectAccessScope: role === 'ADMIN' ? 'ALL_PROJECTS' : prev.projectAccessScope }))}
+                    className={`h-9 rounded-sm text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${editFormData.role === role ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {role === 'ADMIN' ? '管理员' : '团队成员'}
+                  </button>
+                ))}
+              </div>
+              {editFormData.role === 'MEMBER' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setEditFormData(prev => ({ ...prev, projectAccessScope: 'ALL_PROJECTS' }))} className={`rounded-md border p-3 text-left text-sm ${editFormData.projectAccessScope === 'ALL_PROJECTS' ? 'border-primary bg-primary/5' : 'border-border'}`}>查看团队全部项目</button>
+                    <button type="button" onClick={() => setEditFormData(prev => ({ ...prev, projectAccessScope: 'ASSIGNED_ONLY' }))} className={`rounded-md border p-3 text-left text-sm ${editFormData.projectAccessScope === 'ASSIGNED_ONLY' ? 'border-primary bg-primary/5' : 'border-border'}`}>仅查看指定项目</button>
+                  </div>
+                  {editFormData.projectAccessScope === 'ASSIGNED_ONLY' && (
+                    <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border p-2" aria-label="选择允许访问的项目">
+                      {projects.length === 0 ? <p className="p-2 text-sm text-muted-foreground">暂无可分配项目</p> : projects.map((project) => (
+                        <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-muted">
+                          <input type="checkbox" checked={editFormData.projectIds.includes(project.id)} onChange={(event) => setEditFormData(prev => ({ ...prev, projectIds: event.target.checked ? [...prev.projectIds, project.id] : prev.projectIds.filter((id) => id !== project.id) }))} />
+                          <span className="font-mono text-muted-foreground">{project.projectCode}</span><span className="truncate">{project.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -794,7 +898,9 @@ export default function UsersPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={passwordData.password}
-                  onChange={(e) => setPasswordData(prev => ({ ...prev, password: e.target.value }))}
+                  onChange={(e) => setPasswordData(prev => ({ ...prev, password: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                  inputMode="numeric"
+                  maxLength={6}
                   className="pr-10"
                   autoComplete="new-password"
                 />
@@ -814,7 +920,9 @@ export default function UsersPage() {
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                  onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                  inputMode="numeric"
+                  maxLength={6}
                   className="pr-10"
                   autoComplete="new-password"
                 />

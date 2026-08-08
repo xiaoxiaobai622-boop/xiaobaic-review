@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 
 export type StorageProvider = 'local' | 's3'
 
@@ -14,6 +14,10 @@ export function StorageConfigProvider({
   provider: StorageProvider
   children: React.ReactNode
 }) {
+  useEffect(() => {
+    window.__STORAGE_PROVIDER__ = provider
+  }, [provider])
+
   return (
     <StorageConfigContext.Provider value={provider}>
       {children}

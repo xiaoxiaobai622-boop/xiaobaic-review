@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
-import { Bug, Building2, Calendar, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, Settings, Shield, User, Users } from 'lucide-react'
+import { Bug, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, Settings, Shield, User, Users } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -67,20 +67,20 @@ export default function AdminHeader() {
 
   const navLinks: Array<{ href: string; label: string; icon: typeof FolderKanban; title?: string }> = [
     { href: '/admin/projects', label: t('projects'), icon: FolderKanban },
-    { href: '/admin/calendar', label: t('calendar'), icon: Calendar },
-    { href: '/admin/clients', label: t('clients'), icon: Building2 },
-    { href: '/admin/users', label: t('users'), icon: Users },
-    { href: '/admin/settings', label: t('settings'), icon: Settings },
+    ...(user.role === 'ADMIN' ? [
+      { href: '/admin/users', label: t('users'), icon: Users },
+      { href: '/admin/settings', label: t('settings'), icon: Settings },
+    ] : []),
   ]
 
   // Add Security link if enabled
-  if (showSecurityDashboard) {
+  if (user.role === 'ADMIN' && showSecurityDashboard) {
     navLinks.push({ href: '/admin/security', label: t('security'), icon: Shield })
   }
 
   return (
     <div className="bg-card border-b border-border/50 shadow-elevation-sm backdrop-blur-sm">
-      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-2">
+      <div className="w-full px-3 sm:px-4 lg:px-6 py-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-6 flex-1 min-w-0">
             <nav className="flex gap-1 sm:gap-2 overflow-x-auto">

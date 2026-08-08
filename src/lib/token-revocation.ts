@@ -43,7 +43,7 @@ export async function revokeAllUserTokens(userId: string): Promise<void> {
   // refresh tokens can resurface after the blacklist key expires.
   const refreshTtlSeconds = (() => {
     const parsed = parseInt(process.env.ADMIN_REFRESH_TTL_SECONDS || '', 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 7 * 24 * 60 * 60
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 30 * 24 * 60 * 60
   })()
   await redis.setex(key, refreshTtlSeconds, Date.now().toString())
 }

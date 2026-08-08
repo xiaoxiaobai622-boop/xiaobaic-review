@@ -1,6 +1,6 @@
 'use client'
 
-import { Globe } from 'lucide-react'
+import { Languages } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
 
 interface LocaleOption {
@@ -62,13 +62,7 @@ export default function LanguageToggle({ onChange }: LanguageToggleProps) {
     init()
   }, [fetchLanguageSettings, onChange])
 
-  const cycleLanguage = () => {
-    if (availableLocales.length <= 1) return
-
-    const currentIndex = availableLocales.findIndex(l => l.code === locale)
-    const nextIndex = (currentIndex + 1) % availableLocales.length
-    const nextLocale = availableLocales[nextIndex].code
-
+  const changeLanguage = (nextLocale: string) => {
     setLocale(nextLocale)
     localStorage.setItem('shareLanguage', nextLocale)
     onChange?.(nextLocale)
@@ -82,18 +76,22 @@ export default function LanguageToggle({ onChange }: LanguageToggleProps) {
     return null
   }
 
-  const currentLocale = availableLocales.find(l => l.code === locale)
-  const label = currentLocale?.code?.toUpperCase() || 'EN'
-
   return (
-    <button
-      onClick={cycleLanguage}
-      className="p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm flex items-center gap-1.5"
-      aria-label={`Language: ${currentLocale?.name || 'English'}`}
-      title={currentLocale?.name || 'English'}
-    >
-      <Globe className="h-5 w-5 text-foreground" />
-      <span className="text-xs font-medium text-foreground">{label}</span>
-    </button>
+    <label className="flex h-9 items-center gap-2 rounded-md border border-border bg-background px-2 shadow-sm transition-colors hover:bg-accent">
+      <Languages className="h-4 w-4 shrink-0 text-foreground" aria-hidden="true" />
+      <span className="sr-only">{availableLocales.find(option => option.code === locale)?.name}</span>
+      <select
+        value={locale}
+        onChange={(event) => changeLanguage(event.target.value)}
+        className="max-w-28 cursor-pointer bg-transparent text-xs font-medium text-foreground outline-none"
+        aria-label={availableLocales.find(option => option.code === locale)?.name || 'Language'}
+      >
+        {availableLocales.map(option => (
+          <option key={option.code} value={option.code}>
+            {option.name}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }

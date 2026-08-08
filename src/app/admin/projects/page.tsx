@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { FolderKanban, Plus, Eye, EyeOff, RefreshCw, Copy, Check, Mail, AlertCircle } from 'lucide-react'
+import { FolderKanban, Plus, Eye, EyeOff, RefreshCw, Copy, Check, Mail, AlertCircle, ArrowRight } from 'lucide-react'
+import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
 import ProjectsFilterChips from '@/components/projects/ProjectsFilterChips'
@@ -71,6 +72,7 @@ export default function AdminPage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const router = useRouter()
+  const { user } = useAuth()
   const pathname = usePathname()
 
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null)
@@ -98,6 +100,29 @@ export default function AdminPage() {
   const [recipientName, setRecipientName] = useState('')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [formError, setFormError] = useState('')
+  const [projectCode, setProjectCode] = useState('')
+  const [projectCodeError, setProjectCodeError] = useState('')
+  const [openingProject, setOpeningProject] = useState(false)
+
+  async function openProjectByCode() {
+    const code = projectCode.trim()
+    if (!/^\d{3}$/.test(code) || Number(code) < 1) {
+      setProjectCodeError('请输入三位项目 ID')
+      return
+    }
+    setOpeningProject(true)
+    setProjectCodeError('')
+    try {
+      const response = await apiFetch(`/api/projects/by-code/${code}`)
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `无法打开项目 ${code}`)
+      router.push(user?.role === 'ADMIN' ? `/admin/projects/${data.id}` : `/share/${data.slug}`)
+    } catch (error) {
+      setProjectCodeError(error instanceof Error ? error.message : `无法打开项目 ${code}`)
+    } finally {
+      setOpeningProject(false)
+    }
+  }
 
   // Load saved views from API
   useEffect(() => {
@@ -553,10 +578,10 @@ export default function AdminPage() {
 
   const totalProjects = projects?.length ?? 0
 
-  if (totalProjects === 0) {
+  if (totalProjects === 0 && user?.role === 'ADMIN') {
     return (
       <div className="flex-1 min-h-0 bg-background">
-        <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
+        <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
           <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
@@ -587,20 +612,48 @@ export default function AdminPage() {
 
   return (
     <div className="flex-1 min-h-0 bg-background">
-      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
-        <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
+      <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
+        <div className="flex justify-between items-center gap-4 border-b border-border pb-3 mb-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-              <FolderKanban className="w-7 h-7 sm:w-8 sm:h-8" />
+            <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
+              <FolderKanban className="w-6 h-6" />
               {t('dashboard')}
             </h1>
             <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('dashboardDescription')}</p>
           </div>
-          <Button variant="default" size="default" onClick={openNewProjectModal}>
+          {user?.role === 'ADMIN' && <Button variant="default" size="default" onClick={openNewProjectModal}>
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">{t('newProject')}</span>
-          </Button>
+          </Button>}
         </div>
+
+        <section className="mb-3 flex flex-col gap-2 border-b border-border pb-3 sm:flex-row sm:items-end" aria-labelledby="quick-project-title">
+          <div className="min-w-0 flex-1">
+            <Label id="quick-project-title" htmlFor="project-code" className="text-sm font-medium">团队项目 ID</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">只有团队成员或被单独邀请的成员可以打开</p>
+          </div>
+          <div className="flex w-full gap-2 sm:w-auto">
+            <Input
+              id="project-code"
+              value={projectCode}
+              onChange={(event) => {
+                setProjectCode(event.target.value.replace(/\D/g, '').slice(0, 3))
+                setProjectCodeError('')
+              }}
+              onKeyDown={(event) => { if (event.key === 'Enter') void openProjectByCode() }}
+              inputMode="numeric"
+              maxLength={3}
+              placeholder="例如 001"
+              aria-invalid={Boolean(projectCodeError)}
+              className="w-full font-mono tabular-nums tracking-widest sm:w-40"
+            />
+            <Button onClick={openProjectByCode} disabled={openingProject} className="shrink-0">
+              {openingProject ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+              <span className="ml-2">打开项目</span>
+            </Button>
+          </div>
+          {projectCodeError && <p className="text-sm text-destructive sm:basis-full" role="alert">{projectCodeError}</p>}
+        </section>
 
         <ProjectsSavedViews
           views={savedViews}

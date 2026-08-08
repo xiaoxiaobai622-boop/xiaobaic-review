@@ -1,11 +1,28 @@
 'use client'
 
-import { AuthProvider } from '@/components/AuthProvider'
+import { AuthProvider, useAuth } from '@/components/AuthProvider'
 import AdminHeader from '@/components/AdminHeader'
 import SessionMonitor from '@/components/SessionMonitor'
 import KofiWidget from '@/components/KofiWidget'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef } from 'react'
+
+function AdminRoleGate({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (user?.role === 'MEMBER') {
+      router.replace('/profile')
+    }
+  }, [router, user?.role])
+
+  if (user?.role === 'MEMBER') {
+    return <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">正在返回个人中心...</div>
+  }
+
+  return children
+}
 
 export default function AdminLayout({
   children,
@@ -65,7 +82,7 @@ export default function AdminLayout({
 
   return (
     <AuthProvider requireAuth={true}>
-      <div className="flex flex-1 min-h-0 bg-background flex-col overflow-x-hidden">
+      <AdminRoleGate><div className="flex flex-1 min-h-0 bg-background flex-col overflow-x-hidden">
         {!hideHeader && (
           <div ref={headerRef}>
             <AdminHeader />
@@ -76,7 +93,7 @@ export default function AdminLayout({
         </div>
         <SessionMonitor />
         <KofiWidget />
-      </div>
+      </div></AdminRoleGate>
     </AuthProvider>
   )
 }

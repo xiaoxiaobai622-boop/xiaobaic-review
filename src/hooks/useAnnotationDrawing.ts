@@ -10,6 +10,8 @@ import {
   DEFAULT_STROKE_WIDTH,
   DEFAULT_OPACITY,
   Point,
+  DrawingTool,
+  LineShape,
 } from '@/types/annotations'
 
 /**
@@ -59,6 +61,7 @@ function simplifyPath(points: Point[], epsilon: number): Point[] {
 }
 
 export function useAnnotationDrawing() {
+  const [activeTool, setActiveTool] = useState<DrawingTool>('freehand')
   const [activeColor, setActiveColor] = useState<AnnotationColor>(ANNOTATION_COLORS[2]) // Red default
   const [strokeWidth, setStrokeWidth] = useState(DEFAULT_STROKE_WIDTH)
   const [opacity, setOpacity] = useState(DEFAULT_OPACITY)
@@ -79,27 +82,24 @@ export function useAnnotationDrawing() {
   const startShape = useCallback(
     (point: Point) => {
       const id = generateShapeId()
-      const newShape: FreehandShape = {
-        id,
-        type: 'freehand',
-        color: activeColor,
-        strokeWidth,
-        opacity,
-        points: [point],
-      }
+      const newShape: Shape = activeTool === 'freehand'
+        ? { id, type: 'freehand', color: activeColor, strokeWidth, opacity, points: [point] }
+        : { id, type: activeTool, color: activeColor, strokeWidth, opacity, start: point, end: point }
 
       activeShapeRef.current = newShape
       setActiveShape(newShape)
     },
-    [activeColor, strokeWidth, opacity, generateShapeId]
+    [activeColor, activeTool, strokeWidth, opacity, generateShapeId]
   )
 
   const updateShape = useCallback(
     (point: Point) => {
       const prev = activeShapeRef.current
-      if (!prev || prev.type !== 'freehand') return
+      if (!prev) return
 
-      const updated: FreehandShape = { ...prev, points: [...prev.points, point] }
+      const updated: Shape = prev.type === 'freehand'
+        ? ({ ...prev, points: [...prev.points, point] } as FreehandShape)
+        : ({ ...prev, end: point } as LineShape)
       activeShapeRef.current = updated
       setActiveShape(updated)
     },
@@ -108,7 +108,7 @@ export function useAnnotationDrawing() {
 
   const finishShape = useCallback(() => {
     const current = activeShapeRef.current
-    if (!current || current.type !== 'freehand') {
+    if (!current) {
       activeShapeRef.current = null
       setActiveShape(null)
       return
@@ -117,11 +117,17 @@ export function useAnnotationDrawing() {
     let isValid = true
     let finalShape: Shape = current
 
-    if (current.points.length < 2) {
-      isValid = false
+    if (current.type === 'freehand') {
+      if (current.points.length < 2) {
+        isValid = false
+      } else {
+        const simplified = simplifyPath(current.points, 0.002)
+        finalShape = { ...current, points: simplified }
+      }
     } else {
-      const simplified = simplifyPath(current.points, 0.002)
-      finalShape = { ...current, points: simplified }
+      const dx = current.end.x - current.start.x
+      const dy = current.end.y - current.start.y
+      isValid = Math.hypot(dx, dy) > 0.01
     }
 
     if (isValid) {
@@ -172,6 +178,8 @@ export function useAnnotationDrawing() {
   const hasShapes = shapes.length > 0
 
   return {
+    activeTool,
+    setActiveTool,
     activeColor,
     setActiveColor,
     strokeWidth,

@@ -13,9 +13,10 @@ export const runtime = 'nodejs'
 
 const addRecipientSchema = z.object({
   email: z.string().email('INVALID_EMAIL_FORMAT').nullable().optional(),
+  phone: z.string().regex(/^1[3-9]\d{9}$/, 'INVALID_PHONE_FORMAT').nullable().optional(),
   name: z.string().nullable().optional(),
   isPrimary: z.boolean().optional().default(false)
-}).refine(data => data.email || data.name, {
+}).refine(data => data.email || data.phone || data.name, {
   message: 'RECIPIENT_NAME_OR_EMAIL_REQUIRED'
 })
 
@@ -91,10 +92,10 @@ export async function POST(
       )
     }
 
-    const { email, name = null, isPrimary = false } = validation.data
+    const { email, phone = null, name = null, isPrimary = false } = validation.data
 
     // Add recipient
-    const recipient = await addRecipient(projectId, email, name, isPrimary)
+    const recipient = await addRecipient(projectId, email, name, isPrimary, phone)
 
     return NextResponse.json({ recipient }, { status: 201 })
   } catch (error: any) {

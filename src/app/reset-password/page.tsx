@@ -46,9 +46,9 @@ export default function ResetPasswordPage() {
       return
     }
 
-    if (password.length < 12) {
+    if (!/^\d{6}$/.test(password)) {
       setStatus('error')
-      setMessage(t('passwordTooShort'))
+      setMessage('密码必须是 6 位数字')
       return
     }
 
@@ -151,7 +151,9 @@ export default function ResetPasswordPage() {
                         type={showPassword ? 'text' : 'password'}
                         placeholder={t('newPasswordPlaceholder')}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => setPassword(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        inputMode="numeric"
+                        maxLength={6}
                         required
                         autoComplete="new-password"
                         autoFocus
@@ -168,7 +170,7 @@ export default function ResetPasswordPage() {
                       </button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {t('passwordHint')}
+                      密码只需 6 位数字
                     </p>
                   </div>
 
@@ -180,7 +182,9 @@ export default function ResetPasswordPage() {
                         type={showConfirmPassword ? 'text' : 'password'}
                         placeholder={t('confirmPasswordPlaceholder')}
                         value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onChange={(e) => setConfirmPassword(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        inputMode="numeric"
+                        maxLength={6}
                         required
                         autoComplete="new-password"
                         disabled={status === 'loading' || status === 'success'}

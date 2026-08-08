@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest, getShareContext } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getClientIpAddress } from '@/lib/utils'
+import type { AuthUser } from '@/lib/auth'
+import type { Prisma, PrismaClient } from '@prisma/client'
+
+type DbClient = PrismaClient | Prisma.TransactionClient
+
+export function projectAccessWhere(user: AuthUser): Prisma.ProjectWhereInput {
+  if (user.role === 'ADMIN') return {}
+  if (user.projectAccessScope === 'ALL_PROJECTS') return {}
+  return {
+    OR: [
+      { createdById: user.id },
+      { members: { some: { userId: user.id } } },
+    ],
+  }
+}
+
+export async function canAccessProject(db: DbClient, user: AuthUser, projectId: string) {
+  if (user.role === 'ADMIN') return true
+  const actor = await db.user.findUnique({
+    where: { id: user.id },
+    select: { projectAccessScope: true },
+  })
+  if (!actor) return false
+  if (actor.projectAccessScope === 'ALL_PROJECTS') return true
+  const membership = await db.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId: user.id } },
+    select: { id: true },
+  })
+  return Boolean(membership)
+}
+
+export async function nextProjectCode(db: DbClient) {
+  await db.$executeRaw`SELECT pg_advisory_xact_lock(86230401)`
+  const existing = await db.project.findMany({ select: { projectCode: true } })
+  const used = new Set(existing.map((item) => Number(item.projectCode)))
+  for (let value = 1; value <= 999; value += 1) {
+    if (!used.has(value)) return String(value).padStart(3, '0')
+  }
+  throw new Error('PROJECT_CODE_LIMIT_REACHED')
+}
 
 /**
  * Verify project access using dual authentication pattern
@@ -45,13 +85,17 @@ export async function verifyProjectAccess(
   const isAdmin = currentUser?.role === 'ADMIN'
   const shareContext = await getShareContext(request)
 
-  if (isAdmin) {
+  const hasTeamAccess = currentUser
+    ? await canAccessProject(prisma, currentUser, projectId)
+    : false
+
+  if (currentUser && hasTeamAccess) {
     return {
       authorized: true,
       isAdmin: true,
       isAuthenticated: true,
       permissions: ['view', 'comment', 'download', 'approve'],
-      shareTokenSessionId: `admin:${currentUser.id}`,
+      shareTokenSessionId: `${isAdmin ? 'admin' : 'member'}:${currentUser.id}`,
     }
   }
 

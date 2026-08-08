@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 const DANGEROUS_PROTOCOL = /^(javascript|data|vbscript):/i
+const PUBLIC_MEDIA_ORIGIN = 'https://static.xiaobaic.cn'
 
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
@@ -34,28 +35,41 @@ export async function proxy(request: NextRequest) {
 
   // Derive S3 origin for CSP — presigned redirects go directly to the S3 endpoint
   let s3Origin = ''
+  let s3BucketOrigin = ''
   if (process.env.STORAGE_PROVIDER === 's3' && process.env.S3_ENDPOINT) {
-    try { s3Origin = new URL(process.env.S3_ENDPOINT).origin } catch {}
+    try {
+      const endpoint = new URL(process.env.S3_ENDPOINT)
+      s3Origin = endpoint.origin
+      if (process.env.S3_FORCE_PATH_STYLE === 'false' && process.env.S3_BUCKET) {
+        s3BucketOrigin = `${endpoint.protocol}//${process.env.S3_BUCKET}.${endpoint.host}`
+      }
+    } catch {}
   }
 
   const connectSrc = [
     "'self'",
     'blob:',
     s3Origin,
+    s3BucketOrigin,
     'https://ko-fi.com',
     'https://storage.ko-fi.com',
     'https://cloudflareinsights.com',
   ].filter(Boolean).join(' ')
 
+  // Next/Turbopack's React development diagnostics use eval() for source
+  // mapped call stacks. Keep this allowance development-only; production
+  // remains nonce-based without unsafe-eval.
+  const developmentScriptSource = process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''
+
   const cspDirectives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://static.cloudflareinsights.com`,
+    `script-src 'self' 'nonce-${nonce}'${developmentScriptSource} https://static.cloudflareinsights.com`,
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com${s3Origin ? ` ${s3Origin}` : ''}`,
+    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
-    `media-src 'self' blob:${s3Origin ? ` ${s3Origin}` : ''}`,
+    `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN}${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

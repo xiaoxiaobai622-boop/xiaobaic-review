@@ -6,20 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { Trash2, ExternalLink, Archive, ArchiveRestore, RotateCcw, Send, Loader2, CheckCircle, BarChart3, FolderKanban, Copy, Check, Calendar } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Trash2, ExternalLink, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Copy, Check, Calendar } from 'lucide-react'
 import { UnapproveModal } from './UnapproveModal'
 import { apiPost, apiPatch, apiDelete } from '@/lib/api-client'
 
@@ -36,10 +23,9 @@ interface ProjectActionsProps {
   videos: Video[]
   onRefresh?: () => void
   shareUrl?: string
-  recipients?: any[]
 }
 
-export default function ProjectActions({ project, videos, onRefresh, shareUrl = '', recipients = [] }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, shareUrl = '' }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -50,22 +36,6 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
   const [linkCopied, setLinkCopied] = useState(false)
 
   const [showUnapproveModal, setShowUnapproveModal] = useState(false)
-
-  const [showNotificationModal, setShowNotificationModal] = useState(false)
-  const [notificationType, setNotificationType] = useState<'entire-project' | 'specific-video'>('entire-project')
-  const [selectedVideoName, setSelectedVideoName] = useState<string>('')
-  const [selectedVideoId, setSelectedVideoId] = useState<string>('')
-  const [sendPasswordSeparately, setSendPasswordSeparately] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-
-  const smtpConfigured = (project as any).smtpConfigured !== false
-
-  const hasRecipientWithEmail = (project as any).recipients?.some((r: any) => r.email && r.email.trim() !== '') || false
-
-  const isPasswordProtected = (project as any).sharePassword !== null &&
-                               (project as any).sharePassword !== undefined &&
-                               (project as any).sharePassword !== ''
 
   // Filter only ready videos
   const readyVideos = videos.filter(v => v.status === 'READY')
@@ -84,62 +54,6 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
   )
 
   const canApproveProject = readyVideos.length > 0 && allVideosHaveApprovedVersion
-
-  // Group videos by name
-  const videosByName = readyVideos.reduce((acc, video) => {
-    if (!acc[video.name]) {
-      acc[video.name] = []
-    }
-    acc[video.name].push(video)
-    return acc
-  }, {} as Record<string, Video[]>)
-
-  const videoNames = Object.keys(videosByName)
-  const versionsForSelectedVideo = selectedVideoName ? videosByName[selectedVideoName] : []
-
-  // Reset selections when notification type changes
-  const handleNotificationTypeChange = (type: 'entire-project' | 'specific-video') => {
-    setNotificationType(type)
-    setSelectedVideoName('')
-    setSelectedVideoId('')
-  }
-
-  // Reset version selection when video name changes
-  const handleVideoNameChange = (name: string) => {
-    setSelectedVideoName(name)
-    setSelectedVideoId('')
-  }
-
-  const handleSendNotification = async () => {
-    // Prevent rapid-fire notification sends
-    if (loading) return
-
-    if (notificationType === 'specific-video' && !selectedVideoId) {
-      setMessage({ type: 'error', text: t('selectVideoAndVersion') })
-      return
-    }
-
-    setLoading(true)
-    setMessage({ type: 'success', text: t('sendingNotificationProgress') })
-
-    apiPost(`/api/projects/${project.id}/notify`, {
-      videoId: notificationType === 'specific-video' ? selectedVideoId : null,
-      notifyEntireProject: notificationType === 'entire-project',
-      sendPasswordSeparately: isPasswordProtected && sendPasswordSeparately
-    })
-      .then((data) => {
-        setMessage({ type: 'success', text: data.message || t('notificationSentSuccessfully') })
-        setSelectedVideoName('')
-        setSelectedVideoId('')
-        setSendPasswordSeparately(false)
-      })
-      .catch((error) => {
-        setMessage({ type: 'error', text: error instanceof Error ? error.message : t('failedToSendNotification') })
-      })
-      .finally(() => {
-        setLoading(false)
-      })
-  }
 
   const handleViewSharePage = () => {
     router.push(`/admin/projects/${project.id}/share`)
@@ -293,45 +207,16 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
                   : 'bg-muted text-muted-foreground border border-border'
               }`}
             >
-              {project.status.replace('_', ' ')}
+              {{
+                IN_REVIEW: t('statusInReview'),
+                APPROVED: t('statusApproved'),
+                SHARE_ONLY: t('statusShareOnly'),
+                ARCHIVED: t('statusArchived'),
+              }[project.status] || project.status}
             </span>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* Client Information */}
-          <div className="pb-3 border-b border-border">
-            <div className="text-sm">
-              <p className="text-muted-foreground mb-1">{t('client')}</p>
-              {(() => {
-                const clientCompany = (project as any).companyName
-                const primaryRecipient = recipients?.find((r: any) => r.isPrimary) || recipients?.[0]
-                const clientName = primaryRecipient?.name
-                const clientEmail = primaryRecipient?.email
-
-                return (
-                  <>
-                    {clientCompany && (
-                      <p className="font-medium break-words">{clientCompany}</p>
-                    )}
-                    {clientName && (
-                      <p className={clientCompany ? "text-muted-foreground break-words" : "font-medium break-words"}>
-                        {clientName}
-                      </p>
-                    )}
-                    {clientEmail && (
-                      <p className="text-xs text-muted-foreground break-all">
-                        {clientEmail}
-                      </p>
-                    )}
-                    {!clientCompany && !clientName && !clientEmail && (
-                      <p className="font-medium">{t('noClientInfo')}</p>
-                    )}
-                  </>
-                )
-              })()}
-            </div>
-          </div>
-
           {/* Due Date */}
           {(project as any).dueDate && (() => {
             const due = new Date((project as any).dueDate)
@@ -407,44 +292,6 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
                   </Button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Actions Section Title */}
-          <div className="pt-2">
-            <h3 className="text-sm font-semibold mb-3">{t('projectActions')}</h3>
-          </div>
-
-          {/* Send Notification Button - only show if there are ready videos */}
-          {readyVideos.length > 0 && (
-            <div>
-              <Button
-                variant="outline"
-                size="default"
-                className="w-full"
-                onClick={() => setShowNotificationModal(true)}
-                disabled={smtpConfigured === false || !hasRecipientWithEmail}
-                title={
-                  smtpConfigured === false
-                    ? t('smtpNotConfigured')
-                    : !hasRecipientWithEmail
-                    ? t('noRecipientsEmail')
-                    : ''
-                }
-              >
-                <Send className="w-4 h-4 mr-2" />
-                {t('sendNotification')}
-              </Button>
-              {smtpConfigured === false && (
-                <p className="text-xs text-muted-foreground mt-1 px-1">
-                  {t('configureSMTPToEnable')}
-                </p>
-              )}
-              {smtpConfigured && !hasRecipientWithEmail && (
-                <p className="text-xs text-muted-foreground mt-1 px-1">
-                  {t('addRecipientWithEmail')}
-                </p>
-              )}
             </div>
           )}
 
@@ -535,144 +382,6 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
           </Button>
         </CardContent>
       </Card>
-
-      {/* Notification Modal */}
-      <Dialog open={showNotificationModal} onOpenChange={setShowNotificationModal}>
-        <DialogContent className="max-w-[95vw] sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Send className="w-5 h-5 text-primary" />
-              {t('sendNotification')}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* Notification Type Selection */}
-            <div>
-              <label className="text-sm font-medium mb-2 block">
-                {t('notificationType')}
-              </label>
-              <Select value={notificationType} onValueChange={handleNotificationTypeChange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="entire-project">
-                    {t('entireProject')}
-                  </SelectItem>
-                  <SelectItem value="specific-video">
-                    {t('specificVideo')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Show video/version selectors only for specific video notification */}
-            {notificationType === 'specific-video' && (
-              <>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    {t('selectVideo')}
-                  </label>
-                  <Select value={selectedVideoName} onValueChange={handleVideoNameChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={t('selectVideoPlaceholder')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {videoNames.map((name) => (
-                        <SelectItem key={name} value={name}>
-                          {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {selectedVideoName && (
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      {t('selectVersion')}
-                    </label>
-                    <Select value={selectedVideoId} onValueChange={setSelectedVideoId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('selectVersionPlaceholder')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {versionsForSelectedVideo.map((video) => (
-                          <SelectItem key={video.id} value={video.id}>
-                            {video.versionLabel}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Password checkbox - only show if project is password protected */}
-            {isPasswordProtected && (
-              <div className="flex items-center space-x-2 p-3 bg-muted rounded-md">
-                <input
-                  type="checkbox"
-                  id="send-password"
-                  checked={sendPasswordSeparately}
-                  onChange={(e) => setSendPasswordSeparately(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <label
-                  htmlFor="send-password"
-                  className="text-sm font-medium cursor-pointer"
-                >
-                  {t('sendPasswordSeparate')}
-                </label>
-              </div>
-            )}
-
-            {isPasswordProtected && (
-              <p className="text-xs text-muted-foreground bg-accent/50 p-3 rounded-md border border-border">
-                <strong>{t('noteLabel')}</strong> {t('passwordProtected')} {sendPasswordSeparately ? t('passwordSentSeparate') : t('passwordNotIncluded')}
-              </p>
-            )}
-
-            <Button
-              onClick={handleSendNotification}
-              disabled={loading || (notificationType === 'specific-video' && !selectedVideoId)}
-              className="w-full"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {t('sendingNotification')}
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  {t('sendEmailNotification')}
-                </>
-              )}
-            </Button>
-
-            {message && (
-              <div
-                className={`p-3 rounded-md text-sm font-medium ${
-                  message.type === 'success'
-                    ? 'bg-success-visible text-success border-2 border-success-visible'
-                    : 'bg-destructive-visible text-destructive border-2 border-destructive-visible'
-                }`}
-              >
-                {message.text}
-              </div>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              {notificationType === 'entire-project'
-                ? t('notifyAllVideos')
-                : t('notifySpecificVideo')}
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Unapprove Modal */}
       <UnapproveModal

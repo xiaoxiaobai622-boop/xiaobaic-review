@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getInvalidWatermarkCharacters } from '@/lib/watermark'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { encrypt, decrypt } from '@/lib/encryption'
@@ -225,12 +226,11 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // SECURITY: Validate watermark text (same rules as FFmpeg sanitization)
-    // Only allow alphanumeric, spaces, and safe punctuation: - _ . ( )
+    // SECURITY: Validate watermark text using the same Unicode-aware rules as FFmpeg.
     if (defaultWatermarkText) {
-      const invalidChars = defaultWatermarkText.match(/[^a-zA-Z0-9\s\-_.()]/g)
-      if (invalidChars) {
-        const uniqueInvalid = [...new Set(invalidChars)].join(', ')
+      const invalidChars = getInvalidWatermarkCharacters(defaultWatermarkText)
+      if (invalidChars.length > 0) {
+        const uniqueInvalid = invalidChars.join(', ')
         return NextResponse.json(
           {
             error: settingsMessages.invalidWatermarkCharacters || 'Invalid characters in watermark text',

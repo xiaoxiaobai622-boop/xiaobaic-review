@@ -37,39 +37,32 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
     const settings = await fetchProcessingSettings(projectId, videoId)
 
     if (settings.skipTranscoding) {
-      // Skip transcoding — only extract metadata and generate thumbnail
-      logMessage(`[WORKER] Skip transcoding enabled for video ${videoId}, generating thumbnail only`)
+      logMessage(`[WORKER] Ignoring skipTranscoding for video ${videoId}; originals are download-only`)
+    }
 
-      const thumbnailPath = await processThumbnail(
-        videoId,
-        projectId,
-        videoInfo.path,
-        videoInfo.metadata.duration,
-        tempFiles
-      )
+    const previewPaths: Partial<Record<'720p' | '1080p', string>> = {}
+    const targetResolutions: Array<'720p' | '1080p'> = ['720p']
+    const wants1080 = settings.resolution === '1080p' || settings.resolution === '2160p'
+    const sourceSupports1080 = videoInfo.metadata.height > videoInfo.metadata.width
+      ? videoInfo.metadata.width >= 1080
+      : videoInfo.metadata.height >= 1080
+    if (wants1080 && sourceSupports1080) targetResolutions.push('1080p')
 
-      // Finalize without preview path — original file is served directly
-      await finalizeVideo(
-        videoId,
-        '', // No preview path
-        thumbnailPath,
-        videoInfo.metadata,
-        settings.resolution
-      )
-    } else {
-      const dimensions = calculateOutputDimensions(videoInfo.metadata, settings.resolution)
-
-      const previewPath = await processPreview(
+    for (const resolution of targetResolutions) {
+      const dimensions = calculateOutputDimensions(videoInfo.metadata, resolution)
+      previewPaths[resolution] = await processPreview(
         videoId,
         projectId,
         videoInfo.path,
         dimensions,
         settings,
         tempFiles,
-        videoInfo.metadata.duration
+        videoInfo.metadata.duration,
+        resolution
       )
+    }
 
-      const thumbnailPath = await processThumbnail(
+    const thumbnailPath = await processThumbnail(
         videoId,
         projectId,
         videoInfo.path,
@@ -77,14 +70,12 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
         tempFiles
       )
 
-      await finalizeVideo(
+    await finalizeVideo(
         videoId,
-        previewPath,
+        previewPaths,
         thumbnailPath,
-        videoInfo.metadata,
-        settings.resolution
+        videoInfo.metadata
       )
-    }
 
     const totalTime = Date.now() - processingStart
     logMessage(`[WORKER] Successfully processed video ${videoId} in ${(totalTime / 1000).toFixed(2)}s`)

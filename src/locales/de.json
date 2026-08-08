@@ -1139,12 +1139,14 @@
     "noApprovedVideos": "Keine freigegebenen Videos zum Herunterladen verfügbar",
     "submitFiles": "Dateien einreichen",
     "submitFilesTitle": "Dateien an Projekt einreichen",
+    "uploadProjectName": "Projekt: {name}",
     "submitFilesDesc": "Dateien auswählen, um sie an dieses Projekt einzureichen.",
     "unsupportedFileType": "Nicht unterstützter Dateityp",
     "maxFilesReached": "Maximale Dateianzahl erreicht",
     "dragDropFiles": "Dateien hierher ziehen oder klicken zum Durchsuchen",
     "supportedFileTypes": "Bilder, Audio, Video, Dokumente, Untertitel, Projektdateien und Archive",
-    "allFilesUploaded": "Alle Dateien erfolgreich eingereicht"
+    "allFilesUploaded": "Alle Dateien erfolgreich eingereicht",
+    "uploadMore": "Weitere hochladen"
   },
 
   "settings": {
@@ -1600,11 +1602,12 @@
       "maxReverseShareFiles": "Max. Datei-Einreichungen pro Sitzung",
       "maxReverseShareFilesHint": "Maximale Dateien, die ein Kunde pro Sitzung einreichen kann (1–500, Standard: 10)",
       "adminSessionTimeout": "Admin-Sitzungs-Timeout",
-      "adminSessionTimeoutHint": "Steuert das Inaktivitäts-Logout im Admin-Dashboard. Maximum ist 24 Stunden.",
+      "adminSessionTimeoutHint": "Meldet nach durchgehender Inaktivität ab. Maximal 30 Tage; Zugriffstoken werden bei normaler Nutzung automatisch erneuert.",
       "timeoutValue": "Timeout-Wert",
       "timeoutUnit": "Timeout-Einheit",
       "minutes": "Minuten",
       "hours": "Stunden",
+      "days": "Tage",
       "currentSetting": "Aktuelle Einstellung:",
       "shortSecurity": "Kurz – starke Sicherheit; Sitzungen laufen schnell ab",
       "balanced": "Ausgewogen – gut für typische Sitzungen",

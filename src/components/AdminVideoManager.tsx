@@ -3,18 +3,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { ChevronDown, ChevronUp, Video, CheckCircle2, Loader2, Pencil, Trash2, Upload } from 'lucide-react'
+import { ChevronRight, ChevronUp, Video, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3 } from 'lucide-react'
 import VideoUpload from './VideoUpload'
 import VideoList from './VideoList'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
-import { InlineEdit } from './InlineEdit'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
+import { Input } from './ui/input'
 import { VideoUploadModal } from './VideoUploadModal'
-import { cn } from '@/lib/utils'
+import { cn, formatFileSize } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { apiPatch, apiFetch, apiDelete } from '@/lib/api-client'
 import { FILE_LIMITS } from '@/lib/file-validation'
 import { entryToFiles } from '@/lib/drop-entries'
 import { useTranslations } from 'next-intl'
+import VideoComparison from './VideoComparison'
 
 function isVideoFile(file: File): boolean {
   const name = file.name.toLowerCase()
@@ -29,8 +30,23 @@ interface AdminVideoManagerProps {
   companyName?: string
   onRefresh?: () => void
   sortMode?: 'status' | 'alphabetical'
+  viewMode?: 'list' | 'grid'
   maxRevisions?: number
   enableRevisions?: boolean
+  comments?: Array<{ videoId?: string | null }>
+  shareUrl?: string
+  uploadRequestKey?: number
+  onShowVideoInfo?: (videoGroup: { name: string; videos: any[] }) => void
+}
+
+interface CollectedUpload {
+  id: string
+  fileName: string
+  fileSize: string
+  fileType: string
+  uploadedByName: string | null
+  uploadedByEmail: string | null
+  createdAt: string
 }
 
 export default function AdminVideoManager({
@@ -41,8 +57,13 @@ export default function AdminVideoManager({
   companyName: _companyName = 'Studio',
   onRefresh,
   sortMode = 'alphabetical',
+  viewMode = 'list',
   maxRevisions,
-  enableRevisions
+  enableRevisions,
+  comments = [],
+  shareUrl = '',
+  uploadRequestKey = 0,
+  onShowVideoInfo
 }: AdminVideoManagerProps) {
   const t = useTranslations('videos')
   const tc = useTranslations('common')
@@ -62,6 +83,9 @@ export default function AdminVideoManager({
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
+  const localVersionInputRef = useRef<HTMLInputElement>(null)
+  const [localVersionTargetGroup, setLocalVersionTargetGroup] = useState<string | null>(null)
+  const [localVersionFile, setLocalVersionFile] = useState<File | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounterRef = useRef(0)
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
@@ -69,8 +93,20 @@ export default function AdminVideoManager({
   const [savingGroupName, setSavingGroupName] = useState<string | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ name: string; label: string; token: string } | null>(null)
+  const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
+  const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
+  const [versionSourceMenuGroup, setVersionSourceMenuGroup] = useState<string | null>(null)
+  const [collectionTargetGroup, setCollectionTargetGroup] = useState<string | null>(null)
+  const [collectionUploads, setCollectionUploads] = useState<CollectedUpload[]>([])
+  const [collectionLoading, setCollectionLoading] = useState(false)
+  const [selectedCollectionUploadId, setSelectedCollectionUploadId] = useState<string | null>(null)
+  const [promotingCollectionUploadId, setPromotingCollectionUploadId] = useState<string | null>(null)
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   const [sessionId] = useState<string>(() => `admin:${Date.now()}`)
+
+  useEffect(() => {
+    if (uploadRequestKey > 0 && projectStatus !== 'APPROVED') setIsUploadModalOpen(true)
+  }, [uploadRequestKey, projectStatus])
 
   // Fetch a thumbnail per video group (latest version that has one)
   useEffect(() => {
@@ -138,6 +174,142 @@ export default function AdminVideoManager({
     } catch {}
   }
 
+  const handleCompare = async (groupName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const readyVersions = [...videoGroups[groupName]]
+      .filter(video => video.status === 'READY')
+      .sort((a, b) => a.version - b.version)
+    if (readyVersions.length < 2) return
+
+    try {
+      const versionsWithStreams = await Promise.all(readyVersions.map(async video => {
+        const response = await apiFetch(
+          `/api/admin/video-token?videoId=${video.id}&projectId=${projectId}&quality=720p&sessionId=${sessionId}`,
+          { cache: 'no-store' }
+        )
+        if (!response.ok) throw new Error(t('failedToLoadData'))
+        const data = await response.json()
+        return { ...video, streamUrl720p: `/api/content/${data.token}` }
+      }))
+      setComparisonVideos(versionsWithStreams)
+    } catch {
+      alert(t('failedToLoadData'))
+    }
+  }
+
+  const handleOpenReview = (groupName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setActionMenuGroup(null)
+    const url = `/admin/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleEnterReview = (groupName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    router.push(`/admin/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`)
+  }
+
+  const handleCopyReviewLink = async (groupName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const baseUrl = shareUrl || `${window.location.origin}/admin/projects/${projectId}/share`
+    const separator = baseUrl.includes('?') ? '&' : '?'
+    await navigator.clipboard.writeText(`${baseUrl}${separator}video=${encodeURIComponent(groupName)}`)
+    setActionMenuGroup(null)
+  }
+
+  const openLocalVersionPicker = (groupName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setActionMenuGroup(null)
+    setVersionSourceMenuGroup(null)
+    setLocalVersionTargetGroup(groupName)
+    setLocalVersionFile(null)
+    localVersionInputRef.current?.click()
+  }
+
+  const handleLocalVersionFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0] || null
+    event.target.value = ''
+    if (!selectedFile) return
+    if (!isVideoFile(selectedFile)) {
+      alert(t('invalidVideoShort'))
+      setLocalVersionTargetGroup(null)
+      return
+    }
+    setLocalVersionFile(selectedFile)
+  }
+
+  const clearLocalVersionUpload = () => {
+    setLocalVersionTargetGroup(null)
+    setLocalVersionFile(null)
+  }
+
+  const isCollectedVideo = (upload: CollectedUpload) => {
+    const lowerName = upload.fileName.toLowerCase()
+    const extension = lowerName.includes('.') ? lowerName.slice(lowerName.lastIndexOf('.')) : ''
+    return upload.fileType?.toLowerCase().startsWith('video/') || FILE_LIMITS.ALLOWED_EXTENSIONS.includes(extension)
+  }
+
+  const formatCollectedUploadTime = (createdAt: string) => new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(createdAt))
+
+  const openCollectionVersionPicker = async (groupName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setActionMenuGroup(null)
+    setVersionSourceMenuGroup(null)
+    setCollectionTargetGroup(groupName)
+    setCollectionUploads([])
+    setSelectedCollectionUploadId(null)
+    setCollectionLoading(true)
+
+    try {
+      const response = await apiFetch(`/api/projects/${projectId}/project-uploads`, { cache: 'no-store' })
+      if (!response.ok) throw new Error(t('collectionLoadFailed'))
+      const data = await response.json()
+      setCollectionUploads((data.uploads || []).filter(isCollectedVideo))
+    } catch (error) {
+      alert(error instanceof Error ? error.message : t('collectionLoadFailed'))
+      setCollectionTargetGroup(null)
+    } finally {
+      setCollectionLoading(false)
+    }
+  }
+
+  const promoteCollectedUpload = async () => {
+    if (!collectionTargetGroup || !selectedCollectionUploadId) return
+    setPromotingCollectionUploadId(selectedCollectionUploadId)
+
+    try {
+      const response = await apiFetch(
+        `/api/projects/${projectId}/project-uploads/${selectedCollectionUploadId}/promote`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoName: collectionTargetGroup }),
+        }
+      )
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || t('collectionReplaceFailed'))
+      }
+
+      setCollectionTargetGroup(null)
+      setSelectedCollectionUploadId(null)
+      onRefresh?.()
+      router.refresh()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : t('collectionReplaceFailed'))
+    } finally {
+      setPromotingCollectionUploadId(null)
+    }
+  }
+
   // Delete a video group: removes every version of the video
   const handleDeleteGroup = async (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -198,18 +370,6 @@ export default function AdminVideoManager({
 
     setDroppedFiles(videoFiles)
     setIsUploadModalOpen(true)
-  }
-
-  const toggleGroup = (name: string) => {
-    const wasExpanded = expandedGroup === name
-
-    if (wasExpanded) {
-      // Collapse current video
-      setExpandedGroup(null)
-    } else {
-      // Expand this video (and collapse any other)
-      setExpandedGroup(name)
-    }
   }
 
   const handleStartEditGroupName = (oldName: string, e: React.MouseEvent) => {
@@ -290,6 +450,28 @@ export default function AdminVideoManager({
         onUploadComplete={handleUploadComplete}
         initialFiles={droppedFiles}
       />
+      <input
+        ref={localVersionInputRef}
+        type="file"
+        accept={`video/*,${FILE_LIMITS.ALLOWED_EXTENSIONS.join(',')}`}
+        className="hidden"
+        onChange={handleLocalVersionFile}
+      />
+      {localVersionTargetGroup && localVersionFile && (
+        <VideoUpload
+          key={`${localVersionTargetGroup}:${localVersionFile.name}:${localVersionFile.lastModified}`}
+          projectId={projectId}
+          videoName={localVersionTargetGroup}
+          initialFile={localVersionFile}
+          autoStart
+          compact
+          onCancel={clearLocalVersionUpload}
+          onUploadComplete={() => {
+            clearLocalVersionUpload()
+            handleUploadComplete()
+          }}
+        />
+      )}
 
       {sortedGroupNames.length === 0 && (
         <Card>
@@ -306,6 +488,10 @@ export default function AdminVideoManager({
         </Card>
       )}
 
+      <div
+        className={viewMode === 'grid' ? 'grid content-start gap-3' : 'space-y-4'}
+        style={viewMode === 'grid' ? { gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 280px))' } : undefined}
+      >
       {sortedGroupNames.map((groupName) => {
         const groupVideos = videoGroups[groupName]
         const isExpanded = expandedGroup === groupName
@@ -316,35 +502,43 @@ export default function AdminVideoManager({
         const hasProcessingVideos = processingCount > 0
         const errorCount = groupVideos.filter(v => v.status === 'ERROR').length
         const hasErrorVideos = errorCount > 0
+        const groupVideoIds = new Set(groupVideos.map(video => video.id))
+        const feedbackCount = comments.filter(comment => comment.videoId && groupVideoIds.has(comment.videoId)).length
+        const isGridCard = viewMode === 'grid' && !isExpanded
 
         return (
-          <Card key={groupName} className="overflow-hidden">
+          <Card
+            key={groupName}
+            className={cn('relative', isGridCard && 'h-full', viewMode === 'grid' && isExpanded && 'col-span-full')}
+          >
             <CardHeader
               className={cn(
                 'cursor-pointer hover:bg-accent/50 transition-colors',
-                'flex flex-row items-center justify-between space-y-0 py-3 px-3 sm:px-6'
+                isGridCard
+                  ? 'block space-y-0 p-2.5'
+                  : 'flex flex-row items-center justify-between space-y-0 py-3 px-3 sm:px-6'
               )}
-              onClick={() => toggleGroup(groupName)}
+              onClick={(e) => handleEnterReview(groupName, e)}
             >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className={cn('relative flex gap-3 flex-1 min-w-0', isGridCard ? 'flex-col items-stretch' : 'items-center')}>
                 {thumbnails[groupName] ? (
                   <button
                     type="button"
-                    onClick={(e) => handlePreview(groupName, e)}
-                    className="relative flex-shrink-0 cursor-zoom-in"
-                    title={t('previewVideo')}
-                    aria-label={t('previewVideo')}
+                    onClick={(e) => handleEnterReview(groupName, e)}
+                    className={cn('relative flex-shrink-0 cursor-pointer overflow-hidden rounded-md border border-border bg-black', isGridCard && 'w-full aspect-video')}
+                    title={t('openReviewPage')}
+                    aria-label={t('openReviewPage')}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={thumbnails[groupName]}
                       alt={groupName}
                       loading="lazy"
-                      className="w-20 h-12 rounded-md object-cover border border-border bg-muted"
+                      className={cn('object-contain bg-black', isGridCard ? 'h-full w-full' : 'w-20 h-12 rounded-md')}
                     />
                     {hasApprovedVideos && (
                       <span
-                        className="absolute -top-1.5 -right-1.5 bg-success text-success-foreground rounded-full p-0.5 shadow-elevation-sm"
+                        className="absolute right-2 top-2 rounded-full bg-success p-0.5 text-success-foreground shadow-elevation-sm"
                         title={`${approvedCount} ${t('approved')}`}
                         aria-label={`${approvedCount} ${t('approved')}`}
                       >
@@ -353,11 +547,11 @@ export default function AdminVideoManager({
                     )}
                   </button>
                 ) : (
-                  <div className="relative w-20 h-12 rounded-md border border-border bg-muted flex items-center justify-center flex-shrink-0">
+                  <div className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? 'w-full aspect-video' : 'w-20 h-12')}>
                     <Video className="w-5 h-5 text-muted-foreground" />
                     {hasApprovedVideos && (
                       <span
-                        className="absolute -top-1.5 -right-1.5 bg-success text-success-foreground rounded-full p-0.5 shadow-elevation-sm"
+                        className="absolute right-2 top-2 rounded-full bg-success p-0.5 text-success-foreground shadow-elevation-sm"
                         title={`${approvedCount} ${t('approved')}`}
                         aria-label={`${approvedCount} ${t('approved')}`}
                       >
@@ -369,18 +563,10 @@ export default function AdminVideoManager({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     {editingGroupName === groupName ? (
-                      <InlineEdit
-                        value={editGroupValue}
-                        onChange={setEditGroupValue}
-                        onSave={() => handleSaveGroupName(groupName)}
-                        onCancel={handleCancelEditGroupName}
-                        disabled={savingGroupName === groupName}
-                        inputClassName="h-8 w-full sm:w-64"
-                        stopPropagation={true}
-                      />
+                      <CardTitle className={cn('min-w-0', isGridCard ? 'truncate text-sm leading-5' : 'text-lg')}>{groupName}</CardTitle>
                     ) : (
                       <>
-                        <CardTitle className="text-lg">{groupName}</CardTitle>
+                        <CardTitle className={cn('min-w-0', isGridCard ? 'truncate text-sm leading-5' : 'text-lg')}>{groupName}</CardTitle>
                         {isExpanded && projectStatus !== 'APPROVED' && (
                           <>
                             <Button
@@ -406,6 +592,17 @@ export default function AdminVideoManager({
                             </Button>
                           </>
                         )}
+                        {isExpanded && groupVideos.filter(v => v.status === 'READY').length > 1 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={(e) => handleCompare(groupName, e)}
+                          >
+                            <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
+                            {t('compareVersions')}
+                          </Button>
+                        )}
                         {hasProcessingVideos && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary-visible text-primary border border-primary-visible flex-shrink-0">
                             <div className="animate-spin rounded-full h-2.5 w-2.5 border-b border-primary"></div>
@@ -421,19 +618,127 @@ export default function AdminVideoManager({
                     )}
                   </div>
                   {editingGroupName !== groupName && (
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {groupVideos.length} {groupVideos.length === 1 ? t('versionSingular') : t('versions')} • {t('latestLabel')} {latestVideo.versionLabel || `v${latestVideo.version}`}
+                    <p className={cn('text-muted-foreground mt-1 flex items-center gap-x-3 gap-y-1', isGridCard ? 'overflow-hidden whitespace-nowrap text-xs' : 'flex-wrap text-sm')}>
+                      <span>{groupVideos.length} {groupVideos.length === 1 ? t('versionSingular') : t('versions')} • {t('latestLabel')} {latestVideo.versionLabel || `v${latestVideo.version}`}</span>
+                      <span className="inline-flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />{t('feedbackCount', { count: feedbackCount })}</span>
                       {enableRevisions && maxRevisions && (
-                        <> • {t('revisionsLabel')} {groupVideos.length}/{maxRevisions}</>
+                        <span>{t('revisionsLabel')} {groupVideos.length}/{maxRevisions}</span>
                       )}
                     </p>
                   )}
                 </div>
                 {editingGroupName !== groupName && (
                   isExpanded ? (
-                    <ChevronUp className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                    <button
+                      type="button"
+                      className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setExpandedGroup(null)
+                      }}
+                      title={t('collapseVersion')}
+                      aria-label={t('collapseVersion')}
+                    >
+                      <ChevronUp className="h-5 w-5" />
+                    </button>
                   ) : (
-                    <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                    <div className={cn('relative z-50 flex-shrink-0', isGridCard && 'absolute bottom-0 right-0')}>
+                      <button
+                        type="button"
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setVersionSourceMenuGroup(null)
+                          setActionMenuGroup(current => current === groupName ? null : groupName)
+                        }}
+                        aria-label={t('videoActions')}
+                        title={t('videoActions')}
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                      {actionMenuGroup === groupName && (
+                        <>
+                          <button
+                            type="button"
+                            className="fixed inset-0 z-40 cursor-default"
+                            aria-label={tc('close')}
+                            onClick={(e) => { e.stopPropagation(); setActionMenuGroup(null); setVersionSourceMenuGroup(null) }}
+                          />
+                          <div className="absolute right-0 top-8 z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                            <button type="button" onClick={(e) => { setActionMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                              <Play className="h-4 w-4" />{t('previewVideo')}
+                            </button>
+                            <button type="button" onClick={(e) => handleOpenReview(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                              <ExternalLink className="h-4 w-4" />{t('openReviewPage')}
+                            </button>
+                            <button type="button" onClick={(e) => handleCopyReviewLink(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                              <Link2 className="h-4 w-4" />{t('copyReviewLink')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActionMenuGroup(null)
+                                setVersionSourceMenuGroup(null)
+                                onShowVideoInfo?.({
+                                  name: groupName,
+                                  videos: [...groupVideos].sort((a, b) => b.version - a.version),
+                                })
+                              }}
+                              className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+                            >
+                              <Layers3 className="h-4 w-4" />{t('versionInfo')}
+                            </button>
+                            <div className="my-1 border-t border-border" />
+                            {projectStatus !== 'APPROVED' && (
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setVersionSourceMenuGroup(current => current === groupName ? null : groupName)
+                                  }}
+                                  className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="flex-1">{t('uploadNewVersion')}</span>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                </button>
+                                {versionSourceMenuGroup === groupName && (
+                                  <div className="absolute left-full top-0 z-[60] w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                                    <button type="button" onClick={(e) => openLocalVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                                      <Upload className="h-4 w-4" />{t('localUpload')}
+                                    </button>
+                                    <button type="button" onClick={(e) => openCollectionVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                                      <FolderInput className="h-4 w-4" />{t('collectionReplace')}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              disabled={groupVideos.filter(v => v.status === 'READY').length < 2}
+                              onClick={(e) => { setActionMenuGroup(null); handleCompare(groupName, e) }}
+                              className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <GitCompareArrows className="h-4 w-4" />{t('compareVersions')}
+                            </button>
+                            {projectStatus !== 'APPROVED' && (
+                              <>
+                                <button type="button" onClick={(e) => { setActionMenuGroup(null); handleStartEditGroupName(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                                  <Pencil className="h-4 w-4" />{t('editVideoName')}
+                                </button>
+                                <div className="my-1 border-t border-border" />
+                                <button type="button" onClick={(e) => { setActionMenuGroup(null); handleDeleteGroup(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
+                                  <Trash2 className="h-4 w-4" />{t('deleteVideo')}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )
                 )}
               </div>
@@ -445,6 +750,7 @@ export default function AdminVideoManager({
                 {projectStatus !== 'APPROVED' && (
                   <div className="mt-4">
                     <h4 className="text-sm font-medium mb-3">{t('uploadNewVersion')}</h4>
+                    <p className="mb-3 text-xs text-muted-foreground">{t('versionUploadDescription')}</p>
                     <VideoUpload
                       projectId={projectId}
                       videoName={groupName}
@@ -477,6 +783,125 @@ export default function AdminVideoManager({
           </Card>
         )
       })}
+      </div>
+
+      <Dialog
+        open={!!editingGroupName}
+        onOpenChange={(open) => {
+          if (!open && !savingGroupName) handleCancelEditGroupName()
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-md"
+          onPointerDownOutside={() => {
+            if (!savingGroupName) handleCancelEditGroupName()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t('editVideoName')}</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (editingGroupName) handleSaveGroupName(editingGroupName)
+            }}
+          >
+            <Input
+              value={editGroupValue}
+              onChange={(event) => setEditGroupValue(event.target.value)}
+              autoFocus
+              disabled={!!savingGroupName}
+              aria-label={t('videoName')}
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleCancelEditGroupName} disabled={!!savingGroupName}>
+                {tc('cancel')}
+              </Button>
+              <Button type="submit" disabled={!!savingGroupName || !editGroupValue.trim()}>
+                {savingGroupName ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {tc('save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!collectionTargetGroup}
+        onOpenChange={(open) => {
+          if (!open && !promotingCollectionUploadId) {
+            setCollectionTargetGroup(null)
+            setSelectedCollectionUploadId(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('collectionReplaceTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {t('collectionReplaceDescription', { name: collectionTargetGroup || '' })}
+            </p>
+            {collectionLoading ? (
+              <div className="flex min-h-36 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : collectionUploads.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                {t('noCollectedVideos')}
+              </div>
+            ) : (
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {collectionUploads.map((upload) => {
+                  const selected = selectedCollectionUploadId === upload.id
+                  return (
+                    <button
+                      key={upload.id}
+                      type="button"
+                      onClick={() => setSelectedCollectionUploadId(upload.id)}
+                      className={cn(
+                        'flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors',
+                        selected ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:bg-accent'
+                      )}
+                    >
+                      <span className={cn('mt-0.5 rounded-md p-2', selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                        <Video className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium" title={upload.fileName}>{upload.fileName}</span>
+                        <span className="mt-1 block text-xs text-muted-foreground">{formatFileSize(Number(upload.fileSize))}</span>
+                        <span className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Clock3 className="h-3.5 w-3.5" />{formatCollectedUploadTime(upload.createdAt)}
+                        </span>
+                      </span>
+                      {selected && <CheckCircle2 className="mt-1 h-4 w-4 text-primary" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCollectionTargetGroup(null)
+                  setSelectedCollectionUploadId(null)
+                }}
+                disabled={!!promotingCollectionUploadId}
+              >
+                {tc('cancel')}
+              </Button>
+              <Button type="button" onClick={promoteCollectedUpload} disabled={!selectedCollectionUploadId || !!promotingCollectionUploadId}>
+                {promotingCollectionUploadId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FolderInput className="mr-2 h-4 w-4" />}
+                {t('confirmCollectionReplace')}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
         <DialogContent className="sm:max-w-3xl">
@@ -494,18 +919,14 @@ export default function AdminVideoManager({
         </DialogContent>
       </Dialog>
 
-      {sortedGroupNames.length > 0 && projectStatus !== 'APPROVED' && (
-        <button
-          type="button"
-          onClick={() => setIsUploadModalOpen(true)}
-          className="w-full flex items-center gap-3 py-3 px-3 sm:px-6 rounded-lg border border-dashed bg-card hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-        >
-          <div className="w-20 h-12 rounded-md border border-dashed border-border flex items-center justify-center flex-shrink-0">
-            <Upload className="w-5 h-5" />
-          </div>
-          <span className="text-sm font-medium">{t('uploadFirstVideo')}</span>
-        </button>
+      {comparisonVideos && (
+        <VideoComparison
+          videoVersions={comparisonVideos}
+          defaultQuality="720p"
+          onClose={() => setComparisonVideos(null)}
+        />
       )}
+
     </div>
   )
 }

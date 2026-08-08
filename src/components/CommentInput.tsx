@@ -26,6 +26,7 @@ interface CommentInputProps {
 
   // Timecode range (in/out)
   selectedTimecodeEnd?: string | null
+  isSelectingTimecodeEnd?: boolean
   onSetTimecodeEnd?: () => void
   onClearTimecodeEnd?: () => void
 
@@ -116,24 +117,31 @@ export default function CommentInput({
   const tCommon = useTranslations('common')
 
   if (commentsDisabled) {
-    // Still show the shortcuts button when comments are disabled (e.g. after approval)
-    if (showShortcutsButton && onShowShortcuts) {
-      return (
-        <div className="p-3 flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onShowShortcuts}
-            className="hidden lg:inline-flex"
-          >
-            <Keyboard className="w-4 h-4 lg:mr-2" />
-            <span className="hidden lg:inline">{t('shortcuts')}</span>
-          </Button>
+    return (
+      <div className="flex-shrink-0 border-t border-border/70 bg-card p-3">
+        <textarea
+          disabled
+          aria-label="批注输入框"
+          placeholder="该版本已通过，暂不能新增批注"
+          className="flex min-h-[72px] w-full resize-none rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground opacity-80"
+        />
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">该版本已通过，批注功能已锁定</p>
+          {showShortcutsButton && onShowShortcuts && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onShowShortcuts}
+              className="hidden lg:inline-flex"
+            >
+              <Keyboard className="w-4 h-4 lg:mr-2" />
+              <span className="hidden lg:inline">{t('shortcuts')}</span>
+            </Button>
+          )}
         </div>
-      )
-    }
-    return null
+      </div>
+    )
   }
 
   // Check if name selection is required but not provided
@@ -176,7 +184,7 @@ export default function CommentInput({
   }
 
   return (
-    <div className="border-t border-border p-4 bg-card flex-shrink-0">
+    <div className="flex-shrink-0 border-t border-border/70 bg-card p-3">
       {/* Restriction Warning */}
       {currentVideoRestricted && restrictionMessage && (
         <div className="mb-3 p-3 bg-warning-visible border-2 border-warning-visible rounded-lg">
@@ -276,54 +284,6 @@ export default function CommentInput({
         </div>
       )}
 
-      {/* Timestamp indicator with optional range */}
-      {timestampLabel && !currentVideoRestricted && (
-        <div className="mb-3 flex items-center gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-1.5 rounded-md bg-warning-visible px-2 py-1 text-sm font-semibold text-warning">
-            <Clock className="w-3.5 h-3.5" />
-            <span className="font-mono">{timestampLabel}</span>
-            {timecodeEndLabel && (
-              <>
-                <ArrowRight className="w-3 h-3 mx-0.5" />
-                <span className="font-mono">{timecodeEndLabel}</span>
-                {onClearTimecodeEnd && (
-                  <button
-                    type="button"
-                    onClick={onClearTimecodeEnd}
-                    className="ml-0.5 hover:opacity-70 transition-opacity"
-                    title={t('clearEndTimecode')}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-          {!timecodeEndLabel && onSetTimecodeEnd && (
-            <Button
-              type="button"
-              onClick={onSetTimecodeEnd}
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs px-2"
-              title={t('setOutPoint')}
-            >
-              {t('setOutPoint')}
-            </Button>
-          )}
-          <Button
-            type="button"
-            onClick={onClearTimestamp}
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            title={t('clearTimestamp')}
-          >
-            <X className="w-4 h-4" />
-          </Button>
-        </div>
-      )}
-
       {/* Message Input */}
       {!currentVideoRestricted && (
         <>
@@ -377,11 +337,54 @@ export default function CommentInput({
               value={newComment}
               onChange={(e) => onCommentChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="resize-none"
+              className="min-h-[72px] resize-none rounded-md text-sm"
               rows={2}
             />
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
+                {timestampLabel && !currentVideoRestricted && (
+                  <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-foreground">
+                    <button
+                      type="button"
+                      onClick={timecodeEndLabel ? undefined : onSetTimecodeEnd}
+                      className={`inline-flex items-center gap-1 tabular-nums ${
+                        timecodeEndLabel || !onSetTimecodeEnd ? 'cursor-default' : 'cursor-pointer hover:text-primary'
+                      }`}
+                      title={timecodeEndLabel ? t('clearEndTimecode') : t('setOutPoint')}
+                    >
+                      <Clock className="h-3 w-3" />
+                      <span>{timestampLabel}</span>
+                      {timecodeEndLabel && (
+                        <>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                          <span>{timecodeEndLabel}</span>
+                        </>
+                      )}
+                    </button>
+                    {timecodeEndLabel && onClearTimecodeEnd && (
+                      <button
+                        type="button"
+                        onClick={onClearTimecodeEnd}
+                        className="text-muted-foreground transition-colors hover:text-foreground"
+                        title={t('clearEndTimecode')}
+                        aria-label={t('clearEndTimecode')}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                    {!timecodeEndLabel && (
+                      <button
+                        type="button"
+                        onClick={onClearTimestamp}
+                        className="text-muted-foreground transition-colors hover:text-foreground"
+                        title={t('clearTimestamp')}
+                        aria-label={t('clearTimestamp')}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
                 {onStartDrawing && (
                   <Button
                     type="button"
@@ -406,15 +409,24 @@ export default function CommentInput({
                   />
                 )}
               </div>
-              <Button
-                onClick={onSubmit}
-                variant="default"
-                disabled={!canSubmit}
-                size="icon"
-                className="h-8 w-8"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
+                {showShortcutsButton && onShowShortcuts && (
+                  <Button type="button" variant="outline" size="sm" onClick={onShowShortcuts} className="hidden h-8 lg:inline-flex">
+                    <Keyboard className="h-4 w-4 lg:mr-2" />
+                    <span className="hidden lg:inline">{t('shortcuts')}</span>
+                  </Button>
+                )}
+                <Button
+                  onClick={onSubmit}
+                  variant="default"
+                  disabled={!canSubmit}
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
           {(attachmentError || attachmentNotice) && (
@@ -428,22 +440,10 @@ export default function CommentInput({
               {t('selectNameFirst')}
             </p>
           ) : (
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-1 sm:hidden">
               <p className="text-xs text-muted-foreground">
                 {t('enterToSend')}
               </p>
-              {showShortcutsButton && onShowShortcuts && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onShowShortcuts}
-                  className="self-start sm:self-auto hidden lg:inline-flex"
-                >
-                  <Keyboard className="w-4 h-4 lg:mr-2" />
-                  <span className="hidden lg:inline">{t('shortcuts')}</span>
-                </Button>
-              )}
             </div>
           )}
         </>

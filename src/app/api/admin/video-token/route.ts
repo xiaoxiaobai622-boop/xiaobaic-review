@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requireApiUser } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
   const videosMessages = messages?.videos || {}
 
   // Check authentication
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requireApiUser(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -49,6 +50,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: videosMessages.missingRequiredParameters || 'Missing required parameters' },
         { status: 400 }
+      )
+    }
+
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json(
+        { error: '你没有这个项目的访问权限，请联系团队管理员' },
+        { status: 403 }
       )
     }
 

@@ -21,6 +21,7 @@ export default function EditUserPage() {
   const router = useRouter()
   const params = useParams()
   const userId = params?.id as string
+  const [returnUrl, setReturnUrl] = useState('/admin/users')
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -52,6 +53,13 @@ export default function EditUserPage() {
   const [passkeys, setPasskeys] = useState<any[]>([])
   const [passkeyLoading, setPasskeyLoading] = useState(false)
   const [passkeyError, setPasskeyError] = useState('')
+
+  useEffect(() => {
+    const requestedReturnUrl = new URLSearchParams(window.location.search).get('returnUrl')
+    if (requestedReturnUrl?.startsWith('/') && !requestedReturnUrl.startsWith('//')) {
+      setReturnUrl(requestedReturnUrl)
+    }
+  }, [])
 
   const fetchUser = useCallback(async () => {
     try {
@@ -159,35 +167,9 @@ export default function EditUserPage() {
   }
 
   const generateRandomPassword = () => {
-    const length = 16
-    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    const lowercase = 'abcdefghijklmnopqrstuvwxyz'
-    const numbers = '0123456789'
-    const special = '!@#$%^&*'
-    const all = uppercase + lowercase + numbers + special
-
-    const getRandomInt = (max: number) => {
-      const array = new Uint32Array(1)
-      crypto.getRandomValues(array)
-      return array[0] % max
-    }
-
-    let password = ''
-    password += uppercase[getRandomInt(uppercase.length)]
-    password += lowercase[getRandomInt(lowercase.length)]
-    password += numbers[getRandomInt(numbers.length)]
-    password += special[getRandomInt(special.length)]
-
-    for (let i = password.length; i < length; i++) {
-      password += all[getRandomInt(all.length)]
-    }
-
-    const chars = password.split('')
-    for (let i = chars.length - 1; i > 0; i--) {
-      const j = getRandomInt(i + 1)
-      ;[chars[i], chars[j]] = [chars[j], chars[i]]
-    }
-    password = chars.join('')
+    const values = new Uint32Array(6)
+    crypto.getRandomValues(values)
+    const password = Array.from(values, value => String(value % 10)).join('')
 
     setPasswordData({
       ...passwordData,
@@ -212,6 +194,11 @@ export default function EditUserPage() {
 
     if (passwordData.password !== passwordData.confirmPassword) {
       setPasswordError(t('passwordsDoNotMatch'))
+      return
+    }
+
+    if (!/^\d{6}$/.test(passwordData.password)) {
+      setPasswordError('密码必须是 6 位数字')
       return
     }
 
@@ -250,7 +237,7 @@ export default function EditUserPage() {
         name: formData.name || null,
       })
 
-      router.push('/admin/users')
+      router.push(returnUrl)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -363,7 +350,7 @@ export default function EditUserPage() {
                     type="button"
                     variant="outline"
                     size="default"
-                    onClick={() => router.push('/admin/users')}
+                    onClick={() => router.push(returnUrl)}
                     disabled={loading}
                   >
                     <X className="w-4 h-4 sm:mr-2" />
@@ -423,7 +410,9 @@ export default function EditUserPage() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={passwordData.password}
-                  onChange={(e) => setPasswordData({ ...passwordData, password: e.target.value })}
+                  onChange={(e) => setPasswordData({ ...passwordData, password: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                  inputMode="numeric"
+                  maxLength={6}
                   className="pr-20"
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-2">
@@ -462,7 +451,9 @@ export default function EditUserPage() {
                   id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                  inputMode="numeric"
+                  maxLength={6}
                   className="pr-10"
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-2">

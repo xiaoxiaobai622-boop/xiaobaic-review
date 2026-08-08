@@ -4,16 +4,23 @@ import crypto from 'crypto'
 import { prisma } from './db'
 import { verifyPassword } from './encryption'
 import { revokeToken, isTokenRevoked, isUserTokensRevoked } from './token-revocation'
+import {
+  isAdminSessionRevoked,
+  registerAdminSession,
+  revokeAdminSession,
+  touchAdminSession,
+} from './admin-session-registry'
 import { getRedis } from './redis'
 import { isShareSessionRevoked } from './session-invalidation'
 import { logError, logWarn } from './logging'
-import { getAdminSessionTimeoutSeconds } from './settings'
 
 export interface AuthUser {
   id: string
   email: string
+  phone?: string | null
   name: string | null
   role: string
+  projectAccessScope?: string
 }
 
 interface AdminAccessPayload extends jwt.JwtPayload {
@@ -55,8 +62,8 @@ const ADMIN_ACCESS_SECRET = process.env.JWT_SECRET
 const ADMIN_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET
 const SHARE_TOKEN_SECRET = process.env.SHARE_TOKEN_SECRET
 
-const ACCESS_TOKEN_DURATION = safeParseInt(process.env.ADMIN_ACCESS_TTL_SECONDS, 15 * 60) // 15 minutes
-const REFRESH_TOKEN_DURATION = safeParseInt(process.env.ADMIN_REFRESH_TTL_SECONDS, 7 * 24 * 60 * 60) // 7 days
+const ACCESS_TOKEN_DURATION = safeParseInt(process.env.ADMIN_ACCESS_TTL_SECONDS, 60 * 60) // 1 hour
+const REFRESH_TOKEN_DURATION = safeParseInt(process.env.ADMIN_REFRESH_TTL_SECONDS, 30 * 24 * 60 * 60) // 30 days
 const SHARE_TOKEN_DURATION = safeParseInt(process.env.SHARE_TOKEN_TTL_SECONDS, 45 * 60) // 45 minutes
 const DUMMY_BCRYPT_HASH = '$2a$14$aoLibk0GEJrzo6fSqPoQIONMGynUKWEoQhkCrFcEapn6I.WzXXdki'
 
@@ -132,6 +139,7 @@ export async function verifyAdminAccessToken(token: string): Promise<AdminAccess
     if (decoded.type !== 'admin_access') return null
     if (await isTokenRevoked(token)) return null
     if (await isUserTokensRevoked(decoded.userId, decoded.iat)) return null
+    if (await isAdminSessionRevoked(decoded.sessionId)) return null
     return decoded
   } catch {
     return null
@@ -167,9 +175,10 @@ export function parseBearerToken(request: NextRequest, headerName: string = 'aut
 export async function issueAdminTokens(user: AuthUser, fingerprintHash?: string) {
   const sessionId = crypto.randomUUID()
   const rotationId = crypto.randomUUID()
-  const adminTtl = await getAdminSessionTimeoutSeconds()
-  const accessToken = signAdminAccess(user, sessionId, adminTtl)
+  const accessToken = signAdminAccess(user, sessionId, ACCESS_TOKEN_DURATION)
   const refreshToken = signAdminRefresh(user, sessionId, rotationId)
+
+  await registerAdminSession(user.id, sessionId, fingerprintHash)
 
   if (fingerprintHash) {
     await storeTokenFingerprint(user.id, refreshToken, fingerprintHash)
@@ -178,7 +187,7 @@ export async function issueAdminTokens(user: AuthUser, fingerprintHash?: string)
   return {
     accessToken,
     refreshToken,
-    accessExpiresAt: Date.now() + adminTtl * 1000,
+    accessExpiresAt: Date.now() + ACCESS_TOKEN_DURATION * 1000,
     refreshExpiresAt: Date.now() + REFRESH_TOKEN_DURATION * 1000,
     sessionId,
   }
@@ -203,21 +212,22 @@ export async function refreshAdminTokens(params: {
     return null
   }
 
-  // Signature valid. If this token is already in the revocation blacklist, it was rotated
-  // before — this is a reuse attempt. Kill the entire token family for this user.
+  // A rotated token being presented again indicates reuse. Revoke only this
+  // device session so another signed-in computer is not logged out as collateral.
   if (await isTokenRevoked(refreshToken)) {
-    await revokeTokenFamily(payload.userId)
+    await revokeAdminSession(payload.sessionId)
     return null
   }
 
   // User-level revocation (e.g. password reset, family already killed).
   if (await isUserTokensRevoked(payload.userId, payload.iat)) return null
+  if (await isAdminSessionRevoked(payload.sessionId)) return null
 
   if (fingerprintHash) {
     const storedFingerprint = await getTokenFingerprint(payload.userId, refreshToken)
     if (storedFingerprint && storedFingerprint !== fingerprintHash) {
       await revokeToken(refreshToken, remainingTtl(refreshToken, ADMIN_REFRESH_SECRET))
-      await revokeTokenFamily(payload.userId)
+      await revokeAdminSession(payload.sessionId)
       return null
     }
   }
@@ -232,8 +242,7 @@ export async function refreshAdminTokens(params: {
   }
 
   const rotationId = crypto.randomUUID()
-  const adminTtl = await getAdminSessionTimeoutSeconds()
-  const accessToken = signAdminAccess(user, payload.sessionId, adminTtl)
+  const accessToken = signAdminAccess(user, payload.sessionId, ACCESS_TOKEN_DURATION)
   const newRefreshToken = signAdminRefresh(user, payload.sessionId, rotationId)
 
   // Revoke old refresh token on rotation
@@ -241,20 +250,15 @@ export async function refreshAdminTokens(params: {
   if (fingerprintHash) {
     await storeTokenFingerprint(user.id, newRefreshToken, fingerprintHash)
   }
+  await touchAdminSession(payload.sessionId)
 
   return {
     accessToken,
     refreshToken: newRefreshToken,
-    accessExpiresAt: Date.now() + adminTtl * 1000,
+    accessExpiresAt: Date.now() + ACCESS_TOKEN_DURATION * 1000,
     refreshExpiresAt: Date.now() + REFRESH_TOKEN_DURATION * 1000,
     sessionId: payload.sessionId,
   }
-}
-
-async function revokeTokenFamily(userId: string) {
-  // Reuse user-level revocation for blast radius control
-  const redis = getRedis()
-  await redis.setex(`blacklist:user:${userId}`, REFRESH_TOKEN_DURATION, Date.now().toString())
 }
 
 export async function revokePresentedTokens(tokens: { accessToken?: string | null; refreshToken?: string | null }) {
@@ -266,19 +270,36 @@ export async function revokePresentedTokens(tokens: { accessToken?: string | nul
   if (refreshToken) {
     await revokeToken(refreshToken, remainingTtl(refreshToken, ADMIN_REFRESH_SECRET))
   }
+
+  const sessionIds = new Set<string>()
+  if (accessToken && ADMIN_ACCESS_SECRET) {
+    try {
+      const payload = jwt.verify(accessToken, ADMIN_ACCESS_SECRET, { algorithms: ['HS256'], ignoreExpiration: true }) as AdminAccessPayload
+      if (payload.type === 'admin_access' && payload.sessionId) sessionIds.add(payload.sessionId)
+    } catch { /* ignore invalid tokens */ }
+  }
+  if (refreshToken && ADMIN_REFRESH_SECRET) {
+    try {
+      const payload = jwt.verify(refreshToken, ADMIN_REFRESH_SECRET, { algorithms: ['HS256'], ignoreExpiration: true }) as AdminRefreshPayload
+      if (payload.type === 'admin_refresh' && payload.sessionId) sessionIds.add(payload.sessionId)
+    } catch { /* ignore invalid tokens */ }
+  }
+  await Promise.all(Array.from(sessionIds).map((sessionId) => revokeAdminSession(sessionId)))
 }
 
 export async function verifyCredentials(usernameOrEmail: string, password: string): Promise<AuthUser | null> {
   try {
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ email: usernameOrEmail }, { username: usernameOrEmail }],
+        OR: [{ email: usernameOrEmail }, { username: usernameOrEmail }, { phone: usernameOrEmail }],
       },
       select: {
         id: true,
         email: true,
+        phone: true,
         name: true,
         role: true,
+        projectAccessScope: true,
         password: true,
       },
     })
@@ -296,8 +317,10 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
     return {
       id: user.id,
       email: user.email,
+      phone: user.phone,
       name: user.name,
       role: user.role,
+      projectAccessScope: user.projectAccessScope,
     }
   } catch (error) {
     logError('Error verifying credentials:', error)
@@ -313,7 +336,7 @@ export async function getCurrentUserFromRequest(request: NextRequest): Promise<A
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true, role: true },
+    select: { id: true, email: true, phone: true, name: true, role: true, projectAccessScope: true },
   })
 
   return user
@@ -321,7 +344,18 @@ export async function getCurrentUserFromRequest(request: NextRequest): Promise<A
 
 export async function requireApiAdmin(request: NextRequest): Promise<AuthUser | Response> {
   const user = await getCurrentUserFromRequest(request)
-  if (!user || user.role !== 'ADMIN') {
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Administrator permission required' }, { status: 403 })
+  }
+  return user
+}
+
+export async function requireApiUser(request: NextRequest): Promise<AuthUser | Response> {
+  const user = await getCurrentUserFromRequest(request)
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'MEMBER')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return user

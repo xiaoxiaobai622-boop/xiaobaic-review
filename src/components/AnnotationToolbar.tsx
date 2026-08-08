@@ -2,16 +2,18 @@
 
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Pencil, Undo2, Check, X, Minus, Plus, ChevronUp, ChevronDown } from 'lucide-react'
-import { AnnotationColor, ANNOTATION_COLORS, MIN_STROKE_WIDTH, MAX_STROKE_WIDTH } from '@/types/annotations'
+import { Pencil, Undo2, Check, X, Minus, Plus, ChevronUp, ChevronDown, ArrowUpRight, Square } from 'lucide-react'
+import { AnnotationColor, ANNOTATION_COLORS, DrawingTool } from '@/types/annotations'
 
 interface AnnotationToolbarProps {
+  activeTool: DrawingTool
   activeColor: AnnotationColor
   strokeWidth: number
   opacity: number
   canUndo: boolean
   hasShapes: boolean
   onColorChange: (color: AnnotationColor) => void
+  onToolChange: (tool: DrawingTool) => void
   onStrokeWidthChange: (width: number) => void
   onOpacityChange: (opacity: number) => void
   onUndo: () => void
@@ -46,12 +48,14 @@ function closestStepIndex(value: number): number {
 }
 
 export default function AnnotationToolbar({
+  activeTool,
   activeColor,
   strokeWidth,
   opacity,
   canUndo,
   hasShapes,
   onColorChange,
+  onToolChange,
   onStrokeWidthChange,
   onOpacityChange,
   onUndo,
@@ -107,10 +111,23 @@ export default function AnnotationToolbar({
     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 bg-black/85 backdrop-blur-sm rounded-xl px-2.5 sm:px-3 py-2 shadow-2xl border border-white/10 max-w-[calc(100%-1.5rem)]">
       {/* Row 1: Drawing tools */}
       <div className="flex items-center gap-1 sm:gap-1.5">
-        {/* Tool indicator */}
-        <div className="p-1.5 sm:p-2 rounded-lg bg-white/20 text-white">
-          <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        </div>
+        {([
+          ['freehand', Pencil, '画笔'],
+          ['arrow', ArrowUpRight, '箭头'],
+          ['rectangle', Square, '矩形'],
+        ] as const).map(([tool, Icon, label]) => (
+          <button
+            key={tool}
+            type="button"
+            onClick={() => onToolChange(tool)}
+            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${activeTool === tool ? 'bg-white text-black' : 'text-white/75 hover:bg-white/10 hover:text-white'}`}
+            title={label}
+            aria-label={label}
+            aria-pressed={activeTool === tool}
+          >
+            <Icon className="h-4 w-4" />
+          </button>
+        ))}
 
         {/* Separator */}
         <div className="w-px h-5 sm:h-6 bg-white/20 mx-0.5 sm:mx-1" />

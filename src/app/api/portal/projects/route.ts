@@ -35,13 +35,15 @@ export async function GET(request: NextRequest) {
     }, 'portal-projects-session', session.sessionId)
     if (sessionLimit) return sessionLimit
 
+    const recipientWhere = session.email
+      ? { email: { equals: session.email, mode: 'insensitive' as const } }
+      : { phone: session.phone }
+
     const projects = await prisma.project.findMany({
       where: {
         status: { in: ['IN_REVIEW', 'APPROVED'] },
         recipients: {
-          some: {
-            email: { equals: session.email, mode: 'insensitive' },
-          },
+          some: recipientWhere,
         },
       },
       select: {

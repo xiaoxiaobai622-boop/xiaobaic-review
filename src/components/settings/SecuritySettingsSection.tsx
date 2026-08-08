@@ -301,10 +301,10 @@ export function SecuritySettingsSection({
                   id="adminSessionTimeoutValue"
                   type="number"
                   min="1"
-                  max={adminSessionTimeoutUnit === 'HOURS' ? '24' : '1440'}
+                  max={adminSessionTimeoutUnit === 'DAYS' ? '30' : adminSessionTimeoutUnit === 'HOURS' ? '720' : '43200'}
                   value={adminSessionTimeoutValue}
                   onChange={(e) => setAdminSessionTimeoutValue(e.target.value)}
-                  placeholder="15"
+                  placeholder="7"
                 />
               </div>
 
@@ -317,6 +317,7 @@ export function SecuritySettingsSection({
                   <SelectContent>
                     <SelectItem value="MINUTES">{t('security.minutes')}</SelectItem>
                     <SelectItem value="HOURS">{t('security.hours')}</SelectItem>
+                    <SelectItem value="DAYS">{t('security.days')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -328,9 +329,9 @@ export function SecuritySettingsSection({
               </p>
               <p className="text-xs text-muted-foreground mt-1 flex items-start gap-2">
                 {(() => {
-                  const val = parseInt(adminSessionTimeoutValue, 10) || 15
+                  const val = parseInt(adminSessionTimeoutValue, 10) || 7
                   const unit = adminSessionTimeoutUnit
-                  const seconds = unit === 'HOURS' ? val * 60 * 60 : val * 60
+                  const seconds = unit === 'DAYS' ? val * 24 * 60 * 60 : unit === 'HOURS' ? val * 60 * 60 : val * 60
                   if (seconds <= 15 * 60) {
                     return <><CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0 text-success" /> {t('security.shortSecurity')}</>
                   }

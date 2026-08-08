@@ -9,7 +9,7 @@ import ThumbnailGrid from '@/components/ThumbnailGrid'
 import ThumbnailReel from '@/components/ThumbnailReel'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import ThemeToggle from '@/components/ThemeToggle'
 import SharePhotoSection from '@/components/SharePhotoSection'
@@ -25,6 +25,7 @@ type TokenFetchTelemetryEvent = 'first-attempt-failure' | 'retry-success' | 'ret
 export default function AdminSharePage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
+  const tv = useTranslations('videos')
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -51,7 +52,7 @@ export default function AdminSharePage() {
   const [activeVideoName, setActiveVideoName] = useState<string>('')
   const [activeVideos, setActiveVideos] = useState<any[]>([])
   const [activeVideosRaw, setActiveVideosRaw] = useState<any[]>([])
-  const [tokensLoading, setTokensLoading] = useState(false)
+  const [tokensLoading, setTokensLoading] = useState(() => Boolean(urlVideoName))
   const [initialSeekTime, setInitialSeekTime] = useState<number | null>(null)
   const [initialVideoIndex, setInitialVideoIndex] = useState<number>(0)
   const [adminUser, setAdminUser] = useState<any>(null)
@@ -194,6 +195,16 @@ export default function AdminSharePage() {
     }
   }
 
+  const refreshProject = useCallback(async () => {
+    const response = await apiFetch(`/api/projects/${id}`, { cache: 'no-store' })
+    if (!response.ok) return
+    const projectData = transformProjectData(await response.json())
+    setProject(projectData)
+    if (activeVideoName && projectData.videosByName[activeVideoName]) {
+      setActiveVideosRaw(projectData.videosByName[activeVideoName])
+    }
+  }, [id, activeVideoName])
+
   const fetchTokensForVideos = useCallback(async (videos: any[]) => {
     const sessionId = sessionIdRef.current
 
@@ -221,9 +232,6 @@ export default function AdminSharePage() {
             const originalToken = await fetchAdminVideoTokenWithRetry(video.id, 'original', sessionId)
             if (originalToken) {
               downloadToken = originalToken
-              streamToken720p = streamToken720p || originalToken
-              streamToken1080p = streamToken1080p || originalToken
-              streamToken2160p = streamToken2160p || originalToken
             }
           }
 
@@ -260,6 +268,7 @@ export default function AdminSharePage() {
     let isMounted = true
 
     async function loadProject() {
+      let redirectingMember = false
       if (!id) {
         setLoading(false)
         return
@@ -279,6 +288,12 @@ export default function AdminSharePage() {
 
           if (userResponse.ok) {
             const userData = await userResponse.json()
+            if (userData.user?.role !== 'ADMIN' && projectData.slug) {
+              redirectingMember = true
+              const query = searchParams?.toString()
+              router.replace(`/share/${projectData.slug}${query ? `?${query}` : ''}`)
+              return
+            }
             setAdminUser(userData.user)
           }
 
@@ -304,7 +319,7 @@ export default function AdminSharePage() {
       } catch (error) {
         // Silent fail
       } finally {
-        if (isMounted) {
+        if (isMounted && !redirectingMember) {
           setLoading(false)
         }
       }
@@ -315,7 +330,7 @@ export default function AdminSharePage() {
     return () => {
       isMounted = false
     }
-  }, [id, fetchComments])
+  }, [id, fetchComments, router, searchParams])
 
   // Listen for comment updates (post, delete, etc.)
   useEffect(() => {
@@ -533,11 +548,6 @@ export default function AdminSharePage() {
   // Filter to READY videos
   let readyVideos = activeVideos.filter((v: any) => v.status === 'READY')
 
-  const hasApprovedVideo = readyVideos.some((v: any) => v.approved)
-  if (hasApprovedVideo) {
-    readyVideos = readyVideos.filter((v: any) => v.approved)
-  }
-
   const activeVideoIds = new Set(activeVideos.map((v: any) => v.id))
   const filteredComments = comments.filter((comment: any) => {
     return !comment.videoId || activeVideoIds.has(comment.videoId)
@@ -548,7 +558,7 @@ export default function AdminSharePage() {
     return project.companyName || primaryRecipient?.name || primaryRecipient?.email || t('client')
   })()
 
-  const showCommentPanel = !project.hideFeedback && !hideComments
+  const showCommentPanel = !project.hideFeedback
 
   // Show thumbnail grid when in grid view (same as public share layout)
   if (viewState === 'grid') {
@@ -557,15 +567,17 @@ export default function AdminSharePage() {
         {/* Grid view toolbar */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
           {/* Left: back to project */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(projectUrl)}
-            title={t('backToProject')}
-          >
-            <ArrowLeft className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">{t('backToProject')}</span>
-          </Button>
+          {adminUser?.role === 'ADMIN' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(projectUrl)}
+              title={t('backToProject')}
+            >
+              <ArrowLeft className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">{t('backToProject')}</span>
+            </Button>
+          )}
 
           {/* Right: view toggle + theme */}
           <div className="flex items-center gap-2 ml-auto">
@@ -609,13 +621,33 @@ export default function AdminSharePage() {
         onVideoSelect={handleVideoSelect}
         onBackToGrid={handleBackToGrid}
         showBackButton={true}
+        leadingAction={adminUser?.role === 'ADMIN' ? (
+          <Button variant="ghost" size="sm" onClick={() => router.push(projectUrl)} className="h-8 shrink-0 gap-1.5 px-2 sm:px-3" title={t('backToProject')}>
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden md:inline">{t('backToProject')}</span>
+          </Button>
+        ) : undefined}
         showLanguageToggle={false}
         showCommentToggle={!project.hideFeedback}
         isCommentPanelVisible={!hideComments}
         onToggleCommentPanel={() => setHideComments(!hideComments)}
+        beforeToolbarAction={
+          <Button
+            type="button"
+            variant="success"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 px-3"
+            onClick={() => window.dispatchEvent(new CustomEvent('openVideoApproval'))}
+            disabled={Boolean(activeVideos.find((video: any) => video.approved))}
+            title={activeVideos.find((video: any) => video.approved) ? tv('approved') : tv('approve')}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            <span className="hidden sm:inline">{activeVideos.find((video: any) => video.approved) ? tv('approved') : tv('approve')}</span>
+          </Button>
+        }
       />
       {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
-      <div className="xl:flex-1 xl:min-h-0 flex flex-col xl:flex-row p-2 sm:p-3 gap-2 sm:gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
         {readyVideos.length === 0 ? (
           <div className="flex-1 flex items-center justify-center p-4">
             <Card className="bg-card">
@@ -629,7 +661,7 @@ export default function AdminSharePage() {
         ) : (
           <>
             {/* Video Player - natural height on mobile, fills space on desktop */}
-            <div className={`xl:h-full xl:min-h-0 xl:flex-1 min-w-0 flex flex-col ${showCommentPanel ? 'xl:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div className={`min-w-0 flex flex-col lg:h-full lg:min-h-0 lg:flex-1 ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={readyVideos}
                 projectId={project.id}
@@ -647,18 +679,20 @@ export default function AdminSharePage() {
                 isGuest={false}
                 allowAssetDownload={project.allowAssetDownload}
                 shareToken={null}
-                onApprove={undefined}
+                onApprove={refreshProject}
                 hideDownloadButton={true}
+                hideApprovalAction={true}
                 comments={!project.hideFeedback ? filteredComments : []}
-                timestampDisplayMode={project.timestampDisplay || 'TIMECODE'}
+                timestampDisplayMode="AUTO"
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 fillContainer={true}
               />
+              <div id="review-comment-composer" className="lg:mt-auto" />
             </div>
 
             {/* Comments Section - max one screen height on mobile, side panel on desktop */}
             {showCommentPanel && (
-              <div className="max-h-[100vh] xl:shrink xl:flex-1 xl:max-w-[30%] 2xl:max-w-[25%] xl:min-w-[280px] flex flex-col xl:max-h-full xl:h-full overflow-hidden rounded-xl bg-card">
+              <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden bg-card lg:max-h-full lg:w-[360px] lg:flex-none lg:border-l lg:border-border/70">
                 <CommentSection
                   projectId={project.id}
                   projectSlug={project.slug}
@@ -666,7 +700,7 @@ export default function AdminSharePage() {
                   focusCommentId={focusCommentId}
                   clientName={clientDisplayName}
                   clientEmail={project.recipients?.[0]?.email}
-                  isApproved={project.status === 'APPROVED' || project.status === 'SHARE_ONLY'}
+                  isApproved={project.status === 'APPROVED'}
                   restrictToLatestVersion={project.restrictCommentsToLatestVersion}
                   videos={readyVideos}
                   isAdminView={true}
@@ -676,7 +710,7 @@ export default function AdminSharePage() {
                   recipients={project.recipients || []}
                   shareToken={null}
                   showShortcutsButton={true}
-                  timestampDisplayMode={project.timestampDisplay || 'TIMECODE'}
+                  timestampDisplayMode="AUTO"
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}
                   onToggleVisibility={() => setHideComments(!hideComments)}

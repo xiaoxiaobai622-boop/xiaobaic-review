@@ -12,7 +12,18 @@ export interface FreehandShape {
   points: Point[]
 }
 
-export type Shape = FreehandShape
+export interface LineShape {
+  id: string
+  type: 'arrow' | 'rectangle'
+  color: string
+  strokeWidth: number
+  opacity?: number
+  start: Point
+  end: Point
+}
+
+export type DrawingTool = 'freehand' | 'arrow' | 'rectangle'
+export type Shape = FreehandShape | LineShape
 
 export interface AnnotationData {
   version: 1

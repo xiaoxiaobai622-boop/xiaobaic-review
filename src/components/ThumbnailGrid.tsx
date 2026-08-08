@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { CheckCircle2, Film, Layers, Files, Download, Loader2, ChevronRight, Images } from 'lucide-react'
+import { CheckCircle2, Film, Files, Download, Loader2, ChevronRight, Images, MessageSquare } from 'lucide-react'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import type { ShareViewMode } from './ShareViewToggle'
@@ -26,6 +26,40 @@ interface ThumbnailGridProps {
   viewMode?: ShareViewMode
   /** Album count for the hero meta line (0 hides the entry) */
   albumCount?: number
+  comments?: Array<{ videoId?: string | null }>
+}
+
+function getLatestVideo(videos: any[]) {
+  return videos.reduce((latest, video) => {
+    if (!latest) return video
+    if (video.version !== latest.version) return video.version > latest.version ? video : latest
+    return new Date(video.createdAt).getTime() > new Date(latest.createdAt).getTime() ? video : latest
+  }, null as any)
+}
+
+function formatBeijingUploadTime(value?: string | Date): string {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '--'
+
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value || ''
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}`
+}
+
+function formatMinuteSecondDuration(value?: number | null): string {
+  const totalSeconds = typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
 export default function ThumbnailGrid({
@@ -42,6 +76,7 @@ export default function ThumbnailGrid({
   downloadAllLabel,
   viewMode = 'grid',
   albumCount = 0,
+  comments = [],
 }: ThumbnailGridProps) {
   const t = useTranslations('share')
   const tv = useTranslations('videos')
@@ -79,6 +114,19 @@ export default function ThumbnailGrid({
   const approvedCount = videoNames.filter(name =>
     videosByName[name].some((v: any) => v.approved === true)
   ).length
+  const commentCountByName = useMemo(() => {
+    const videoNamesById = new Map<string, string>()
+    Object.entries(videosByName).forEach(([name, versions]) => {
+      versions.forEach((video: any) => videoNamesById.set(video.id, name))
+    })
+    const counts = new Map<string, number>()
+    comments.forEach((comment) => {
+      if (!comment.videoId) return
+      const name = videoNamesById.get(comment.videoId)
+      if (name) counts.set(name, (counts.get(name) || 0) + 1)
+    })
+    return counts
+  }, [comments, videosByName])
 
   // With nothing approved yet, the button explains the workflow instead of downloading
   const handleDownloadAllClick = () => {
@@ -185,7 +233,10 @@ export default function ThumbnailGrid({
               const videos = videosByName[name]
               const hasApprovedVideo = videos.some((v: any) => v.approved === true)
               const hasAssets = allowAssetDownload && videos.some((v: any) => v.hasAssets === true)
-              const versionCount = videos.length
+              const latestVideo = getLatestVideo(videos)
+              const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
+              const uploadTime = formatBeijingUploadTime(latestVideo?.createdAt)
+              const feedbackCount = commentCountByName.get(name) || 0
               const thumbnailUrl = thumbnailsByName.get(name)
 
               return (
@@ -212,10 +263,16 @@ export default function ThumbnailGrid({
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {versionCount} {versionCount === 1 ? tv('versionSingular') : tv('versions')}
-                    </p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-sm font-medium">{name}</p>
+                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                        {latestVersionLabel}
+                      </span>
+                    </div>
+                    <div className="flex min-w-0 items-center justify-between gap-1 text-[9px] text-muted-foreground sm:text-[10px]">
+                      <span className="shrink-0 whitespace-nowrap" title={uploadTime}>{uploadTime}</span>
+                      <span className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap"><MessageSquare className="h-3 w-3" />{t('feedbackCount', { count: feedbackCount })}</span>
+                    </div>
                   </div>
                   {hasAssets && (
                     <span title={t('includesAssets')} aria-label={t('includesAssets')} className="flex-shrink-0">
@@ -233,12 +290,16 @@ export default function ThumbnailGrid({
             })}
           </div>
         ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(168px,190px))]">
           {videoNames.map((name) => {
             const videos = videosByName[name]
             const hasApprovedVideo = videos.some((v: any) => v.approved === true)
             const hasAssets = allowAssetDownload && videos.some((v: any) => v.hasAssets === true)
-            const versionCount = videos.length
+            const latestVideo = getLatestVideo(videos)
+            const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
+            const durationLabel = formatMinuteSecondDuration(Number(latestVideo?.duration) || 0)
+            const uploadTime = formatBeijingUploadTime(latestVideo?.createdAt)
+            const feedbackCount = commentCountByName.get(name) || 0
             const thumbnailUrl = thumbnailsByName.get(name)
 
             return (
@@ -246,7 +307,7 @@ export default function ThumbnailGrid({
                 key={name}
                 onClick={() => onVideoSelect(name)}
                 className={cn(
-                  'group relative rounded-lg overflow-hidden',
+                  'group relative overflow-hidden rounded-md text-left',
                   'bg-card border border-border/50 shadow-elevation-md',
                   'hover:border-primary/50 hover:shadow-elevation-lg',
                   'transition-all duration-200',
@@ -267,7 +328,7 @@ export default function ThumbnailGrid({
                       src={thumbnailUrl}
                       alt={name}
                       fill
-                      sizes="(min-width: 1536px) 20vw, (min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                      sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
                       className="object-contain"
                       draggable={false}
                       unoptimized
@@ -304,23 +365,32 @@ export default function ThumbnailGrid({
                     </div>
                   )}
 
-                  {/* Version count badge */}
-                  {versionCount > 1 && (
-                    <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1">
-                      <Layers className="w-3 h-3" />
-                      <span>{versionCount}</span>
-                    </div>
-                  )}
+                  {/* Duration and annotation badges */}
+                  <div className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm">
+                    <Film className="h-2.5 w-2.5" />
+                    {durationLabel}
+                  </div>
+                  <div
+                    className="absolute bottom-1.5 right-1.5 inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm"
+                    title={t('feedbackCount', { count: feedbackCount })}
+                    aria-label={t('feedbackCount', { count: feedbackCount })}
+                  >
+                    <MessageSquare className="h-2.5 w-2.5" />
+                    {feedbackCount}
+                  </div>
                 </div>
 
                 {/* Info */}
-                <div className="p-3 sm:p-4">
-                  <p className="text-sm font-medium text-foreground truncate text-left">
+                <div className="px-2.5 py-2">
+                  <p className="truncate text-xs font-medium text-foreground">
                     {name}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1 text-left">
-                    {versionCount} {versionCount === 1 ? tv('versionSingular') : tv('versions')}
-                  </p>
+                  <div className="mt-1 flex min-w-0 items-center justify-between gap-1 text-[9px] text-muted-foreground sm:text-[10px]">
+                    <span className="shrink-0 whitespace-nowrap" title={uploadTime}>{uploadTime}</span>
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-foreground">
+                      {latestVersionLabel}
+                    </span>
+                  </div>
                 </div>
               </button>
             )

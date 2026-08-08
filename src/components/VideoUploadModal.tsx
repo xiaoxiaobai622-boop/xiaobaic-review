@@ -27,7 +27,6 @@ interface PendingUpload {
   id: string
   file: File
   videoName: string
-  versionLabel: string
   status: 'pending' | 'uploading' | 'completed' | 'error'
   progress: number
   speed: number
@@ -160,7 +159,6 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         file,
         videoName: getVideoNameFromFile(file),
-        versionLabel: '',
         status: 'pending',
         progress: 0,
         speed: 0,
@@ -198,12 +196,8 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
     setPendingUploads(prev => prev.map(u => u.id === id ? { ...u, videoName: truncatedName } : u))
   }
 
-  const handleUpdateVersionLabel = (id: string, newLabel: string) => {
-    setPendingUploads(prev => prev.map(u => u.id === id ? { ...u, versionLabel: newLabel } : u))
-  }
-
   const startUpload = async (uploadItem: PendingUpload) => {
-    const { id, file, videoName, versionLabel } = uploadItem
+    const { id, file, videoName } = uploadItem
 
     if (!videoName.trim()) {
       setPendingUploads(prev => prev.map(u =>
@@ -213,8 +207,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
     }
 
     const trimmedVideoName = videoName.trim()
-    const trimmedVersionLabel = versionLabel.trim()
-    const contextKey = `${projectId}:${trimmedVideoName}:${trimmedVersionLabel || 'auto'}`
+    const contextKey = `${projectId}:${trimmedVideoName}:auto`
 
     setPendingUploads(prev => prev.map(u =>
       u.id === id ? { ...u, status: 'uploading', progress: 0, error: undefined } : u
@@ -235,7 +228,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
         existingMetadata?.projectId === projectId &&
         !!existingMetadata.videoId &&
         existingMetadata?.targetName === trimmedVideoName &&
-        (existingMetadata.versionLabel || '') === (trimmedVersionLabel || '')
+        (existingMetadata.versionLabel || '') === ''
 
       let videoId: string
       let createdVideoRecord = false
@@ -245,13 +238,12 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
         storeUploadMetadata(file, {
           videoId,
           projectId,
-          versionLabel: trimmedVersionLabel,
+          versionLabel: '',
           targetName: trimmedVideoName,
         })
       } else {
         const response = await apiPost('/api/videos', {
           projectId,
-          versionLabel: trimmedVersionLabel,
           originalFileName: file.name,
           originalFileSize: file.size,
           name: trimmedVideoName,
@@ -262,7 +254,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
         storeUploadMetadata(file, {
           videoId,
           projectId,
-          versionLabel: trimmedVersionLabel,
+          versionLabel: '',
           targetName: trimmedVideoName,
         })
       }
@@ -651,16 +643,6 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
                         )}
                       </div>
 
-                      {/* Version label input */}
-                      {upload.status === 'pending' && (
-                        <Input
-                          value={upload.versionLabel}
-                          onChange={(e) => handleUpdateVersionLabel(upload.id, e.target.value)}
-                          placeholder={t('versionLabelPlaceholder')}
-                          className="h-8 text-sm w-full min-w-0"
-                        />
-                      )}
-
                       {/* File info */}
                       <div className="text-xs text-muted-foreground">
                         <span title={upload.file.name}>{truncateFilename(upload.file.name, MAX_FILENAME_DISPLAY_LENGTH)}</span>
@@ -786,12 +768,6 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
             )}
           </div>
 
-          {/* Help text */}
-          {!hasActiveUploads && !allCompleted && (
-            <p className="text-xs text-muted-foreground text-center">
-              {t('versionLabelHint')}
-            </p>
-          )}
         </div>
       </DialogContent>
     </Dialog>

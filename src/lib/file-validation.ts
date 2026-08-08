@@ -79,7 +79,7 @@ function validateMimeType(mimeType: string): boolean {
 /**
  * Sanitize filename to prevent path traversal and other attacks
  */
-export function sanitizeFilename(filename: string): string {
+export function sanitizeDisplayFilename(filename: string): string {
   if (!filename || typeof filename !== 'string') {
     return 'upload.bin'
   }
@@ -112,10 +112,13 @@ export function sanitizeFilename(filename: string): string {
     safe = 'upload.bin'
   }
   
-  // Additional safety: only allow alphanumeric, dash, underscore, dot
-  safe = safe.replace(/[^a-zA-Z0-9._-]/g, '_')
-  
   return safe
+}
+
+export function sanitizeFilename(filename: string): string {
+  // Storage paths remain ASCII-only; the original Unicode display name is
+  // stored separately so users see exactly what they uploaded.
+  return sanitizeDisplayFilename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
 /**

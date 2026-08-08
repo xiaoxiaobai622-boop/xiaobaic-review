@@ -14,6 +14,7 @@ function adminTimeoutSeconds(value: number, unit: string): number | null {
   if (!Number.isFinite(value) || value <= 0) return null
   if (unit === 'MINUTES') return value * 60
   if (unit === 'HOURS') return value * 60 * 60
+  if (unit === 'DAYS') return value * 24 * 60 * 60
   return null
 }
 
@@ -158,9 +159,9 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (adminSessionTimeoutUnit !== undefined && adminSessionTimeoutUnit !== null) {
-      if (adminSessionTimeoutUnit !== 'MINUTES' && adminSessionTimeoutUnit !== 'HOURS') {
+      if (adminSessionTimeoutUnit !== 'MINUTES' && adminSessionTimeoutUnit !== 'HOURS' && adminSessionTimeoutUnit !== 'DAYS') {
         return NextResponse.json(
-          { error: settingsSecurityMessages.adminSessionTimeoutUnitMustBeMinutesOrHours || 'Admin session timeout unit must be MINUTES or HOURS' },
+          { error: settingsSecurityMessages.adminSessionTimeoutUnitMustBeMinutesOrHours || 'Admin session timeout unit must be MINUTES, HOURS, or DAYS' },
           { status: 400 }
         )
       }
@@ -239,22 +240,22 @@ export async function PATCH(request: NextRequest) {
       const mergedValue =
         adminSessionTimeoutValue !== undefined && adminSessionTimeoutValue !== null
           ? parseInt(adminSessionTimeoutValue, 10)
-          : (currentSettings?.adminSessionTimeoutValue ?? 15)
+          : (currentSettings?.adminSessionTimeoutValue ?? 7)
       const mergedUnit =
         adminSessionTimeoutUnit !== undefined && adminSessionTimeoutUnit !== null
           ? String(adminSessionTimeoutUnit)
-          : (currentSettings?.adminSessionTimeoutUnit ?? 'MINUTES')
+          : (currentSettings?.adminSessionTimeoutUnit ?? 'DAYS')
 
       const seconds = adminTimeoutSeconds(mergedValue, mergedUnit)
       if (!seconds) {
         return NextResponse.json(
-          { error: settingsSecurityMessages.adminSessionTimeoutMustBePositiveMinutesOrHours || 'Admin session timeout must be a positive number in minutes or hours' },
+          { error: settingsSecurityMessages.adminSessionTimeoutMustBePositiveMinutesOrHours || 'Admin session timeout must be a positive number in minutes, hours, or days' },
           { status: 400 }
         )
       }
-      if (seconds > 24 * 60 * 60) {
+      if (seconds > 30 * 24 * 60 * 60) {
         return NextResponse.json(
-          { error: settingsSecurityMessages.adminSessionTimeoutMustBe24HoursOrLess || 'Admin session timeout must be 24 hours or less' },
+          { error: settingsSecurityMessages.adminSessionTimeoutMustBe24HoursOrLess || 'Admin session timeout must be 30 days or less' },
           { status: 400 }
         )
       }
@@ -280,8 +281,8 @@ export async function PATCH(request: NextRequest) {
         passwordAttempts: passwordAttempts ? parseInt(passwordAttempts, 10) : 5,
         sessionTimeoutValue: sessionTimeoutValue ? parseInt(sessionTimeoutValue, 10) : 15,
         sessionTimeoutUnit: sessionTimeoutUnit || 'MINUTES',
-        adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 15,
-        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'MINUTES',
+        adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 7,
+        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'DAYS',
         trackAnalytics: trackAnalytics ?? true,
         trackSecurityLogs: trackSecurityLogs ?? true,
         viewSecurityEvents: viewSecurityEvents ?? false,
@@ -297,8 +298,8 @@ export async function PATCH(request: NextRequest) {
         passwordAttempts: passwordAttempts ? parseInt(passwordAttempts, 10) : 5,
         sessionTimeoutValue: sessionTimeoutValue ? parseInt(sessionTimeoutValue, 10) : 15,
         sessionTimeoutUnit: sessionTimeoutUnit || 'MINUTES',
-        adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 15,
-        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'MINUTES',
+        adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 7,
+        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'DAYS',
         trackAnalytics: trackAnalytics ?? true,
         trackSecurityLogs: trackSecurityLogs ?? true,
         viewSecurityEvents: viewSecurityEvents ?? false,

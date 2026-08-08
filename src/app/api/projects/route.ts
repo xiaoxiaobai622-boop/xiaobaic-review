@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { generateUniqueSlug } from '@/lib/utils'
-import { requireApiAdmin } from '@/lib/auth'
+import { requireApiAdmin, requireApiUser } from '@/lib/auth'
+import { nextProjectCode, projectAccessWhere } from '@/lib/project-access'
 import { encrypt } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { createProjectSchema, validateRequest } from '@/lib/validation'
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const projectMessages = messages?.projects || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requireApiUser(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -40,8 +41,10 @@ export async function GET(request: NextRequest) {
   try {
     // Optimized query: only fetch essential fields + minimal video data for list view
     const projects = await prisma.project.findMany({
+      where: projectAccessWhere(authResult),
       select: {
         id: true,
+        projectCode: true,
         title: true,
         slug: true,
         status: true,
@@ -70,6 +73,8 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             status: true,
+            version: true,
+            thumbnailPath: true,
           },
         },
         recipients: {
@@ -206,8 +211,10 @@ export async function POST(request: NextRequest) {
 
     // Use transaction to ensure atomicity: if recipient creation fails, project creation is rolled back
     const project = await prisma.$transaction(async (tx) => {
+      const projectCode = await nextProjectCode(tx)
       const newProject = await tx.project.create({
         data: {
+          projectCode,
           title,
           slug,
           description,

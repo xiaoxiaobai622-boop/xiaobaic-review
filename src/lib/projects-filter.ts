@@ -16,6 +16,8 @@ export type SortKey =
 
 export interface ProjectListItem {
   id: string
+  projectCode: string
+  slug: string
   title: string
   description?: string | null
   status: string

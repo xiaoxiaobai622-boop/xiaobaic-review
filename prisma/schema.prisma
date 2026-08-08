@@ -13,10 +13,12 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
+  phone     String?  @unique
   username  String?  @unique
   password  String
   name      String?
   role      UserRole @default(ADMIN)
+  projectAccessScope ProjectAccessScope @default(ALL_PROJECTS)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -26,6 +28,23 @@ model User {
   pushSubscriptions PushSubscription[]
   calendarToken     CalendarToken?
   savedViews        AdminSavedView[]
+  projectMemberships ProjectMember[]
+}
+
+// WeChat identities are separate from admin users. The unionId index allows a
+// future mini-program identity to be linked to the same person safely.
+model WechatIdentity {
+  id        String   @id @default(cuid())
+  platform  String   @default("WEB")
+  openId    String
+  unionId   String?
+  nickname  String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([platform, openId])
+  @@index([unionId])
 }
 
 // Saved filter/sort presets for the admin Projects Dashboard.
@@ -44,10 +63,17 @@ model AdminSavedView {
 
 enum UserRole {
   ADMIN
+  MEMBER
+}
+
+enum ProjectAccessScope {
+  ALL_PROJECTS
+  ASSIGNED_ONLY
 }
 
 model Project {
   id              String  @id @default(cuid())
+  projectCode     String  @unique
   title           String
   slug            String  @unique
   description     String?
@@ -91,7 +117,7 @@ model Project {
   allowPhotoDownload     Boolean @default(true) // Allow clients to download photos from photo albums
   allowClientAssetUpload Boolean @default(false) // Allow clients to upload file attachments on comments
   clientCanApprove       Boolean @default(true) // Allow clients to approve videos (false = admin only)
-  allowReverseShare      Boolean @default(false) // Allow clients to upload files directly to the project (reverse share)
+  allowReverseShare      Boolean @default(true) // Allow clients to upload files directly to the project (reverse share)
 
   // Approved playback settings
   usePreviewForApprovedPlayback Boolean @default(false) // Use browser-compatible preview instead of original after approval
@@ -126,6 +152,7 @@ model Project {
   sharePageAccesses SharePageAccess[] // Share page authentication tracking
   projectUploads    ProjectUpload[] // Client-submitted files via reverse share
   photoAlbums       PhotoAlbum[] // Photo gallery albums
+  members           ProjectMember[]
 
   @@index([clientCompanyId])
 }
@@ -142,6 +169,7 @@ model ProjectRecipient {
   projectId            String
   project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   email                String?
+  phone                String?
   name                 String?
   isPrimary            Boolean  @default(false)
   receiveNotifications Boolean  @default(true) // Per-recipient notification toggle
@@ -149,6 +177,19 @@ model ProjectRecipient {
 
   @@index([projectId])
   @@index([projectId, email])
+  @@index([projectId, phone])
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([userId])
 }
 
 model Video {
@@ -162,6 +203,11 @@ model Video {
   originalFileName    String
   originalFileSize    BigInt
   originalStoragePath String
+  fileType            String?
+
+  // Upload metadata
+  uploadedBy     String?
+  uploadedByName String?
 
   // Video metadata
   duration Float // in seconds
@@ -242,7 +288,8 @@ model ProjectUpload {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  fileName      String
+  fileName         String
+  originalFileName String?
   fileSize      BigInt
   fileType      String  @default("application/octet-stream")
   storagePath   String
@@ -330,6 +377,7 @@ model Comment {
   isInternal   Boolean  @default(false) // true = from studio, false = from client
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  resolved     Boolean  @default(false)
 
   // Annotation support
   timecodeEnd String? // Optional end timecode for time range comments
@@ -434,7 +482,7 @@ model Settings {
   defaultAllowClientAssetUpload Boolean @default(false)
 
   // Default Client Access Defaults
-  defaultAllowReverseShare  Boolean @default(false) // Default: allow clients to submit files directly to project
+  defaultAllowReverseShare  Boolean @default(true) // Default: allow clients to submit files directly to project
   defaultShowClientTutorial Boolean @default(true)  // Default: show interactive tutorial for first-time visitors
   defaultAllowAssetDownload Boolean @default(true)  // Default: allow clients to download approved assets
   defaultClientCanApprove   Boolean @default(true)  // Default: allow clients to approve videos
@@ -537,8 +585,8 @@ model SecuritySettings {
   sessionTimeoutUnit  String @default("MINUTES") // MINUTES, HOURS, DAYS, WEEKS
 
   // Admin Session Timeout (admin UI inactivity logout)
-  adminSessionTimeoutValue Int    @default(15) // Numeric value (e.g., 15, 30, 1, 2, etc.)
-  adminSessionTimeoutUnit  String @default("MINUTES") // MINUTES, HOURS (max 24 hours)
+  adminSessionTimeoutValue Int    @default(7) // Numeric value (e.g., 7 days)
+  adminSessionTimeoutUnit  String @default("DAYS") // MINUTES, HOURS, DAYS (max 30 days)
 
   // HTTPS Enforcement (HTTPS_ENABLED env var always takes precedence if set)
   httpsEnabled Boolean @default(true) // Enable HSTS (default: true for production security)

@@ -8,8 +8,8 @@ import { enqueueExternalNotification } from '@/lib/external-notifications/enqueu
 import { getAppUrl } from '@/lib/url'
 import { safeParseBody } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import crypto from 'crypto'
 import { logError } from '@/lib/logging'
+import { getAdminDeviceFingerprint } from '@/lib/admin-device'
 
 export const runtime = 'nodejs'
 
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
     // SUCCESSFUL LOGIN: Clear rate limit
     await clearRateLimit(request, 'login', rateLimitKey)
 
-    const fingerprint = crypto.createHash('sha256').update(request.headers.get('user-agent') || 'unknown').digest('base64url')
+    const fingerprint = getAdminDeviceFingerprint(request)
     const tokens = await issueAdminTokens(result.user, fingerprint)
 
     void enqueueExternalNotification({

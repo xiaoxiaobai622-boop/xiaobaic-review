@@ -40,7 +40,7 @@ const VALID_VIDEO_TYPES = [
 // Types
 export interface TempFiles {
   input?: string
-  preview?: string
+  previews?: string[]
   thumbnail?: string
 }
 
@@ -249,6 +249,15 @@ export function calculateOutputDimensions(
     aspectRatio: aspectRatio.toFixed(2)
   })
 
+  // Never upscale a source just to satisfy a configured preview label.
+  const downscale = Math.min(1, metadata.width / dimensions.width, metadata.height / dimensions.height)
+  if (downscale < 1) {
+    dimensions = {
+      width: Math.max(2, Math.floor((dimensions.width * downscale) / 2) * 2),
+      height: Math.max(2, Math.floor((dimensions.height * downscale) / 2) * 2),
+    }
+  }
+
   return dimensions
 }
 
@@ -262,10 +271,11 @@ export async function processPreview(
   dimensions: OutputDimensions,
   settings: ProcessingSettings,
   tempFiles: TempFiles,
-  duration: number
+  duration: number,
+  resolution = settings.resolution
 ): Promise<string> {
-  const tempPreviewPath = path.join(TEMP_DIR, `${videoId}-preview.mp4`)
-  tempFiles.preview = tempPreviewPath
+  const tempPreviewPath = path.join(TEMP_DIR, `${videoId}-preview-${resolution}.mp4`)
+  tempFiles.previews = [...(tempFiles.previews || []), tempPreviewPath]
 
   debugLog('Starting video transcoding...')
   debugLog('Temp preview path:', tempPreviewPath)
@@ -277,6 +287,7 @@ export async function processPreview(
     outputPath: tempPreviewPath,
     width: dimensions.width,
     height: dimensions.height,
+    quality: resolution === '1080p' ? '1080p' : '720p',
     watermarkText: settings.watermarkText,
     watermarkPositions: settings.watermarkPositions,
     watermarkOpacity: settings.watermarkOpacity,
@@ -306,12 +317,12 @@ export async function processPreview(
   })
 
   const transcodeTime = Date.now() - transcodeStart
-  logMessage(`[WORKER] Generated ${settings.resolution} preview for video ${videoId} in ${(transcodeTime / 1000).toFixed(2)}s`)
+  logMessage(`[WORKER] Generated ${resolution} preview for video ${videoId} in ${(transcodeTime / 1000).toFixed(2)}s`)
 
   const transcodeStats = fs.statSync(tempPreviewPath)
   debugLog('Transcoded file size:', (transcodeStats.size / 1024 / 1024).toFixed(2) + ' MB')
 
-  const previewPath = `projects/${projectId}/videos/${videoId}/preview-${settings.resolution}.mp4`
+  const previewPath = `projects/${projectId}/videos/${videoId}/preview-${resolution}.mp4`
 
   debugLog('Uploading preview to:', previewPath)
 
@@ -383,10 +394,9 @@ export async function processThumbnail(
  */
 export async function finalizeVideo(
   videoId: string,
-  previewPath: string,
+  previewPaths: Partial<Record<'720p' | '1080p', string>>,
   thumbnailPath: string,
-  metadata: VideoMetadata,
-  resolution: string
+  metadata: VideoMetadata
 ): Promise<void> {
   // Preserve user-supplied thumbnails (assets) when reprocessing so we don't overwrite them
   const existingThumbnail = await prisma.video.findUnique({
@@ -416,14 +426,8 @@ export async function finalizeVideo(
     codec: metadata.codec,
   }
 
-  // Store preview path in correct field based on resolution (skip if no transcoding)
-  if (previewPath && resolution === '720p') {
-    updateData.preview720Path = previewPath
-  } else if (previewPath && resolution === '1080p') {
-    updateData.preview1080Path = previewPath
-  } else if (previewPath && resolution === '2160p') {
-    updateData.preview2160Path = previewPath
-  }
+  if (previewPaths['720p']) updateData.preview720Path = previewPaths['720p']
+  if (previewPaths['1080p']) updateData.preview1080Path = previewPaths['1080p']
 
   debugLog('Updating database with final video data...')
   debugLog('Update data:', updateData)
@@ -461,7 +465,9 @@ export async function updateVideoStatus(
 export async function cleanupTempFiles(tempFiles: TempFiles): Promise<void> {
   debugLog('Starting temp file cleanup...')
 
-  const files = Object.values(tempFiles).filter((f): f is string => !!f)
+  const files = Object.values(tempFiles)
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter((f): f is string => !!f)
 
   for (const file of files) {
     try {

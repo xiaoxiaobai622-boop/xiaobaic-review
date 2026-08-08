@@ -90,6 +90,7 @@ export async function GET(
       select: {
         id: true,
         fileName: true,
+        originalFileName: true,
         fileSize: true,
         fileType: true,
         storagePath: true,
@@ -101,7 +102,7 @@ export async function GET(
       return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
     }
 
-    const safeFileName = sanitizeFilenameForHeader(upload.fileName)
+    const safeFileName = sanitizeFilenameForHeader(upload.originalFileName || upload.fileName)
 
     if (inline) {
       if (thumb && !upload.thumbnailPath) {

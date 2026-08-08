@@ -1,7 +1,7 @@
 {
-  "name": "ViTransfer",
-  "short_name": "ViTransfer",
-  "description": "Professional video review and approval platform",
+  "name": "逐帧审阅",
+  "short_name": "逐帧审阅",
+  "description": "专业视频审阅、版本管理与素材收录平台",
   "start_url": "/admin",
   "display": "standalone",
   "background_color": "#0a0a0a",
@@ -9,21 +9,21 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/brand/icon-192.svg",
+      "src": "/brand/logo.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/brand/icon-512.svg",
+      "src": "/brand/logo.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/brand/icon.svg",
+      "src": "/brand/logo.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],

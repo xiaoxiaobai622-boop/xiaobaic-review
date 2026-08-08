@@ -2,14 +2,17 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { apiFetch } from '@/lib/api-client'
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from '@/lib/token-store'
+import { apiFetch, attemptRefresh } from '@/lib/api-client'
+import { clearTokens, getAccessToken, getRefreshToken } from '@/lib/token-store'
+import { getDeviceAuthHeaders } from '@/lib/device-id'
+import { useTranslations } from 'next-intl'
 
 interface User {
   id: string
   email: string
   name: string | null
   role: string
+  projectAccessScope?: string
 }
 
 interface AuthContextType {
@@ -38,6 +41,7 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children, requireAuth = false }: AuthProviderProps) {
+  const t = useTranslations('common')
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -61,46 +65,17 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
     }
   }, [])
 
-  const refreshWithToken = useCallback(async (refreshToken: string) => {
-    try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${refreshToken}`,
-        },
-      })
-      if (!response.ok) {
-        clearTokens()
-        return false
-      }
-
-      const data = await response.json()
-      if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
-        setTokens({
-          accessToken: data.tokens.accessToken,
-          refreshToken: data.tokens.refreshToken,
-        })
-        return true
-      }
-      clearTokens()
-      return false
-    } catch (error) {
-      clearTokens()
-      return false
-    }
-  }, [])
-
   const bootstrap = useCallback(async () => {
     setLoading(true)
     const refreshToken = getRefreshToken()
     const hasAccess = getAccessToken()
 
     if (!hasAccess && refreshToken) {
-      await refreshWithToken(refreshToken)
+      await attemptRefresh()
     }
 
     await checkAuth()
-  }, [checkAuth, refreshWithToken])
+  }, [checkAuth])
 
   useEffect(() => {
     bootstrap()
@@ -123,6 +98,7 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
           'Content-Type': 'application/json',
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           ...(refreshToken ? { 'X-Refresh-Token': `Bearer ${refreshToken}` } : {}),
+          ...getDeviceAuthHeaders(),
         },
         body: JSON.stringify({ refreshToken }),
       })
@@ -156,7 +132,7 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
       <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
+          <p className="text-muted-foreground">{t('loading')}</p>
         </div>
       </div>
     )

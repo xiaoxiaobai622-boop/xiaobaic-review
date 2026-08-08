@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Comment, Video } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { CheckCircle2, MessageSquare, ChevronDown, ChevronUp, PanelRightClose } from 'lucide-react'
+import { CheckCircle2, MessageSquare, ChevronDown, ChevronUp, Info } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import MessageBubble from './MessageBubble'
@@ -44,6 +45,8 @@ interface CommentSectionProps {
   onToggleVisibility?: () => void
   showToggleButton?: boolean
   onMobileExpandedChange?: (expanded: boolean) => void
+  isReviewAuthenticated?: boolean
+  onRequireLogin?: () => void
 }
 
 export default function CommentSection({
@@ -72,10 +75,30 @@ export default function CommentSection({
   onToggleVisibility,
   showToggleButton = false,
   onMobileExpandedChange,
+  isReviewAuthenticated = false,
+  onRequireLogin,
 }: CommentSectionProps) {
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
   const [isMobileCollapsed, setIsMobileCollapsed] = useState(initialMobileCollapsed)
+  const [resolvedOverrides, setResolvedOverrides] = useState<Record<string, boolean>>({})
+  const [composerTarget, setComposerTarget] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const resolveComposer = () => {
+      const target = document.getElementById('review-comment-composer')
+      if (target) setComposerTarget(target)
+      return Boolean(target)
+    }
+
+    if (resolveComposer()) return
+
+    // The player can mount after the comment panel. Keep the composer attached
+    // when that happens instead of dropping the input on the first render.
+    const observer = new MutationObserver(resolveComposer)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
   const {
     comments,
     newComment,
@@ -94,6 +117,7 @@ export default function CommentSection({
     attachmentNotice,
     pendingAnnotation,
     selectedTimecodeEnd,
+    isSelectingTimecodeEnd,
     handleCommentChange,
     handleSubmitComment,
     handleReply,
@@ -134,8 +158,8 @@ export default function CommentSection({
     try {
       const response = isAdminView
         ? await apiFetch(`/api/comments?projectId=${projectId}`)
-        : shareToken
-          ? await fetch(`/api/comments?projectId=${projectId}`, {
+        : shareToken && _projectSlug
+          ? await fetch(`/api/share/${encodeURIComponent(_projectSlug)}/comments`, {
               headers: { Authorization: `Bearer ${shareToken}` },
             })
           : null
@@ -213,6 +237,14 @@ export default function CommentSection({
     }
   }, [projectId, fetchComments])
 
+  // Keep separate browsers in sync when another reviewer posts a comment.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void fetchComments()
+    }, 5000)
+    return () => window.clearInterval(interval)
+  }, [fetchComments])
+
   const latestVideoVersion = videos.length > 0
     ? Math.max(...videos.map(v => v.version))
     : null
@@ -221,13 +253,16 @@ export default function CommentSection({
   const currentVideoDuration = currentVideo?.duration ?? null
   const isCurrentVideoApproved = currentVideo ? (currentVideo as any).approved === true : false
   // Check if ANY video in the group is approved (for admin view with multiple versions)
-  const hasAnyApprovedVideo = videos.some(v => (v as any).approved === true)
   const approvedVideo = videos.find(v => (v as any).approved === true)
-  const commentsDisabled = isApproved || isCurrentVideoApproved || hasAnyApprovedVideo
+  // Sharing a project is not the same as approving it. Only lock comments for
+  // an explicitly approved project or the currently approved version.
+  const commentsDisabled = isApproved || isCurrentVideoApproved
 
   // Always use hook comments (includes optimistic updates)
   // Local comments only used as fallback if hook hasn't loaded
-  const mergedComments = comments.length > 0 ? comments : localComments
+  const mergedComments = Array.from(
+    new Map([...comments, ...localComments].map((comment) => [comment.id, comment])).values(),
+  )
 
   const displayComments = (() => {
     if (!selectedVideoId) {
@@ -276,18 +311,26 @@ export default function CommentSection({
 
   const replyingToComment = mergedComments.find(c => c.id === replyingToCommentId) || null
 
-  const formatMessageTime = (date: Date) => {
-    const now = new Date()
-    const diffMs = now.getTime() - new Date(date).getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
+  const handleSubmitWithAuth = () => {
+    if (!isAdminView && !isReviewAuthenticated) {
+      onRequireLogin?.()
+      return
+    }
+    void handleSubmitComment()
+  }
 
-    if (diffMins < 1) return t('justNow')
-    if (diffMins < 60) return `${diffMins}${t('minutesAgo')}`
-    if (diffHours < 24) return `${diffHours}${t('hoursAgo')}`
-    if (diffDays < 7) return `${diffDays}${t('daysAgo')}`
-    return formatDate(date)
+  const formatMessageTime = (date: Date) => {
+    const value = new Date(date)
+    const now = new Date()
+    const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const time = `${pad(value.getHours())}:${pad(value.getMinutes())}`
+
+    if (dayKey(value) === dayKey(now)) return `今天 ${time}`
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    if (dayKey(value) === dayKey(yesterday)) return `昨天 ${time}`
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${time}`
   }
 
   const handleSeekToTimestamp = (timestamp: number, videoId: string, videoVersion: number | null) => {
@@ -317,26 +360,51 @@ export default function CommentSection({
     window.dispatchEvent(new CustomEvent('openShortcutsDialog'))
   }
 
+  const handleToggleResolved = async (commentId: string, resolved: boolean) => {
+    setResolvedOverrides((current) => ({ ...current, [commentId]: resolved }))
+    try {
+      const response = isAdminView
+        ? await apiFetch(`/api/comments/${commentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resolved }),
+          })
+        : await fetch(`/api/comments/${commentId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(shareToken ? { Authorization: `Bearer ${shareToken}` } : {}),
+            },
+            body: JSON.stringify({ resolved }),
+          })
+      if (!response.ok) throw new Error('批注状态更新失败')
+    } catch {
+      setResolvedOverrides((current) => ({ ...current, [commentId]: !resolved }))
+    }
+  }
+
   return (
-    <Card className="bg-card border-0 flex flex-col h-full lg:max-h-full rounded-none lg:rounded-lg overflow-hidden" data-comment-section>
+    <Card className="flex h-full flex-col overflow-hidden rounded-none border-0 bg-card lg:max-h-full" data-comment-section>
       {/* Desktop: Show header at top, Mobile: Hide header (will show below input) */}
-      <CardHeader className={cn("flex-shrink-0", mobileCollapsible && "hidden lg:block")}>
+      <CardHeader className={cn("flex-shrink-0 border-b border-border/70 px-4 py-3", mobileCollapsible && "hidden lg:block")}>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-foreground flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base text-foreground">
+            <MessageSquare className="h-4 w-4" />
             {t('feedbackAndDiscussion')}
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {sortedComments.length}
+            </span>
           </CardTitle>
-          {showToggleButton && onToggleVisibility && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleVisibility}
-              className="hidden lg:flex h-8 px-2"
-              title={t('hideFeedback')}
-            >
-              <PanelRightClose className="w-4 h-4" />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => window.dispatchEvent(new CustomEvent('openReviewInfo'))}
+            className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+            title="视频信息"
+          >
+            <Info className="h-4 w-4" />
+            <span>信息</span>
+          </Button>
         </div>
         {selectedVideoId && currentVideo && !isAdminView && (
           <p className="text-xs text-muted-foreground mt-1">
@@ -370,12 +438,12 @@ export default function CommentSection({
         )}
 
         {/* Comment Input - MOVED TO TOP on mobile when collapsible */}
-        {mobileCollapsible && (
+        {false && mobileCollapsible && (
           <div className="order-1 lg:hidden">
             <CommentInput
               newComment={newComment}
               onCommentChange={handleCommentChange}
-              onSubmit={handleSubmitComment}
+              onSubmit={handleSubmitWithAuth}
               loading={loading}
               selectedTimestamp={selectedTimestamp}
               onClearTimestamp={handleClearTimestamp}
@@ -383,6 +451,7 @@ export default function CommentSection({
               selectedVideoDurationSeconds={currentVideoDuration}
               timestampDisplayMode={timestampDisplayMode}
               selectedTimecodeEnd={selectedTimecodeEnd}
+              isSelectingTimecodeEnd={isSelectingTimecodeEnd}
               onSetTimecodeEnd={handleSetTimecodeEnd}
               onClearTimecodeEnd={handleClearTimecodeEnd}
               replyingToComment={replyingToComment}
@@ -444,8 +513,8 @@ export default function CommentSection({
         <div
           ref={messagesContainerRef}
           className={cn(
-            "flex-1 overflow-y-auto p-4 space-y-6 min-h-0 bg-muted/20",
-            mobileCollapsible && "order-3 lg:order-1",
+            "min-h-0 flex-1 space-y-0 overflow-y-auto bg-card p-0",
+            mobileCollapsible && "order-3 lg:order-2",
             mobileCollapsible && isMobileCollapsed && "hidden lg:block"
           )}
         >
@@ -486,7 +555,7 @@ export default function CommentSection({
                 return (
                   <div key={comment.id}>
                     <MessageBubble
-                      comment={comment}
+                      comment={{ ...comment, resolved: resolvedOverrides[comment.id] ?? (comment as any).resolved } as any}
                       isReply={false}
                       onReply={() => handleReply(comment.id, comment.videoId)}
                       onSeekToTimecode={handleSeekToTimecode}
@@ -500,6 +569,7 @@ export default function CommentSection({
                       timecodeEndLabel={timecodeEndLabel}
                       hasAnnotation={hasAnnotation}
                       shareToken={shareToken}
+                      onToggleResolved={(resolved) => handleToggleResolved(comment.id, resolved)}
                     />
                   </div>
                 )
@@ -511,11 +581,11 @@ export default function CommentSection({
         </div>
 
         {/* Input Area - Desktop and non-collapsible mobile */}
-        <div className={cn(mobileCollapsible && "hidden lg:block lg:order-2")}>
+        {composerTarget && createPortal(<div className="flex-shrink-0">
           <CommentInput
           newComment={newComment}
           onCommentChange={handleCommentChange}
-          onSubmit={handleSubmitComment}
+          onSubmit={handleSubmitWithAuth}
           loading={loading}
           selectedTimestamp={selectedTimestamp}
           onClearTimestamp={handleClearTimestamp}
@@ -523,6 +593,7 @@ export default function CommentSection({
           selectedVideoDurationSeconds={currentVideoDuration}
           timestampDisplayMode={timestampDisplayMode}
           selectedTimecodeEnd={selectedTimecodeEnd}
+          isSelectingTimecodeEnd={isSelectingTimecodeEnd}
           onSetTimecodeEnd={handleSetTimecodeEnd}
           onClearTimecodeEnd={handleClearTimecodeEnd}
           replyingToComment={replyingToComment}
@@ -553,8 +624,7 @@ export default function CommentSection({
           onClearAnnotation={handleClearAnnotation}
           showShortcutsButton={showShortcutsButton}
           onShowShortcuts={handleOpenShortcuts}
-        />
-        </div>
+        /></div>, composerTarget)}
       </CardContent>
     </Card>
   )

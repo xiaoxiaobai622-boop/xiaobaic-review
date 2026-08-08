@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
-import { Clock, Trash2, Brush } from 'lucide-react'
+import { Clock, Trash2, Brush, Check } from 'lucide-react'
 import DOMPurify from 'isomorphic-dompurify'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachments from './CommentAttachments'
@@ -26,6 +26,7 @@ interface MessageBubbleProps {
   timecodeEndLabel?: string | null
   hasAnnotation?: boolean
   shareToken?: string | null
+  onToggleResolved?: (resolved: boolean) => void
 }
 
 /**
@@ -59,6 +60,7 @@ export default function MessageBubble({
   timecodeEndLabel,
   hasAnnotation,
   shareToken,
+  onToggleResolved,
 }: MessageBubbleProps) {
   const t = useTranslations('comments')
 
@@ -75,40 +77,76 @@ export default function MessageBubble({
     }
   }
 
+  const handleFeedbackClick = (event: React.MouseEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest('a, button')) return
+    handleTimestampClick()
+  }
+
+  const handleFeedbackKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    handleTimestampClick()
+  }
+
   const threadReplies = !isReply && replies && replies.length > 0 ? replies : []
   const hasReplies = threadReplies.length > 0
 
   return (
     <div className="w-full" id={`comment-${comment.id}`}>
-      <div className="bg-card border border-border/50 rounded-lg p-4 shadow-elevation-sm relative">
+      <div
+        className={`relative border-b border-border/60 px-4 py-3 transition-colors ${
+          (comment as any).resolved ? 'bg-success/8 hover:bg-success/12' : 'bg-card hover:bg-muted/30'
+        } ${comment.timecode && onSeekToTimecode ? 'cursor-pointer focus-within:bg-muted/30' : ''}`}
+        onClick={comment.timecode && onSeekToTimecode ? handleFeedbackClick : undefined}
+        onKeyDown={comment.timecode && onSeekToTimecode ? handleFeedbackKeyDown : undefined}
+        role={comment.timecode && onSeekToTimecode ? 'button' : undefined}
+        tabIndex={comment.timecode && onSeekToTimecode ? 0 : undefined}
+        title={comment.timecode && onSeekToTimecode ? t('seekToTimecode') : undefined}
+      >
         {hasReplies && (
-          <div className="absolute left-9 top-12 bottom-10 w-px bg-border/50" aria-hidden="true" />
+          <div className="absolute bottom-8 left-8 top-10 w-px bg-border/60" aria-hidden="true" />
         )}
 
-        <div className="grid grid-cols-[40px_1fr] gap-x-3 gap-y-6 items-start">
+        <div className="grid grid-cols-[32px_1fr] items-start gap-x-2.5 gap-y-4">
           <div className="flex justify-center">
-            <InitialsAvatar name={effectiveAuthorName} size="md" isInternal={comment.isInternal ?? false} />
+            <InitialsAvatar name={effectiveAuthorName} size="sm" isInternal={comment.isInternal ?? false} />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1 min-w-0">
-              <span className="text-base font-semibold text-foreground truncate">
+            <div className="mb-1 flex min-w-0 items-center gap-2 pr-8">
+              <span className="truncate text-sm font-semibold text-foreground">
                 {effectiveAuthorName || t('anonymous')}
               </span>
-              <span className="ml-auto text-sm text-muted-foreground flex-shrink-0">
-                {formatMessageTime(comment.createdAt)}
-              </span>
             </div>
+
+            {!isReply && onToggleResolved && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onToggleResolved(!(comment as any).resolved)
+                }}
+                className={`absolute right-4 top-3.5 flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
+                  (comment as any).resolved
+                    ? 'border-success bg-success text-success-foreground'
+                    : 'border-muted-foreground/50 bg-card text-transparent hover:border-primary'
+                }`}
+                aria-label={(comment as any).resolved ? '标记为未完成' : '标记为已完成'}
+                aria-pressed={(comment as any).resolved === true}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             {!isReply && timestampLabel && (
               <div className="flex items-center gap-1.5 mb-1.5">
                 <button
                   type="button"
                   onClick={handleTimestampClick}
-                  className="inline-flex items-center gap-1 rounded-md bg-warning-visible px-2 py-0.5 text-xs font-semibold text-warning hover:opacity-90 transition-opacity"
+                  className="inline-flex items-center gap-1 rounded bg-warning-visible px-1.5 py-0.5 text-[11px] font-semibold text-warning transition-opacity hover:opacity-90"
                   title={t('seekToTimecode')}
                 >
                   <Clock className="w-3 h-3" />
-                  <span className="font-mono">
+                  <span className="font-sans tabular-nums">
                     {timestampLabel}{timecodeEndLabel ? ` \u2192 ${timecodeEndLabel}` : ''}
                   </span>
                 </button>
@@ -120,7 +158,13 @@ export default function MessageBubble({
               </div>
             )}
 
-            <div className="text-base text-foreground whitespace-pre-wrap break-words leading-relaxed">
+            <div
+              className={`break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap ${
+                comment.timecode && onSeekToTimecode
+                  ? 'cursor-pointer rounded-md -mx-2 px-2 py-1 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+                  : ''
+              }`}
+            >
               <div
                 className="[&>p]:m-0"
                 dangerouslySetInnerHTML={{ __html: sanitizeContent(comment.content) }}
@@ -135,12 +179,15 @@ export default function MessageBubble({
               />
             )}
 
-            <div className="mt-4 flex items-center justify-between gap-3">
+            <div className="mt-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {formatMessageTime(comment.createdAt)}
+                </span>
                 {!isReply && !commentsDisabled && onReply && (
                   <button
                     onClick={onReply}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium"
+                    className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {t('reply')}
                   </button>
@@ -148,7 +195,7 @@ export default function MessageBubble({
                 {onDelete && (
                   <button
                     onClick={onDelete}
-                    className="text-sm text-muted-foreground hover:text-destructive transition-colors font-medium flex items-center gap-1"
+                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive"
                     title={t('deleteComment')}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -157,7 +204,7 @@ export default function MessageBubble({
                 )}
               </div>
               {typeof sequenceNumber === 'number' && sequenceNumber > 0 && (
-                <span className="text-sm text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   #{sequenceNumber}
                 </span>
               )}
@@ -173,14 +220,14 @@ export default function MessageBubble({
             return (
               <div key={reply.id} className="contents">
                 <div className="flex justify-center">
-                  <InitialsAvatar name={replyEffectiveName} size="md" isInternal={reply.isInternal ?? false} />
+                  <InitialsAvatar name={replyEffectiveName} size="sm" isInternal={reply.isInternal ?? false} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-2 min-w-0">
-                    <span className="text-base font-semibold text-foreground truncate">
+                    <span className="truncate text-sm font-semibold text-foreground">
                       {replyEffectiveName || t('anonymous')}
                     </span>
-                    <span className="text-sm text-muted-foreground flex-shrink-0">
+                    <span className="flex-shrink-0 text-xs text-muted-foreground">
                       {formatMessageTime(reply.createdAt)}
                     </span>
                     {onDeleteReply && (
@@ -194,7 +241,7 @@ export default function MessageBubble({
                     )}
                   </div>
                   <div
-                    className="text-base text-foreground whitespace-pre-wrap break-words leading-relaxed [&>p]:m-0"
+                    className="break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap [&>p]:m-0"
                     dangerouslySetInnerHTML={{ __html: sanitizeContent(reply.content) }}
                   />
                   {(reply as any).assets && (reply as any).assets.length > 0 && (

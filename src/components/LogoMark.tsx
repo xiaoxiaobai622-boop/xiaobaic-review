@@ -10,7 +10,7 @@ type LogoMarkProps = {
 }
 
 /**
- * Reusable ViTransfer logomark. Accent fill uses the global accent color by default.
+ * Reusable 逐帧审阅 logomark fallback.
  */
 function LogoMark({
   size = 64,
@@ -25,7 +25,7 @@ function LogoMark({
       viewBox="0 0 64 64"
       role={ariaHidden ? 'presentation' : 'img'}
       aria-hidden={ariaHidden}
-      aria-label={ariaHidden ? undefined : 'ViTransfer logo'}
+      aria-label={ariaHidden ? undefined : '逐帧审阅 logo'}
       className={cn('shrink-0', className)}
     >
       <rect width="64" height="64" rx="14" fill="var(--logo-bg)" />

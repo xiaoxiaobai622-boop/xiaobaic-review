@@ -15,6 +15,7 @@ import {
   type CompletedPart,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { createHash } from 'crypto'
 import { Readable } from 'stream'
 
 let _s3Client: S3Client | null = null
@@ -65,6 +66,26 @@ function getS3Bucket(): string {
   const bucket = process.env.S3_BUCKET
   if (!bucket) throw new Error('S3_BUCKET is not configured')
   return bucket
+}
+
+function getCdnStreamUrl(key: string, expirySeconds: number): string | null {
+  if (process.env.MEDIA_CDN_ENABLED !== 'true') return null
+
+  const baseUrl = process.env.MEDIA_CDN_BASE_URL?.trim().replace(/\/$/, '')
+  const authKey = process.env.MEDIA_CDN_AUTH_KEY?.trim()
+  if (!baseUrl || !authKey) {
+    throw new Error('MEDIA_CDN_BASE_URL and MEDIA_CDN_AUTH_KEY are required when MEDIA_CDN_ENABLED=true')
+  }
+
+  const encodedPath = `/${key.split('/').map(encodeURIComponent).join('/')}`
+  const timestamp = Math.floor(Date.now() / 1000) + expirySeconds
+  const rand = '0'
+  const uid = '0'
+  const digest = createHash('md5')
+    .update(`${encodedPath}-${timestamp}-${rand}-${uid}-${authKey}`)
+    .digest('hex')
+
+  return `${baseUrl}${encodedPath}?auth_key=${timestamp}-${rand}-${uid}-${digest}`
 }
 
 function formatS3Error(operation: string, key: string, err: unknown): Error {
@@ -389,7 +410,7 @@ export async function s3GetPresignedDownloadUrl(
   key: string,
   expirySeconds: number = 3600,
   filename?: string,
-  contentType?: string
+  _contentType?: string
 ): Promise<string> {
   return getSignedUrl(
     getS3Client(),
@@ -400,7 +421,6 @@ export async function s3GetPresignedDownloadUrl(
         ResponseContentDisposition:
           `attachment; filename="${filename.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       }),
-      ...(contentType && { ResponseContentType: contentType }),
     }),
     { expiresIn: expirySeconds }
   )
@@ -410,14 +430,16 @@ export async function s3GetPresignedDownloadUrl(
 export async function s3GetPresignedStreamUrl(
   key: string,
   expirySeconds: number = 14400,
-  contentType?: string
+  _contentType?: string
 ): Promise<string> {
+  const cdnUrl = getCdnStreamUrl(key, expirySeconds)
+  if (cdnUrl) return cdnUrl
+
   return getSignedUrl(
     getS3Client(),
     new GetObjectCommand({
       Bucket: getS3Bucket(),
       Key: key,
-      ...(contentType && { ResponseContentType: contentType }),
     }),
     { expiresIn: expirySeconds }
   )

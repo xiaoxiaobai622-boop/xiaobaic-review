@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
-import { Download, Trash2, Loader2, FileIcon, FileImage, FileVideo, FileMusic, FileArchive, FileText, FilePlay, Square, CheckSquare, Info } from 'lucide-react'
+import { Download, Trash2, Loader2, FileIcon, FileImage, FileVideo, FileMusic, FileArchive, FileText, FilePlay, Square, CheckSquare, Info, RefreshCw } from 'lucide-react'
 import { formatFileSize } from '@/lib/utils'
 import { Button } from './ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
+import { Input } from './ui/input'
+import { FILE_LIMITS } from '@/lib/file-validation'
 
 interface ProjectUpload {
   id: string
@@ -24,16 +26,20 @@ interface ProjectUpload {
 interface ProjectUploadsBlockProps {
   projectId: string
   onCountChange?: (count: number) => void
+  videoNames?: string[]
+  onPromoted?: () => void
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString(undefined, {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  })
+    hour12: false,
+  }).format(new Date(dateStr))
 }
 
 function getCategoryLabel(category: string | null, otherLabel: string): string {
@@ -71,7 +77,18 @@ function getUploaderDisplay(upload: ProjectUpload, unknownLabel: string): string
   return upload.uploadedByName || upload.uploadedByEmail || unknownLabel
 }
 
-export default function ProjectUploadsBlock({ projectId, onCountChange }: ProjectUploadsBlockProps) {
+function isVideoUpload(upload: ProjectUpload): boolean {
+  const lowerName = upload.fileName.toLowerCase()
+  const extension = lowerName.includes('.') ? lowerName.slice(lowerName.lastIndexOf('.')) : ''
+  return upload.fileType?.toLowerCase().startsWith('video/') || FILE_LIMITS.ALLOWED_EXTENSIONS.includes(extension)
+}
+
+function fileNameWithoutExtension(fileName: string): string {
+  const lastDot = fileName.lastIndexOf('.')
+  return (lastDot > 0 ? fileName.slice(0, lastDot) : fileName).trim()
+}
+
+export default function ProjectUploadsBlock({ projectId, onCountChange, videoNames = [], onPromoted }: ProjectUploadsBlockProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
 
@@ -82,6 +99,10 @@ export default function ProjectUploadsBlock({ projectId, onCountChange }: Projec
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDownloading, setBulkDownloading] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [promoteUpload, setPromoteUpload] = useState<ProjectUpload | null>(null)
+  const [promotingId, setPromotingId] = useState<string | null>(null)
+  const [targetVideoName, setTargetVideoName] = useState('__new__')
+  const [newVideoName, setNewVideoName] = useState('')
   const [previews, setPreviews] = useState<Record<string, string>>({})
   const previewsRef = useRef<Record<string, string>>({})
 
@@ -187,6 +208,50 @@ export default function ProjectUploadsBlock({ projectId, onCountChange }: Projec
       logError('Error deleting project upload:', error)
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const openPromoteDialog = (upload: ProjectUpload) => {
+    const suggestedName = fileNameWithoutExtension(upload.fileName)
+    const matchingName = videoNames.find(name => name.toLowerCase() === suggestedName.toLowerCase())
+    setPromoteUpload(upload)
+    setTargetVideoName(matchingName || '__new__')
+    setNewVideoName(suggestedName)
+  }
+
+  const handlePromote = async () => {
+    if (!promoteUpload) return
+    const videoName = targetVideoName === '__new__' ? newVideoName.trim() : targetVideoName
+    if (!videoName) return
+
+    setPromotingId(promoteUpload.id)
+    try {
+      const res = await apiFetch(
+        `/api/projects/${projectId}/project-uploads/${promoteUpload.id}/promote`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoName }),
+        }
+      )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || t('promoteUploadFailed'))
+      }
+
+      setUploads(prev => prev.filter(upload => upload.id !== promoteUpload.id))
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        next.delete(promoteUpload.id)
+        return next
+      })
+      setPromoteUpload(null)
+      onPromoted?.()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : t('promoteUploadFailed'))
+      logError('Error promoting project upload:', error)
+    } finally {
+      setPromotingId(null)
     }
   }
 
@@ -326,9 +391,26 @@ export default function ProjectUploadsBlock({ projectId, onCountChange }: Projec
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{upload.fileName}</p>
                   <p className="text-xs text-muted-foreground">{formatFileSize(Number(upload.fileSize))}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {formatDate(upload.createdAt)}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  {isVideoUpload(upload) && (
+                    <button
+                      type="button"
+                      onClick={() => openPromoteDialog(upload)}
+                      disabled={promotingId === upload.id}
+                      className="p-1.5 rounded hover:bg-primary-visible text-primary transition-colors disabled:opacity-50"
+                      title={t('promoteUpload')}
+                      aria-label={t('promoteUpload')}
+                    >
+                      {promotingId === upload.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <RefreshCw className="w-4 h-4" />}
+                    </button>
+                  )}
                   <Dialog>
                     <DialogTrigger asChild>
                       <button
@@ -405,6 +487,50 @@ export default function ProjectUploadsBlock({ projectId, onCountChange }: Projec
           </div>
         </div>
       )}
+
+      <Dialog open={!!promoteUpload} onOpenChange={(open) => !open && !promotingId && setPromoteUpload(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('promoteUploadTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">{t('promoteUploadDescription')}</p>
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm break-all">
+              {promoteUpload?.fileName}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="promote-target">{t('targetVideo')}</label>
+              <select
+                id="promote-target"
+                value={targetVideoName}
+                onChange={(event) => setTargetVideoName(event.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="__new__">{t('createNewVideo')}</option>
+                {videoNames.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+            {targetVideoName === '__new__' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="promote-name">{t('newVideoName')}</label>
+                <Input
+                  id="promote-name"
+                  value={newVideoName}
+                  onChange={(event) => setNewVideoName(event.target.value)}
+                  maxLength={255}
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setPromoteUpload(null)} disabled={!!promotingId}>{tc('cancel')}</Button>
+              <Button onClick={handlePromote} disabled={!!promotingId || (targetVideoName === '__new__' && !newVideoName.trim())}>
+                {promotingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {promotingId ? t('promotingUpload') : t('promoteUpload')}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

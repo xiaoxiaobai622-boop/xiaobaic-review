@@ -18,11 +18,13 @@ dist
 !docker-compose.example.env
 
 # Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 pnpm-debug.log*
+pnpm-lock.yaml
 
 # OS
 .DS_Store
@@ -51,6 +53,11 @@ minio-data/
 postgres-data/
 redis-data/
 integrations/
+
+# Local build and deployment tooling
+.docker-local-config/
+*.tgz
+*.tar.gz
 
 # Prisma
 prisma/.env

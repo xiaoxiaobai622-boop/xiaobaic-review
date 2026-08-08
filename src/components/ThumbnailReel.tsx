@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useRef, useEffect, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { CheckCircle2, ChevronLeft, ChevronRight, Film, Layers, Grid3X3, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Film, ArrowLeft, GitCompareArrows, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -24,6 +24,11 @@ interface ThumbnailReelProps {
   showLanguageToggle?: boolean
   // Optional slot rendered after ThemeToggle (e.g. tutorial help button)
   trailingAction?: React.ReactNode
+  // Optional slot rendered before the comparison and theme controls
+  beforeToolbarAction?: React.ReactNode
+  // Optional action before the overview button (e.g. return to source page)
+  leadingAction?: React.ReactNode
+  comments?: Array<{ videoId?: string | null }>
 }
 
 export default function ThumbnailReel({
@@ -38,12 +43,16 @@ export default function ThumbnailReel({
   onToggleCommentPanel,
   showLanguageToggle = true,
   trailingAction,
+  beforeToolbarAction,
+  leadingAction,
+  comments = [],
 }: ThumbnailReelProps) {
   const tShare = useTranslations('share')
-  const tComments = useTranslations('comments')
+  const tVideos = useTranslations('videos')
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   // Start collapsed on first load
   const [isExpanded, setIsExpanded] = useState(false)
+  const [selectedVersionId, setSelectedVersionId] = useState<string>('')
   const hasScrolledRef = useRef(false)
 
   const handleToggleExpanded = () => {
@@ -78,6 +87,19 @@ export default function ThumbnailReel({
 
   const activeIndex = videoNames.indexOf(activeVideoName)
   const totalVideos = videoNames.length
+  const commentCountByName = useMemo(() => {
+    const videoNamesById = new Map<string, string>()
+    Object.entries(videosByName).forEach(([name, versions]) => {
+      versions.forEach((video: any) => videoNamesById.set(video.id, name))
+    })
+    const counts = new Map<string, number>()
+    comments.forEach((comment) => {
+      if (!comment.videoId) return
+      const name = videoNamesById.get(comment.videoId)
+      if (name) counts.set(name, (counts.get(name) || 0) + 1)
+    })
+    return counts
+  }, [comments, videosByName])
 
   // Navigation
   const handlePrevVideo = () => {
@@ -127,96 +149,75 @@ export default function ThumbnailReel({
 
   // Get current video info
   const currentVideos = activeVideoName ? videosByName[activeVideoName] : []
-  const hasApprovedCurrent = currentVideos.some((v: any) => v.approved === true)
+
+  useEffect(() => {
+    const available = currentVideos.some((video: any) => video.id === selectedVersionId)
+    if (!available) setSelectedVersionId(currentVideos[0]?.id || '')
+  }, [activeVideoName, currentVideos, selectedVersionId])
+
+  useEffect(() => {
+    const handleVersionChanged = (event: Event) => {
+      const videoId = (event as CustomEvent).detail?.videoId
+      if (videoId) setSelectedVersionId(videoId)
+    }
+    window.addEventListener('reviewVersionChanged', handleVersionChanged)
+    return () => window.removeEventListener('reviewVersionChanged', handleVersionChanged)
+  }, [])
 
   return (
-    <div className="relative shrink-0 z-20 p-2 sm:p-3">
+    <div className="relative z-20 shrink-0">
       {/* Compact Control Bar - Always visible */}
-      <div className="bg-card/95 backdrop-blur-sm px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Left: Back to grid */}
-          <div className="flex items-center">
+      <div className="h-14 border-b border-border/70 bg-card px-3 sm:px-4">
+        <div className="flex h-full items-center gap-1.5 sm:gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {leadingAction}
             {showBackButton && onBackToGrid && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon"
                 onClick={onBackToGrid}
-                className="shrink-0 gap-1.5 px-2 sm:px-3 h-8"
+                className="h-9 w-9 shrink-0"
                 title={tShare('backToOverview')}
               >
-                <Grid3X3 className="w-4 h-4" />
-                <span className="hidden sm:inline text-sm">{tShare('backToOverview')}</span>
+                <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
-          </div>
-
-          {/* Center: Video selector */}
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex items-center gap-1">
-              <Button
-                data-tutorial="video-reel-prev"
-                variant="ghost"
-                size="icon"
-                onClick={handlePrevVideo}
-                disabled={activeIndex <= 0}
-                className="h-7 w-7 sm:h-8 sm:w-8"
-                title={tShare('previousVideo')}
+            <button
+              type="button"
+              onClick={handleToggleExpanded}
+              className="min-w-0 truncate text-left text-sm font-semibold text-foreground hover:text-primary"
+              title={activeVideoName}
+            >
+              {activeVideoName}
+            </button>
+            {currentVideos.length > 0 && (
+              <select
+                aria-label="切换版本"
+                value={selectedVersionId || currentVideos[0]?.id}
+                onChange={(event) => {
+                  setSelectedVersionId(event.target.value)
+                  window.dispatchEvent(new CustomEvent('selectReviewVersion', { detail: { videoId: event.target.value } }))
+                }}
+                className="h-8 min-w-[72px] shrink-0 rounded border border-border bg-background px-2 text-sm font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-
-              <button
-                data-tutorial="video-reel-center"
-                onClick={handleToggleExpanded}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all",
-                  "hover:bg-muted/80 active:scale-95",
-                  isExpanded && "bg-muted/50"
-                )}
-                title={isExpanded ? "Hide video thumbnails" : "Show video thumbnails"}
-              >
-                <CheckCircle2
-                  className={cn(
-                    "w-4 h-4",
-                    hasApprovedCurrent ? "text-success" : "text-muted-foreground/50"
-                  )}
-                />
-                <span className="text-sm text-muted-foreground tabular-nums">
-                  {activeIndex + 1}/{totalVideos}
-                </span>
-              </button>
-
-              <Button
-                data-tutorial="video-reel-next"
-                variant="ghost"
-                size="icon"
-                onClick={handleNextVideo}
-                disabled={activeIndex >= totalVideos - 1}
-                className="h-7 w-7 sm:h-8 sm:w-8"
-                title={tShare('nextVideo')}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+                {currentVideos.map((video: any) => (
+                  <option key={video.id} value={video.id}>{video.versionLabel || `v${video.version}`}</option>
+                ))}
+              </select>
+            )}
+            <div className="hidden items-center gap-0.5 sm:flex">
+              <Button variant="ghost" size="icon" onClick={handlePrevVideo} disabled={activeIndex <= 0} className="h-7 w-7" title={tShare('previousVideo')}><ChevronLeft className="h-4 w-4" /></Button>
+              <span className="min-w-9 text-center text-xs text-muted-foreground tabular-nums">{activeIndex + 1}/{totalVideos}</span>
+              <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-7 w-7" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
             </div>
           </div>
 
-          {/* Right: Toggle buttons */}
-          <div className="flex items-center gap-1">
-
-            {/* Comment panel toggle */}
-            {showCommentToggle && onToggleCommentPanel && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggleCommentPanel}
-                className="hidden lg:flex h-8 w-8"
-                title={isCommentPanelVisible ? tComments('hideFeedback') : tComments('showFeedback')}
-              >
-                {isCommentPanelVisible ? (
-                  <PanelRightClose className="w-4 h-4" />
-                ) : (
-                  <PanelRightOpen className="w-4 h-4" />
-                )}
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            {beforeToolbarAction}
+            {currentVideos.length > 1 && (
+              <Button variant="outline" size="sm" className="hidden h-8 gap-1.5 lg:flex" onClick={() => window.dispatchEvent(new CustomEvent('openReviewComparison'))}>
+                <GitCompareArrows className="h-4 w-4" />
+                {tVideos('compare')}
               </Button>
             )}
 
@@ -231,9 +232,9 @@ export default function ThumbnailReel({
       {/* Floating Thumbnail Overlay - Appears below the bar, overlays content */}
       {isExpanded && (
         <div
-          className="absolute left-2 right-2 sm:left-3 sm:right-3 top-full z-30 mt-1"
+          className="absolute left-2 right-2 top-full z-30 mt-1 sm:left-4 sm:right-4"
         >
-          <div className="bg-background/90 backdrop-blur-md shadow-lg rounded-xl">
+          <div className="rounded-md border border-border/70 bg-background/95 shadow-lg backdrop-blur-md">
             <div className="px-2 py-3 sm:px-4">
               {/* Thumbnails container */}
               <div
@@ -248,7 +249,11 @@ export default function ThumbnailReel({
                 {videoNames.map((name) => {
                   const videos = videosByName[name]
                   const hasApprovedVideo = videos.some((v: any) => v.approved === true)
-                  const versionCount = videos.length
+                  const latestVideo = videos.reduce((latest: any, video: any) => (
+                    !latest || video.version > latest.version ? video : latest
+                  ), null)
+                  const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
+                  const feedbackCount = commentCountByName.get(name) || 0
                   const thumbnailUrl = thumbnailsByName.get(name)
                   const isActive = activeVideoName === name
 
@@ -295,13 +300,10 @@ export default function ThumbnailReel({
                           </div>
                         )}
 
-                        {/* Version count badge */}
-                        {versionCount > 1 && (
-                          <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                            <Layers className="w-2.5 h-2.5" />
-                            <span>{versionCount}</span>
-                          </div>
-                        )}
+                        {/* Latest version badge */}
+                        <div className="absolute bottom-1 right-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium text-black shadow-sm sm:text-[10px]">
+                          {latestVersionLabel}
+                        </div>
 
                         {/* Active overlay */}
                         {isActive && (
@@ -318,6 +320,10 @@ export default function ThumbnailReel({
                           )}
                         >
                           {name}
+                        </p>
+                        <p className="mt-0.5 flex items-center justify-center gap-1 text-[9px] sm:text-[10px] text-muted-foreground">
+                          <MessageSquare className="h-2.5 w-2.5" />
+                          {tShare('feedbackCount', { count: feedbackCount })}
                         </p>
                       </div>
                     </button>

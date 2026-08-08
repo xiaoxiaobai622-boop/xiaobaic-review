@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vitransfer-local:current
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vitransfer-local:current

@@ -4,9 +4,18 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { getAccessToken, getRefreshToken, clearTokens, subscribe } from '@/lib/token-store'
+import { getDeviceAuthHeaders } from '@/lib/device-id'
 
-const DEFAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000 // 15 minutes
+const DEFAULT_INACTIVITY_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000
 const CHECK_INTERVAL = 30 * 1000 // 30 seconds
+const ACTIVITY_WRITE_INTERVAL = 30 * 1000
+const LAST_ACTIVITY_KEY = 'vitransfer_admin_last_activity'
+
+function readLastActivity(): number {
+  if (typeof window === 'undefined') return Date.now()
+  const parsed = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY))
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now()
+}
 
 export default function SessionMonitor() {
   const router = useRouter()
@@ -14,10 +23,16 @@ export default function SessionMonitor() {
   const [showWarning, setShowWarning] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState(0)
   const lastActivityRef = useRef<number>(0)
+  const lastActivityWriteRef = useRef<number>(0)
+  const loggingOutRef = useRef(false)
   const inactivityTimeoutRef = useRef<number>(DEFAULT_INACTIVITY_TIMEOUT_MS)
 
   useEffect(() => {
-    lastActivityRef.current = Date.now()
+    const stored = window.localStorage.getItem(LAST_ACTIVITY_KEY)
+    const initialActivity = readLastActivity()
+    lastActivityRef.current = initialActivity
+    lastActivityWriteRef.current = initialActivity
+    if (!stored) window.localStorage.setItem(LAST_ACTIVITY_KEY, String(initialActivity))
   }, [])
 
   useEffect(() => {
@@ -37,15 +52,21 @@ export default function SessionMonitor() {
         if (!response.ok) return
 
         const data = await response.json()
-        const value = Number.parseInt(String(data?.adminSessionTimeoutValue ?? '15'), 10)
-        const unit = String(data?.adminSessionTimeoutUnit ?? 'MINUTES')
+        const value = Number.parseInt(String(data?.adminSessionTimeoutValue ?? '7'), 10)
+        const unit = String(data?.adminSessionTimeoutUnit ?? 'DAYS')
         if (!Number.isFinite(value) || value <= 0) return
 
-        const seconds = unit === 'HOURS' ? value * 60 * 60 : unit === 'MINUTES' ? value * 60 : null
+        const seconds = unit === 'DAYS'
+          ? value * 24 * 60 * 60
+          : unit === 'HOURS'
+            ? value * 60 * 60
+            : unit === 'MINUTES'
+              ? value * 60
+              : null
         if (!seconds || seconds <= 0) return
 
         if (cancelled) return
-        inactivityTimeoutRef.current = Math.min(seconds, 24 * 60 * 60) * 1000
+        inactivityTimeoutRef.current = Math.min(seconds, 30 * 24 * 60 * 60) * 1000
         loaded = true
       } catch {
         // ignore and keep defaults
@@ -66,6 +87,8 @@ export default function SessionMonitor() {
   }, [])
 
   const handleLogout = useCallback(async () => {
+    if (loggingOutRef.current) return
+    loggingOutRef.current = true
     const accessToken = getAccessToken()
     const refreshToken = getRefreshToken()
     try {
@@ -74,6 +97,7 @@ export default function SessionMonitor() {
         headers: {
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           ...(refreshToken ? { 'X-Refresh-Token': `Bearer ${refreshToken}` } : {}),
+          ...getDeviceAuthHeaders(),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ refreshToken }),
@@ -82,39 +106,67 @@ export default function SessionMonitor() {
       // ignore
     } finally {
       clearTokens()
+      window.localStorage.removeItem(LAST_ACTIVITY_KEY)
       router.push('/login?sessionExpired=true')
     }
   }, [router])
 
   useEffect(() => {
     const onActivity = () => {
-      lastActivityRef.current = Date.now()
+      const now = Date.now()
+      const latestActivity = Math.max(lastActivityRef.current, readLastActivity())
+      if (now - latestActivity >= inactivityTimeoutRef.current) {
+        void handleLogout()
+        return
+      }
+
+      lastActivityRef.current = now
       setShowWarning(false)
+      if (now - lastActivityWriteRef.current >= ACTIVITY_WRITE_INTERVAL) {
+        lastActivityWriteRef.current = now
+        window.localStorage.setItem(LAST_ACTIVITY_KEY, String(now))
+      }
+    }
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== LAST_ACTIVITY_KEY || !event.newValue) return
+      const activity = Number(event.newValue)
+      if (Number.isFinite(activity) && activity > lastActivityRef.current) {
+        lastActivityRef.current = activity
+        setShowWarning(false)
+      }
     }
 
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click']
     activityEvents.forEach(event => {
       document.addEventListener(event, onActivity, { passive: true, capture: true })
     })
+    window.addEventListener('storage', onStorage)
 
-    const inactivityTimer = setInterval(() => {
+    const checkInactivity = () => {
+      const sharedLastActivity = readLastActivity()
+      lastActivityRef.current = Math.max(lastActivityRef.current, sharedLastActivity)
       const timeSinceActivity = Date.now() - lastActivityRef.current
       const timeUntilLogout = inactivityTimeoutRef.current - timeSinceActivity
 
       if (timeUntilLogout <= 0) {
-        handleLogout()
+        void handleLogout()
       } else if (timeUntilLogout <= 2 * 60 * 1000) {
         setShowWarning(true)
         setTimeRemaining(Math.ceil(timeUntilLogout / 1000))
       } else {
         setShowWarning(false)
       }
-    }, CHECK_INTERVAL)
+    }
+
+    checkInactivity()
+    const inactivityTimer = setInterval(checkInactivity, CHECK_INTERVAL)
 
     return () => {
       activityEvents.forEach(event => {
         document.removeEventListener(event, onActivity, { capture: true } as any)
       })
+      window.removeEventListener('storage', onStorage)
       clearInterval(inactivityTimer)
     }
   }, [handleLogout])

@@ -5,6 +5,7 @@ import { logError } from './logging'
 export interface Recipient {
   id?: string
   email: string | null
+  phone: string | null
   name: string | null
   isPrimary: boolean
   receiveNotifications: boolean
@@ -25,6 +26,7 @@ export async function getProjectRecipients(projectId: string): Promise<Recipient
   return recipients.map(r => ({
     id: r.id,
     email: r.email,
+    phone: r.phone,
     name: r.name,
     isPrimary: r.isPrimary,
     receiveNotifications: r.receiveNotifications
@@ -44,6 +46,7 @@ export async function getPrimaryRecipient(projectId: string): Promise<Recipient 
     return {
       id: primary.id,
       email: primary.email,
+      phone: primary.phone,
       name: primary.name,
       isPrimary: primary.isPrimary,
       receiveNotifications: primary.receiveNotifications
@@ -63,6 +66,7 @@ export async function getPrimaryRecipient(projectId: string): Promise<Recipient 
   return {
     id: fallback.id,
     email: fallback.email,
+    phone: fallback.phone,
     name: fallback.name,
     isPrimary: fallback.isPrimary,
     receiveNotifications: fallback.receiveNotifications
@@ -76,7 +80,8 @@ export async function addRecipient(
   projectId: string,
   email: string | null = null,
   name: string | null = null,
-  isPrimary: boolean = false
+  isPrimary: boolean = false,
+  phone: string | null = null
 ): Promise<Recipient> {
   // If setting as primary, unset other primary recipients
   if (isPrimary) {
@@ -90,6 +95,7 @@ export async function addRecipient(
     data: {
       projectId,
       email,
+      phone,
       name,
       isPrimary
     }
@@ -103,6 +109,7 @@ export async function addRecipient(
   return {
     id: recipient.id,
     email: recipient.email,
+    phone: recipient.phone,
     name: recipient.name,
     isPrimary: recipient.isPrimary,
     receiveNotifications: recipient.receiveNotifications
@@ -114,7 +121,7 @@ export async function addRecipient(
  */
 export async function updateRecipient(
   recipientId: string,
-  data: { name?: string | null; email?: string | null; isPrimary?: boolean; receiveNotifications?: boolean }
+  data: { name?: string | null; email?: string | null; phone?: string | null; isPrimary?: boolean; receiveNotifications?: boolean }
 ): Promise<Recipient> {
   // If setting as primary, get projectId and unset other primaries
   if (data.isPrimary) {
@@ -150,6 +157,7 @@ export async function updateRecipient(
   return {
     id: recipient.id,
     email: recipient.email,
+    phone: recipient.phone,
     name: recipient.name,
     isPrimary: recipient.isPrimary,
     receiveNotifications: recipient.receiveNotifications

@@ -11,7 +11,7 @@ ARG BUILDPLATFORM
 RUN apk update && apk upgrade --no-cache && \
     apk add --no-cache \
         openssl openssl-dev \
-        ffmpeg ffmpeg-libs fontconfig ttf-dejavu \
+        ffmpeg ffmpeg-libs fontconfig ttf-dejavu font-noto-cjk \
         bash curl ca-certificates shadow su-exec \
     && apk add --no-cache --upgrade cjson libsndfile giflib orc zlib expat \
     && npm install -g npm@latest \
@@ -46,7 +46,7 @@ ARG APP_VERSION
 ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
 ENV SKIP_ENV_VALIDATION=1
 ENV NEXT_PHASE=phase-production-build
-RUN npm run build
+RUN npm run build && rm -rf .next/cache
 
 # === Production ===
 FROM base AS runner
@@ -55,7 +55,7 @@ WORKDIR /app
 ARG APP_VERSION
 LABEL org.opencontainers.image.title="ViTransfer"
 LABEL org.opencontainers.image.description="Video review and approval platform"
-LABEL org.opencontainers.image.source="https://github.com/MansiVisuals/ViTransfer"
+LABEL org.opencontainers.image.source="https://github.com/xiaoxiaobai622-boop/xiaobaic-review"
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -93,9 +93,10 @@ COPY --from=builder --link /app/worker.mjs ./worker.mjs
 COPY --link --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY --link previewlut.cube /usr/share/ffmpeg/previewlut.cube
 
-RUN chmod a+r /usr/share/ffmpeg/previewlut.cube && \
-    chown -R app:app /app && \
-    chmod -R a+rX /app
+# Windows checkouts may convert the shell script to CRLF. Normalize it for Linux.
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && \
+    chmod a+r /usr/share/ffmpeg/previewlut.cube && \
+    chown app:app /app
 
 ENV PUID=1000 PGID=1000
 

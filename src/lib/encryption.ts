@@ -182,6 +182,19 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash)
 }
 
+export function validateSixDigitPassword(password: string): {
+  isValid: boolean
+  errors: string[]
+  strength: 'weak' | 'medium' | 'strong'
+} {
+  const isValid = typeof password === 'string' && /^\d{6}$/.test(password)
+  return {
+    isValid,
+    errors: isValid ? [] : ['Password must be exactly 6 digits'],
+    strength: isValid ? 'medium' : 'weak',
+  }
+}
+
 /**
  * Validate password strength
  * @param password Password to validate

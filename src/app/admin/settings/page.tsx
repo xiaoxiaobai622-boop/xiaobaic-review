@@ -106,7 +106,7 @@ export default function GlobalSettingsPage() {
   const [testEmailResult, setTestEmailResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [testEmailAddress, setTestEmailAddress] = useState('')
 
-  const [language, setLanguage] = useState('en')
+  const [language, setLanguage] = useState('zh')
 
   const [defaultTheme, setDefaultTheme] = useState('auto')
   const [accentColor, setAccentColor] = useState('blue')
@@ -173,8 +173,8 @@ export default function GlobalSettingsPage() {
   const [passwordAttempts, setPasswordAttempts] = useState('5')
   const [sessionTimeoutValue, setSessionTimeoutValue] = useState('15')
   const [sessionTimeoutUnit, setSessionTimeoutUnit] = useState('MINUTES')
-  const [adminSessionTimeoutValue, setAdminSessionTimeoutValue] = useState('15')
-  const [adminSessionTimeoutUnit, setAdminSessionTimeoutUnit] = useState('MINUTES')
+  const [adminSessionTimeoutValue, setAdminSessionTimeoutValue] = useState('7')
+  const [adminSessionTimeoutUnit, setAdminSessionTimeoutUnit] = useState('DAYS')
   const [trackAnalytics, setTrackAnalytics] = useState(true)
   const [trackSecurityLogs, setTrackSecurityLogs] = useState(true)
   const [viewSecurityEvents, setViewSecurityEvents] = useState(false)
@@ -197,7 +197,7 @@ export default function GlobalSettingsPage() {
   const [activeSection, setActiveSection] = useState('appearance')
 
   const applySettingsToForm = useCallback((data: Settings) => {
-    setLanguage(data.language || 'en')
+    setLanguage(data.language || 'zh')
     setDefaultTheme(data.defaultTheme || 'auto')
     setAccentColor(data.accentColor || 'blue')
     setCompanyName(data.companyName || '')
@@ -255,8 +255,8 @@ export default function GlobalSettingsPage() {
     setPasswordAttempts(data.passwordAttempts?.toString() || '5')
     setSessionTimeoutValue(data.sessionTimeoutValue?.toString() || '15')
     setSessionTimeoutUnit(data.sessionTimeoutUnit || 'MINUTES')
-    setAdminSessionTimeoutValue(data.adminSessionTimeoutValue?.toString() || '15')
-    setAdminSessionTimeoutUnit(data.adminSessionTimeoutUnit || 'MINUTES')
+    setAdminSessionTimeoutValue(data.adminSessionTimeoutValue?.toString() || '7')
+    setAdminSessionTimeoutUnit(data.adminSessionTimeoutUnit || 'DAYS')
     setTrackAnalytics(data.trackAnalytics ?? true)
     setTrackSecurityLogs(data.trackSecurityLogs ?? true)
     setViewSecurityEvents(data.viewSecurityEvents ?? false)
@@ -616,7 +616,7 @@ export default function GlobalSettingsPage() {
       }
 
       const updates = {
-        language: language || 'en',
+        language: language || 'zh',
         defaultTheme: defaultTheme || 'auto',
         accentColor: accentColor || 'blue',
         companyName: companyName || null,
@@ -670,8 +670,8 @@ export default function GlobalSettingsPage() {
         passwordAttempts: parseInt(passwordAttempts, 10) || 5,
         sessionTimeoutValue: parseInt(sessionTimeoutValue, 10) || 15,
         sessionTimeoutUnit: sessionTimeoutUnit || 'MINUTES',
-        adminSessionTimeoutValue: parseInt(adminSessionTimeoutValue, 10) || 15,
-        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'MINUTES',
+        adminSessionTimeoutValue: parseInt(adminSessionTimeoutValue, 10) || 7,
+        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'DAYS',
         trackAnalytics,
         trackSecurityLogs,
         viewSecurityEvents,
@@ -864,10 +864,6 @@ export default function GlobalSettingsPage() {
               </p>
             </div>
 
-            <Button onClick={handleSave} variant="default" disabled={saving} size="default">
-              <Save className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">{saving ? tc('saving') : tc('saveChanges')}</span>
-            </Button>
           </div>
         </div>
 
@@ -948,19 +944,6 @@ export default function GlobalSettingsPage() {
             )}
           </div>
         </div>
-
-        {/* Bottom notifications + save */}
-        {error && (
-          <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-destructive-visible border-2 border-destructive-visible rounded-lg">
-            <p className="text-xs sm:text-sm text-destructive font-medium">{error}</p>
-          </div>
-        )}
-
-        {success && (
-          <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-success-visible border-2 border-success-visible rounded-lg">
-            <p className="text-xs sm:text-sm text-success font-medium">{t('savedSuccessfully')}</p>
-          </div>
-        )}
 
         <div className="mt-6 sm:mt-8 pb-20 lg:pb-24 flex justify-end">
           <Button onClick={handleSave} variant="default" disabled={saving} size="default">

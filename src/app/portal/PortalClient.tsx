@@ -83,6 +83,12 @@ export default function PortalClient() {
     setView('check-email')
   }, [])
 
+  const handleAuthenticated = useCallback((newToken: string) => {
+    savePortalSession(newToken)
+    setToken(newToken)
+    setView('dashboard')
+  }, [])
+
   // Inactivity TTL: derive from JWT exp (= server-side client session TTL).
   // Recomputed via effect when token changes so Date.now() doesn't run during render.
   const [inactivityMs, setInactivityMs] = useState<number | undefined>(undefined)
@@ -128,7 +134,7 @@ export default function PortalClient() {
 
         {view === 'login' && (
           <div className="w-full max-w-md">
-            <PortalLogin onSubmitted={handleSubmitted} />
+            <PortalLogin onSubmitted={handleSubmitted} onAuthenticated={handleAuthenticated} />
           </div>
         )}
 

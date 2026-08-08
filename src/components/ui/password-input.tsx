@@ -2,18 +2,23 @@ import * as React from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
+import { useTranslations } from 'next-intl'
 
 export interface PasswordInputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {
   showToggle?: boolean
+  onVisibilityChange?: (visible: boolean) => void
 }
 
 const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
-  ({ className, showToggle = true, ...props }, ref) => {
+  ({ className, showToggle = true, onVisibilityChange, ...props }, ref) => {
+    const t = useTranslations('users')
     const [showPassword, setShowPassword] = React.useState(false)
 
     const handleToggle = () => {
-      setShowPassword(!showPassword)
+      const nextValue = !showPassword
+      setShowPassword(nextValue)
+      onVisibilityChange?.(nextValue)
     }
 
     return (
@@ -35,9 +40,11 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
               variant="ghost"
               size="sm"
               onClick={handleToggle}
+              onMouseDown={(event) => event.preventDefault()}
               className="h-7 w-7 p-0"
               tabIndex={-1}
-              title={showPassword ? 'Hide password' : 'Show password'}
+              title={showPassword ? t('hidePassword') : t('showPassword')}
+              aria-label={showPassword ? t('hidePassword') : t('showPassword')}
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />

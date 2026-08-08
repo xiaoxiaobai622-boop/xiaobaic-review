@@ -271,6 +271,11 @@ export async function GET(
 
     // Extract authenticated recipient ID from share token (for OTP-authenticated users)
     const authenticatedRecipientId = shareContext?.recipientId || null
+    const clientFallback = shareMessages?.clientFallback || 'Client'
+    const storedClientName = project.companyName || primaryRecipient?.name
+    const clientName = storedClientName?.trim().toLowerCase() === 'client'
+      ? clientFallback
+      : storedClientName || clientFallback
 
     const projectData = {
       // Guests need the project id only when photo albums are visible to them
@@ -286,7 +291,7 @@ export async function GET(
       isGuest: isGuest,
 
       ...(isGuest ? {} : {
-        clientName: project.companyName || primaryRecipient?.name || 'Client',
+        clientName,
         clientEmail: primaryRecipient?.email || null,
         companyName: project.companyName || null,
         recipients: allRecipients,

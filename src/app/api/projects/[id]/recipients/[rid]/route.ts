@@ -16,6 +16,7 @@ export const runtime = 'nodejs'
 const updateRecipientSchema = z.object({
   name: z.string().nullable().optional(),
   email: z.string().email('INVALID_EMAIL_FORMAT').nullable().optional(),
+  phone: z.string().regex(/^1[3-9]\d{9}$/, 'INVALID_PHONE_FORMAT').nullable().optional(),
   isPrimary: z.boolean().optional(),
   receiveNotifications: z.boolean().optional()
 }).refine(data => {

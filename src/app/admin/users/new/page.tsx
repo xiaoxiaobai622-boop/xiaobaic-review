@@ -22,6 +22,7 @@ export default function NewUserPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
+    phone: '',
     username: '',
     password: '',
     confirmPassword: '',
@@ -29,40 +30,9 @@ export default function NewUserPage() {
   })
 
   const generateRandomPassword = () => {
-    // Generate a random password with at least 16 characters
-    const length = 16
-    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    const lowercase = 'abcdefghijklmnopqrstuvwxyz'
-    const numbers = '0123456789'
-    const special = '!@#$%^&*'
-    const all = uppercase + lowercase + numbers + special
-
-    // Helper function for cryptographically secure random int
-    const getRandomInt = (max: number) => {
-      const array = new Uint32Array(1)
-      crypto.getRandomValues(array)
-      return array[0] % max
-    }
-
-    // Ensure at least one of each type
-    let password = ''
-    password += uppercase[getRandomInt(uppercase.length)]
-    password += lowercase[getRandomInt(lowercase.length)]
-    password += numbers[getRandomInt(numbers.length)]
-    password += special[getRandomInt(special.length)]
-
-    // Fill the rest randomly
-    for (let i = password.length; i < length; i++) {
-      password += all[getRandomInt(all.length)]
-    }
-
-    // Shuffle the password using Fisher-Yates
-    const chars = password.split('')
-    for (let i = chars.length - 1; i > 0; i--) {
-      const j = getRandomInt(i + 1)
-      ;[chars[i], chars[j]] = [chars[j], chars[i]]
-    }
-    password = chars.join('')
+    const values = new Uint32Array(6)
+    crypto.getRandomValues(values)
+    const password = Array.from(values, value => String(value % 10)).join('')
 
     setFormData({
       ...formData,
@@ -88,8 +58,13 @@ export default function NewUserPage() {
     setError('')
 
     // Validation
-    if (!formData.email || !formData.password) {
-      setError(t('emailAndPasswordRequired'))
+    if ((!formData.email && !formData.phone) || !formData.password) {
+      setError('邮箱或手机号至少填写一项，并设置密码')
+      return
+    }
+
+    if (!/^\d{6}$/.test(formData.password)) {
+      setError('密码必须是 6 位数字')
       return
     }
 
@@ -98,14 +73,12 @@ export default function NewUserPage() {
       return
     }
 
-    // Password validation will be done by the API using the passwordSchema
-    // which requires 12+ chars, uppercase, lowercase, number, and special char
-
     setLoading(true)
 
     try {
       await apiPost('/api/users', {
-        email: formData.email,
+        email: formData.email || undefined,
+        phone: formData.phone || undefined,
         username: formData.username || null,
         password: formData.password,
         name: formData.name || null,
@@ -148,14 +121,18 @@ export default function NewUserPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="email">{t('emailRequired')}</Label>
+              <Label htmlFor="email">邮箱（与手机号二选一）</Label>
               <Input
                 id="email"
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="phone">手机号（与邮箱二选一）</Label>
+              <Input id="phone" type="tel" inputMode="numeric" maxLength={11} value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '') })} />
             </div>
 
             <div className="space-y-2">
@@ -198,7 +175,9 @@ export default function NewUserPage() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                  inputMode="numeric"
+                  maxLength={6}
                   required
                   className="pr-20"
                 />
@@ -247,7 +226,9 @@ export default function NewUserPage() {
                   id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                  inputMode="numeric"
+                  maxLength={6}
                   required
                   className="pr-10"
                 />

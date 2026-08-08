@@ -11,6 +11,7 @@ import { getClientIpAddress } from '@/lib/utils'
 import { safeParseBody } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import crypto from 'crypto'
 
 
 /**
@@ -134,7 +135,8 @@ export async function POST(request: NextRequest) {
           )
         }
 
-        const tokenData = await issueAdminTokens(user)
+        const fingerprint = crypto.createHash('sha256').update(`device-code\n${clientId}`).digest('base64url')
+        const tokenData = await issueAdminTokens(user, fingerprint)
 
         void logSecurityEvent({
           type: 'DEVICE_CODE_TOKEN_ISSUED',

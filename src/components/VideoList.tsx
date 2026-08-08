@@ -5,10 +5,8 @@ import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
 import { formatDuration, formatFileSize } from '@/lib/utils'
 import { Button } from './ui/button'
-import { ReprocessModal } from './ReprocessModal'
-import { InlineEdit } from './InlineEdit'
-import { Trash2, CheckCircle2, XCircle, Pencil, Upload, Download, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react'
-import { apiPost, apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
+import { Trash2, CheckCircle2, XCircle, Upload, Download, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react'
+import { apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
 import { VideoAssetUploadQueue } from './VideoAssetUploadQueue'
 import { VideoAssetList } from './VideoAssetList'
 import { logError } from '@/lib/logging'
@@ -25,12 +23,6 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [videos, setVideos] = useState<Video[]>(initialVideos)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [savingId, setSavingId] = useState<string | null>(null)
-  const [showReprocessModal, setShowReprocessModal] = useState(false)
-  const [pendingVideoUpdate, setPendingVideoUpdate] = useState<{ videoId: string; newLabel: string } | null>(null)
-  const [reprocessing, setReprocessing] = useState(false)
   const [uploadingAssetsFor, setUploadingAssetsFor] = useState<string | null>(null)
   const [assetRefreshTrigger, setAssetRefreshTrigger] = useState(0)
 
@@ -112,66 +104,6 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
       .finally(() => {
         setApprovingId(null)
       })
-  }
-
-  const handleStartEdit = (videoId: string, currentLabel: string) => {
-    setEditingId(videoId)
-    setEditValue(currentLabel)
-  }
-
-  const handleCancelEdit = () => {
-    setEditingId(null)
-    setEditValue('')
-  }
-
-  const handleSaveEdit = async (videoId: string) => {
-    if (!editValue.trim()) {
-      alert(t('videoNameEmpty'))
-      return
-    }
-
-    // Show reprocessing modal since version label affects watermark
-    setPendingVideoUpdate({ videoId, newLabel: editValue.trim() })
-    setShowReprocessModal(true)
-  }
-
-  const saveVersionLabel = async (shouldReprocess: boolean) => {
-    if (!pendingVideoUpdate) return
-
-    setSavingId(pendingVideoUpdate.videoId)
-    try {
-      await apiPatch(`/api/videos/${pendingVideoUpdate.videoId}`, { versionLabel: pendingVideoUpdate.newLabel })
-
-      // Reprocess if requested
-      if (shouldReprocess) {
-        await reprocessVideo(pendingVideoUpdate.videoId)
-      }
-
-      setEditingId(null)
-      setEditValue('')
-      setPendingVideoUpdate(null)
-      setShowReprocessModal(false)
-      await onRefresh?.()
-    } catch (error) {
-      alert(t('failedToUpdateName'))
-    } finally {
-      setSavingId(null)
-    }
-  }
-
-  const reprocessVideo = async (videoId: string) => {
-    setReprocessing(true)
-    try {
-      const video = videos.find(v => v.id === videoId)
-      if (!video) return
-
-      await apiPost(`/api/projects/${video.projectId}/reprocess`, { videoIds: [videoId] })
-
-    } catch (err) {
-      // Don't throw - we still want to save the label
-    } finally {
-      setReprocessing(false)
-    }
   }
 
   const triggerDownload = (url: string) => {
@@ -320,17 +252,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
       <div className="flex items-center gap-2">
         {/* Text block: version label row + filename */}
         <div className="flex-1 min-w-0">
-          {editingId === video.id ? (
-            <InlineEdit
-              value={editValue}
-              onChange={setEditValue}
-              onSave={() => handleSaveEdit(video.id)}
-              onCancel={handleCancelEdit}
-              disabled={savingId === video.id}
-              inputClassName="h-7 w-full"
-            />
-          ) : (
-            <>
+          <>
               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                 {(video as any).approved && (
                   <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0" />
@@ -355,26 +277,13 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
                     {video.status}
                   </span>
                 )}
-                {isAdmin && video.status === 'READY' && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 flex-shrink-0 text-muted-foreground hover:bg-primary-visible hover:text-primary"
-                    onClick={() => handleStartEdit(video.id, video.versionLabel)}
-                    title={t('editVersionLabel')}
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </Button>
-                )}
               </div>
               <p className="text-xs text-muted-foreground truncate">{video.originalFileName}</p>
-            </>
-          )}
+          </>
         </div>
 
         {/* Action icons — icon buttons only, fixed width, never overflow */}
-        {editingId !== video.id && (
-          <div className="flex items-center gap-0.5 flex-shrink-0">
+        <div className="flex items-center gap-0.5 flex-shrink-0">
             {videos.length > 1 && (
               <Button
                 variant="ghost"
@@ -440,8 +349,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
             )}
-          </div>
-        )}
+        </div>
       </div>
 
       {video.status === 'PROCESSING' && (
@@ -568,21 +476,6 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
         }
       })}
 
-      <ReprocessModal
-        show={showReprocessModal}
-        onCancel={() => {
-          setShowReprocessModal(false)
-          setPendingVideoUpdate(null)
-          setSavingId(null)
-        }}
-        onSaveWithoutReprocess={() => saveVersionLabel(false)}
-        onSaveAndReprocess={() => saveVersionLabel(true)}
-        saving={savingId !== null}
-        reprocessing={reprocessing}
-        title={t('versionLabelChanged')}
-        description={t('versionLabelWarning')}
-        isSingleVideo={true}
-      />
     </div>
   )
 }

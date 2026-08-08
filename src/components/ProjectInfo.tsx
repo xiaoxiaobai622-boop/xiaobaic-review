@@ -16,7 +16,6 @@ import {
 } from './ui/dialog'
 import { VideoAssetDownloadModal } from './VideoAssetDownloadModal'
 import { getAccessToken } from '@/lib/token-store'
-import { cn } from '@/lib/utils'
 
 interface ProjectInfoProps {
   selectedVideo: Video & { name?: string; approved?: boolean; downloadUrl?: string; cleanPreview720Path?: string | null; cleanPreview1080Path?: string | null; cleanPreview2160Path?: string | null }
@@ -43,6 +42,7 @@ interface ProjectInfoProps {
   className?: string
   usePreviewForApprovedPlayback?: boolean
   playbackQuality?: '720p' | '1080p' | '2160p'
+  hideApprovalAction?: boolean
 }
 
 export default function ProjectInfo({
@@ -69,6 +69,7 @@ export default function ProjectInfo({
   className,
   usePreviewForApprovedPlayback = false,
   playbackQuality,
+  hideApprovalAction = false,
 }: ProjectInfoProps) {
   const [showInfoDialog, setShowInfoDialog] = useState(false)
   const [showApprovalConfirm, setShowApprovalConfirm] = useState(false)
@@ -77,6 +78,20 @@ export default function ProjectInfo({
   const [hasAssets, setHasAssets] = useState(false)
   const [_checkingAssets, setCheckingAssets] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
+
+  useEffect(() => {
+    const openApproval = () => {
+      if (isAdmin && !isVideoApproved && onApprove) setShowApprovalConfirm(true)
+    }
+    window.addEventListener('openVideoApproval', openApproval)
+    return () => window.removeEventListener('openVideoApproval', openApproval)
+  }, [isAdmin, isVideoApproved, onApprove])
+
+  useEffect(() => {
+    const openInfo = () => setShowInfoDialog(true)
+    window.addEventListener('openReviewInfo', openInfo)
+    return () => window.removeEventListener('openReviewInfo', openInfo)
+  }, [])
 
   const t = useTranslations('videos')
   const tc = useTranslations('common')
@@ -190,10 +205,7 @@ export default function ProjectInfo({
   }, [])
 
   return (
-    <div className={cn(
-      'rounded-lg p-4 text-card-foreground flex-shrink-0 bg-card',
-      className
-    )}>
+    <div className="pointer-events-none fixed right-[500px] top-2 z-40 hidden h-10 items-center bg-transparent text-card-foreground xl:flex 2xl:right-[568px]">
       {/* Shortcuts Dialog */}
       <Dialog open={showShortcutsDialog} onOpenChange={setShowShortcutsDialog}>
         <DialogContent className="bg-card border-border text-card-foreground max-w-[95vw] sm:max-w-md">
@@ -239,19 +251,20 @@ export default function ProjectInfo({
       </Dialog>
 
       {/* Header: Name + Action Buttons in single row */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-end gap-3">
         {/* Left: Video Name */}
-        <h3 className="text-base font-bold text-foreground truncate min-w-0">{(selectedVideo as any).name}</h3>
+        <h3 className="sr-only">{(selectedVideo as any).name}</h3>
 
         {/* Right: Action Buttons */}
-        <div className="flex gap-2 flex-shrink-0">
+        <div className="pointer-events-auto flex shrink-0 gap-2 whitespace-nowrap">
           {/* Approve Button - Only show when not approved and approval is allowed */}
-          {!isVideoApproved && onApprove && (isAdmin || clientCanApprove) && (
+          {!hideApprovalAction && !isVideoApproved && onApprove && isAdmin && (
             <Button
               data-tutorial="approve-btn"
               onClick={() => setShowApprovalConfirm(true)}
               variant="success"
               size="sm"
+              className="shrink-0 whitespace-nowrap"
               title={t('approveVideoVersion')}
             >
               <CheckCircle2 className="w-4 h-4 sm:mr-2" />
@@ -263,7 +276,7 @@ export default function ProjectInfo({
           {!isGuest && (
             <Dialog open={showInfoDialog} onOpenChange={setShowInfoDialog}>
               <DialogTrigger asChild>
-                <Button data-tutorial="info-btn" variant="outline" size="sm" title={t('viewVideoInfo')}>
+                <Button data-tutorial="info-btn" variant="outline" size="sm" title={t('viewVideoInfo')} className="sr-only">
                   <Info className="w-4 h-4 sm:mr-2" />
                   <span className="hidden sm:inline">{t('info')}</span>
                 </Button>

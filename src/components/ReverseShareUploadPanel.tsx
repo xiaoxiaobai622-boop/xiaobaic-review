@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Upload, Loader2, CheckCircle2, AlertCircle, FileIcon, X, RotateCcw, FolderUp } from 'lucide-react'
 import { formatFileSize } from '@/lib/utils'
@@ -45,7 +45,10 @@ interface FileItem {
 interface ReverseShareUploadPanelProps {
   shareToken: string
   shareSlug: string
+  projectName?: string
   maxFiles?: number
+  autoOpen?: boolean
+  variant?: 'dialog' | 'embedded'
 }
 
 const DEFAULT_MAX_FILES = 10
@@ -53,7 +56,10 @@ const DEFAULT_MAX_FILES = 10
 export default function ReverseShareUploadPanel({
   shareToken,
   shareSlug,
+  projectName,
   maxFiles: maxFilesProp,
+  autoOpen = false,
+  variant = 'dialog',
 }: ReverseShareUploadPanelProps) {
   const t = useTranslations('share')
   const tc = useTranslations('common')
@@ -74,16 +80,21 @@ export default function ReverseShareUploadPanel({
   const hasFiles = items.length > 0
   const hasPending = items.some((i) => i.status === 'pending')
 
+  useEffect(() => {
+    if (autoOpen) setOpen(true)
+  }, [autoOpen])
+
   const addFiles = useCallback((files: FileList | File[]) => {
     setAllDone(false)
     setItems((prev) => {
-      const remaining = MAX_FILES - prev.length
-      if (remaining <= 0) return prev
+      const currentItems = allDone ? [] : prev
+      const remaining = MAX_FILES - currentItems.length
+      if (remaining <= 0) return currentItems
       return [
-        ...prev,
+        ...currentItems,
         ...Array.from(files).slice(0, remaining).map((file) => {
           const ext = getFileExtension(file.name)
-          const error = !ext || !ALLOWED_EXTENSIONS.has(ext) ? `Unsupported file type (${ext || 'no extension'})` : null
+          const error = !ext || !ALLOWED_EXTENSIONS.has(ext) ? `${t('unsupportedFileType')} (${ext || '-'})` : null
           return {
             id: crypto.randomUUID?.() ?? `file-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             file,
@@ -94,7 +105,7 @@ export default function ReverseShareUploadPanel({
         }),
       ]
     })
-  }, [MAX_FILES])
+  }, [MAX_FILES, allDone, t])
 
   const removeFile = useCallback((id: string) => {
     if (storageProvider === 's3') {
@@ -135,13 +146,13 @@ export default function ReverseShareUploadPanel({
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}))
-        throw new Error(err.error || 'Failed to create upload record')
+        throw new Error(err.error || t('failedToCreateUpload'))
       }
 
       const data = await response.json()
       uploadId = data.uploadId
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create upload record'
+      const message = error instanceof Error ? error.message : t('failedToCreateUpload')
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: message } : i)))
       return false
     }
@@ -268,6 +279,12 @@ export default function ReverseShareUploadPanel({
     setAllDone(false)
   }
 
+  const handleUploadMore = () => {
+    setItems([])
+    setAllDone(false)
+    window.setTimeout(() => fileInputRef.current?.click(), 0)
+  }
+
   const handleOpenChange = (next: boolean) => {
     if (!next && isUploading) return
     setOpen(next)
@@ -300,12 +317,164 @@ export default function ReverseShareUploadPanel({
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
-    if (!atLimit && !isUploading && e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files)
+    const droppedFiles = Array.from(e.dataTransfer.files)
+    if (!atLimit && !isUploading && droppedFiles.length > 0) addFiles(droppedFiles)
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) addFiles(e.target.files)
+    const selectedFiles = Array.from(e.target.files ?? [])
     e.target.value = ''
+    if (selectedFiles.length > 0) addFiles(selectedFiles)
+  }
+
+  const dropZone = (
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onClick={atLimit || isUploading ? undefined : () => fileInputRef.current?.click()}
+      onKeyDown={(event) => {
+        if (!atLimit && !isUploading && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          fileInputRef.current?.click()
+        }
+      }}
+      role="button"
+      tabIndex={atLimit || isUploading ? -1 : 0}
+      aria-disabled={atLimit || isUploading}
+      className={`flex min-h-36 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-5 py-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-44 ${
+        atLimit || isUploading
+          ? 'cursor-not-allowed border-muted bg-muted/30 opacity-60'
+          : isDragging
+            ? 'cursor-copy border-primary bg-primary/5'
+            : 'cursor-pointer border-muted-foreground/25 bg-background hover:border-primary/50 hover:bg-muted/20'
+      }`}
+    >
+      <Upload className="h-9 w-9 text-muted-foreground" strokeWidth={1.8} />
+      <p className="text-center text-sm text-muted-foreground">
+        {atLimit ? t('maxFilesReached') : t('dragDropFiles')}
+      </p>
+      <p className="max-w-xl text-center text-xs leading-5 text-muted-foreground/70">{t('supportedFileTypes')}</p>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept={ACCEPTED_FILE_INPUT}
+        multiple
+        onChange={handleFileChange}
+      />
+    </div>
+  )
+
+  const fileList = hasFiles ? (
+    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+      {items.map((item) => (
+        <div key={item.id} className="rounded-lg bg-muted/55 px-3 py-2.5 text-sm">
+          <div className="flex items-center gap-2.5">
+            {item.status === 'pending' && <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+            {item.status === 'uploading' && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />}
+            {item.status === 'completed' && <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />}
+            {item.status === 'error' && <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />}
+
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium">{item.file.name}</p>
+              {item.status === 'error' && item.error && (
+                <p className="mt-0.5 truncate text-xs text-destructive">{item.error}</p>
+              )}
+            </div>
+
+            {item.status === 'uploading' ? (
+              <span className="shrink-0 text-xs font-medium text-primary">{item.progress}%</span>
+            ) : (
+              <span className="shrink-0 text-xs text-muted-foreground">{formatFileSize(item.file.size)}</span>
+            )}
+
+            {item.status === 'error' && (
+              <button
+                type="button"
+                onClick={() => retryFile(item.id)}
+                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                title={tc('retry')}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {(item.status === 'pending' || item.status === 'error') && (
+              <button
+                type="button"
+                onClick={() => removeFile(item.id)}
+                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={tc('remove')}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {item.status === 'uploading' && (
+            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${item.progress}%` }} />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  ) : null
+
+  if (variant === 'embedded') {
+    return (
+      <main className="fixed inset-0 overflow-y-auto bg-muted/35 px-4 py-8 sm:px-6 sm:py-12">
+        <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-3xl items-center sm:min-h-[calc(100vh-6rem)]">
+          <div className="w-full rounded-lg border border-border bg-card p-5 shadow-lg sm:p-7">
+            <h1 className="text-xl font-semibold text-foreground sm:text-2xl">{t('submitFilesTitle')}</h1>
+            {projectName && (
+              <p className="mt-1.5 truncate text-sm font-medium text-muted-foreground" title={projectName}>
+                {t('uploadProjectName', { name: projectName })}
+              </p>
+            )}
+            <p className="sr-only">{t('submitFilesDesc')}</p>
+
+            <div className="mt-5 space-y-3">
+              {dropZone}
+
+              {isUploading && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {tc('uploading')}
+                </p>
+              )}
+
+              {allDone && (
+                <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2.5 text-green-700 dark:bg-green-950/30 dark:text-green-400" aria-live="polite">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <p className="text-sm font-medium">{t('allFilesUploaded')}</p>
+                </div>
+              )}
+
+              {fileList}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-4">
+              <span className="text-sm tabular-nums text-muted-foreground">{items.length}/{MAX_FILES}</span>
+              {allDone ? (
+                <Button onClick={handleUploadMore}>{t('uploadMore')}</Button>
+              ) : (
+                <Button onClick={startUpload} disabled={!hasFiles || isUploading || !hasPending} className="min-w-24">
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {tc('uploading')}
+                    </>
+                  ) : (
+                    t('submitFiles')
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+    )
   }
 
   return (

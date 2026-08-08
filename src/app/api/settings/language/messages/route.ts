@@ -8,10 +8,10 @@ export const runtime = 'nodejs'
  * No authentication required - share pages need this for dynamic locale loading.
  */
 export async function GET(request: NextRequest) {
-  const configuredLocale = await getConfiguredLocale().catch(() => 'en')
+  const configuredLocale = await getConfiguredLocale().catch(() => 'zh')
   const configuredMessages = await loadLocaleMessages(configuredLocale).catch(() => null)
   const { searchParams } = new URL(request.url)
-  const locale = searchParams.get('locale') || 'en'
+  const locale = searchParams.get('locale') || configuredLocale
 
   // Validate locale is supported
   if (!(SUPPORTED_LOCALES as readonly string[]).includes(locale)) {
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const messages = (await import(`@/locales/${locale}.json`)).default
+    const messages = await loadLocaleMessages(locale)
     return NextResponse.json({ locale, messages }, {
       headers: {
         // Cache for 5 minutes — locale files don't change at runtime
@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch {
-    // Fall back to English
-    const messages = (await import('@/locales/en.json')).default
-    return NextResponse.json({ locale: 'en', messages })
+    // Fall back to the bundled Chinese locale.
+    const messages = (await import('@/locales/zh.json')).default
+    return NextResponse.json({ locale: 'zh', messages })
   }
 }

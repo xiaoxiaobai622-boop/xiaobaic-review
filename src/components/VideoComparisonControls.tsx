@@ -146,7 +146,7 @@ export default function VideoComparisonControls({
           {/* Hover Time Indicator */}
           {hoveredTime !== null && !isDragging && (
             <div
-              className="absolute bottom-full mb-2 px-2 py-1 bg-black/90 text-white text-xs font-mono rounded border border-white/20 shadow-lg whitespace-nowrap pointer-events-none"
+              className="absolute bottom-full mb-2 px-2 py-1 bg-black/90 text-white text-xs font-sans tabular-nums rounded border border-white/20 shadow-lg whitespace-nowrap pointer-events-none"
               style={{
                 left: `${(hoveredTime / videoDuration) * 100}%`,
                 transform: 'translateX(-50%)',
@@ -194,7 +194,7 @@ export default function VideoComparisonControls({
           </button>
 
           {/* Time Display */}
-          <div className="text-white text-xs sm:text-sm font-mono ml-1 sm:ml-2 whitespace-nowrap">
+          <div className="text-white text-xs sm:text-sm font-sans font-medium tabular-nums ml-1 sm:ml-2 whitespace-nowrap">
             {formatTimeWithMode(currentTime, videoFps, videoDuration, timestampDisplayMode)} / {formatTimeWithMode(videoDuration, videoFps, videoDuration, timestampDisplayMode)}
           </div>
         </div>
@@ -209,7 +209,7 @@ export default function VideoComparisonControls({
               const next = idx >= 0 && idx < speeds.length - 1 ? speeds[idx + 1] : speeds[0]
               onSpeedChange(next)
             }}
-            className="px-2 py-1 sm:px-2.5 sm:py-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors text-white text-xs sm:text-sm font-mono touch-manipulation"
+            className="px-2 py-1 sm:px-2.5 sm:py-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors text-white text-xs sm:text-sm font-sans tabular-nums touch-manipulation"
             aria-label={t('playbackSpeed')}
             title={t('cycleSpeed')}
           >

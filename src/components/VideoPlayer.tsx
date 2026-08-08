@@ -54,6 +54,7 @@ interface VideoPlayerProps {
   }) => void // Callback to expose video state for mobile layout
   usePreviewForApprovedPlayback?: boolean // Use preview for approved playback instead of original
   fillContainer?: boolean // Fill parent container height (for full-viewport layouts)
+  hideApprovalAction?: boolean
 }
 
 export default function VideoPlayer({
@@ -84,6 +85,7 @@ export default function VideoPlayer({
   fillContainer = false, // Default to false (standard aspect ratio)
   authenticatedEmail = null,
   authenticatedName = null,
+  hideApprovalAction = false,
 }: VideoPlayerProps) {
   const t = useTranslations('videos')
   const tControls = useTranslations('controls')
@@ -99,6 +101,9 @@ export default function VideoPlayer({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isLooping, setIsLooping] = useState(false)
   const [showControls, setShowControls] = useState(true)
+  const [pendingRangeStart, setPendingRangeStart] = useState<number | null>(null)
+  const [pendingRangeEnd, setPendingRangeEnd] = useState<number | null>(null)
+  const [isSelectingRange, setIsSelectingRange] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -108,16 +113,30 @@ export default function VideoPlayer({
   const lastTimeUpdateRef = useRef(0) // Throttle time updates
   const previousVideoNameRef = useRef<string | null>(null)
   const currentTimeRef = useRef(0)
+
+  useEffect(() => {
+    const handleRangeState = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {}
+      setIsSelectingRange(Boolean(detail.active))
+      setPendingRangeStart(typeof detail.startTime === 'number' ? detail.startTime : null)
+      setPendingRangeEnd(typeof detail.endTime === 'number' ? detail.endTime : null)
+    }
+    const handleRangeEnd = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {}
+      setPendingRangeEnd(typeof detail.time === 'number' ? detail.time : null)
+    }
+    window.addEventListener('commentRangeStateChanged', handleRangeState)
+    window.addEventListener('commentRangeEndChanged', handleRangeEnd)
+    return () => {
+      window.removeEventListener('commentRangeStateChanged', handleRangeState)
+      window.removeEventListener('commentRangeEndChanged', handleRangeEnd)
+    }
+  }, [])
   const selectedVideoIdRef = useRef<string | null>(null)
 
-  // If ANY video is approved, only show approved videos (for both admin and client)
-  // Memoize to prevent infinite loops with onVideoStateChange callback
-  const displayVideos = useMemo(() => {
-    const hasAnyApprovedVideo = videos.some((v: any) => v.approved === true)
-    return hasAnyApprovedVideo
-      ? videos.filter((v: any) => v.approved === true)
-      : videos
-  }, [videos])
+  // Keep every ready version available. Approval only controls the current
+  // version's actions; it must not make older versions impossible to review.
+  const displayVideos = useMemo(() => videos, [videos])
 
   const safeIndex = Math.min(selectedVideoIndex, displayVideos.length - 1)
   const selectedVideo = displayVideos[safeIndex >= 0 ? safeIndex : 0]
@@ -204,8 +223,32 @@ export default function VideoPlayer({
       window.dispatchEvent(new CustomEvent('videoChanged', {
         detail: { videoId: selectedVideo.id }
       }))
+      window.dispatchEvent(new CustomEvent('reviewVersionChanged', {
+        detail: { videoId: selectedVideo.id, versionLabel: selectedVideo.versionLabel }
+      }))
     }
   }, [selectedVideo?.id])
+
+  useEffect(() => {
+    const selectVersion = (event: Event) => {
+      const videoId = (event as CustomEvent).detail?.videoId
+      const targetIndex = displayVideos.findIndex((video) => video.id === videoId)
+      if (targetIndex >= 0) setSelectedVideoIndex(targetIndex)
+    }
+    const openComparison = () => {
+      if (displayVideos.length >= 2) {
+        videoRef.current?.pause()
+        setIsPlaying(false)
+        setShowComparison(true)
+      }
+    }
+    window.addEventListener('selectReviewVersion', selectVersion)
+    window.addEventListener('openReviewComparison', openComparison)
+    return () => {
+      window.removeEventListener('selectReviewVersion', selectVersion)
+      window.removeEventListener('openReviewComparison', openComparison)
+    }
+  }, [displayVideos])
 
   useEffect(() => {
     selectedVideoIdRef.current = selectedVideo?.id ?? null
@@ -351,9 +394,11 @@ export default function VideoPlayer({
           setSelectedVideoIndex(targetVideoIndex)
           setTimeout(() => {
             if (videoRef.current) {
+              videoRef.current.pause()
               videoRef.current.currentTime = timestamp
               currentTimeRef.current = timestamp
               setCurrentTimeState(timestamp)
+              videoRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
             }
           }, 500)
           return
@@ -362,9 +407,11 @@ export default function VideoPlayer({
 
       // Same video - just seek
       if (videoRef.current) {
+        videoRef.current.pause()
         videoRef.current.currentTime = timestamp
         currentTimeRef.current = timestamp
         setCurrentTimeState(timestamp)
+        videoRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     }
 
@@ -453,6 +500,9 @@ export default function VideoPlayer({
         window.dispatchEvent(new CustomEvent('videoTimeUpdated', {
           detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
         }))
+        window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+          detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
+        }))
         return
       }
 
@@ -475,6 +525,9 @@ export default function VideoPlayer({
         window.dispatchEvent(new CustomEvent('videoTimeUpdated', {
           detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
         }))
+        window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+          detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
+        }))
         return
       }
     }
@@ -493,6 +546,9 @@ export default function VideoPlayer({
       if (now - lastTimeUpdateRef.current > 200) {
         currentTimeRef.current = videoRef.current.currentTime
         setCurrentTimeState(videoRef.current.currentTime)
+        window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+          detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
+        }))
         lastTimeUpdateRef.current = now
       }
     }
@@ -511,6 +567,9 @@ export default function VideoPlayer({
       videoRef.current.currentTime = timestamp
       currentTimeRef.current = timestamp
       setCurrentTimeState(timestamp)
+      window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+        detail: { time: timestamp, videoId: selectedVideoIdRef.current }
+      }))
     }
   }
 
@@ -608,6 +667,9 @@ export default function VideoPlayer({
     window.dispatchEvent(new CustomEvent('videoTimeUpdated', {
       detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
     }))
+    window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+      detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
+    }))
   }
 
   const resetControlsTimeout = useCallback(() => {
@@ -615,12 +677,7 @@ export default function VideoPlayer({
       clearTimeout(controlsTimeoutRef.current)
     }
     setShowControls(true)
-    if (isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false)
-      }, 2000)
-    }
-  }, [isPlaying])
+  }, [])
 
   useEffect(() => {
     if (isPlaying) {
@@ -701,28 +758,15 @@ export default function VideoPlayer({
       resetControlsTimeout()
     }
 
-    const handleMouseLeave = () => {
-      if (isPlaying) {
-        if (controlsTimeoutRef.current) {
-          clearTimeout(controlsTimeoutRef.current)
-        }
-        controlsTimeoutRef.current = setTimeout(() => {
-          setShowControls(false)
-        }, 500)
-      }
-    }
-
     if (container) {
       container.addEventListener('mousemove', handleInteraction)
       container.addEventListener('touchstart', handleInteraction)
-      container.addEventListener('mouseleave', handleMouseLeave)
     }
 
     return () => {
       if (container) {
         container.removeEventListener('mousemove', handleInteraction)
         container.removeEventListener('touchstart', handleInteraction)
-        container.removeEventListener('mouseleave', handleMouseLeave)
       }
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current)
@@ -767,9 +811,9 @@ export default function VideoPlayer({
   }
 
   return (
-    <div className={`flex flex-col ${fillContainer ? 'h-full' : 'space-y-4 max-h-full'}`}>
+    <div className={`flex flex-col ${fillContainer ? 'min-h-0 lg:h-full' : 'space-y-4 max-h-full'}`}>
       {/* Version Selector - Show ABOVE video on mobile, BELOW on desktop */}
-      {displayVideos.length > 1 && (
+      {false && displayVideos.length > 1 && (
         <div data-tutorial="version-selector" className={`flex gap-2 overflow-x-auto py-2 px-2 flex-shrink-0 ${fillContainer ? '' : 'lg:order-2'}`}>
           {displayVideos.map((video, index) => {
             const videoApproved = (video as any).approved === true
@@ -813,7 +857,7 @@ export default function VideoPlayer({
       <div
         ref={containerRef}
         className={`relative w-full ${
-          fillContainer ? 'xl:flex-1 xl:min-h-0' : 'flex-shrink min-h-0 lg:order-1'
+                  fillContainer ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col' : 'flex-shrink min-h-0 lg:order-1'
         } ${isPlaying && !showControls ? 'cursor-none' : ''}`}
       >
         {videoUrl ? (
@@ -826,8 +870,9 @@ export default function VideoPlayer({
             */}
             <div
               ref={videoWrapperRef}
-              className={`relative group w-full overflow-hidden rounded-xl bg-muted/50 backdrop-blur-sm ${fillContainer ? 'max-h-[60vh] xl:max-h-full' : 'max-h-[70vh]'}`}
-              style={{ aspectRatio: '16 / 9' }}
+              className={`group relative mb-[96px] w-full max-h-[56vh] overflow-visible rounded-md bg-muted/50 aspect-video lg:aspect-auto ${
+                fillContainer ? 'lg:max-h-none lg:min-h-0 lg:flex-1' : ''
+              }`}
             >
               <video
                 key={selectedVideo?.id}
@@ -872,12 +917,14 @@ export default function VideoPlayer({
                       onFinishShape={annotationDrawing.finishShape}
                     />
                     <AnnotationToolbar
+                      activeTool={annotationDrawing.activeTool}
                       activeColor={annotationDrawing.activeColor}
                       strokeWidth={annotationDrawing.strokeWidth}
                       opacity={annotationDrawing.opacity}
                       canUndo={annotationDrawing.undoStack.length > 0}
                       hasShapes={annotationDrawing.hasShapes}
                       onColorChange={annotationDrawing.setActiveColor}
+                      onToolChange={annotationDrawing.setActiveTool}
                       onStrokeWidthChange={annotationDrawing.setStrokeWidth}
                       onOpacityChange={annotationDrawing.setOpacity}
                       onUndo={annotationDrawing.undo}
@@ -927,9 +974,7 @@ export default function VideoPlayer({
 
                 {/* Custom Video Controls with Integrated Timeline */}
                 <div
-                  className={`relative z-20 transition-opacity duration-300 ${
-                    showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
-                  }`}
+                  className="relative z-20"
                 >
                   <CustomVideoControls
                     videoRef={videoRef as React.RefObject<HTMLVideoElement>}
@@ -953,6 +998,21 @@ export default function VideoPlayer({
                     isAdmin={isAdmin}
                     timestampDisplayMode={timestampDisplayMode}
                     onMarkerClick={onCommentFocus}
+                    pendingRangeStart={pendingRangeStart}
+                    pendingRangeEnd={pendingRangeEnd}
+                    isSelectingRange={isSelectingRange && pendingRangeStart !== null}
+                    onRangeStartChange={(time) => {
+                      setPendingRangeStart(time)
+                      window.dispatchEvent(new CustomEvent('commentRangeStartChanged', {
+                        detail: { time, videoId: selectedVideo?.id },
+                      }))
+                    }}
+                    onRangeEndChange={(time) => {
+                      setPendingRangeEnd(time)
+                      window.dispatchEvent(new CustomEvent('commentRangeEndChanged', {
+                        detail: { time, videoId: selectedVideo?.id },
+                      }))
+                    }}
                   />
                 </div>
 
@@ -1003,9 +1063,10 @@ export default function VideoPlayer({
         activeVideoName={activeVideoName}
         authenticatedEmail={authenticatedEmail}
         authenticatedName={authenticatedName}
-        className="mt-3 lg:order-3"
+        className="mt-2 border-t border-border/70 lg:order-3 xl:mt-0"
         usePreviewForApprovedPlayback={usePreviewForApprovedPlayback}
         playbackQuality={resolvedPlaybackQuality}
+        hideApprovalAction={hideApprovalAction}
       />
     </div>
   )

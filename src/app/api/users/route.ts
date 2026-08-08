@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
-import { hashPassword, validatePassword } from '@/lib/encryption'
+import { hashPassword, validateSixDigitPassword } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createUserSchema } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { createPhoneOnlyEmail } from '@/lib/user-contact'
 export const runtime = 'nodejs'
 
 
@@ -39,9 +40,14 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         email: true,
+        phone: true,
         username: true,
         name: true,
         role: true,
+        projectAccessScope: true,
+        projectMemberships: {
+          select: { project: { select: { id: true, title: true, projectCode: true } } },
+        },
         createdAt: true,
         updatedAt: true,
         // Exclude password from response
@@ -94,10 +100,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { email, username, password, name } = validation.data
+    const {
+      email,
+      phone,
+      username,
+      password,
+      name,
+      role: validatedRole,
+      projectAccessScope: validatedProjectAccessScope,
+      projectIds: validatedProjectIds = [],
+    } = validation.data
+    const resolvedEmail = email || createPhoneOnlyEmail(phone!)
+    const role = validatedRole === 'MEMBER' ? 'MEMBER' : 'ADMIN'
+    const projectAccessScope = role === 'MEMBER' && validatedProjectAccessScope === 'ASSIGNED_ONLY'
+      ? 'ASSIGNED_ONLY'
+      : 'ALL_PROJECTS'
+    const projectIds = [...new Set(validatedProjectIds)]
 
     // Validate password strength (additional check beyond Zod format validation)
-    const passwordValidation = validatePassword(password)
+    const passwordValidation = validateSixDigitPassword(password)
     if (!passwordValidation.isValid) {
       return NextResponse.json(
         { error: usersMessages.passwordDoesNotMeetRequirements || 'Password does not meet requirements', details: passwordValidation.errors },
@@ -107,7 +128,7 @@ export async function POST(request: NextRequest) {
 
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: { email: resolvedEmail },
     })
 
     if (existingUser) {
@@ -134,21 +155,42 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await hashPassword(password)
 
-    // Create user (always ADMIN role)
+    if (projectAccessScope === 'ASSIGNED_ONLY' && projectIds.length > 0) {
+      const projectCount = await prisma.project.count({ where: { id: { in: projectIds } } })
+      if (projectCount !== projectIds.length) {
+        return NextResponse.json({ error: '包含不存在的项目' }, { status: 400 })
+      }
+    }
+
+    if (phone) {
+      const existingPhone = await prisma.user.findUnique({ where: { phone } })
+      if (existingPhone) return NextResponse.json({ error: '该手机号已被使用' }, { status: 409 })
+    }
+
     const user = await prisma.user.create({
       data: {
-        email,
+        email: resolvedEmail,
+        phone: phone || null,
         username: username || null,
         password: hashedPassword,
         name: name || null,
-        role: 'ADMIN',
+        role,
+        projectAccessScope,
+        projectMemberships: projectAccessScope === 'ASSIGNED_ONLY'
+          ? { create: projectIds.map((projectId) => ({ projectId })) }
+          : undefined,
       },
       select: {
         id: true,
         email: true,
+        phone: true,
         username: true,
         name: true,
         role: true,
+        projectAccessScope: true,
+        projectMemberships: {
+          select: { project: { select: { id: true, title: true, projectCode: true } } },
+        },
         createdAt: true,
         updatedAt: true,
       },

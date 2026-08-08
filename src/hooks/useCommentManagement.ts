@@ -64,6 +64,7 @@ export function useCommentManagement({
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
   const [pendingAnnotation, setPendingAnnotation] = useState<AnnotationData | null>(null)
   const [selectedTimecodeEnd, setSelectedTimecodeEnd] = useState<string | null>(null)
+  const [isSelectingTimecodeEnd, setIsSelectingTimecodeEnd] = useState(false)
   const attachmentUploadCountRef = useRef(0)
   const previousVideoIdRef = useRef<string | null>(null)
 
@@ -303,6 +304,7 @@ export function useCommentManagement({
 
       if (typeof time !== 'number') return
       if (!videoId || videoId !== selectedVideoId) return
+      if (isSelectingTimecodeEnd) return
       if (!hasAutoFilledTimestamp || selectedTimestamp === null) return
 
       setSelectedTimestamp(time)
@@ -312,7 +314,62 @@ export function useCommentManagement({
     return () => {
       window.removeEventListener('videoTimeUpdated', handleVideoTimeUpdated as EventListener)
     }
-  }, [hasAutoFilledTimestamp, selectedTimestamp, selectedVideoId])
+  }, [hasAutoFilledTimestamp, isSelectingTimecodeEnd, selectedTimestamp, selectedVideoId])
+
+  // Expose the pending range to the video timeline. The end point is changed
+  // only by dragging the timeline handle, matching the review workflow.
+  useEffect(() => {
+    const video = videos.find(v => v.id === selectedVideoId)
+    const fps = video?.fps || 24
+    const startTime = selectedTimestamp === null ? null : selectedTimestamp
+    const endTime = selectedTimecodeEnd
+      ? timecodeToSeconds(selectedTimecodeEnd, fps)
+      : startTime
+
+    window.dispatchEvent(new CustomEvent('commentRangeStateChanged', {
+      detail: {
+        active: isSelectingTimecodeEnd && startTime !== null && !!selectedVideoId,
+        startTime,
+        endTime,
+        videoId: selectedVideoId,
+      },
+    }))
+  }, [isSelectingTimecodeEnd, selectedTimecodeEnd, selectedTimestamp, selectedVideoId, videos])
+
+  useEffect(() => {
+    const updateRangeStart = (e: CustomEvent) => {
+      const time = e.detail?.time
+      const videoId = e.detail?.videoId
+      if (!isSelectingTimecodeEnd || typeof time !== 'number' || videoId !== selectedVideoId) return
+      setSelectedTimestamp(Math.max(0, time))
+    }
+
+    const updateRangeEnd = (e: CustomEvent) => {
+      const time = e.detail?.time
+      const videoId = e.detail?.videoId
+      if (!isSelectingTimecodeEnd || typeof time !== 'number' || videoId !== selectedVideoId) return
+
+      const video = videos.find(v => v.id === selectedVideoId)
+      const fps = video?.fps || 24
+      const start = selectedTimestamp ?? time
+      setSelectedTimecodeEnd(secondsToTimecode(Math.max(start, time), fps))
+    }
+
+    const cancelRange = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setSelectedTimecodeEnd(null)
+      setIsSelectingTimecodeEnd(false)
+    }
+
+    window.addEventListener('commentRangeStartChanged', updateRangeStart as EventListener)
+    window.addEventListener('commentRangeEndChanged', updateRangeEnd as EventListener)
+    window.addEventListener('keydown', cancelRange)
+    return () => {
+      window.removeEventListener('commentRangeStartChanged', updateRangeStart as EventListener)
+      window.removeEventListener('commentRangeEndChanged', updateRangeEnd as EventListener)
+      window.removeEventListener('keydown', cancelRange)
+    }
+  }, [isSelectingTimecodeEnd, selectedTimestamp, selectedVideoId, videos])
 
   // Auto-fill timestamp when user starts typing
   const handleCommentChange = (value: string) => {
@@ -400,6 +457,7 @@ export function useCommentManagement({
       isInternal: isInternalComment,
       createdAt: new Date(),
       updatedAt: new Date(),
+      resolved: false,
       parentId: replyingToCommentId,
       userId: null,
       replies: [],
@@ -417,6 +475,7 @@ export function useCommentManagement({
     setReplyingToCommentId(null)
     setPendingAnnotation(null)
     setSelectedTimecodeEnd(null)
+    setIsSelectingTimecodeEnd(false)
     const attachmentsForComment = pendingAttachments.filter(a => a.videoId === validatedVideoId)
     const commentAssetIds = attachmentsForComment.map(a => a.assetId)
     setPendingAttachments(prev => prev.filter(a => !commentAssetIds.includes(a.assetId)))
@@ -532,6 +591,7 @@ export function useCommentManagement({
     setSelectedVideoId(null)
     setHasAutoFilledTimestamp(false)
     setSelectedTimecodeEnd(null)
+    setIsSelectingTimecodeEnd(false)
   }
 
   const handleNameSourceChange = (source: 'recipient' | 'custom' | 'none', recipientId?: string) => {
@@ -653,6 +713,11 @@ export function useCommentManagement({
 
   // Set end timecode from current video playback position
   const handleSetTimecodeEnd = () => {
+    if (isSelectingTimecodeEnd) {
+      setIsSelectingTimecodeEnd(false)
+      return
+    }
+
     window.dispatchEvent(
       new CustomEvent('getCurrentTime', {
         detail: {
@@ -662,8 +727,10 @@ export function useCommentManagement({
             }
             const video = videos.find(v => v.id === (videoId || selectedVideoId))
             const fps = video?.fps || 24
-            const timecode = secondsToTimecode(time, fps)
+            const rangeStart = selectedTimestamp ?? time
+            const timecode = secondsToTimecode(Math.max(rangeStart, time), fps)
             setSelectedTimecodeEnd(timecode)
+            setIsSelectingTimecodeEnd(true)
           },
         },
       })
@@ -672,6 +739,7 @@ export function useCommentManagement({
 
   const handleClearTimecodeEnd = () => {
     setSelectedTimecodeEnd(null)
+    setIsSelectingTimecodeEnd(false)
   }
 
   // Get FPS of currently selected video
@@ -683,6 +751,7 @@ export function useCommentManagement({
     newComment,
     selectedTimestamp,
     selectedTimecodeEnd,
+    isSelectingTimecodeEnd,
     selectedVideoId,
     selectedVideoFps,
     loading,

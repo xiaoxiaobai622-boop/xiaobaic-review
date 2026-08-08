@@ -1,12 +1,13 @@
 'use client'
 
 import { useTranslations, useLocale } from 'next-intl'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import Link from 'next/link'
 import { Video, MessageSquare, ChevronRight, Calendar } from 'lucide-react'
 import type { ViewMode } from '@/components/ViewModeToggle'
 import { formatDate } from '@/lib/utils'
 import type { ProjectListItem } from '@/lib/projects-filter'
+import { useAuth } from '@/components/AuthProvider'
 
 interface ProjectsListProps {
   projects: ProjectListItem[]
@@ -37,6 +38,10 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
   const tc = useTranslations('common')
   const tn = useTranslations('nav')
   const locale = useLocale()
+  const { user } = useAuth()
+  const projectHref = (project: ProjectListItem) => user?.role === 'ADMIN'
+    ? `/admin/projects/${project.id}`
+    : `/share/${project.slug}`
 
   if (projects.length === 0) {
     return (
@@ -50,24 +55,22 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
 
   if (viewMode === 'grid') {
     return (
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
+      <div
+        className="grid content-start gap-3"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 320px))' }}
+      >
         {projects.map((project) => {
           const totalVideos = project.videos.length
-          const primaryRecipient = project.recipients?.find((r) => r.isPrimary) || project.recipients?.[0]
-          const displayName = project.clientCompany?.name || project.companyName || primaryRecipient?.name || primaryRecipient?.email || t('client')
-
           return (
-            <Link key={project.id} href={`/admin/projects/${project.id}`} className="block">
-              <Card className="h-full cursor-pointer transition-all duration-200 hover:border-primary/50 hover:shadow-elevation-lg sm:hover:-translate-y-1">
+            <Link key={project.id} href={projectHref(project)} className="block">
+              <Card className="h-full cursor-pointer transition-colors hover:border-primary/50 hover:bg-accent/20">
                 <CardHeader className="p-2 sm:p-3">
                   <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
                     <div className="flex-1 min-w-0">
+                      <p className="mb-1 font-mono text-[11px] text-muted-foreground">ID {project.projectCode}</p>
                       <CardTitle className="font-semibold text-sm sm:text-base">
                         {project.title}
                       </CardTitle>
-                      <CardDescription className="mt-1 break-words text-xs sm:text-sm">
-                        {t('clientLabel')} {displayName}
-                      </CardDescription>
                     </div>
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
@@ -128,7 +131,6 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
       </div>
       <div className="hidden sm:flex items-center gap-4 px-5 py-2 text-xs text-muted-foreground bg-muted/20 border-b">
         <span className="flex-1 min-w-0">{tc('name')}</span>
-        <span className="w-36 hidden md:block">{t('client')}</span>
         <span className="w-28">{tc('status')}</span>
         <span className="w-16 text-center hidden lg:block">{t('videos')}</span>
         <span className="w-20 text-center hidden lg:block">{t('comments')}</span>
@@ -140,17 +142,13 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
       <div className="divide-y">
         {projects.map((project) => {
           const totalVideos = project.videos.length
-          const primaryRecipient = project.recipients?.find((r) => r.isPrimary) || project.recipients?.[0]
-          const displayName = project.clientCompany?.name || project.companyName || primaryRecipient?.name || primaryRecipient?.email || t('client')
-
           return (
             <Link
               key={project.id}
-              href={`/admin/projects/${project.id}`}
+              href={projectHref(project)}
               className="flex items-center gap-4 px-5 py-3 text-sm hover:bg-accent/30 transition-colors"
             >
-              <span className="flex-1 min-w-0 font-medium truncate">{project.title}</span>
-              <span className="w-36 text-xs text-muted-foreground truncate hidden md:block">{displayName}</span>
+              <span className="flex-1 min-w-0 font-medium truncate"><span className="mr-2 font-mono text-xs text-muted-foreground">{project.projectCode}</span>{project.title}</span>
               <span className="w-28">
                 <span
                   className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${

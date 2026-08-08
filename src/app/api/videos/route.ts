@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { projectId, versionLabel, originalFileName, originalFileSize, name, mimeType } = body
+    const { projectId, originalFileName, originalFileSize, name, mimeType } = body
 
     // Validate required fields
     if (!name || !name.trim()) {
@@ -98,10 +98,13 @@ export async function POST(request: NextRequest) {
         projectId,
         name: videoName,
         version: nextVersion,
-        versionLabel: versionLabel || `v${nextVersion}`,
+        versionLabel: `v${nextVersion}`,
         originalFileName,
         originalFileSize: BigInt(originalFileSize),
         originalStoragePath: `projects/${projectId}/videos/original-${Date.now()}-${sanitizedOriginalFileName}`,
+        fileType: mimeType || 'video/mp4',
+        uploadedBy: authResult.id,
+        uploadedByName: authResult.name || authResult.email,
         status: 'UPLOADING',
         duration: 0,
         width: 0,

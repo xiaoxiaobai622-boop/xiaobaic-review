@@ -6,9 +6,8 @@ import { logSecurityEvent } from '@/lib/video-access'
 import { getClientIpAddress } from '@/lib/utils'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
 import { getAppUrl } from '@/lib/url'
-import { prisma } from '@/lib/db'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import crypto from 'crypto'
+import { getAdminDeviceFingerprint } from '@/lib/admin-device'
 export const runtime = 'nodejs'
 
 
@@ -153,41 +152,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // SECURITY ENHANCEMENT: Check if user has passkeys configured
-    // If passkeys are registered, require their use instead of password
-    const passkeyCount = await prisma.passkeyCredential.count({
-      where: { userId: user.id },
-    })
-
-    if (passkeyCount > 0) {
-      const ipAddress = getClientIpAddress(request)
-      
-      await logSecurityEvent({
-        type: 'ADMIN_PASSWORD_LOGIN_BLOCKED_PASSKEY_REQUIRED',
-        severity: 'WARNING',
-        ipAddress,
-        details: {
-          userId: user.id,
-          email: user.email,
-          passkeyCount,
-        },
-        wasBlocked: true,
-      })
-
-      return NextResponse.json(
-        { 
-          error: authMessages.passkeyRequired || 'Passkey required',
-          passkeyRequired: true,
-          message: authMessages.passkeyRequiredMessage || 'This account has passkey authentication enabled. Please use your passkey to sign in for enhanced security.',
-        },
-        { status: 403 }
-      )
-    }
-
     // SUCCESSFUL LOGIN: Clear rate limit counter for this username/email
     await clearRateLimit(request, 'login', email)
 
-    const fingerprint = fingerprintHash(request.headers.get('user-agent') || 'unknown')
+    const fingerprint = getAdminDeviceFingerprint(request)
     const tokens = await issueAdminTokens(user, fingerprint)
 
     const ipAddress = getClientIpAddress(request)
@@ -222,6 +190,7 @@ export async function POST(request: NextRequest) {
       user: {
         id: user.id,
         email: user.email,
+        phone: user.phone,
         name: user.name,
         role: user.role,
       },
@@ -238,11 +207,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-/**
- * Store token fingerprint in Redis for theft detection
- */
-function fingerprintHash(userAgent: string): string {
-  return crypto.createHash('sha256').update(userAgent).digest('base64url')
 }

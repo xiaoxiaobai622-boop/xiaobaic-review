@@ -5,12 +5,13 @@ import { useTranslations } from 'next-intl'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import { Mail, Edit, Trash2, Plus, Star, Check, Bell, BellOff, User } from 'lucide-react'
+import { Mail, Phone, Edit, Trash2, Plus, Star, Check, Bell, BellOff, User } from 'lucide-react'
 import { apiFetch, apiPost, apiPatch, apiDelete } from '@/lib/api-client'
 
 interface Recipient {
   id?: string
   email: string | null
+  phone: string | null
   name: string | null
   isPrimary: boolean
   receiveNotifications: boolean
@@ -37,9 +38,11 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
   const [showAddForm, setShowAddForm] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
   const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
 
   const loadRecipients = useCallback(async () => {
     setLoading(true)
@@ -112,7 +115,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
   }
 
   const addRecipient = async () => {
-    if (!newEmail && !newName) {
+    if (!newEmail && !newPhone && !newName) {
       onError(t('enterNameOrEmail'))
       return
     }
@@ -121,16 +124,22 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
       onError(t('invalidEmail'))
       return
     }
+    if (newPhone && !/^1[3-9]\d{9}$/.test(newPhone)) {
+      onError('请输入正确的 11 位手机号')
+      return
+    }
 
     try {
       await apiPost(`/api/projects/${projectId}/recipients`, {
         email: newEmail || null,
+        phone: newPhone || null,
         name: newName || null,
         isPrimary: recipients.length === 0,
       })
 
       setNewEmail('')
       setNewName('')
+      setNewPhone('')
       setShowAddForm(false)
       await loadRecipients()
     } catch (error) {
@@ -173,18 +182,20 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
     setEditingId(recipient.id!)
     setEditEmail(recipient.email || '')
     setEditName(recipient.name || '')
+    setEditPhone(recipient.phone || '')
   }
 
   const cancelEdit = () => {
     setEditingId(null)
     setEditEmail('')
     setEditName('')
+    setEditPhone('')
   }
 
   const saveEdit = async () => {
     if (!editingId) return
 
-    if (!editEmail && !editName) {
+    if (!editEmail && !editPhone && !editName) {
       onError(t('enterNameOrEmail'))
       return
     }
@@ -193,11 +204,16 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
       onError(t('invalidEmail'))
       return
     }
+    if (editPhone && !/^1[3-9]\d{9}$/.test(editPhone)) {
+      onError('请输入正确的 11 位手机号')
+      return
+    }
 
     try {
       await apiPatch(`/api/projects/${projectId}/recipients/${editingId}`, {
         name: editName || null,
-        email: editEmail || null
+        email: editEmail || null,
+        phone: editPhone || null,
       })
 
       cancelEdit()
@@ -258,6 +274,10 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor={`edit-phone-${recipient.id}`}>手机号</Label>
+                    <Input id={`edit-phone-${recipient.id}`} type="tel" inputMode="numeric" maxLength={11} value={editPhone} onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, ''))} placeholder="用于客户中心验证码登录" />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor={`edit-email-${recipient.id}`}>{t('clientEmail')}</Label>
                     <Input
                       id={`edit-email-${recipient.id}`}
@@ -300,6 +320,11 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                     {recipient.name && recipient.email && (
                       <div className="flex items-center gap-2 pl-6">
                         <span className="text-xs text-muted-foreground truncate">{recipient.email}</span>
+                      </div>
+                    )}
+                    {recipient.phone && (
+                      <div className="flex items-center gap-2 pl-6 text-xs text-muted-foreground">
+                        <Phone className="w-3.5 h-3.5" />{recipient.phone}
                       </div>
                     )}
                   </div>
@@ -413,6 +438,10 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                 )}
               </div>
               <div className="space-y-2">
+                <Label htmlFor="newRecipientPhone">手机号</Label>
+                <Input id="newRecipientPhone" type="tel" inputMode="numeric" maxLength={11} value={newPhone} onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, ''))} placeholder="用于客户中心验证码登录" />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="newRecipientEmail">{t('clientEmail')}</Label>
                 <Input
                   id="newRecipientEmail"
@@ -427,7 +456,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                   type="button"
                   onClick={addRecipient}
                   size="sm"
-                  disabled={!newEmail && !newName}
+                  disabled={!newEmail && !newPhone && !newName}
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   {tc('add')}
@@ -440,6 +469,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                     setShowAddForm(false)
                     setNewEmail('')
                     setNewName('')
+                    setNewPhone('')
                   }}
                 >
                   {tc('cancel')}

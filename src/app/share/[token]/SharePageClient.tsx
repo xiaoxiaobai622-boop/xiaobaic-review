@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
 import { Button } from '@/components/ui/button'
-import { Lock, Check, Mail, KeyRound, Download, Loader2 } from 'lucide-react'
+import { Lock, Check, Mail, KeyRound } from 'lucide-react'
 import BrandLogo from '@/components/BrandLogo'
 import { loadShareToken, saveShareToken } from '@/lib/share-token-store'
 import { loadPortalSession } from '@/app/portal/portalSession'
@@ -23,6 +23,7 @@ import PrivacyBanner, { PRIVACY_STORAGE_KEY } from '@/components/PrivacyBanner'
 import ReverseShareUploadPanel from '@/components/ReverseShareUploadPanel'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
+import ReviewLoginActions from '@/components/ReviewLoginActions'
 
 interface SharePageClientProps {
   token: string
@@ -32,6 +33,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const t = useTranslations('share')
   const tc = useTranslations('common')
   const searchParams = useSearchParams()
+  const collectionMode = searchParams?.get('mode') === 'collect'
   const pathname = usePathname()
   const router = useRouter()
 
@@ -71,9 +73,19 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const [viewState, setViewState] = useState<'grid' | 'player'>('grid')
   const [thumbnailsByName, setThumbnailsByName] = useState<Map<string, string>>(new Map())
   const [thumbnailsLoading, setThumbnailsLoading] = useState(true)
-  const [downloadingAll, setDownloadingAll] = useState(false)
   const [viewMode, setViewMode] = useState<ShareViewMode>('grid')
   const [albumCount, setAlbumCount] = useState(0)
+  const [reviewAuthenticated, setReviewAuthenticated] = useState(false)
+  const [loginOpenSignal, setLoginOpenSignal] = useState(0)
+
+  const handleWechatIdentity = useCallback((identity: { name: string | null } | null) => {
+    setReviewAuthenticated(Boolean(identity))
+    if (identity?.name) setAuthenticatedName(identity.name)
+  }, [])
+
+  const requireReviewLogin = useCallback(() => {
+    setLoginOpenSignal((value) => value + 1)
+  }, [])
 
   useEffect(() => { setViewMode(loadShareViewMode()) }, [])
   const storageKey = token || ''
@@ -158,6 +170,16 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       window.removeEventListener('commentDeleted', handleCommentDeleted)
     }
   }, [fetchComments])
+
+  // Keep comments and timeline markers current when multiple reviewers are
+  // working in separate browsers.
+  useEffect(() => {
+    if (!shareToken || !project || project.hideFeedback || isGuest) return
+    const interval = window.setInterval(() => {
+      void fetchComments()
+    }, 5000)
+    return () => window.clearInterval(interval)
+  }, [fetchComments, isGuest, project, shareToken])
 
   const fetchProjectData = async (tokenOverride?: string | null) => {
     try {
@@ -410,8 +432,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           let downloadToken = null
 
           if (video.approved) {
-            // Check if project uses preview for approved playback
-            if (project?.usePreviewForApprovedPlayback) {
               const [token720, token1080, token2160, originalToken] = await Promise.all([
                 fetchVideoToken(video.id, '720p'),
                 fetchVideoToken(video.id, '1080p'),
@@ -422,13 +442,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               streamToken1080p = token1080
               streamToken2160p = token2160
               downloadToken = originalToken
-            } else {
-              const originalToken = await fetchVideoToken(video.id, 'original')
-              streamToken720p = originalToken
-              streamToken1080p = originalToken
-              streamToken2160p = originalToken
-              downloadToken = originalToken
-            }
           } else {
             const [token720, token1080, token2160] = await Promise.all([
               fetchVideoToken(video.id, '720p'),
@@ -468,7 +481,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         }
       })
     )
-  }, [shareToken, fetchVideoToken, project?.usePreviewForApprovedPlayback])
+  }, [shareToken, fetchVideoToken])
 
   useEffect(() => {
     let isMounted = true
@@ -570,52 +583,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname
     router.replace(newUrl || '', { scroll: false })
   }, [searchParams, pathname, router])
-
-  const handleDownloadAll = useCallback(async () => {
-    if (downloadingAll || !shareToken) return
-
-    try {
-      setDownloadingAll(true)
-
-      const response = await fetch(`/api/share/${token}/download-all-token`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${shareToken}`,
-        },
-      })
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.error || 'Download failed')
-      }
-
-      const { urls } = await response.json()
-
-      if (!Array.isArray(urls) || urls.length === 0) {
-        throw new Error('No download links available')
-      }
-
-      // Trigger each approved video as its own download to avoid server-side ZIP creation.
-      for (let i = 0; i < urls.length; i += 1) {
-        const link = document.createElement('a')
-        link.href = urls[i]
-        link.download = ''
-        link.rel = 'noopener'
-        link.style.display = 'none'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        // Stagger starts slightly so browsers process each save request reliably.
-        if (i < urls.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 150))
-        }
-      }
-    } catch {
-    } finally {
-      setDownloadingAll(false)
-    }
-  }, [downloadingAll, shareToken, token])
 
   async function handleSendOtp(e: React.FormEvent) {
     e.preventDefault()
@@ -862,7 +829,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                         }}
                         className="flex-1"
                       >
-                        Back
+                        {tc('back')}
                       </Button>
                       <Button
                         type="submit"
@@ -872,7 +839,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                         className="flex-1"
                       >
                         <Check className="w-4 h-4 mr-2" />
-                        {loading ? 'Verifying...' : 'Verify'}
+                        {loading ? t('verifying') : t('verify')}
                       </Button>
                     </div>
                   </form>
@@ -907,6 +874,9 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 </Button>
               </>
             )}
+            <div className="border-t border-border pt-4">
+              <ReviewLoginActions onIdentityChange={handleWechatIdentity} openSignal={loginOpenSignal} />
+            </div>
             </CardContent>
           </Card>
         </div>
@@ -926,35 +896,38 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     )
   }
 
+  if (collectionMode && !isGuest && project.allowReverseShare && shareToken) {
+    return (
+      <ReverseShareUploadPanel
+        shareToken={shareToken}
+        shareSlug={token}
+        projectName={project.title}
+        maxFiles={project.settings?.maxReverseShareFiles ?? 10}
+        variant="embedded"
+      />
+    )
+  }
+
   // Filter to READY videos first
   let readyVideos = activeVideos.filter((v: any) => v.status === 'READY')
-
-  const hasApprovedVideo = readyVideos.some((v: any) => v.approved)
-  if (hasApprovedVideo) {
-    readyVideos = readyVideos.filter((v: any) => v.approved)
-  }
 
   const activeVideoIds = new Set(activeVideos.map((v: any) => v.id))
   const filteredComments = comments.filter((comment: any) => {
     return !comment.videoId || activeVideoIds.has(comment.videoId)
   })
+  const displayClientName = project.clientName?.trim().toLowerCase() === 'client'
+    ? t('clientFallback')
+    : project.clientName
 
   if (viewState === 'grid') {
     return (
       <>
       <div className="fixed inset-0 bg-background flex flex-col overflow-hidden">
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
-          <div className="flex items-center gap-2" data-tutorial="grid-actions">
-            {!isGuest && project.allowReverseShare && shareToken && (
-              <ReverseShareUploadPanel
-                shareToken={shareToken}
-                shareSlug={token}
-                maxFiles={project.settings?.maxReverseShareFiles ?? 10}
-              />
-            )}
-          </div>
+          <div className="flex items-center gap-2" data-tutorial="grid-actions" />
 
           <div className="flex items-center gap-2 ml-auto">
+            <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} />
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
             <LanguageToggle />
             <ThemeToggle />
@@ -977,12 +950,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         <div className="flex-1 overflow-y-auto">
           <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
             {(() => {
-              const approvedCount = project.videosByName
-                ? Object.values(project.videosByName as Record<string, any[]>)
-                    .filter((versions) => versions.some((v: any) => v.approved))
-                    .length
-                : 0
-              const showDownloadAll = !isGuest && project.allowAssetDownload
               return (
                 <ThumbnailGrid
                   videosByName={project.videosByName}
@@ -991,13 +958,10 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   onVideoSelect={handleVideoSelect}
                   projectTitle={project.title}
                   projectDescription={isGuest ? undefined : project.description}
-                  clientName={isGuest ? undefined : project.clientName}
                   allowAssetDownload={project.allowAssetDownload}
-                  onDownloadAll={showDownloadAll ? handleDownloadAll : undefined}
-                  downloadingAll={downloadingAll}
-                  downloadAllLabel={t('downloadAllVideos', { count: approvedCount })}
                   viewMode={viewMode}
                   albumCount={albumCount}
+                  comments={comments}
                 />
               )
             })()}
@@ -1018,7 +982,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               rel="noopener noreferrer"
               className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
             >
-              Powered by ViTransfer
+              {tc('poweredBy')}
             </a>
           </div>
         </div>
@@ -1033,10 +997,10 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   }
 
   // Whether to show comment panel
-  const showCommentPanel = !project.hideFeedback && !isGuest && !hideComments
+  const showCommentPanel = !project.hideFeedback && !isGuest
 
   return (
-    <div className="min-h-screen lg:fixed lg:inset-0 bg-background flex flex-col lg:overflow-hidden">
+    <div className="flex min-h-screen flex-col bg-background lg:fixed lg:inset-0 lg:overflow-hidden">
       {/* Thumbnail Reel */}
         <ThumbnailReel
           videosByName={project.videosByName}
@@ -1044,35 +1008,39 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           activeVideoName={activeVideoName}
           onVideoSelect={handleVideoSelect}
           onBackToGrid={handleBackToGrid}
-          showBackButton={true}
+          showBackButton={false}
           showCommentToggle={!project.hideFeedback && !isGuest}
           isCommentPanelVisible={!hideComments}
           onToggleCommentPanel={() => setHideComments(!hideComments)}
+          comments={comments}
           trailingAction={
-            project.showClientTutorial ? (
-              <ShareTutorial
-                projectId={project.id || token}
-                showTutorial={project.showClientTutorial}
-                watermarkEnabled={project.watermarkEnabled}
-                hideFeedback={project.hideFeedback}
-                clientCanApprove={project.clientCanApprove}
-                allowAssetDownload={project.allowAssetDownload}
-                allowReverseShare={project.allowReverseShare}
-                isGuest={isGuest}
-                inPlayerView={true}
-              />
-            ) : undefined
+            <div className="flex items-center gap-1">
+              <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} />
+              {project.showClientTutorial && (
+                <ShareTutorial
+                  projectId={project.id || token}
+                  showTutorial={project.showClientTutorial}
+                  watermarkEnabled={project.watermarkEnabled}
+                  hideFeedback={project.hideFeedback}
+                  clientCanApprove={project.clientCanApprove}
+                  allowAssetDownload={project.allowAssetDownload}
+                  allowReverseShare={project.allowReverseShare}
+                  isGuest={isGuest}
+                  inPlayerView={true}
+                />
+              )}
+            </div>
           }
         />
 
       {/* Main Content Area */}
-      <div className="xl:flex-1 xl:min-h-0 flex flex-col xl:flex-row p-2 sm:p-3 gap-2 sm:gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
         {readyVideos.length === 0 ? (
           <div className="flex-1 flex items-center justify-center p-4">
             <Card className="bg-card border-border">
               <CardContent className="py-12 text-center">
                 <p className="text-muted-foreground">
-                  {tokensLoading ? 'Loading video...' : 'No videos are ready for review yet. Please check back later.'}
+                  {tokensLoading ? t('loadingVideo') : t('noVideosReady')}
                 </p>
               </CardContent>
             </Card>
@@ -1080,7 +1048,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         ) : (
           <>
             {/* Video Player */}
-            <div data-tutorial="video-player" className={`xl:h-full xl:min-h-0 xl:flex-1 min-w-0 flex flex-col ${showCommentPanel ? 'xl:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div data-tutorial="video-player" className={`flex min-w-0 flex-col bg-muted/30 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={readyVideos}
                 projectId={project.id}
@@ -1088,7 +1056,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 defaultQuality={defaultQuality}
                 projectTitle={project.title}
                 projectDescription={isGuest ? null : project.description}
-                clientName={isGuest ? null : project.clientName}
+                clientName={isGuest ? null : displayClientName}
                 isPasswordProtected={isPasswordProtected || false}
                 watermarkEnabled={project.watermarkEnabled}
                 activeVideoName={activeVideoName}
@@ -1103,22 +1071,24 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 clientCanApprove={project.clientCanApprove}
                 shareToken={shareToken}
                 comments={!project.hideFeedback && !isGuest ? filteredComments : []}
-                timestampDisplayMode={project.timestampDisplay || 'TIMECODE'}
+                timestampDisplayMode="AUTO"
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
                 fillContainer={true}
               />
+              <div id="review-comment-composer" className="lg:mt-auto" />
             </div>
 
             {showCommentPanel && (
-              <div data-tutorial="comments" className="max-h-[100vh] xl:shrink xl:flex-1 xl:max-w-[30%] 2xl:max-w-[25%] xl:min-w-[280px] flex flex-col xl:max-h-full xl:h-full overflow-hidden rounded-xl bg-card">
+              <div data-tutorial="comments" className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden bg-card lg:max-h-full lg:w-[360px] lg:flex-none lg:border-l lg:border-border/70">
                 <CommentSection
                   projectId={project.id}
+                  projectSlug={token}
                   comments={filteredComments}
                   focusCommentId={focusCommentId}
-                  clientName={project.clientName}
+                  clientName={displayClientName}
                   clientEmail={project.clientEmail}
-                  isApproved={project.status === 'APPROVED' || project.status === 'SHARE_ONLY'}
+                  isApproved={project.status === 'APPROVED'}
                   restrictToLatestVersion={project.restrictCommentsToLatestVersion}
                   videos={readyVideos}
                   isAdminView={false}
@@ -1127,7 +1097,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   recipients={project.recipients || []}
                   shareToken={shareToken}
                   showShortcutsButton={true}
-                  timestampDisplayMode={project.timestampDisplay || 'TIMECODE'}
+                  timestampDisplayMode="AUTO"
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}
                   authenticatedEmail={authenticatedEmail}
@@ -1135,6 +1105,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   maxCommentAttachments={project.settings?.maxCommentAttachments ?? 10}
                   onToggleVisibility={() => setHideComments(!hideComments)}
                   showToggleButton={false}
+                  isReviewAuthenticated={reviewAuthenticated}
+                  onRequireLogin={requireReviewLogin}
                 />
               </div>
             )}

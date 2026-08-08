@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { getShareContext } from '@/lib/auth'
-import { validateAssetFile, sanitizeFilename, isSuspiciousFilename } from '@/lib/file-validation'
+import { validateAssetFile, sanitizeDisplayFilename, sanitizeFilename, isSuspiciousFilename } from '@/lib/file-validation'
 import { deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -97,6 +97,7 @@ export async function POST(
       return NextResponse.json({ error: 'File type not allowed' }, { status: 400 })
     }
 
+    const originalFileName = sanitizeDisplayFilename(fileName)
     const sanitizedFileName = sanitizeFilename(fileName)
     const assetValidation = validateAssetFile(sanitizedFileName, 'application/octet-stream', undefined)
 
@@ -130,6 +131,7 @@ export async function POST(
       data: {
         projectId: project.id,
         fileName: finalFileName,
+        originalFileName,
         fileSize: BigInt(fileSize),
         fileType: 'application/octet-stream',
         storagePath,
@@ -142,7 +144,7 @@ export async function POST(
 
     return NextResponse.json({
       uploadId: upload.id,
-      fileName: finalFileName,
+      fileName: originalFileName,
       category,
     })
   } catch (error) {

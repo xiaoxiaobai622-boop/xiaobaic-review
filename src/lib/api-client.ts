@@ -1,5 +1,6 @@
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from './token-store'
+import { clearTokens, getAccessToken, getRefreshToken, setTokens, withAuthRefreshLock } from './token-store'
 import { logError } from './logging'
+import { getDeviceAuthHeaders } from './device-id'
 
 let isRedirecting = false
 let refreshInFlight: Promise<boolean> | null = null
@@ -50,7 +51,11 @@ async function apiJson<T = any>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    const baseMessage = error.error || `HTTP ${response.status}`
+    const details = Array.isArray(error.details)
+      ? error.details.filter((detail: unknown): detail is string => typeof detail === 'string' && detail.length > 0)
+      : []
+    throw new Error(details.length > 0 ? `${baseMessage}: ${details.join('; ')}` : baseMessage)
   }
 
   return response.json()
@@ -118,37 +123,40 @@ function withAuthHeader(init?: RequestInit): RequestInit {
 export async function attemptRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
 
-  const refreshToken = getRefreshToken()
-  if (!refreshToken) return false
-
   refreshInFlight = (async () => {
     try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${refreshToken}`,
-        },
-      })
+      return await withAuthRefreshLock(async () => {
+        // Read inside the cross-tab lock so a waiting tab uses the token most
+        // recently rotated by the tab that refreshed before it.
+        const refreshToken = getRefreshToken()
+        if (!refreshToken) return false
 
-      if (!response.ok) {
-        clearTokens()
-        return false
-      }
-
-      const data = await response.json()
-      if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
-        setTokens({
-          accessToken: data.tokens.accessToken,
-          refreshToken: data.tokens.refreshToken,
+        const response = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${refreshToken}`,
+            ...getDeviceAuthHeaders(),
+          },
         })
-        return true
-      }
 
-      clearTokens()
-      return false
+        if (!response.ok) {
+          if (response.status === 401 && getRefreshToken() === refreshToken) clearTokens()
+          return false
+        }
+
+        const data = await response.json()
+        if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
+          setTokens({
+            accessToken: data.tokens.accessToken,
+            refreshToken: data.tokens.refreshToken,
+          })
+          return true
+        }
+
+        return false
+      })
     } catch (error) {
       logError('[API] Failed to refresh token:', error)
-      clearTokens()
       return false
     } finally {
       refreshInFlight = null

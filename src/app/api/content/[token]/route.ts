@@ -246,17 +246,24 @@ export async function GET(
       } else if (isDownload && isAdminRequest && originalPath) {
         // Admin downloads should always use the original file, even before approval
         filePath = originalPath
-      } else if (video.approved && originalPath) {
-        // Check if project prefers preview playback after approval (for streaming, not downloads)
-        if (!isDownload && video.project.usePreviewForApprovedPlayback) {
-          // Prefer requested clean preview quality, then requested watermarked preview quality, then original
-          filePath = getPreferredPreviewPath(true) || originalPath
-        } else {
-          filePath = originalPath
-        }
+      } else if (isDownload && video.approved && originalPath) {
+        filePath = originalPath
       } else {
-        // Fall back to original if no preview exists (e.g. skipTranscoding enabled)
-        filePath = getPreferredPreviewPath(false) || originalPath
+        // Playback is preview-only. Originals are retained exclusively for explicit downloads.
+        filePath = getPreferredPreviewPath(video.approved)
+        if (!filePath) {
+          // Temporary migration guard: keep already-ready legacy videos playable until
+          // their bounded-bitrate previews have been regenerated. New processing jobs
+          // never reach READY without a 720p preview.
+          if (video.status === 'READY' && originalPath) {
+            filePath = originalPath
+          } else {
+            return NextResponse.json(
+              { error: '视频正在处理，请稍后再试', code: 'PREVIEW_NOT_READY' },
+              { status: 409, headers: { 'Retry-After': '10' } }
+            )
+          }
+        }
       }
     }
 

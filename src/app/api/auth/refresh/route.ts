@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { parseBearerToken, refreshAdminTokens, revokePresentedTokens } from '@/lib/auth'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { getAdminDeviceFingerprint } from '@/lib/admin-device'
 
 export const runtime = 'nodejs'
 
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     }, `auth-refresh:${tokenHash}`)
     if (rateLimitResult) return rateLimitResult
 
-    const fingerprint = hashFingerprint(request.headers.get('user-agent') || 'unknown')
+    const fingerprint = getAdminDeviceFingerprint(request)
     const tokens = await refreshAdminTokens({ refreshToken: presentedToken, fingerprintHash: fingerprint })
 
     if (!tokens) {
@@ -62,8 +63,4 @@ export async function POST(request: NextRequest) {
 
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('base64url')
-}
-
-function hashFingerprint(userAgent: string): string {
-  return crypto.createHash('sha256').update(userAgent).digest('base64url')
 }

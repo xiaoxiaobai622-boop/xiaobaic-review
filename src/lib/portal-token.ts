@@ -5,7 +5,8 @@ import { getClientSessionTimeoutSeconds } from './settings'
 
 export interface PortalSessionPayload extends jwt.JwtPayload {
   type: 'portal'
-  email: string
+  email?: string
+  phone?: string
   sessionId: string
 }
 
@@ -15,13 +16,18 @@ const PORTAL_TOKEN_SECRET = process.env.SHARE_TOKEN_SECRET
 
 const DENYLIST_PREFIX = 'portal_denylist:'
 
-export async function signPortalSession(email: string): Promise<{ token: string; sessionId: string; ttlSeconds: number }> {
+export async function signPortalSession(identity: string | { email?: string; phone?: string }): Promise<{ token: string; sessionId: string; ttlSeconds: number }> {
   if (!PORTAL_TOKEN_SECRET) throw new Error('SHARE_TOKEN_SECRET missing')
   const ttlSeconds = await getClientSessionTimeoutSeconds()
   const sessionId = crypto.randomBytes(16).toString('base64url')
   const payload: PortalSessionPayload = {
     type: 'portal',
-    email: email.toLowerCase().trim(),
+    ...(typeof identity === 'string'
+      ? { email: identity.toLowerCase().trim() }
+      : {
+          email: identity.email?.toLowerCase().trim(),
+          phone: identity.phone?.trim(),
+        }),
     sessionId,
   }
   const token = jwt.sign(payload, PORTAL_TOKEN_SECRET, {
@@ -36,7 +42,7 @@ export async function verifyPortalSession(token: string): Promise<PortalSessionP
   try {
     const decoded = jwt.verify(token, PORTAL_TOKEN_SECRET, { algorithms: ['HS256'] }) as PortalSessionPayload
     if (decoded.type !== 'portal') return null
-    if (!decoded.sessionId || !decoded.email) return null
+    if (!decoded.sessionId || (!decoded.email && !decoded.phone)) return null
     if (await isPortalSessionRevoked(decoded.sessionId)) return null
     return decoded
   } catch {

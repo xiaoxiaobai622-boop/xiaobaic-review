@@ -8,7 +8,7 @@ import { Label } from './ui/label'
 import { useRouter } from 'next/navigation'
 import { Upload, Pause, Play, X } from 'lucide-react'
 import * as tus from 'tus-js-client'
-import { formatFileSize } from '@/lib/utils'
+import { cn, formatFileSize } from '@/lib/utils'
 import { apiPost, apiDelete } from '@/lib/api-client'
 import { getAccessToken } from '@/lib/token-store'
 import { getTusUploadErrorMessage, createTusAfterResponseHandler, createTusShouldRetryHandler, resetTusAuthRetry } from '@/lib/tus-error'
@@ -29,14 +29,18 @@ interface VideoUploadProps {
   videoName: string // Required video name for multi-video support
   onUploadComplete?: () => void // Callback when upload completes successfully
   initialFile?: File | null // Pre-selected file from drag & drop
+  autoStart?: boolean
+  compact?: boolean
+  onCancel?: () => void
 }
 
-export default function VideoUpload({ projectId, videoName, onUploadComplete, initialFile }: VideoUploadProps) {
+export default function VideoUpload({ projectId, videoName, onUploadComplete, initialFile, autoStart = false, compact = false, onCancel }: VideoUploadProps) {
   const t = useTranslations('videos')
   const tc = useTranslations('common')
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadRef = useRef<tus.Upload | null>(null)
+  const autoStartedFileRef = useRef<string | null>(null)
   const videoIdRef = useRef<string | null>(null)
   const s3UploadKey = useRef<string | null>(null)
   const { startUpload: startS3Upload, abortUpload: abortS3Upload } = useS3MultipartUpload()
@@ -47,7 +51,6 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
   const [paused, setPaused] = useState(false)
   const [progress, setProgress] = useState(0)
   const [uploadSpeed, setUploadSpeed] = useState(0)
-  const [versionLabel, setVersionLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -138,8 +141,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
     }
 
     const trimmedVideoName = videoName.trim()
-    const trimmedVersionLabel = versionLabel.trim()
-    const contextKey = `${projectId}:${trimmedVideoName}:${trimmedVersionLabel || 'auto'}`
+    const contextKey = `${projectId}:${trimmedVideoName}:auto`
 
     setUploading(true)
     setProgress(0)
@@ -159,7 +161,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
         existingMetadata?.projectId === projectId &&
         !!existingMetadata.videoId &&
         existingMetadata?.targetName === trimmedVideoName &&
-        (existingMetadata.versionLabel || '') === (trimmedVersionLabel || '')
+        (existingMetadata.versionLabel || '') === ''
       let createdVideoRecord = false
 
       if (canResumeExisting) {
@@ -168,13 +170,12 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
         storeUploadMetadata(file, {
           videoId: existingMetadata!.videoId,
           projectId,
-          versionLabel: existingMetadata?.versionLabel || trimmedVersionLabel,
+          versionLabel: '',
           targetName: trimmedVideoName,
         })
       } else {
         const { videoId } = await apiPost('/api/videos', {
           projectId,
-          versionLabel: trimmedVersionLabel,
           originalFileName: file.name,
           originalFileSize: file.size,
           name: trimmedVideoName, // Include video name for multi-video support
@@ -185,7 +186,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
         storeUploadMetadata(file, {
           videoId,
           projectId,
-          versionLabel: trimmedVersionLabel,
+          versionLabel: '',
           targetName: trimmedVideoName,
         })
       }
@@ -221,7 +222,6 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
               clearFileContext(file)
               clearUploadMetadata(file)
               setFile(null)
-              setVersionLabel('')
               s3UploadKey.current = null
               videoIdRef.current = null
               router.refresh()
@@ -308,7 +308,6 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
             resetTusAuthRetry(uploadRef.current)
 
             setFile(null)
-            setVersionLabel('')
             uploadRef.current = null
             videoIdRef.current = null
             router.refresh()
@@ -362,6 +361,16 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
     }
   }
 
+  useEffect(() => {
+    if (!autoStart || !file || uploading) return
+    const fileKey = `${file.name}:${file.size}:${file.lastModified}`
+    if (autoStartedFileRef.current === fileKey) return
+    autoStartedFileRef.current = fileKey
+    void handleUpload()
+    // handleUpload intentionally starts once for each mounted file instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, file])
+
   function handlePauseResume() {
     if (!uploadRef.current) return
 
@@ -405,6 +414,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
       clearTUSFingerprint(file)
       clearFileContext(file)
     }
+    onCancel?.()
   }
 
   function handleDragOver(e: React.DragEvent) {
@@ -436,6 +446,59 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
     }
   }
 
+  if (compact) {
+    return (
+      <div className="fixed bottom-4 right-4 z-[80] w-[min(24rem,calc(100vw-2rem))] rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-xl">
+        <div className="flex items-start gap-3">
+          <span className="rounded-md bg-primary/10 p-2 text-primary">
+            <Upload className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{t('uploadNewVersion')}</p>
+            <p className="mt-1 truncate text-xs text-muted-foreground" title={file?.name}>{file?.name}</p>
+          </div>
+          {!uploading && (
+            <button type="button" onClick={onCancel} className="rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={tc('close')} title={tc('close')}>
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        {error ? (
+          <div className="mt-3 space-y-3">
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={onCancel}>{tc('close')}</Button>
+              <Button type="button" size="sm" onClick={handleUpload}>{tc('retry')}</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">{paused ? t('paused') : t('uploading')}</span>
+              <span className="font-medium">{progress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-secondary">
+              <div className={cn('h-full transition-all', paused ? 'bg-warning' : 'bg-primary')} style={{ width: `${progress}%` }} />
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <span className="text-xs text-muted-foreground">{uploadSpeed > 0 ? `${uploadSpeed} MB/s` : ''}</span>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={handlePauseResume}>
+                  {paused ? <Play className="mr-1.5 h-3.5 w-3.5" /> : <Pause className="mr-1.5 h-3.5 w-3.5" />}
+                  {paused ? t('resume') : t('pause')}
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={handleCancel} className="text-destructive hover:text-destructive">
+                  <X className="mr-1.5 h-3.5 w-3.5" />{tc('cancel')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div
       onDragOver={handleDragOver}
@@ -455,18 +518,6 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
           <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
-
-      {/* Version Label */}
-      <div className="space-y-2">
-        <Label htmlFor="versionLabel">{t('versionLabel')}</Label>
-        <Input
-          id="versionLabel"
-          value={versionLabel}
-          onChange={(e) => setVersionLabel(e.target.value)}
-          placeholder={t('versionLabelPlaceholder')}
-          disabled={uploading}
-        />
-      </div>
 
       {/* File Selection */}
       <div className="space-y-2">
@@ -568,7 +619,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
         disabled={!file || uploading}
         className="w-full"
       >
-        {uploading ? t('uploading') : t('uploadVideo')}
+        {uploading ? t('uploading') : t('uploadNewVersion')}
       </Button>
 
       <p className="text-xs text-muted-foreground">

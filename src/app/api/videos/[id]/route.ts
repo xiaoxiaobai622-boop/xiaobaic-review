@@ -137,6 +137,13 @@ export async function PATCH(
     const body = await request.json()
     const { approved, name, versionLabel } = body
 
+    if (versionLabel !== undefined) {
+      return NextResponse.json(
+        { error: videoMessages.versionLabelAutomatic || 'Version labels are generated automatically' },
+        { status: 400 }
+      )
+    }
+
     if (approved !== undefined && typeof approved !== 'boolean') {
       return NextResponse.json(
         { error: videoMessages.invalidApprovedBoolean || 'Invalid request: approved must be a boolean' },
@@ -151,14 +158,7 @@ export async function PATCH(
       )
     }
 
-    if (versionLabel !== undefined && (!versionLabel || typeof versionLabel !== 'string' || versionLabel.trim().length === 0)) {
-      return NextResponse.json(
-        { error: videoMessages.invalidVersionLabel || 'Invalid request: versionLabel must be a non-empty string' },
-        { status: 400 }
-      )
-    }
-
-    if (approved === undefined && name === undefined && versionLabel === undefined) {
+    if (approved === undefined && name === undefined) {
       return NextResponse.json(
         { error: videoMessages.invalidUpdateRequest || 'Invalid request: at least one field must be provided' },
         { status: 400 }
@@ -197,10 +197,6 @@ export async function PATCH(
 
     if (name !== undefined) {
       updateData.name = name.trim()
-    }
-
-    if (versionLabel !== undefined) {
-      updateData.versionLabel = versionLabel.trim()
     }
 
     await prisma.video.update({

@@ -1,0 +1,100 @@
+# Compatibility build file for Docker installations without the buildx plugin.
+# Runtime contents match Dockerfile; only BuildKit-only copy/cache flags are omitted.
+
+FROM node:24-alpine3.23 AS base
+
+ARG TARGETPLATFORM
+ARG TARGETARCH
+ARG BUILDPLATFORM
+
+RUN apk update && apk upgrade --no-cache && \
+    apk add --no-cache \
+        openssl openssl-dev \
+        ffmpeg ffmpeg-libs fontconfig ttf-dejavu font-noto-cjk \
+        bash curl ca-certificates shadow su-exec \
+    && apk add --no-cache --upgrade cjson libsndfile giflib orc zlib expat \
+    && npm install -g npm@latest \
+    && npm cache clean --force \
+    && ffmpeg -version
+
+FROM base AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma
+
+RUN npm ci --legacy-peer-deps
+RUN cp -R node_modules /tmp/prod_node_modules
+RUN npm audit --audit-level=high || \
+    (echo "SECURITY: High/critical vulnerabilities found!" && exit 1)
+
+FROM base AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN npx prisma generate
+
+ARG APP_VERSION
+ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
+ENV SKIP_ENV_VALIDATION=1
+ENV NEXT_PHASE=phase-production-build
+RUN npm run build
+RUN rm -rf .next/cache
+
+FROM base AS runner
+WORKDIR /app
+
+ARG APP_VERSION
+LABEL org.opencontainers.image.title="ViTransfer"
+LABEL org.opencontainers.image.description="Video review and approval platform"
+LABEL org.opencontainers.image.source="https://github.com/MansiVisuals/ViTransfer"
+LABEL org.opencontainers.image.version="${APP_VERSION}"
+LABEL org.opencontainers.image.licenses="MIT"
+
+ENV NODE_ENV=production
+
+RUN apk add --no-cache python3 py3-pip \
+    && python3 -m venv /opt/apprise-venv \
+    && /opt/apprise-venv/bin/pip install --no-cache-dir --timeout=120 --upgrade pip \
+    && /opt/apprise-venv/bin/pip install --no-cache-dir --timeout=120 apprise==1.11.0 \
+    && apk del --no-cache py3-pip
+
+ENV APPRISE_PYTHON=/opt/apprise-venv/bin/python3
+
+ARG TARGETPLATFORM
+ARG TARGETARCH
+RUN echo "Building for: $TARGETPLATFORM ($TARGETARCH)" && uname -a
+
+RUN addgroup -g 911 app && adduser -D -u 911 -G app -h /app app
+
+COPY --from=deps /tmp/prod_node_modules ./node_modules
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/next.config.js ./next.config.js
+COPY --from=builder /app/worker.mjs ./worker.mjs
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY previewlut.cube /usr/share/ffmpeg/previewlut.cube
+
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && \
+    chmod 0755 /usr/local/bin/docker-entrypoint.sh && \
+    chmod a+r /usr/share/ffmpeg/previewlut.cube && \
+    chown app:app /app
+
+ENV PUID=1000 PGID=1000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:4321/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
+
+EXPOSE 4321
+ENV PORT=4321 HOSTNAME="0.0.0.0"
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["npm", "start"]

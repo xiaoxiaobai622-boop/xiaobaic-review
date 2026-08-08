@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import LogoMark from './LogoMark'
 
 type BrandLogoProps = {
   size?: number // legacy square size
@@ -12,7 +11,7 @@ type BrandLogoProps = {
 }
 
 /**
- * Displays custom uploaded SVG logo when configured, otherwise falls back to LogoMark.
+ * Displays a configured company logo, otherwise the 逐帧审阅 product mark.
  * Fetches brandingLogoPath from /api/settings/theme (cached in localStorage).
  */
 function BrandLogo({ size = 64, height, className, ariaHidden = false }: BrandLogoProps) {
@@ -52,11 +51,29 @@ function BrandLogo({ size = 64, height, className, ariaHidden = false }: BrandLo
         style={{ height: `${resolvedHeight}px`, width: 'auto', maxWidth: `${resolvedHeight * 3}px` }}
         className={cn('shrink-0', className)}
         aria-hidden={ariaHidden}
+        onError={() => {
+          setLogoUrl(null)
+          try {
+            localStorage.removeItem('brandingLogoUrl')
+          } catch {
+            // Storage may be unavailable in privacy-restricted browsers.
+          }
+        }}
       />
     )
   }
 
-  return <LogoMark size={resolvedHeight} className={className} ariaHidden={ariaHidden} />
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/brand/logo.png"
+      alt="逐帧审阅"
+      width={resolvedHeight}
+      height={resolvedHeight}
+      className={cn('shrink-0 object-contain', className)}
+      aria-hidden={ariaHidden}
+    />
+  )
 }
 
 export default BrandLogo

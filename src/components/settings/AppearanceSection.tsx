@@ -5,6 +5,7 @@ import { Monitor, Moon, Sun, Check, Globe } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
 const SUPPORTED_LANGUAGES = [
+  { code: 'zh' },
   { code: 'en' },
   { code: 'nl' },
   { code: 'de' },

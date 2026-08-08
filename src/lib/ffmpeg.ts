@@ -5,6 +5,7 @@ import os from 'os'
 import crypto from 'crypto'
 import { getCpuAllocation } from './cpu-config'
 import { logError, logMessage } from './logging'
+import { getInvalidWatermarkCharacters, stripInvalidWatermarkCharacters } from './watermark'
 
 // Debug mode - outputs verbose FFmpeg logs
 // Enable with: DEBUG_WORKER=true environment variable
@@ -39,15 +40,15 @@ function validateAndSanitizeWatermarkText(text: string): string {
     throw new Error('Watermark text exceeds 100 character limit')
   }
 
-  // Check for invalid characters (only alphanumeric, spaces, and safe punctuation)
-  const invalidChars = text.match(/[^a-zA-Z0-9\s\-_.()]/g)
-  if (invalidChars) {
-    const uniqueInvalid = [...new Set(invalidChars)].join(', ')
+  // Allow Unicode letters/numbers (including Chinese) and safe punctuation.
+  const invalidChars = getInvalidWatermarkCharacters(text)
+  if (invalidChars.length > 0) {
+    const uniqueInvalid = invalidChars.join(', ')
     throw new Error(`Watermark text contains invalid characters: ${uniqueInvalid}`)
   }
 
-  // Sanitize by removing any potentially dangerous characters (should be none at this point)
-  const sanitized = text.replace(/[^a-zA-Z0-9\s\-_.()]/g, '')
+  // Defense-in-depth; validation above should already have rejected these.
+  const sanitized = stripInvalidWatermarkCharacters(text)
 
   // Escape for FFmpeg drawtext filter (defense-in-depth)
   // Escape all special characters that FFmpeg might interpret
@@ -183,6 +184,7 @@ export interface TranscodeOptions {
   outputPath: string
   width: number
   height: number
+  quality?: '720p' | '1080p'
   watermarkText?: string
   watermarkPositions?: string // comma-separated positions, e.g. "center,bottom-right"
   watermarkOpacity?: number // 10-100
@@ -197,6 +199,7 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     outputPath,
     width,
     height,
+    quality = '720p',
     watermarkText,
     onProgress
   } = options
@@ -273,7 +276,12 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     const cornerFontPx = Math.round(width * multiplier.corner)
 
     const spacing = isVertical ? 30 : 50
-    const font = `/usr/share/fonts/dejavu/DejaVuSans.ttf`
+    const fontCandidates = [
+      '/usr/share/fonts/noto/NotoSansCJK-Regular.ttc',
+      '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+      '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+    ]
+    const font = fontCandidates.find((candidate) => fs.existsSync(candidate)) ?? fontCandidates[2]
 
     const positionMap: Record<WatermarkPosition, { x: string; y: string; fs: number; shadow: number }> = {
       'center':       { x: '(w-text_w)/2', y: '(h-text_h)/2', fs: centerFontPx, shadow: 2 },
@@ -307,13 +315,23 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     logMessage('[FFMPEG DEBUG] Built filter complex:', filterComplex)
   }
 
+  const bitrateProfile = quality === '1080p'
+    ? { maxRate: '5000k', bufferSize: '10000k' }
+    : { maxRate: '2500k', bufferSize: '5000k' }
+  const gopSize = Math.max(24, Math.round((metadata.fps || 25) * 2))
+
   const args = [
     '-v', 'verbose', // Enable verbose logging for debug
     '-i', inputPath,
     '-vf', filterComplex,
     '-c:v', 'libx264',
     '-preset', preset,
-    '-crf', '23', // Constant Rate Factor: 18-28 range (lower = better quality, 23 is default)
+    '-crf', '22',
+    '-maxrate', bitrateProfile.maxRate,
+    '-bufsize', bitrateProfile.bufferSize,
+    '-g', gopSize.toString(),
+    '-keyint_min', gopSize.toString(),
+    '-sc_threshold', '0',
     '-threads', threads.toString(),
     '-profile:v', 'high',
     '-level', '4.1',

@@ -16,12 +16,7 @@ export const emailSchema = z
 
 export const passwordSchema = z
   .string()
-  .min(12, 'Password must be at least 12 characters')
-  .max(128, 'Password must not exceed 128 characters')
-  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-  .regex(/[0-9]/, 'Password must contain at least one number')
-  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character')
+  .regex(/^\d{6}$/, 'Password must be exactly 6 digits')
 
 export const usernameSchema = z
   .string()
@@ -198,15 +193,24 @@ export const updateNotificationDestinationSchema = z.discriminatedUnion('provide
 // ============================================================================
 
 export const createUserSchema = z.object({
-  email: emailSchema,
+  email: emailSchema.optional().or(z.literal('')),
+  phone: z.string().regex(/^1\d{10}$/, '请输入有效的 11 位手机号').optional(),
   username: usernameSchema.optional(),
   password: passwordSchema,
   name: safeStringSchema(1, 255).optional(),
-  role: z.enum(['ADMIN']).optional()
+  // Team accounts can be administrators or members. Keep this aligned with
+  // the admin user form, which sends MEMBER for ordinary team users.
+  role: z.enum(['ADMIN', 'MEMBER']).optional(),
+  projectAccessScope: z.enum(['ALL_PROJECTS', 'ASSIGNED_ONLY']).optional(),
+  projectIds: z.array(cuidSchema).optional(),
+}).superRefine((data, ctx) => {
+  if (!data.email && !data.phone) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['email'], message: 'Email or phone is required' })
+  }
 })
 
 export const loginSchema = z.object({
-  email: z.string().min(1, 'Email/username is required').max(255),
+  email: z.string().min(1, 'Phone/email/username is required').max(255),
   password: z.string().min(1, 'Password is required').max(128)
 })
 
@@ -364,7 +368,31 @@ const freehandShapeSchema = z.object({
   points: z.array(pointSchema).min(1).max(5000),
 })
 
-const shapeSchema = freehandShapeSchema
+const arrowShapeSchema = z.object({
+  id: z.string().min(1).max(50),
+  type: z.literal('arrow'),
+  color: hexColorSchema,
+  strokeWidth: strokeWidthSchema,
+  opacity: z.number().min(0).max(1).optional(),
+  start: pointSchema,
+  end: pointSchema,
+})
+
+const rectangleShapeSchema = z.object({
+  id: z.string().min(1).max(50),
+  type: z.literal('rectangle'),
+  color: hexColorSchema,
+  strokeWidth: strokeWidthSchema,
+  opacity: z.number().min(0).max(1).optional(),
+  start: pointSchema,
+  end: pointSchema,
+})
+
+const shapeSchema = z.discriminatedUnion('type', [
+  freehandShapeSchema,
+  arrowShapeSchema,
+  rectangleShapeSchema,
+])
 
 const annotationDataSchema = z.object({
   version: z.literal(1),

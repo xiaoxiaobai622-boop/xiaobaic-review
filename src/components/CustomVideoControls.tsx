@@ -33,6 +33,11 @@ interface CustomVideoControlsProps {
   isAdmin?: boolean
   timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onMarkerClick?: (commentId: string) => void // Callback when a timeline marker is clicked
+  pendingRangeStart?: number | null
+  pendingRangeEnd?: number | null
+  isSelectingRange?: boolean
+  onRangeStartChange?: (time: number) => void
+  onRangeEndChange?: (time: number) => void
 }
 
 // Color map for marker backgrounds - IDENTICAL to InitialsAvatar component
@@ -324,6 +329,11 @@ export default function CustomVideoControls({
   isAdmin: _isAdmin = false,
   timestampDisplayMode = 'TIMECODE',
   onMarkerClick,
+  pendingRangeStart = null,
+  pendingRangeEnd = null,
+  isSelectingRange = false,
+  onRangeStartChange,
+  onRangeEndChange,
 }: CustomVideoControlsProps) {
   const t = useTranslations('controls')
   const tComments = useTranslations('comments')
@@ -481,7 +491,7 @@ export default function CustomVideoControls({
     if (isDragging) {
       onSeek(time)
     }
-  }, [isDragging, videoDuration, onSeek])
+  }, [isDragging, onSeek, videoDuration])
 
   const handleTimelineMouseLeave = useCallback(() => {
     setHoveredTime(null)
@@ -497,6 +507,50 @@ export default function CustomVideoControls({
     window.addEventListener('mouseup', handleMouseUp)
     return () => window.removeEventListener('mouseup', handleMouseUp)
   }, [isDragging])
+
+  const updateRangeEndFromPointer = useCallback((clientX: number) => {
+    if (!timelineRef.current || !videoDuration || !onRangeEndChange) return
+    const rect = timelineRef.current.getBoundingClientRect()
+    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const nextTime = Math.max(pendingRangeStart ?? 0, percentage * videoDuration)
+    onRangeEndChange(nextTime)
+    onSeek(nextTime)
+  }, [onRangeEndChange, onSeek, pendingRangeStart, videoDuration])
+
+  const updateRangeStartFromPointer = useCallback((clientX: number) => {
+    if (!timelineRef.current || !videoDuration || !onRangeStartChange) return
+    const rect = timelineRef.current.getBoundingClientRect()
+    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const nextTime = Math.min(pendingRangeEnd ?? videoDuration, percentage * videoDuration)
+    onRangeStartChange(nextTime)
+    onSeek(nextTime)
+  }, [onRangeStartChange, onSeek, pendingRangeEnd, videoDuration])
+
+  const handleRangePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }, [])
+
+  const handleRangePointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    e.preventDefault()
+    e.stopPropagation()
+    updateRangeEndFromPointer(e.clientX)
+  }, [updateRangeEndFromPointer])
+
+  const handleRangeStartPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }, [])
+
+  const handleRangeStartPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    e.preventDefault()
+    e.stopPropagation()
+    updateRangeStartFromPointer(e.clientX)
+  }, [updateRangeStartFromPointer])
 
   const handleMarkerClick = useCallback((marker: MarkerData, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -559,9 +613,9 @@ export default function CustomVideoControls({
   }
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent p-2 sm:p-3 rounded-b-xl">
+    <div className="absolute left-0 right-0 top-full z-30 min-h-0 border-t border-border/60 bg-background/95 p-1 pb-1.5 sm:p-1.5 sm:pb-1.5">
       {/* Timeline Container */}
-      <div className="mb-0 sm:mb-3 px-1">
+      <div className="mb-0 px-1">
         <div
           ref={timelineRef}
           className="relative h-10 sm:h-12 group cursor-pointer touch-none"
@@ -602,6 +656,54 @@ export default function CustomVideoControls({
             )
           })}
 
+          {isSelectingRange && pendingRangeStart !== null && pendingRangeStart !== undefined && videoDuration > 0 && (
+            <>
+              <div
+                className="pointer-events-none absolute top-1/2 h-2 -translate-y-1/2 bg-primary/35"
+                style={{
+                  left: `${Math.min(100, Math.max(0, (pendingRangeStart / videoDuration) * 100))}%`,
+                  width: `${Math.max(0, Math.min(100, (((pendingRangeEnd ?? pendingRangeStart) - pendingRangeStart) / videoDuration) * 100))}%`,
+                }}
+              />
+              <button
+                type="button"
+                aria-label="批注开始时间"
+                className="absolute top-[calc(50%+14px)] z-20 h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize bg-transparent"
+                style={{ left: `${Math.min(100, Math.max(0, (pendingRangeStart / videoDuration) * 100))}%` }}
+                onPointerDown={handleRangeStartPointerDown}
+                onPointerMove={handleRangeStartPointerMove}
+                onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId) }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="absolute left-0.5 top-1/2 h-5 w-1 -translate-y-1/2 bg-slate-500" />
+                <span className="absolute left-0.5 top-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute left-0.5 bottom-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute right-0.5 top-1/2 h-5 w-1 -translate-y-1/2 bg-slate-500" />
+                <span className="absolute right-0.5 top-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute right-0.5 bottom-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow-sm" />
+              </button>
+              <button
+                type="button"
+                aria-label="批注结束时间"
+                className="absolute top-[calc(50%+14px)] z-20 h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize bg-transparent"
+                style={{ left: `${Math.min(100, Math.max(0, ((pendingRangeEnd ?? pendingRangeStart) / videoDuration) * 100))}%` }}
+                onPointerDown={handleRangePointerDown}
+                onPointerMove={handleRangePointerMove}
+                onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId) }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="absolute left-0.5 top-1/2 h-5 w-1 -translate-y-1/2 bg-slate-500" />
+                <span className="absolute left-0.5 top-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute left-0.5 bottom-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute right-0.5 top-1/2 h-5 w-1 -translate-y-1/2 bg-slate-500" />
+                <span className="absolute right-0.5 top-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute right-0.5 bottom-1.5 h-1 w-2.5 bg-slate-500" />
+                <span className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow-sm" />
+              </button>
+            </>
+          )}
+
           {/* Comment Markers */}
           {groupedMarkers.map((group) => {
             const primaryMarker = group[0]
@@ -612,9 +714,10 @@ export default function CustomVideoControls({
             return (
               <div
                 key={primaryMarker.id}
-                className="absolute top-1/2 -translate-y-1/2 pointer-events-auto"
+                className="absolute -translate-y-1/2 pointer-events-auto"
                 style={{
                   left: `${primaryMarker.position}%`,
+                  top: '26%',
                   transform: 'translateX(-50%) translateY(-50%)',
                 }}
               >
@@ -627,7 +730,7 @@ export default function CustomVideoControls({
                   onTouchStart={(e) => handleMarkerTouchStart(primaryMarker.id, e)}
                   className={`
                     relative flex items-center justify-center
-                    w-7 h-7 sm:w-8 sm:h-8
+                    w-5 h-5 sm:w-5 sm:h-5
                     rounded-full ring-1 ring-inset
                     font-semibold select-none
                     transition-all duration-150 ease-out
@@ -639,7 +742,7 @@ export default function CustomVideoControls({
                   `}
                   aria-label={`Comment by ${primaryMarker.authorName || tComments('anonymous')} at ${formatTime(primaryMarker.timestamp)}`}
                 >
-                  <span className="text-[11px] sm:text-xs font-semibold leading-none">
+                  <span className="text-[8px] sm:text-[9px] font-semibold leading-none bg-purple-700/90 text-white absolute inset-0 rounded-full flex items-center justify-center">
                     {primaryMarker.initials}
                   </span>
 
@@ -680,7 +783,7 @@ export default function CustomVideoControls({
                                 {marker.authorName || tComments('anonymous')}
                               </span>
                             </div>
-                            <span className="text-[9px] text-white/70 font-mono">
+                            <span className="text-[9px] text-white/70 font-sans tabular-nums">
                               {formatTime(marker.timestamp)}
                             </span>
                           </div>
@@ -712,7 +815,7 @@ export default function CustomVideoControls({
           {/* Hover Time Indicator */}
           {hoveredTime !== null && !isDragging && (
             <div
-              className="absolute bottom-full mb-2 px-2 py-1 bg-black/90 text-white text-xs font-mono rounded border border-white/20 shadow-lg whitespace-nowrap pointer-events-none"
+              className="absolute bottom-full mb-2 px-2 py-1 bg-black/90 text-white text-xs font-sans tabular-nums rounded border border-white/20 shadow-lg whitespace-nowrap pointer-events-none"
               style={{
                 left: `${(hoveredTime / videoDuration) * 100}%`,
                 transform: 'translateX(-50%)',
@@ -732,38 +835,38 @@ export default function CustomVideoControls({
           <div className="hidden sm:flex items-center gap-1 sm:gap-2">
             <button
               onClick={() => onFrameStep('backward')}
-              className="p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+              className="p-2 sm:p-2.5 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors touch-manipulation"
               aria-label={t('previousFrame')}
               title={`${t('previousFrame')} (Ctrl+J)`}
             >
-              <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
             </button>
 
             <button
               onClick={onPlayPause}
-              className="p-2.5 sm:p-3 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+              className="p-1.5 sm:p-2 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors touch-manipulation"
               aria-label={isPlaying ? t('pauseVideo') : t('playVideo')}
               title={isPlaying ? `${t('pauseVideo')} (Ctrl+Space)` : `${t('playVideo')} (Ctrl+Space)`}
             >
               {isPlaying ? (
-                <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-white fill-white" />
+                <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-slate-700 fill-slate-700" />
               ) : (
-                <Play className="w-5 h-5 sm:w-6 sm:h-6 text-white fill-white" />
+                <Play className="w-5 h-5 sm:w-6 sm:h-6 text-slate-700 fill-slate-700" />
               )}
             </button>
 
             <button
               onClick={() => onFrameStep('forward')}
-              className="p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+              className="p-2 sm:p-2.5 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors touch-manipulation"
               aria-label={t('nextFrame')}
               title={`${t('nextFrame')} (Ctrl+L)`}
             >
-              <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
             </button>
           </div>
 
           {/* Time Display */}
-          <div className="text-white text-xs sm:text-sm font-mono sm:ml-2 whitespace-nowrap">
+          <div className="text-slate-700 text-xs sm:text-sm font-sans font-medium tabular-nums sm:ml-2 whitespace-nowrap">
             {formatTimeWithMode(currentTime, videoFps, videoDuration, timestampDisplayMode)} / {formatTimeWithMode(videoDuration, videoFps, videoDuration, timestampDisplayMode)}
           </div>
         </div>
@@ -778,14 +881,14 @@ export default function CustomVideoControls({
           >
             <button
               onClick={onToggleMute}
-              className="p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+              className="p-2 sm:p-2.5 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors touch-manipulation"
               aria-label={isMuted ? t('unmute') : t('mute')}
               title={isMuted ? t('unmute') : t('mute')}
             >
               {isMuted || volume === 0 ? (
-                <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
               ) : (
-                <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
               )}
             </button>
 
@@ -812,25 +915,25 @@ export default function CustomVideoControls({
           {/* Loop */}
           <button
             onClick={onToggleLoop}
-            className={`p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation ${isLooping ? 'bg-white/15' : ''}`}
+            className={`p-2 sm:p-2.5 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors touch-manipulation ${isLooping ? 'bg-slate-200' : ''}`}
             aria-label={t('loop')}
             aria-pressed={isLooping}
             title={t('loop')}
           >
-            <Repeat className={`w-4 h-4 sm:w-5 sm:h-5 ${isLooping ? 'text-primary' : 'text-white'}`} />
+            <Repeat className={`w-4 h-4 sm:w-5 sm:h-5 ${isLooping ? 'text-primary' : 'text-slate-700'}`} />
           </button>
 
           {/* Fullscreen */}
           <button
             onClick={onToggleFullscreen}
-            className="p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+            className="p-2 sm:p-2.5 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors touch-manipulation"
             aria-label={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
             title={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
           >
             {isFullscreen ? (
-              <Minimize className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <Minimize className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
             ) : (
-              <Maximize className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <Maximize className="w-4 h-4 sm:w-5 sm:h-5 text-slate-700" />
             )}
           </button>
         </div>
