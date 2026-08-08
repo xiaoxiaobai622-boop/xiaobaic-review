@@ -123,8 +123,12 @@ export async function sanitizeAndValidateContent(params: {
 
   let sanitizedAuthorName = authorName || null
   if (sanitizedAuthorName) {
-    const invalidChars = sanitizedAuthorName.match(/[^a-zA-Z0-9\s\-_.()]/g)
-    if (invalidChars) {
+    sanitizedAuthorName = sanitizedAuthorName.trim().normalize('NFC')
+
+    // Names are international user data. Allow Unicode letters, combining marks,
+    // numbers and common name punctuation while rejecting markup and controls.
+    const validAuthorName = /^[\p{L}\p{M}\p{N}\p{Zs}\-_.()'’·]+$/u.test(sanitizedAuthorName)
+    if (!validAuthorName) {
       return {
         valid: false,
         error: 'Invalid characters in name',
@@ -140,7 +144,6 @@ export async function sanitizeAndValidateContent(params: {
       }
     }
 
-    sanitizedAuthorName = sanitizedAuthorName.trim()
   }
 
   return {
