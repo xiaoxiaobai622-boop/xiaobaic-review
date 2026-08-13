@@ -9,6 +9,7 @@ import { logError, logMessage } from '@/lib/logging'
 import { rateLimit } from '@/lib/rate-limit'
 import { handleReverseShareUploadNotification } from '@/lib/upload-notifications'
 import type { CompletedPart } from '@aws-sdk/client-s3'
+import { directPlaybackReadyData, probeStoredDirectPlayableMp4 } from '@/lib/direct-video-playback'
 
 export const runtime = 'nodejs'
 
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
     // ── Derive S3 key from DB (never trust client-supplied key) ───────────────
     // Auth helper already resolved s3Key. For videos, re-check status (TOCTOU guard).
     let s3Key = authResult.s3Key
-    let dbVideo: { id: string; originalStoragePath: string; projectId: string; status: string } | null = null
+    let dbVideo: { id: string; originalStoragePath: string; originalFileName: string; projectId: string; status: string } | null = null
     let dbAsset: { id: string; storagePath: string; category: string | null } | null = null
     let dbProjectUpload: { id: string; storagePath: string; projectId: string; fileName: string; uploadedByName: string | null; uploadedByEmail: string | null } | null = null
     let dbPhoto: { id: string; storagePath: string } | null = null
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
     if (videoId) {
       const video = await prisma.video.findUnique({
         where: { id: videoId },
-        select: { id: true, originalStoragePath: true, projectId: true, status: true },
+        select: { id: true, originalStoragePath: true, originalFileName: true, projectId: true, status: true },
       })
       if (!video) return NextResponse.json({ error: 'Video record not found' }, { status: 404 })
       if (video.status !== 'UPLOADING') {
@@ -163,18 +164,31 @@ export async function POST(request: NextRequest) {
 
     // ── Update DB and trigger worker (mirrors TUS onUploadFinish) ─────────────
     if (dbVideo) {
-      await prisma.video.update({
-        where: { id: dbVideo.id },
-        data: { status: 'PROCESSING', processingProgress: 0 },
-      })
+      const directPlayback = await probeStoredDirectPlayableMp4(
+        dbVideo.originalStoragePath,
+        dbVideo.originalFileName
+      )
 
-      await videoQueue.add('process-video', {
-        videoId: dbVideo.id,
-        originalStoragePath: dbVideo.originalStoragePath,
-        projectId: dbVideo.projectId,
-      })
+      if (directPlayback.compatible && directPlayback.metadata) {
+        await prisma.video.update({
+          where: { id: dbVideo.id },
+          data: directPlaybackReadyData(directPlayback.metadata),
+        })
+        logMessage(`[S3 COMPLETE] Video ${dbVideo.id} is ready for direct playback`)
+      } else {
+        await prisma.video.update({
+          where: { id: dbVideo.id },
+          data: { status: 'PROCESSING', processingProgress: 0 },
+        })
 
-      logMessage(`[S3 COMPLETE] Video ${dbVideo.id} queued for processing`)
+        await videoQueue.add('process-video', {
+          videoId: dbVideo.id,
+          originalStoragePath: dbVideo.originalStoragePath,
+          projectId: dbVideo.projectId,
+        })
+
+        logMessage(`[S3 COMPLETE] Video ${dbVideo.id} queued for processing`)
+      }
     } else if (dbAsset) {
       const actualFileType = sanitizeContentType(contentType)
 

@@ -18,7 +18,6 @@ import { loadShareToken, saveShareToken } from '@/lib/share-token-store'
 import { loadPortalSession } from '@/app/portal/portalSession'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
-import { ShareTutorial } from '@/components/ShareTutorial'
 import PrivacyBanner, { PRIVACY_STORAGE_KEY } from '@/components/PrivacyBanner'
 import ReverseShareUploadPanel from '@/components/ReverseShareUploadPanel'
 import SharePhotoSection from '@/components/SharePhotoSection'
@@ -926,24 +925,20 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
           <div className="flex items-center gap-2" data-tutorial="grid-actions" />
 
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
+            {!isGuest && project.allowReverseShare && shareToken && (
+              <ReverseShareUploadPanel
+                shareToken={shareToken}
+                shareSlug={token}
+                projectName={project.title}
+                maxFiles={project.settings?.maxReverseShareFiles ?? 10}
+                triggerLabel={t('uploadLink')}
+              />
+            )}
             <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} />
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
             <LanguageToggle />
             <ThemeToggle />
-            {project.showClientTutorial && (
-              <ShareTutorial
-                projectId={project.id || token}
-                showTutorial={project.showClientTutorial}
-                watermarkEnabled={project.watermarkEnabled}
-                hideFeedback={project.hideFeedback}
-                clientCanApprove={project.clientCanApprove}
-                allowAssetDownload={project.allowAssetDownload}
-                allowReverseShare={project.allowReverseShare}
-                isGuest={isGuest}
-                inPlayerView={false}
-              />
-            )}
           </div>
         </div>
 
@@ -1008,7 +1003,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           activeVideoName={activeVideoName}
           onVideoSelect={handleVideoSelect}
           onBackToGrid={handleBackToGrid}
-          showBackButton={false}
+          showBackButton={true}
           showCommentToggle={!project.hideFeedback && !isGuest}
           isCommentPanelVisible={!hideComments}
           onToggleCommentPanel={() => setHideComments(!hideComments)}
@@ -1016,19 +1011,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           trailingAction={
             <div className="flex items-center gap-1">
               <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} />
-              {project.showClientTutorial && (
-                <ShareTutorial
-                  projectId={project.id || token}
-                  showTutorial={project.showClientTutorial}
-                  watermarkEnabled={project.watermarkEnabled}
-                  hideFeedback={project.hideFeedback}
-                  clientCanApprove={project.clientCanApprove}
-                  allowAssetDownload={project.allowAssetDownload}
-                  allowReverseShare={project.allowReverseShare}
-                  isGuest={isGuest}
-                  inPlayerView={true}
-                />
-              )}
             </div>
           }
         />
@@ -1101,6 +1083,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}
                   authenticatedEmail={authenticatedEmail}
+                  authenticatedName={authenticatedName}
                   allowClientAssetUpload={project.allowClientAssetUpload || false}
                   maxCommentAttachments={project.settings?.maxCommentAttachments ?? 10}
                   onToggleVisibility={() => setHideComments(!hideComments)}

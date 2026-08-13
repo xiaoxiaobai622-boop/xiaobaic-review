@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { ChevronRight, ChevronUp, Video, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3 } from 'lucide-react'
+import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3 } from 'lucide-react'
 import VideoUpload from './VideoUpload'
 import VideoList from './VideoList'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -16,6 +16,7 @@ import { FILE_LIMITS } from '@/lib/file-validation'
 import { entryToFiles } from '@/lib/drop-entries'
 import { useTranslations } from 'next-intl'
 import VideoComparison from './VideoComparison'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 function isVideoFile(file: File): boolean {
   const name = file.name.toLowerCase()
@@ -87,6 +88,7 @@ export default function AdminVideoManager({
   const [localVersionTargetGroup, setLocalVersionTargetGroup] = useState<string | null>(null)
   const [localVersionFile, setLocalVersionFile] = useState<File | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [copiedReviewGroup, setCopiedReviewGroup] = useState<string | null>(null)
   const dragCounterRef = useRef(0)
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
   const [editGroupValue, setEditGroupValue] = useState('')
@@ -213,8 +215,16 @@ export default function AdminVideoManager({
     e.stopPropagation()
     const baseUrl = shareUrl || `${window.location.origin}/admin/projects/${projectId}/share`
     const separator = baseUrl.includes('?') ? '&' : '?'
-    await navigator.clipboard.writeText(`${baseUrl}${separator}video=${encodeURIComponent(groupName)}`)
-    setActionMenuGroup(null)
+    const copied = await copyTextToClipboard(`${baseUrl}${separator}video=${encodeURIComponent(groupName)}`)
+    if (!copied) {
+      alert(tc('errorTryAgain'))
+      return
+    }
+    setCopiedReviewGroup(groupName)
+    window.setTimeout(() => {
+      setCopiedReviewGroup(null)
+      setActionMenuGroup(null)
+    }, 1200)
   }
 
   const openLocalVersionPicker = (groupName: string, e: React.MouseEvent) => {
@@ -672,7 +682,8 @@ export default function AdminVideoManager({
                               <ExternalLink className="h-4 w-4" />{t('openReviewPage')}
                             </button>
                             <button type="button" onClick={(e) => handleCopyReviewLink(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-                              <Link2 className="h-4 w-4" />{t('copyReviewLink')}
+                              {copiedReviewGroup === groupName ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
+                              {copiedReviewGroup === groupName ? tc('copied') : t('copyReviewLink')}
                             </button>
                             <button
                               type="button"

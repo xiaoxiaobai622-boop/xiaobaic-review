@@ -40,6 +40,7 @@ interface CommentSectionProps {
   mobileCollapsible?: boolean
   initialMobileCollapsed?: boolean
   authenticatedEmail?: string | null
+  authenticatedName?: string | null
   allowClientAssetUpload?: boolean
   maxCommentAttachments?: number
   onToggleVisibility?: () => void
@@ -54,22 +55,18 @@ export default function CommentSection({
   projectSlug: _projectSlug,
   comments: initialComments,
   focusCommentId = null,
-  clientName,
-  clientEmail,
   isApproved,
   restrictToLatestVersion = false,
   videos = [],
   isAdminView = false,
   smtpConfigured: _smtpConfigured = false,
-  isPasswordProtected = false,
   adminUser = null,
-  recipients = [],
   shareToken = null,
   showShortcutsButton = false,
   timestampDisplayMode = 'TIMECODE',
   mobileCollapsible = false,
   initialMobileCollapsed = true,
-  authenticatedEmail = null,
+  authenticatedName = null,
   allowClientAssetUpload = false,
   maxCommentAttachments,
   onToggleVisibility,
@@ -107,11 +104,6 @@ export default function CommentSection({
     selectedVideoFps,
     loading,
     replyingToCommentId,
-    authorName,
-    nameSource,
-    selectedRecipientId,
-    namedRecipients,
-    isOtpAuthenticated,
     pendingAttachments,
     attachmentError,
     attachmentNotice,
@@ -124,8 +116,6 @@ export default function CommentSection({
     handleCancelReply,
     handleClearTimestamp,
     handleDeleteComment,
-    setAuthorName,
-    handleNameSourceChange,
     handleAttachmentAdded,
     handleRemoveAttachment,
     handleAttachmentErrorChange,
@@ -137,15 +127,11 @@ export default function CommentSection({
     projectId,
     initialComments,
     videos,
-    clientEmail,
-    isPasswordProtected,
     adminUser,
-    recipients,
-    clientName,
     restrictToLatestVersion,
     shareToken,
     useAdminAuth: isAdminView,
-    authenticatedEmail,
+    authenticatedName,
   })
 
   // Auto-scroll to latest comment (like messaging apps)
@@ -456,14 +442,6 @@ export default function CommentSection({
               onClearTimecodeEnd={handleClearTimecodeEnd}
               replyingToComment={replyingToComment}
               onCancelReply={handleCancelReply}
-              showAuthorInput={!isAdminView && isPasswordProtected}
-              authorName={authorName}
-              onAuthorNameChange={setAuthorName}
-              namedRecipients={namedRecipients}
-              nameSource={nameSource}
-              selectedRecipientId={selectedRecipientId}
-              onNameSourceChange={handleNameSourceChange}
-              isOtpAuthenticated={isOtpAuthenticated}
               currentVideoRestricted={currentVideoRestricted}
               restrictionMessage={restrictionMessage}
               commentsDisabled={commentsDisabled}
@@ -598,14 +576,6 @@ export default function CommentSection({
           onClearTimecodeEnd={handleClearTimecodeEnd}
           replyingToComment={replyingToComment}
           onCancelReply={handleCancelReply}
-          showAuthorInput={!isAdminView && isPasswordProtected}
-          authorName={authorName}
-          onAuthorNameChange={setAuthorName}
-          namedRecipients={namedRecipients}
-          nameSource={nameSource}
-          selectedRecipientId={selectedRecipientId}
-          onNameSourceChange={handleNameSourceChange}
-          isOtpAuthenticated={isOtpAuthenticated}
           currentVideoRestricted={currentVideoRestricted}
           restrictionMessage={restrictionMessage}
           commentsDisabled={commentsDisabled}

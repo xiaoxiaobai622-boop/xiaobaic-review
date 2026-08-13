@@ -21,9 +21,10 @@ export async function validateCommentPermissions(params: {
 }): Promise<{ valid: boolean; error?: string; errorStatus?: number }> {
   const { projectId, isInternal, currentUser } = params
 
-  // SECURITY: If isInternal flag is set, verify admin session
+  // Internal comments require a real team account. Project authorization is
+  // enforced separately by verifyProjectAccess in the route.
   if (isInternal) {
-    if (!currentUser || currentUser.role !== 'ADMIN') {
+    if (!currentUser || !['ADMIN', 'MEMBER'].includes(currentUser.role)) {
       return { valid: false, error: 'Unauthorized', errorStatus: 401 }
     }
   }

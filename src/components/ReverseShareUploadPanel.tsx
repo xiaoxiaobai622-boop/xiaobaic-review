@@ -49,6 +49,7 @@ interface ReverseShareUploadPanelProps {
   maxFiles?: number
   autoOpen?: boolean
   variant?: 'dialog' | 'embedded'
+  triggerLabel?: string
 }
 
 const DEFAULT_MAX_FILES = 10
@@ -60,6 +61,7 @@ export default function ReverseShareUploadPanel({
   maxFiles: maxFilesProp,
   autoOpen = false,
   variant = 'dialog',
+  triggerLabel,
 }: ReverseShareUploadPanelProps) {
   const t = useTranslations('share')
   const tc = useTranslations('common')
@@ -483,9 +485,10 @@ export default function ReverseShareUploadPanel({
         type="button"
         onClick={() => setOpen(true)}
         className="p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm flex items-center gap-1.5"
+        aria-label={triggerLabel || t('submitFiles')}
       >
         <FolderUp className="h-5 w-5 text-foreground" />
-        <span className="hidden sm:inline text-sm font-medium text-foreground">{t('submitFiles')}</span>
+        <span className="hidden min-[440px]:inline text-sm font-medium text-foreground">{triggerLabel || t('submitFiles')}</span>
       </button>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>

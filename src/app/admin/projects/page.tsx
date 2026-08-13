@@ -22,6 +22,7 @@ import { SharePasswordRequirements } from '@/components/SharePasswordRequirement
 import { ClientSelector } from '@/components/ClientSelector'
 import { generateSecurePassword } from '@/lib/password-utils'
 import type { ViewMode } from '@/components/ViewModeToggle'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import {
   applyProjectsQuery,
   clientLabelFor,
@@ -253,10 +254,11 @@ export default function AdminPage() {
     setCopied(false)
   }
 
-  function handleCopyPassword() {
-    navigator.clipboard.writeText(sharePassword)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  async function handleCopyPassword() {
+    if (await copyTextToClipboard(sharePassword)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   function openNewProjectModal() {

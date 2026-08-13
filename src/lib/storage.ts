@@ -4,7 +4,7 @@ import { Readable } from 'stream'
 import { ReadStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { mkdir } from 'fs/promises'
-import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory } from './s3-storage'
+import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3GetPresignedOriginStreamUrl } from './s3-storage'
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || '/app/uploads'
 
@@ -183,6 +183,12 @@ export async function deleteDirectory(dirPath: string): Promise<void> {
 
 export function getFilePath(filePath: string): string {
   return validatePath(filePath)
+}
+
+export async function getVideoProbeSource(filePath: string): Promise<string> {
+  return isS3Mode()
+    ? s3GetPresignedOriginStreamUrl(filePath)
+    : getFilePath(filePath)
 }
 
 const VIDEO_MIME_MAP: Record<string, string> = {

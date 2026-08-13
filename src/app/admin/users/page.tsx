@@ -13,6 +13,7 @@ import { PasswordRequirements } from '@/components/PasswordRequirements'
 import { startRegistration } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
 import { getDisplayEmail } from '@/lib/user-contact'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface UserData {
   id: string
@@ -182,9 +183,10 @@ export default function UsersPage() {
   }
 
   const copyPassword = async (password: string) => {
-    await navigator.clipboard.writeText(password)
-    setCopiedPassword(true)
-    setTimeout(() => setCopiedPassword(false), 2000)
+    if (await copyTextToClipboard(password)) {
+      setCopiedPassword(true)
+      setTimeout(() => setCopiedPassword(false), 2000)
+    }
   }
 
   // Add user

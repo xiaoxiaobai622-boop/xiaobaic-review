@@ -1163,6 +1163,7 @@
     "approveToDownloadHint": "至少通过一个视频后即可下载。",
     "noApprovedVideos": "没有可下载的已通过视频",
     "submitFiles": "上传文件",
+    "uploadLink": "上传链接",
     "submitFilesTitle": "上传收录文件",
     "uploadProjectName": "项目：{name}",
     "submitFilesDesc": "选择要提交给工作室的原始素材、参考文件或交付文件。",

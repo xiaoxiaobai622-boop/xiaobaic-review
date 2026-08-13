@@ -25,6 +25,8 @@ export interface VideoMetadata {
   height: number
   fps?: number
   codec?: string
+  audioCodecs?: string[]
+  format?: string
 }
 
 /**
@@ -149,12 +151,19 @@ export async function getVideoMetadata(inputPath: string): Promise<VideoMetadata
           fps = den ? num / den : undefined
         }
 
+        const audioCodecs = metadata.streams
+          .filter((stream: any) => stream.codec_type === 'audio')
+          .map((stream: any) => stream.codec_name)
+          .filter((codec: unknown): codec is string => typeof codec === 'string' && codec.length > 0)
+
         const result = {
           duration: parseFloat(metadata.format.duration) || 0,
           width: videoStream.width || 0,
           height: videoStream.height || 0,
           fps,
           codec: videoStream.codec_name,
+          audioCodecs,
+          format: metadata.format.format_name,
         }
 
         if (DEBUG) {

@@ -14,6 +14,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 export default function EditUserPage() {
   const t = useTranslations('users')
@@ -182,8 +183,7 @@ export default function EditUserPage() {
   }
 
   const copyPassword = async () => {
-    if (passwordData.password) {
-      await navigator.clipboard.writeText(passwordData.password)
+    if (passwordData.password && await copyTextToClipboard(passwordData.password)) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }

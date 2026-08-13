@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Calendar, ChevronLeft, ChevronRight, Copy, RefreshCw, BarChart3, Check, Link2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import Link from 'next/link'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface CalendarProject {
   id: string
@@ -82,10 +83,11 @@ export default function CalendarPage() {
     }
   }
 
-  function copyFeedUrl() {
-    navigator.clipboard.writeText(feedUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  async function copyFeedUrl() {
+    if (await copyTextToClipboard(feedUrl)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   // Shared helpers

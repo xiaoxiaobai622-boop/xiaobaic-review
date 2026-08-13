@@ -9,6 +9,7 @@ import { Button } from './ui/button'
 import { Trash2, ExternalLink, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Copy, Check, Calendar } from 'lucide-react'
 import { UnapproveModal } from './UnapproveModal'
 import { apiPost, apiPatch, apiDelete } from '@/lib/api-client'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface Video {
   id: string
@@ -260,10 +261,13 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
                 />
                 <div className="flex gap-2">
                   <Button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(shareUrl)
-                      setLinkCopied(true)
-                      setTimeout(() => setLinkCopied(false), 2000)
+                    onClick={async () => {
+                      if (await copyTextToClipboard(shareUrl)) {
+                        setLinkCopied(true)
+                        setTimeout(() => setLinkCopied(false), 2000)
+                      } else {
+                        alert(tc('errorTryAgain'))
+                      }
                     }} 
                     variant="outline" 
                     size="sm"

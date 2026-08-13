@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api-client'
 import { Label } from '@/components/ui/label'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface PlaceholderDefinition {
   key: string
@@ -192,10 +193,11 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
   }, [selectedTemplate, t])
 
   // Copy placeholder to clipboard
-  const handleCopyPlaceholder = useCallback((placeholder: string) => {
-    navigator.clipboard.writeText(placeholder)
-    setCopiedPlaceholder(placeholder)
-    setTimeout(() => setCopiedPlaceholder(null), 2000)
+  const handleCopyPlaceholder = useCallback(async (placeholder: string) => {
+    if (await copyTextToClipboard(placeholder)) {
+      setCopiedPlaceholder(placeholder)
+      setTimeout(() => setCopiedPlaceholder(null), 2000)
+    }
   }, [])
 
   // Back to template list

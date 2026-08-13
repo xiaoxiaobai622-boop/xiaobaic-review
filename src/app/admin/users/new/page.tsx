@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { PasswordRequirements } from '@/components/PasswordRequirements'
 import { apiPost } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 export default function NewUserPage() {
   const t = useTranslations('users')
@@ -46,8 +47,7 @@ export default function NewUserPage() {
   }
 
   const copyPassword = async () => {
-    if (formData.password) {
-      await navigator.clipboard.writeText(formData.password)
+    if (formData.password && await copyTextToClipboard(formData.password)) {
       setCopiedPassword(true)
       setTimeout(() => setCopiedPassword(false), 2000)
     }

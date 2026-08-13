@@ -1207,6 +1207,7 @@
     "approveToDownloadHint": "Approve at least one video to enable downloads.",
     "noApprovedVideos": "No approved videos available for download",
     "submitFiles": "Submit Files",
+    "uploadLink": "Upload link",
     "submitFilesTitle": "Submit Files to Project",
     "uploadProjectName": "Project: {name}",
     "submitFilesDesc": "Select files to submit to this project.",

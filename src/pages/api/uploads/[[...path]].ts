@@ -13,6 +13,7 @@ import { logError, logMessage } from '@/lib/logging'
 import { parseBearerToken, verifyAdminAccessToken, verifyShareToken } from '@/lib/auth'
 import { isS3Mode } from '@/lib/storage'
 import { handleReverseShareUploadNotification } from '@/lib/upload-notifications'
+import { directPlaybackReadyData, probeDirectPlayableMp4 } from '@/lib/direct-video-playback'
 
 
 const TUS_UPLOAD_DIR = '/tmp/vitransfer-tus-uploads'
@@ -326,6 +327,9 @@ async function handleVideoUploadFinish(tusFilePath: string, upload: any, videoId
 
   await validateVideoFile(tusFilePath, upload.metadata?.filename as string)
 
+  const originalFileName = upload.metadata?.filename as string || video.originalFileName
+  const directPlayback = await probeDirectPlayableMp4(tusFilePath, originalFileName)
+
   await initStorage()
 
   // Move the completed TUS temp file into final storage. In FS mode this is
@@ -338,23 +342,31 @@ async function handleVideoUploadFinish(tusFilePath: string, upload: any, videoId
     upload.metadata?.filetype as string || 'video/mp4'
   )
 
-  await prisma.video.update({
-    where: { id: videoId },
-    data: {
-      status: 'PROCESSING',
-      processingProgress: 0,
-    },
-  })
+  if (directPlayback.compatible && directPlayback.metadata) {
+    await prisma.video.update({
+      where: { id: videoId },
+      data: directPlaybackReadyData(directPlayback.metadata),
+    })
+    logMessage(`[UPLOAD] Video ${videoId} is H.264/AAC MP4 and is ready for direct playback`)
+  } else {
+    await prisma.video.update({
+      where: { id: videoId },
+      data: {
+        status: 'PROCESSING',
+        processingProgress: 0,
+      },
+    })
 
-  logMessage(`[UPLOAD] Video ${videoId} upload complete, status updated to PROCESSING`)
+    logMessage(`[UPLOAD] Video ${videoId} requires processing: ${directPlayback.reason || 'incompatible media'}`)
 
-  await videoQueue.add('process-video', {
-    videoId: video.id,
-    originalStoragePath: video.originalStoragePath,
-    projectId: video.projectId,
-  })
+    await videoQueue.add('process-video', {
+      videoId: video.id,
+      originalStoragePath: video.originalStoragePath,
+      projectId: video.projectId,
+    })
 
-  logMessage(`[UPLOAD] Video ${videoId} queued for worker processing`)
+    logMessage(`[UPLOAD] Video ${videoId} queued for worker processing`)
+  }
 
   // moveFile already removed the temp data file; clean the .json sidecar
   await cleanupTUSMetadata(tusFilePath)

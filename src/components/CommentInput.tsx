@@ -4,8 +4,6 @@ import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
-import { Input } from './ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight } from 'lucide-react'
 import { formatCommentTimestamp, secondsToTimecode } from '@/lib/timecode'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
@@ -33,16 +31,6 @@ interface CommentInputProps {
   // Reply state
   replyingToComment: Comment | null
   onCancelReply: () => void
-
-  // Author name (for clients on password-protected shares)
-  showAuthorInput: boolean
-  authorName: string
-  onAuthorNameChange: (value: string) => void
-  namedRecipients: Array<{ id: string; name: string | null }>
-  nameSource: 'recipient' | 'custom' | 'none'
-  selectedRecipientId: string
-  onNameSourceChange: (source: 'recipient' | 'custom' | 'none', recipientId?: string) => void
-  isOtpAuthenticated?: boolean
 
   // Restrictions
   currentVideoRestricted: boolean
@@ -86,14 +74,6 @@ export default function CommentInput({
   onClearTimecodeEnd,
   replyingToComment,
   onCancelReply,
-  showAuthorInput,
-  authorName,
-  onAuthorNameChange,
-  namedRecipients,
-  nameSource,
-  selectedRecipientId,
-  onNameSourceChange,
-  isOtpAuthenticated = false,
   currentVideoRestricted,
   restrictionMessage,
   commentsDisabled,
@@ -144,10 +124,8 @@ export default function CommentInput({
     )
   }
 
-  // Check if name selection is required but not provided
-  const isNameRequired = showAuthorInput && namedRecipients.length > 0 && nameSource === 'none'
   const hasAttachments = pendingAttachments.length > 0
-  const canSubmit = !loading && (newComment.trim() || hasAttachments || pendingAnnotation) && !isNameRequired
+  const canSubmit = !loading && Boolean(newComment.trim() || hasAttachments || pendingAnnotation)
   const timestampLabel =
     selectedTimestamp !== null && selectedTimestamp !== undefined
       ? formatCommentTimestamp({
@@ -217,70 +195,6 @@ export default function CommentInput({
           >
             {tCommon('cancel')}
           </button>
-        </div>
-      )}
-
-      {/* Author Info - Only show for password-protected shares (not for admin users) */}
-      {!currentVideoRestricted && showAuthorInput && !isOtpAuthenticated && (
-        <div className="mb-3 space-y-2">
-          {namedRecipients.length > 0 ? (
-            <>
-              <Select
-                value={nameSource === 'recipient' && selectedRecipientId ? selectedRecipientId : nameSource === 'custom' ? 'custom' : 'none'}
-                onValueChange={(value) => {
-                  if (value === 'custom') {
-                    onNameSourceChange('custom')
-                  } else if (value === 'none') {
-                    onNameSourceChange('none')
-                  } else {
-                    onNameSourceChange('recipient', value)
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('selectName')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">{t('selectName')}</SelectItem>
-                  {namedRecipients.map((recipient) => (
-                    <SelectItem key={recipient.id} value={recipient.id}>
-                      {recipient.name}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="custom">{t('customName')}</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {nameSource === 'custom' && (
-                <Input
-                  placeholder={t('enterYourName')}
-                  value={authorName}
-                  onChange={(e) => onAuthorNameChange(e.target.value)}
-                  className="text-sm"
-                  autoFocus
-                />
-              )}
-            </>
-          ) : (
-            <Input
-              placeholder={t('yourNameOptional')}
-              value={authorName}
-              onChange={(e) => onAuthorNameChange(e.target.value)}
-              className="text-sm"
-            />
-          )}
-        </div>
-      )}
-
-      {/* Show read-only name indicator when OTP authenticated */}
-      {!currentVideoRestricted && showAuthorInput && isOtpAuthenticated && authorName && (
-        <div className="mb-3">
-          <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border border-border rounded-md">
-            <InitialsAvatar name={authorName} size="sm" />
-            <span className="text-sm text-foreground font-medium">
-              {t('commentingAs')} <span className="font-semibold">{authorName}</span>
-            </span>
-          </div>
         </div>
       )}
 
@@ -435,17 +349,11 @@ export default function CommentInput({
             </p>
           )}
 
-          {isNameRequired ? (
-            <p className="text-xs text-warning mt-2">
-              {t('selectNameFirst')}
+          <div className="mt-1 sm:hidden">
+            <p className="text-xs text-muted-foreground">
+              {t('enterToSend')}
             </p>
-          ) : (
-            <div className="mt-1 sm:hidden">
-              <p className="text-xs text-muted-foreground">
-                {t('enterToSend')}
-              </p>
-            </div>
-          )}
+          </div>
         </>
       )}
     </div>

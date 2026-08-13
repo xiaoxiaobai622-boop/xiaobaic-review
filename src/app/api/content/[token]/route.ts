@@ -252,9 +252,8 @@ export async function GET(
         // Playback is preview-only. Originals are retained exclusively for explicit downloads.
         filePath = getPreferredPreviewPath(video.approved)
         if (!filePath) {
-          // Temporary migration guard: keep already-ready legacy videos playable until
-          // their bounded-bitrate previews have been regenerated. New processing jobs
-          // never reach READY without a 720p preview.
+          // Browser-compatible MP4 uploads can intentionally be READY without a
+          // generated preview. In that case the original is the playback source.
           if (video.status === 'READY' && originalPath) {
             filePath = originalPath
           } else {

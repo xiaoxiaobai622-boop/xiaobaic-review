@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { apiPost, apiDelete } from '@/lib/api-client'
 import { secondsToTimecode, timecodeToSeconds } from '@/lib/timecode'
 import { AnnotationData } from '@/types/annotations'
-import { logError } from '@/lib/logging'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -25,30 +24,22 @@ interface UseCommentManagementProps {
   projectId: string
   initialComments: CommentWithReplies[]
   videos: Video[]
-  clientEmail?: string
-  isPasswordProtected: boolean
   adminUser?: any
-  recipients: Array<{ id: string; name: string | null; email: string | null }>
-  clientName: string
   restrictToLatestVersion: boolean
   shareToken?: string | null
   useAdminAuth?: boolean
-  authenticatedEmail?: string | null
+  authenticatedName?: string | null
 }
 
 export function useCommentManagement({
   projectId,
   initialComments,
   videos,
-  clientEmail,
-  isPasswordProtected,
   adminUser = null,
-  recipients,
-  clientName: _clientName,
   restrictToLatestVersion,
   shareToken = null,
   useAdminAuth = false,
-  authenticatedEmail = null,
+  authenticatedName = null,
 }: UseCommentManagementProps) {
   const router = useRouter()
 
@@ -68,49 +59,7 @@ export function useCommentManagement({
   const attachmentUploadCountRef = useRef(0)
   const previousVideoIdRef = useRef<string | null>(null)
 
-  const namedRecipients = recipients.filter(r => r.name && r.name.trim() !== '')
-
-  // Auto-select recipient if authenticatedEmail is provided
-  useEffect(() => {
-    if (authenticatedEmail && recipients.length > 0) {
-      const matchingRecipient = recipients.find(r => 
-        r.email?.toLowerCase() === authenticatedEmail.toLowerCase()
-      )
-      
-      if (matchingRecipient && matchingRecipient.name) {
-        setNameSource('recipient')
-        setSelectedRecipientId(matchingRecipient.id)
-        setAuthorName(matchingRecipient.name)
-        
-        const storageKey = `comment-name-${projectId}`
-        try {
-          localStorage.setItem(storageKey, JSON.stringify({
-            nameSource: 'recipient',
-            selectedRecipientId: matchingRecipient.id,
-            authorName: matchingRecipient.name
-          }))
-        } catch (error) {
-          logError('Failed to save authenticated name:', error)
-        }
-      }
-    }
-  }, [authenticatedEmail, recipients, projectId])
-
-  const storageKey = `comment-name-${projectId}`
-  const loadPersistedName = () => {
-    if (typeof window === 'undefined') return null
-    try {
-      const stored = localStorage.getItem(storageKey)
-      return stored ? JSON.parse(stored) : null
-    } catch {
-      return null
-    }
-  }
-
-  const persistedName = loadPersistedName()
-  const [authorName, setAuthorName] = useState(persistedName?.authorName || '')
-  const [nameSource, setNameSource] = useState<'recipient' | 'custom' | 'none'>(persistedName?.nameSource || 'none')
-  const [selectedRecipientId, setSelectedRecipientId] = useState(persistedName?.selectedRecipientId || '')
+  const authorName = adminUser?.name || adminUser?.phone || adminUser?.email || authenticatedName || ''
 
   // Remove optimistic comments that have been confirmed by the server
   const activeOptimisticComments = optimisticComments.filter(oc => {
@@ -406,12 +355,6 @@ export function useCommentManagement({
       return
     }
 
-    // Prevent anonymous comments when named recipients are available
-    if (!useAdminAuth && isPasswordProtected && namedRecipients.length > 0 && nameSource === 'none') {
-      alert('Please select your name from the dropdown or choose "Custom Name" before commenting.')
-      return
-    }
-
     const validatedVideoId: string = selectedVideoId
     setAttachmentError(null)
     setAttachmentNotice(null)
@@ -451,10 +394,10 @@ export function useCommentManagement({
       annotations: (pendingAnnotation as Prisma.JsonValue) || null,
       content: commentContent,
       authorName: isInternalComment
-        ? (adminUser!.name || 'Admin')
-        : (isPasswordProtected ? authorName : 'Client'),
-      authorEmail: isInternalComment ? null : (clientEmail || null),
-      isInternal: isInternalComment,
+        ? (adminUser!.name || adminUser!.phone || adminUser!.email)
+        : (authenticatedName || authorName),
+      authorEmail: isInternalComment ? adminUser?.email || null : null,
+      isInternal: true,
       createdAt: new Date(),
       updatedAt: new Date(),
       resolved: false,
@@ -491,7 +434,7 @@ export function useCommentManagement({
         videoId: commentVideoId,
         timecode: commentTimecode,
         content: commentContent,
-        isInternal: isInternalComment,
+        isInternal: true,
       }
 
       if (pendingAnnotation) {
@@ -502,13 +445,9 @@ export function useCommentManagement({
       }
 
       if (isInternalComment) {
-        requestBody.authorName = adminUser!.name || 'Admin'
+        requestBody.authorName = adminUser!.name || adminUser!.phone || adminUser!.email
       } else {
-        if (authorName) requestBody.authorName = authorName
-        if (clientEmail) requestBody.authorEmail = clientEmail
-        if (nameSource === 'recipient' && selectedRecipientId) {
-          requestBody.recipientId = selectedRecipientId
-        }
+        requestBody.authorName = authenticatedName || authorName
       }
 
       if (commentParentId) {
@@ -519,23 +458,10 @@ export function useCommentManagement({
         requestBody.assetIds = commentAssetIds
       }
 
-      const submitPromise = shareToken
-        ? fetch('/api/comments', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${shareToken}`,
-            },
-            body: JSON.stringify(requestBody),
-          }).then(async response => {
-            if (!response.ok) {
-              const err = await response.json().catch(() => ({}))
-              throw new Error(err.error || 'Failed to submit comment')
-            }
-            return response.json() // Return the updated comments list
-          })
-        : useAdminAuth
-        ? apiPost('/api/comments', requestBody)
+      const submitPromise = shareToken || useAdminAuth
+        ? apiPost('/api/comments', requestBody, shareToken ? {
+            headers: { 'X-Share-Token': `Bearer ${shareToken}` },
+          } : undefined)
         : Promise.reject(new Error('Authentication required to submit comment'))
 
       submitPromise
@@ -594,36 +520,6 @@ export function useCommentManagement({
     setIsSelectingTimecodeEnd(false)
   }
 
-  const handleNameSourceChange = (source: 'recipient' | 'custom' | 'none', recipientId?: string) => {
-    setNameSource(source)
-    let newAuthorName = ''
-    let newRecipientId = ''
-
-    if (source === 'custom') {
-      newAuthorName = ''
-    } else if (source === 'none') {
-      newAuthorName = ''
-      newRecipientId = ''
-    } else if (recipientId) {
-      newRecipientId = recipientId
-      const selected = namedRecipients.find(r => r.id === recipientId)
-      newAuthorName = selected?.name || ''
-    }
-
-    setAuthorName(newAuthorName)
-    setSelectedRecipientId(newRecipientId)
-
-    try {
-      localStorage.setItem(storageKey, JSON.stringify({
-        nameSource: source,
-        authorName: newAuthorName,
-        selectedRecipientId: newRecipientId,
-      }))
-    } catch {
-      // Ignore storage errors
-    }
-  }
-
   const handleDeleteComment = async (commentId: string) => {
     if (!(useAdminAuth || adminUser)) {
       alert('Only admins can delete comments')
@@ -655,23 +551,6 @@ export function useCommentManagement({
       window.dispatchEvent(new CustomEvent('commentDeleted'))
     } catch (error) {
       alert(`Failed to delete comment: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
-  }
-
-  // Wrapper for setAuthorName that also persists to localStorage
-  const handleAuthorNameChange = (name: string) => {
-    setAuthorName(name)
-
-    if (nameSource === 'custom') {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify({
-          nameSource,
-          authorName: name,
-          selectedRecipientId,
-        }))
-      } catch {
-        // Ignore storage errors
-      }
     }
   }
 
@@ -756,11 +635,6 @@ export function useCommentManagement({
     selectedVideoFps,
     loading,
     replyingToCommentId,
-    authorName,
-    nameSource,
-    selectedRecipientId,
-    namedRecipients,
-    isOtpAuthenticated: !!authenticatedEmail,
     pendingAttachments,
     attachmentError,
     attachmentNotice,
@@ -771,8 +645,6 @@ export function useCommentManagement({
     handleCancelReply,
     handleClearTimestamp,
     handleDeleteComment,
-    setAuthorName: handleAuthorNameChange,
-    handleNameSourceChange,
     handleAttachmentAdded,
     handleRemoveAttachment,
     handleAttachmentErrorChange,

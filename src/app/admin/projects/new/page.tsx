@@ -15,6 +15,7 @@ import { SharePasswordRequirements } from '@/components/SharePasswordRequirement
 import { logError } from '@/lib/logging'
 import { ClientSelector } from '@/components/ClientSelector'
 import { generateSecurePassword } from '@/lib/password-utils'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 export default function NewProjectPage() {
   const router = useRouter()
@@ -73,10 +74,11 @@ export default function NewProjectPage() {
     setCopied(false)
   }
 
-  function handleCopyPassword() {
-    navigator.clipboard.writeText(sharePassword)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  async function handleCopyPassword() {
+    if (await copyTextToClipboard(sharePassword)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {

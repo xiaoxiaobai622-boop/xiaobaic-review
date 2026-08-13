@@ -444,3 +444,18 @@ export async function s3GetPresignedStreamUrl(
     { expiresIn: expirySeconds }
   )
 }
+
+/** Presigned origin URL for server-side probing. This deliberately bypasses CDN routing. */
+export async function s3GetPresignedOriginStreamUrl(
+  key: string,
+  expirySeconds: number = 600
+): Promise<string> {
+  return getSignedUrl(
+    getS3Client(),
+    new GetObjectCommand({
+      Bucket: getS3Bucket(),
+      Key: key,
+    }),
+    { expiresIn: expirySeconds }
+  )
+}

@@ -36,6 +36,7 @@ export function sanitizeComment(
   clientName?: string
 ) {
   const normalizedTimecode = normalizeTimecode(comment)
+  const accountAuthorName = comment.user?.name || comment.user?.email || null
 
   const sanitized: any = {
     id: comment.id,
@@ -57,7 +58,7 @@ export function sanitizeComment(
   // Use generic labels only
   if (isAdmin) {
     // Admins get real data for management purposes only
-    sanitized.authorName = comment.authorName
+    sanitized.authorName = accountAuthorName || comment.authorName
     sanitized.authorEmail = comment.authorEmail
     sanitized.userId = comment.userId
     if (comment.user) {
@@ -70,8 +71,8 @@ export function sanitizeComment(
   } else if (isAuthenticated) {
     // Authenticated share users see author names but never emails
     sanitized.authorName = comment.isInternal
-      ? (comment.authorName || 'Admin')
-      : (comment.authorName || clientName || 'Client')
+      ? (accountAuthorName || comment.authorName || 'Admin')
+      : (accountAuthorName || comment.authorName || clientName || 'Client')
   } else {
     // Guests/public: generic labels only, no PII
     sanitized.authorName = comment.isInternal ? 'Admin' : 'Client'

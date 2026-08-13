@@ -10,7 +10,6 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import {
 
   validateCommentPermissions,
-  resolveCommentAuthor,
   sanitizeAndValidateContent,
   handleCommentNotifications,
   fetchProjectComments
@@ -181,14 +180,21 @@ export async function POST(request: NextRequest) {
       timecode,
       timecodeEnd,
       content,
-      authorName,
-      authorEmail,
-      recipientId,
       parentId,
-      isInternal,
       assetIds,
       annotations,
     } = validation.data
+
+    if (!authContext.user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const accountAuthorName = authContext.user.name?.trim()
+      || authContext.user.phone
+      || authContext.user.email
 
     // Enforce configurable max comment attachments
     if (assetIds && assetIds.length > 0) {
@@ -207,7 +213,7 @@ export async function POST(request: NextRequest) {
 
     const permissionCheck = await validateCommentPermissions({
       projectId,
-      isInternal: isInternal || false,
+      isInternal: true,
       currentUser: authContext.user
     })
 
@@ -247,7 +253,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const uploaderSessionId = accessCheck.shareTokenSessionId
+    const uploaderSessionId = authContext.shareContext?.sessionId || accessCheck.shareTokenSessionId
     if (!uploaderSessionId) {
       return NextResponse.json(
         { error: shareMessages.unableToProcessRequest || 'Unable to process request' },
@@ -257,15 +263,12 @@ export async function POST(request: NextRequest) {
 
     const { isAdmin, isAuthenticated } = accessCheck
 
-    const { authorEmail: finalAuthorEmail, fallbackName } = await resolveCommentAuthor({
-      projectId,
-      authorEmail,
-      recipientId
-    })
+    const finalAuthorEmail = authContext.user.email
+    const fallbackName = accountAuthorName
 
     const contentValidation = await sanitizeAndValidateContent({
       content,
-      authorName
+      authorName: accountAuthorName
     })
 
     if (!contentValidation.valid) {
@@ -301,7 +304,7 @@ export async function POST(request: NextRequest) {
         content: contentValidation.sanitizedContent!,
         authorName: contentValidation.sanitizedAuthorName,
         authorEmail: finalAuthorEmail,
-        isInternal: isInternal || false,
+        isInternal: true,
         parentId: parentId || null,
         userId: authContext.user?.id || null,
         annotations: annotations || undefined,

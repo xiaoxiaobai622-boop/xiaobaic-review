@@ -362,7 +362,9 @@ export async function requireApiUser(request: NextRequest): Promise<AuthUser | R
 }
 
 export async function getShareContext(request: NextRequest): Promise<SharePayload | null> {
-  const bearer = parseBearerToken(request)
+  // Requests that need both account authentication and share access send the
+  // account token in Authorization and the project token separately.
+  const bearer = parseBearerToken(request, 'x-share-token') || parseBearerToken(request)
   if (!bearer) return null
   return verifyShareToken(bearer)
 }

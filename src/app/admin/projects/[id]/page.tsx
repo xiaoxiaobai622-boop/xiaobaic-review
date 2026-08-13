@@ -15,6 +15,7 @@ import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/components/AuthProvider'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 // Force dynamic rendering (no static pre-rendering)
 export const dynamic = 'force-dynamic'
@@ -261,11 +262,10 @@ export default function ProjectPage() {
 
   const copyCollectionLink = async () => {
     if (!collectionUrl) return
-    try {
-      await navigator.clipboard.writeText(collectionUrl)
+    if (await copyTextToClipboard(collectionUrl)) {
       setCollectionLinkCopied(true)
       window.setTimeout(() => setCollectionLinkCopied(false), 2000)
-    } catch {
+    } else {
       alert(tc('errorTryAgain'))
     }
   }

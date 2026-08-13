@@ -6,6 +6,7 @@ import { validateUploadedFile } from '@/lib/file-validation'
 import { deleteFile, getVideoContentType } from '@/lib/storage'
 import { getVideoQueue } from '@/lib/queue'
 import { logError } from '@/lib/logging'
+import { directPlaybackReadyData, probeStoredDirectPlayableMp4 } from '@/lib/direct-video-playback'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -91,18 +92,30 @@ export async function POST(
       await deleteFile(upload.thumbnailPath).catch(() => {})
     }
 
-    try {
-      await getVideoQueue().add('process-video', {
-        videoId: result.id,
-        originalStoragePath: result.originalStoragePath,
-        projectId,
-      })
-    } catch (error) {
+    const directPlayback = await probeStoredDirectPlayableMp4(
+      result.originalStoragePath,
+      result.originalFileName
+    )
+
+    if (directPlayback.compatible && directPlayback.metadata) {
       await prisma.video.update({
         where: { id: result.id },
-        data: { status: 'ERROR', processingError: 'Failed to queue video processing.' },
-      }).catch(() => {})
-      throw error
+        data: directPlaybackReadyData(directPlayback.metadata),
+      })
+    } else {
+      try {
+        await getVideoQueue().add('process-video', {
+          videoId: result.id,
+          originalStoragePath: result.originalStoragePath,
+          projectId,
+        })
+      } catch (error) {
+        await prisma.video.update({
+          where: { id: result.id },
+          data: { status: 'ERROR', processingError: 'Failed to queue video processing.' },
+        }).catch(() => {})
+        throw error
+      }
     }
 
     return NextResponse.json({

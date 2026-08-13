@@ -23,6 +23,7 @@ import Link from 'next/link'
 import { ArrowLeft, Save, RefreshCw, Copy, Check, Calendar, FileText, Users, Share2, Video, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslations } from 'next-intl'
+import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface Project {
   id: string
@@ -151,8 +152,7 @@ export default function ProjectSettingsPage() {
   const sanitizedSlug = sanitizeSlug(slug)
 
   const copyPassword = async () => {
-    if (sharePassword) {
-      await navigator.clipboard.writeText(sharePassword)
+    if (sharePassword && await copyTextToClipboard(sharePassword)) {
       setCopiedPassword(true)
       setTimeout(() => setCopiedPassword(false), 2000)
     }
