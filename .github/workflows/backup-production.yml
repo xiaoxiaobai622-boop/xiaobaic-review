@@ -78,14 +78,21 @@ jobs:
               "$backup_dir/archive-password.txt" "$backup_dir/recovery-public.pem"
 
       - name: Download encrypted backup from server
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          source: /tmp/xiaobaic-server-backup
-          target: backup-artifacts
-          strip_components: 2
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh backup-artifacts
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/production-backup-key
+          chmod 600 ~/.ssh/production-backup-key
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+          scp -i ~/.ssh/production-backup-key \
+            "$SERVER_USER@$SERVER_HOST:/tmp/xiaobaic-server-backup/xiaobaic-server-backup.tar.gz.enc" \
+            "$SERVER_USER@$SERVER_HOST:/tmp/xiaobaic-server-backup/archive-password.key.enc" \
+            "$SERVER_USER@$SERVER_HOST:/tmp/xiaobaic-server-backup/SHA256SUMS.txt" \
+            backup-artifacts/
+          rm -f ~/.ssh/production-backup-key
 
       - name: Verify encrypted backup
         run: |
