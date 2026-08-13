@@ -71,9 +71,10 @@ jobs:
               -pkeyopt rsa_padding_mode:oaep \
               -pkeyopt rsa_oaep_md:sha256
 
-            sha256sum "$backup_dir/xiaobaic-server-backup.tar.gz.enc" \
-              "$backup_dir/archive-password.key.enc" \
-              > "$backup_dir/SHA256SUMS.txt"
+            cd "$backup_dir"
+            sha256sum xiaobaic-server-backup.tar.gz.enc \
+              archive-password.key.enc \
+              > SHA256SUMS.txt
             rm -rf "$backup_dir/plain" "$backup_dir/backup.tar.gz" \
               "$backup_dir/archive-password.txt" "$backup_dir/recovery-public.pem"
 
