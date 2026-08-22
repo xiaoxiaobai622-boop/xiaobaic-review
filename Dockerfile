@@ -7,15 +7,14 @@ ARG TARGETPLATFORM
 ARG TARGETARCH
 ARG BUILDPLATFORM
 
-# Use Tencent mirrors for faster builds inside Tencent Cloud
-RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.cloud.tencent.com#g' /etc/apk/repositories && \
-    apk update && apk upgrade --no-cache && \
+# Images are built on GitHub-hosted runners, so use the upstream registries.
+RUN apk update && apk upgrade --no-cache && \
     apk add --no-cache \
         openssl openssl-dev \
         ffmpeg ffmpeg-libs fontconfig ttf-dejavu font-noto-cjk \
         bash curl ca-certificates shadow su-exec \
     && apk add --no-cache --upgrade cjson libsndfile giflib orc zlib expat \
-    && npm config set registry https://registry.npmmirror.com \
+    && npm config set registry https://registry.npmjs.org \
     && npm install -g npm@latest \
     && npm cache clean --force \
     && ffmpeg -version
@@ -28,7 +27,7 @@ COPY --link package.json package-lock.json* ./
 COPY --link prisma ./prisma
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm config set registry https://registry.npmmirror.com \
+    npm config set registry https://registry.npmjs.org \
     && npm ci --legacy-peer-deps
 
 RUN cp -R node_modules /tmp/prod_node_modules
@@ -74,7 +73,6 @@ ENV NODE_ENV=production
 # Python for Apprise notifications
 RUN apk add --no-cache python3 py3-pip \
     && python3 -m venv /opt/apprise-venv \
-    && /opt/apprise-venv/bin/pip config set global.index-url https://mirrors.cloud.tencent.com/pypi/simple \
     && /opt/apprise-venv/bin/pip install --no-cache-dir --timeout=120 --upgrade pip \
     && /opt/apprise-venv/bin/pip install --no-cache-dir --timeout=120 apprise==1.11.0 \
     && apk del --no-cache py3-pip
