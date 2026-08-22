@@ -664,11 +664,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     )
   }, [defaultQuality, shareToken, fetchVideoToken])
 
-  const fetchOriginalDownloadUrl = useCallback(async (videoId: string): Promise<string | null> => {
-    const originalToken = await fetchVideoToken(videoId, 'original')
-    return originalToken ? `/api/content/${originalToken}?download=true` : null
-  }, [fetchVideoToken])
-
   useEffect(() => {
     let isMounted = true
 
@@ -1194,7 +1189,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   onVideoSelect={handleVideoSelect}
                   projectTitle={project.title}
                   projectDescription={isGuest ? undefined : project.description}
-                  allowAssetDownload={project.allowAssetDownload}
+                  allowAssetDownload={false}
                   viewMode={viewMode}
                   albumCount={albumCount}
                   comments={comments}
@@ -1249,6 +1244,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           isCommentPanelVisible={!hideComments}
           onToggleCommentPanel={() => setHideComments(!hideComments)}
           comments={comments}
+          showComparisonAction={false}
           trailingAction={
             <div className="flex items-center gap-1">
               <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} onOpenChange={handleLoginOpenChange} />
@@ -1291,10 +1287,11 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 followLatestVersion={urlVersion === null}
                 isAdmin={false}
                 isGuest={isGuest}
-                allowAssetDownload={project.allowAssetDownload}
+                allowAssetDownload={false}
                 clientCanApprove={project.clientCanApprove}
                 shareToken={shareToken}
-                onDownloadToken={fetchOriginalDownloadUrl}
+                hideDownloadButton={true}
+                allowComparison={false}
                 comments={!project.hideFeedback ? filteredComments : []}
                 timestampDisplayMode="AUTO"
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}

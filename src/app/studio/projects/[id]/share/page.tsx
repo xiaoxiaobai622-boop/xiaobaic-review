@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, CheckCircle2, RotateCcw } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import ThemeToggle from '@/components/ThemeToggle'
+import LanguageToggle from '@/components/LanguageToggle'
+import ReviewLoginActions from '@/components/ReviewLoginActions'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import { useTranslations } from 'next-intl'
@@ -589,7 +591,7 @@ export default function AdminSharePage() {
         {/* Grid view toolbar */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
           {/* Left: back to project */}
-          {adminUser?.role === 'ADMIN' && (
+          {canManageApproval && (
             <Button
               variant="outline"
               size="sm"
@@ -604,7 +606,9 @@ export default function AdminSharePage() {
           {/* Right: view toggle + theme */}
           <div className="flex items-center gap-2 ml-auto">
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
+            <LanguageToggle />
             <ThemeToggle />
+            <ReviewLoginActions compact />
           </div>
         </div>
 
@@ -643,13 +647,14 @@ export default function AdminSharePage() {
         onVideoSelect={handleVideoSelect}
         onBackToGrid={handleBackToGrid}
         showBackButton={true}
-        leadingAction={adminUser?.role === 'ADMIN' ? (
+        leadingAction={canManageApproval ? (
           <Button variant="ghost" size="sm" onClick={() => router.push(projectUrl)} className="h-8 shrink-0 gap-1.5 px-2 sm:px-3" title={t('backToProject')}>
             <ArrowLeft className="h-4 w-4" />
             <span className="hidden md:inline">{t('backToProject')}</span>
           </Button>
         ) : undefined}
-        showLanguageToggle={false}
+        showLanguageToggle={true}
+        showComparisonAction={canManageApproval}
         showCommentToggle={!project.hideFeedback}
         isCommentPanelVisible={!hideComments}
         onToggleCommentPanel={() => setHideComments(!hideComments)}
@@ -673,6 +678,7 @@ export default function AdminSharePage() {
             </span>
           </Button>
         ) : undefined}
+        trailingAction={<ReviewLoginActions compact />}
       />
       {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
@@ -712,6 +718,7 @@ export default function AdminSharePage() {
                 onVideoStateChange={setActiveVideoState}
                 hideDownloadButton={true}
                 hideApprovalAction={true}
+                allowComparison={canManageApproval}
                 comments={!project.hideFeedback ? filteredComments : []}
                 timestampDisplayMode="AUTO"
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}

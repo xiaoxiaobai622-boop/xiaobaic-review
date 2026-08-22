@@ -21,8 +21,9 @@ interface ThumbnailReelProps {
   showCommentToggle?: boolean
   isCommentPanelVisible?: boolean
   onToggleCommentPanel?: () => void
-  // Language toggle visibility (hidden on admin share page)
+  // Toolbar capabilities vary between internal and client review pages.
   showLanguageToggle?: boolean
+  showComparisonAction?: boolean
   // Optional slot rendered after ThemeToggle (e.g. tutorial help button)
   trailingAction?: React.ReactNode
   // Optional action rendered beside the current video's version navigation
@@ -43,6 +44,7 @@ export default function ThumbnailReel({
   isCommentPanelVisible = true,
   onToggleCommentPanel,
   showLanguageToggle = true,
+  showComparisonAction = true,
   trailingAction,
   beforeToolbarAction,
   leadingAction,
@@ -184,7 +186,7 @@ export default function ThumbnailReel({
           </div>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {currentVideos.length > 1 && (
+            {showComparisonAction && currentVideos.length > 1 && (
               <Button
                 variant="outline"
                 size="sm"

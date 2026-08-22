@@ -58,6 +58,7 @@ interface VideoPlayerProps {
   usePreviewForApprovedPlayback?: boolean // Use preview for approved playback instead of original
   fillContainer?: boolean // Fill parent container height (for full-viewport layouts)
   hideApprovalAction?: boolean
+  allowComparison?: boolean
 }
 
 export default function VideoPlayer({
@@ -91,6 +92,7 @@ export default function VideoPlayer({
   authenticatedEmail = null,
   authenticatedName = null,
   hideApprovalAction = false,
+  allowComparison = true,
 }: VideoPlayerProps) {
   const t = useTranslations('videos')
   const tControls = useTranslations('controls')
@@ -307,7 +309,7 @@ export default function VideoPlayer({
       if (targetIndex >= 0) setSelectedVideoId(videoId)
     }
     const openComparison = () => {
-      if (displayVideos.length >= 2) {
+      if (allowComparison && displayVideos.length >= 2) {
         videoRef.current?.pause()
         setIsPlaying(false)
         setShowComparison(true)
@@ -319,7 +321,7 @@ export default function VideoPlayer({
       window.removeEventListener('selectReviewVersion', selectVersion)
       window.removeEventListener('openReviewComparison', openComparison)
     }
-  }, [displayVideos])
+  }, [allowComparison, displayVideos])
 
   useEffect(() => {
     selectedVideoIdRef.current = selectedVideo?.id ?? null
@@ -1139,7 +1141,7 @@ export default function VideoPlayer({
       </div>
 
       {/* Video Comparison Modal */}
-      {showComparison && displayVideos.length >= 2 && (
+      {allowComparison && showComparison && displayVideos.length >= 2 && (
         <VideoComparison
           videoVersions={displayVideos}
           defaultQuality={defaultQuality}
