@@ -9,7 +9,7 @@ import ThumbnailGrid from '@/components/ThumbnailGrid'
 import ThumbnailReel from '@/components/ThumbnailReel'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, RotateCcw } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import ThemeToggle from '@/components/ThemeToggle'
 import SharePhotoSection from '@/components/SharePhotoSection'
@@ -52,6 +52,10 @@ export default function AdminSharePage() {
   const [activeVideoName, setActiveVideoName] = useState<string>('')
   const [activeVideos, setActiveVideos] = useState<any[]>([])
   const [activeVideosRaw, setActiveVideosRaw] = useState<any[]>([])
+  const [activeVideoState, setActiveVideoState] = useState<{
+    selectedVideo: any
+    isVideoApproved: boolean
+  } | null>(null)
   const [tokensLoading, setTokensLoading] = useState(() => Boolean(urlVideoName))
   const [initialSeekTime, setInitialSeekTime] = useState<number | null>(null)
   const [initialVideoIndex, setInitialVideoIndex] = useState<number>(0)
@@ -504,6 +508,7 @@ export default function AdminSharePage() {
   const handleVideoSelect = useCallback((videoName: string) => {
     setActiveVideoName(videoName)
     setActiveVideosRaw(project.videosByName[videoName])
+    setActiveVideoState(null)
     setViewState('player')
 
     const params = new URLSearchParams(searchParams?.toString() || '')
@@ -640,15 +645,21 @@ export default function AdminSharePage() {
         beforeToolbarAction={
           <Button
             type="button"
-            variant="success"
+            variant={activeVideoState?.isVideoApproved ? 'outline' : 'success'}
             size="sm"
             className="h-8 shrink-0 gap-1.5 px-3"
             onClick={() => window.dispatchEvent(new CustomEvent('openVideoApproval'))}
-            disabled={Boolean(activeVideos.find((video: any) => video.approved))}
-            title={activeVideos.find((video: any) => video.approved) ? tv('approved') : tv('approve')}
+            disabled={!activeVideoState}
+            title={activeVideoState?.isVideoApproved ? tv('unapproveVideo') : tv('approve')}
           >
-            <CheckCircle2 className="h-4 w-4" />
-            <span className="hidden sm:inline">{activeVideos.find((video: any) => video.approved) ? tv('approved') : tv('approve')}</span>
+            {activeVideoState?.isVideoApproved ? (
+              <RotateCcw className="h-4 w-4" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            <span className="hidden sm:inline">
+              {activeVideoState?.isVideoApproved ? tv('unapprove') : tv('approve')}
+            </span>
           </Button>
         }
       />
@@ -687,6 +698,7 @@ export default function AdminSharePage() {
                 allowAssetDownload={project.allowAssetDownload}
                 shareToken={null}
                 onApprove={refreshProject}
+                onVideoStateChange={setActiveVideoState}
                 hideDownloadButton={true}
                 hideApprovalAction={true}
                 comments={!project.hideFeedback ? filteredComments : []}

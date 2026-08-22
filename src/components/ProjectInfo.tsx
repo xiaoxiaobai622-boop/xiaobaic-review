@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
 import { Button } from './ui/button'
-import { Download, Info, CheckCircle2, Keyboard } from 'lucide-react'
+import { Download, Info, CheckCircle2, Keyboard, LoaderCircle, RotateCcw } from 'lucide-react'
 import { formatTimestamp, formatFileSize, formatDate } from '@/lib/utils'
 import {
   Dialog,
@@ -80,14 +80,15 @@ export default function ProjectInfo({
   const [hasAssets, setHasAssets] = useState(false)
   const [_checkingAssets, setCheckingAssets] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
+  const canManageApproval = Boolean(onApprove && !isGuest && (isAdmin || clientCanApprove))
 
   useEffect(() => {
     const openApproval = () => {
-      if (isAdmin && !isVideoApproved && onApprove) setShowApprovalConfirm(true)
+      if (canManageApproval) setShowApprovalConfirm(true)
     }
     window.addEventListener('openVideoApproval', openApproval)
     return () => window.removeEventListener('openVideoApproval', openApproval)
-  }, [isAdmin, isVideoApproved, onApprove])
+  }, [canManageApproval])
 
   useEffect(() => {
     const openInfo = () => setShowInfoDialog(true)
@@ -164,36 +165,49 @@ export default function ProjectInfo({
     triggerDownload(downloadUrl)
   }
 
-  const handleApprove = async () => {
+  const handleApprovalAction = async () => {
+    if (loading) return
+
     setLoading(true)
 
     const authHeaders = buildAuthHeaders(shareToken)
+    const endpoint = isVideoApproved
+      ? `/api/projects/${projectId}/unapprove-video`
+      : `/api/projects/${projectId}/approve`
 
     try {
-      const response = await fetch(`/api/projects/${projectId}/approve`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           selectedVideoId: selectedVideo.id,
-          authorName: authenticatedName || undefined,
-          authorEmail: authenticatedEmail || undefined,
+          ...(!isVideoApproved && {
+            authorName: authenticatedName || undefined,
+            authorEmail: authenticatedEmail || undefined,
+          }),
         }),
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to approve project')
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          errorData?.error || (isVideoApproved ? t('failedToUnapproveVideo') : t('failedToApproveVideo'))
+        )
       }
 
-      // Store the current video group name in sessionStorage to restore after reload
       if (activeVideoName) {
         sessionStorage.setItem('approvedVideoName', activeVideoName)
       }
 
-      // Reload the page to show updated approval status
       window.location.reload()
     } catch (error) {
-      alert(error instanceof Error ? error.message : t('failedToApproveVideo'))
+      alert(
+        error instanceof Error
+          ? error.message
+          : isVideoApproved
+            ? t('failedToUnapproveVideo')
+            : t('failedToApproveVideo')
+      )
       setLoading(false)
       setShowApprovalConfirm(false)
     }
@@ -264,18 +278,22 @@ export default function ProjectInfo({
 
         {/* Right: Action Buttons */}
         <div className="pointer-events-auto flex shrink-0 gap-2 whitespace-nowrap">
-          {/* Approve Button - Only show when not approved and approval is allowed */}
-          {!hideApprovalAction && !isVideoApproved && onApprove && isAdmin && (
+          {/* Approval action for the currently selected video version */}
+          {!hideApprovalAction && canManageApproval && (
             <Button
               data-tutorial="approve-btn"
               onClick={() => setShowApprovalConfirm(true)}
-              variant="success"
+              variant={isVideoApproved ? 'outline' : 'success'}
               size="sm"
               className="shrink-0 whitespace-nowrap"
-              title={t('approveVideoVersion')}
+              title={isVideoApproved ? t('unapproveVideo') : t('approveVideoVersion')}
             >
-              <CheckCircle2 className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">{t('approve')}</span>
+              {isVideoApproved ? (
+                <RotateCcw className="w-4 h-4 sm:mr-2" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 sm:mr-2" />
+              )}
+              <span className="hidden sm:inline">{isVideoApproved ? t('unapprove') : t('approve')}</span>
             </Button>
           )}
 
@@ -400,11 +418,15 @@ export default function ProjectInfo({
         <DialogContent className="bg-card border-border text-card-foreground max-w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-success" />
-              {t('approveVideo')}
+              {isVideoApproved ? (
+                <RotateCcw className="w-5 h-5 text-muted-foreground" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-success" />
+              )}
+              {isVideoApproved ? t('unapproveVideo') : t('approveVideo')}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {t('confirmApprovalDescription')}
+              {isVideoApproved ? t('confirmUnapproveVideo') : t('confirmApprovalDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -418,18 +440,23 @@ export default function ProjectInfo({
                 <span className="font-medium">{selectedVideo.versionLabel}</span>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {t('approvalDownloadHint')}
-            </p>
+            {!isVideoApproved && (
+              <p className="text-xs text-muted-foreground">
+                {t('approvalDownloadHint')}
+              </p>
+            )}
             <div className="flex gap-2 pt-2">
               <Button
-                onClick={handleApprove}
+                onClick={handleApprovalAction}
                 disabled={loading}
-                variant="success"
+                variant={isVideoApproved ? 'outline' : 'success'}
                 size="default"
                 className="flex-1 font-semibold"
               >
-                {loading ? t('approving') : t('approve')}
+                {loading && <LoaderCircle className="animate-spin" />}
+                {loading
+                  ? isVideoApproved ? t('unapproving') : t('approving')
+                  : isVideoApproved ? t('unapprove') : t('approve')}
               </Button>
               <Button
                 onClick={() => setShowApprovalConfirm(false)}
