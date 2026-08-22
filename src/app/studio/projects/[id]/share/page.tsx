@@ -20,6 +20,16 @@ const MAX_TOKEN_FETCH_ATTEMPTS = 2
 const TOKEN_FETCH_RETRY_BASE_MS = 120
 const TOKEN_FETCH_RETRY_MAX_MS = 400
 
+function canUserManageApproval(user: any, project: any) {
+  if (!user || !project) return false
+  if (project.createdById === user.id) return true
+
+  return user.teams?.some((membership: any) =>
+    membership.team?.id === project.teamId &&
+    (membership.role === 'OWNER' || membership.role === 'ADMIN')
+  ) === true
+}
+
 type TokenFetchTelemetryEvent = 'first-attempt-failure' | 'retry-success' | 'retry-failure'
 
 export default function AdminSharePage() {
@@ -294,7 +304,7 @@ export default function AdminSharePage() {
 
           if (userResponse.ok) {
             const userData = await userResponse.json()
-            if (userData.user?.role !== 'ADMIN' && projectData.slug) {
+            if (!canUserManageApproval(userData.user, projectData) && projectData.slug) {
               redirectingMember = true
               const query = searchParams?.toString()
               router.replace(`/share/${projectData.slug}${query ? `?${query}` : ''}`)
@@ -570,6 +580,7 @@ export default function AdminSharePage() {
   })()
 
   const showCommentPanel = !project.hideFeedback
+  const canManageApproval = canUserManageApproval(adminUser, project)
 
   // Show thumbnail grid when in grid view (same as public share layout)
   if (viewState === 'grid') {
@@ -642,12 +653,12 @@ export default function AdminSharePage() {
         showCommentToggle={!project.hideFeedback}
         isCommentPanelVisible={!hideComments}
         onToggleCommentPanel={() => setHideComments(!hideComments)}
-        beforeToolbarAction={
+        beforeToolbarAction={canManageApproval ? (
           <Button
             type="button"
             variant={activeVideoState?.isVideoApproved ? 'outline' : 'success'}
             size="sm"
-            className="h-8 shrink-0 gap-1.5 px-3"
+            className="h-8 shrink-0 gap-1.5 rounded-md px-2.5"
             onClick={() => window.dispatchEvent(new CustomEvent('openVideoApproval'))}
             disabled={!activeVideoState}
             title={activeVideoState?.isVideoApproved ? tv('unapproveVideo') : tv('approve')}
@@ -661,7 +672,7 @@ export default function AdminSharePage() {
               {activeVideoState?.isVideoApproved ? tv('unapprove') : tv('approve')}
             </span>
           </Button>
-        }
+        ) : undefined}
       />
       {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
@@ -693,11 +704,11 @@ export default function AdminSharePage() {
                 initialSeekTime={initialSeekTime}
                 initialVideoIndex={initialVideoIndex}
                 followLatestVersion={urlVersion === null}
-                isAdmin={true}
+                isAdmin={canManageApproval}
                 isGuest={false}
                 allowAssetDownload={project.allowAssetDownload}
                 shareToken={null}
-                onApprove={refreshProject}
+                onApprove={canManageApproval ? refreshProject : undefined}
                 onVideoStateChange={setActiveVideoState}
                 hideDownloadButton={true}
                 hideApprovalAction={true}

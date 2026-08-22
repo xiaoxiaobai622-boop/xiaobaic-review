@@ -59,7 +59,6 @@ export default function ProjectInfo({
   defaultQuality,
   onApprove,
   isAdmin = false,
-  clientCanApprove = true,
   isGuest = false,
   hideDownloadButton = false,
   allowAssetDownload = true,
@@ -80,7 +79,7 @@ export default function ProjectInfo({
   const [hasAssets, setHasAssets] = useState(false)
   const [_checkingAssets, setCheckingAssets] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
-  const canManageApproval = Boolean(onApprove && !isGuest && (isAdmin || clientCanApprove))
+  const canManageApproval = Boolean(onApprove && !isGuest && isAdmin)
 
   useEffect(() => {
     const openApproval = () => {

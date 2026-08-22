@@ -25,7 +25,7 @@ interface ThumbnailReelProps {
   showLanguageToggle?: boolean
   // Optional slot rendered after ThemeToggle (e.g. tutorial help button)
   trailingAction?: React.ReactNode
-  // Optional slot rendered before the comparison and theme controls
+  // Optional action rendered beside the current video's version navigation
   beforeToolbarAction?: React.ReactNode
   // Optional action before the overview button (e.g. return to source page)
   leadingAction?: React.ReactNode
@@ -180,10 +180,10 @@ export default function ThumbnailReel({
               <span className="min-w-9 text-center text-xs text-muted-foreground tabular-nums">{activeIndex + 1}/{totalVideos}</span>
               <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-7 w-7" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
             </div>
+            {beforeToolbarAction}
           </div>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {beforeToolbarAction}
             {currentVideos.length > 1 && (
               <Button
                 variant="outline"

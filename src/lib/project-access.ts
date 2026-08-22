@@ -88,6 +88,41 @@ export async function canAdministerProject(db: DbClient, user: AuthUser, project
   return Boolean(project)
 }
 
+export async function canManageProjectApproval(db: DbClient, user: AuthUser, projectId: string) {
+  const project = await db.project.findFirst({
+    where: {
+      id: projectId,
+      ...(user.authorizedTeamId ? { teamId: user.authorizedTeamId } : {}),
+      team: {
+        status: 'ACTIVE',
+        members: {
+          some: {
+            userId: user.id,
+            status: 'ACTIVE',
+          },
+        },
+      },
+      OR: [
+        { createdById: user.id },
+        {
+          team: {
+            members: {
+              some: {
+                userId: user.id,
+                status: 'ACTIVE',
+                role: { in: ['OWNER', 'ADMIN'] },
+              },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true },
+  })
+
+  return Boolean(project)
+}
+
 export async function nextProjectCode(db: DbClient, teamId: string) {
   await db.$executeRaw`SELECT pg_advisory_xact_lock(86230401)`
   const existing = await db.project.findMany({

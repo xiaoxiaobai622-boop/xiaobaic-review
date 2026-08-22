@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { handleApprovalNotification } from '@/lib/notifications'
 import { getAutoApproveProject, isSmtpConfigured } from '@/lib/settings'
-import { verifyProjectAccess } from '@/lib/project-access'
+import { canManageProjectApproval } from '@/lib/project-access'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
@@ -52,8 +53,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     logMessage(`[APPROVAL] Starting approval process for project: ${projectId}`)
     logMessage(`[APPROVAL] Selected video: ${selectedVideoId}`)
 
-    // SECURITY: Validate share password if project is password-protected
-    // This allows clients to approve their own projects via the share link
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       include: {
@@ -65,23 +64,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: projectMessages.projectNotFoundApi || 'Project not found' }, { status: 404 })
     }
 
-    // Verify project access using dual auth pattern (clients can approve via share link)
-    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
-      allowGuest: false,
-      requiredAnyPermission: ['approve', 'comment'],
-    })
-
-    if (!accessCheck.authorized) {
-      return NextResponse.json({
-        error: projectMessages.passwordRequiredToApproveProject || 'Password required to approve this project'
-      }, { status: 401 })
+    const currentUser = await getCurrentUserFromRequest(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    // SECURITY: Check if client is allowed to approve videos
-    // If clientCanApprove is false, only admins can approve
-    if (!accessCheck.isAdmin && project.clientCanApprove === false) {
+    if (!(await canManageProjectApproval(prisma, currentUser, project.id))) {
       return NextResponse.json({
-        error: projectMessages.onlyAdminsCanApproveProject || 'Only administrators can approve videos for this project'
+        error: projectMessages.onlyAdminsCanApproveProject || 'Only project managers or the project creator can approve videos'
       }, { status: 403 })
     }
 

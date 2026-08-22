@@ -5,7 +5,7 @@ import { getAutoApproveProject } from '@/lib/settings'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
-import { canAccessProject } from '@/lib/project-access'
+import { canAccessProject, canManageProjectApproval } from '@/lib/project-access'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
 export const runtime = 'nodejs'
@@ -182,6 +182,13 @@ export async function PATCH(
 
     if (!(await canAccessProject(prisma, authResult, video.projectId))) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    if (approved !== undefined && !(await canManageProjectApproval(prisma, authResult, video.projectId))) {
+      return NextResponse.json(
+        { error: 'Only project managers or the project creator can approve videos' },
+        { status: 403 }
+      )
     }
 
     if (approved) {

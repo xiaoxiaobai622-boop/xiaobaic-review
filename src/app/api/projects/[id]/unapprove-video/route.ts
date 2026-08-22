@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
-import { verifyProjectAccess } from '@/lib/project-access'
+import { canManageProjectApproval } from '@/lib/project-access'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -42,9 +43,6 @@ export async function POST(
       where: { id: projectId },
       select: {
         id: true,
-        sharePassword: true,
-        authMode: true,
-        clientCanApprove: true,
       },
     })
 
@@ -52,27 +50,14 @@ export async function POST(
       return NextResponse.json({ error: projectMessages.projectNotFoundApi || 'Project not found' }, { status: 404 })
     }
 
-    const accessCheck = await verifyProjectAccess(
-      request,
-      project.id,
-      project.sharePassword,
-      project.authMode,
-      {
-        allowGuest: false,
-        requiredAnyPermission: ['approve', 'comment'],
-      }
-    )
-
-    if (!accessCheck.authorized) {
-      return accessCheck.errorResponse || NextResponse.json(
-        { error: projectMessages.passwordRequiredToApproveProject || 'Authentication required' },
-        { status: 401 }
-      )
+    const currentUser = await getCurrentUserFromRequest(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    if (!accessCheck.isAdmin && project.clientCanApprove === false) {
+    if (!(await canManageProjectApproval(prisma, currentUser, project.id))) {
       return NextResponse.json({
-        error: projectMessages.onlyAdminsCanApproveProject || 'Only administrators can approve videos for this project',
+        error: projectMessages.onlyAdminsCanApproveProject || 'Only project managers or the project creator can approve videos',
       }, { status: 403 })
     }
 
