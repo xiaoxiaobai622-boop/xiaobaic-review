@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
-import { getShareContext } from '@/lib/auth'
+import { getShareContext, hasWebsiteLoginSession } from '@/lib/auth'
 import { validateAssetFile, sanitizeDisplayFilename, sanitizeFilename, isSuspiciousFilename } from '@/lib/file-validation'
 import { deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -48,16 +48,24 @@ export async function POST(
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     }
 
+    // Uploading from a share page requires a real website account. The share
+    // token still scopes the upload to this project and owns the upload
+    // session; it is not a substitute for account authentication.
+    const hasLoginSession = await hasWebsiteLoginSession(request)
+    const shareContext = await getShareContext(request)
+    if (!hasLoginSession || !shareContext || shareContext.projectId !== project.id) {
+      return NextResponse.json({ error: '请先登录后再上传视频' }, { status: 401 })
+    }
+
     const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
-      requiredPermission: 'comment',
-      allowGuest: false,
+      allowGuest: true,
     })
 
     if (!accessCheck.authorized) {
       return accessCheck.errorResponse || NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
     }
 
-    const sessionId = accessCheck.shareTokenSessionId
+    const sessionId = shareContext.sessionId || accessCheck.shareTokenSessionId
     if (!sessionId) {
       return NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
     }
@@ -183,16 +191,21 @@ export async function DELETE(
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     }
 
+    const hasLoginSession = await hasWebsiteLoginSession(request)
+    const shareContext = await getShareContext(request)
+    if (!hasLoginSession || !shareContext || shareContext.projectId !== project.id) {
+      return NextResponse.json({ error: '请先登录后再操作' }, { status: 401 })
+    }
+
     const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
-      requiredPermission: 'comment',
-      allowGuest: false,
+      allowGuest: true,
     })
 
     if (!accessCheck.authorized) {
       return NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
     }
 
-    const sessionId = accessCheck.shareTokenSessionId
+    const sessionId = shareContext.sessionId || accessCheck.shareTokenSessionId
     if (!sessionId) {
       return NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
     }

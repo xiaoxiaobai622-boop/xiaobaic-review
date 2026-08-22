@@ -9,7 +9,7 @@ import { getAppUrl } from '@/lib/url'
 import { safeParseBody } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { getAdminDeviceFingerprint } from '@/lib/admin-device'
+import { getAdminDeviceFingerprint } from '@/lib/studio-device'
 
 export const runtime = 'nodejs'
 

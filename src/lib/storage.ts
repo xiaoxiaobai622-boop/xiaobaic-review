@@ -4,7 +4,7 @@ import { Readable } from 'stream'
 import { ReadStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { mkdir } from 'fs/promises'
-import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3GetPresignedOriginStreamUrl } from './s3-storage'
+import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl } from './s3-storage'
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || '/app/uploads'
 
@@ -148,6 +148,34 @@ export async function moveFile(
       `File size mismatch: expected ${size} bytes, got ${stats.size} bytes. ` +
       `Upload may have been corrupted.`
     )
+  }
+}
+
+/**
+ * Move an already-stored file to a new final storage path.
+ *
+ * - FS mode: rename when possible, otherwise copy then unlink.
+ * - S3 mode: copy the object to the destination, then delete the source.
+ */
+export async function moveStorageFile(
+  sourcePath: string,
+  finalPath: string
+): Promise<void> {
+  if (isS3Mode()) {
+    await s3MoveFile(sourcePath, finalPath)
+    return
+  }
+
+  const sourceFull = validatePath(sourcePath)
+  const destFull = validatePath(finalPath)
+  await mkdir(path.dirname(destFull), { recursive: true })
+
+  try {
+    await fs.promises.rename(sourceFull, destFull)
+  } catch (err: any) {
+    if (err?.code !== 'EXDEV') throw err
+    await fs.promises.copyFile(sourceFull, destFull)
+    await fs.promises.unlink(sourceFull).catch(() => {})
   }
 }
 

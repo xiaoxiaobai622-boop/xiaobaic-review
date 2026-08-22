@@ -1,10 +1,9 @@
 import { Server } from '@tus/server'
 import { FileStore } from '@tus/file-store'
 import { prisma } from '@/lib/db'
-import { videoQueue, getAssetQueue, getProjectUploadQueue, getPhotoQueue } from '@/lib/queue'
 import { ALL_ALLOWED_EXTENSIONS } from '@/lib/asset-validation'
 import { ALLOWED_PHOTO_TYPES } from '@/lib/file-validation'
-import { initStorage, moveFile } from '@/lib/storage'
+import { getFilePath, initStorage, moveFile } from '@/lib/storage'
 import path from 'path'
 import fs from 'fs'
 import { Readable } from 'stream'
@@ -13,7 +12,8 @@ import { logError, logMessage } from '@/lib/logging'
 import { parseBearerToken, verifyAdminAccessToken, verifyShareToken } from '@/lib/auth'
 import { isS3Mode } from '@/lib/storage'
 import { handleReverseShareUploadNotification } from '@/lib/upload-notifications'
-import { directPlaybackReadyData, probeDirectPlayableMp4 } from '@/lib/direct-video-playback'
+import { canUserAdministerUploadTarget } from '@/lib/s3-upload-auth'
+import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
 
 const TUS_UPLOAD_DIR = '/tmp/vitransfer-tus-uploads'
@@ -47,8 +47,16 @@ const tusServer: Server = new Server({
       // Try admin auth first, then fall back to share token auth
       let isAdmin = false
       const adminPayload = await verifyAdminAccessToken(bearer)
-      if (adminPayload && adminPayload.role === 'ADMIN') {
-        isAdmin = true
+      if (adminPayload) {
+        isAdmin = await canUserAdministerUploadTarget(adminPayload.userId, {
+          videoId: upload.metadata?.videoId as string | undefined,
+          assetId: upload.metadata?.assetId as string | undefined,
+          projectUploadId: upload.metadata?.projectUploadId as string | undefined,
+          photoId: upload.metadata?.photoId as string | undefined,
+        })
+        if (!isAdmin) {
+          throw { status_code: 403, body: 'Access denied for upload target' }
+        }
       } else {
         // Try share token auth for client uploads
         const sharePayload = await verifyShareToken(bearer)
@@ -67,23 +75,16 @@ const tusServer: Server = new Server({
           }
         }
 
-        if (!sharePayload.permissions?.includes('comment')) {
-          throw {
-            status_code: 403,
-            body: 'Comment permission required'
-          }
-        }
-
-        // Guests cannot upload
-        if (sharePayload.guest) {
-          throw {
-            status_code: 403,
-            body: 'Guest access cannot upload files'
-          }
-        }
-
         if (upload.metadata?.projectUploadId) {
           // Reverse share upload — verify the ProjectUpload record
+          // Uploads require an authenticated account (share recipient or admin override).
+          if (!sharePayload.recipientId && !sharePayload.adminOverride) {
+            throw {
+              status_code: 403,
+              body: '请登录后上传素材'
+            }
+          }
+
           const projectUpload = await prisma.projectUpload.findUnique({
             where: { id: upload.metadata.projectUploadId as string },
             select: { projectId: true, uploadedBySessionId: true },
@@ -110,6 +111,20 @@ const tusServer: Server = new Server({
             throw { status_code: 403, body: 'File submissions are not enabled for this project' }
           }
         } else {
+          // Comment attachments still require comment permission and cannot be guests.
+          if (!sharePayload.permissions?.includes('comment')) {
+            throw {
+              status_code: 403,
+              body: 'Comment permission required'
+            }
+          }
+          if (sharePayload.guest) {
+            throw {
+              status_code: 403,
+              body: 'Guest access cannot upload files'
+            }
+          }
+
           // Comment attachment upload — verify VideoAsset record
           const asset = await prisma.videoAsset.findUnique({
             where: { id: upload.metadata.assetId as string },
@@ -323,50 +338,32 @@ async function handleVideoUploadFinish(tusFilePath: string, upload: any, videoId
     return {}
   }
 
-  const fileSize = await verifyUploadedFile(tusFilePath, upload.size)
-
-  await validateVideoFile(tusFilePath, upload.metadata?.filename as string)
-
-  const originalFileName = upload.metadata?.filename as string || video.originalFileName
-  const directPlayback = await probeDirectPlayableMp4(tusFilePath, originalFileName)
-
   await initStorage()
-
-  // Move the completed TUS temp file into final storage. In FS mode this is
-  // an O(1) fs.rename when /tmp and STORAGE_ROOT share a filesystem (typical
-  // Docker setup) — much faster than the previous re-streaming copy.
-  await moveFile(
+  const fileSize = await ensureTusFileStored(
     tusFilePath,
     video.originalStoragePath,
-    fileSize,
-    upload.metadata?.filetype as string || 'video/mp4'
+    upload,
+    validateVideoFile,
+    upload.metadata?.filetype as string || 'video/mp4',
   )
 
-  if (directPlayback.compatible && directPlayback.metadata) {
-    await prisma.video.update({
+  const task = await prisma.$transaction(async (tx) => {
+    await tx.video.update({
       where: { id: videoId },
-      data: directPlaybackReadyData(directPlayback.metadata),
+      data: { status: 'PROCESSING', processingProgress: 0 },
     })
-    logMessage(`[UPLOAD] Video ${videoId} is H.264/AAC MP4 and is ready for direct playback`)
-  } else {
-    await prisma.video.update({
-      where: { id: videoId },
-      data: {
-        status: 'PROCESSING',
-        processingProgress: 0,
-      },
-    })
-
-    logMessage(`[UPLOAD] Video ${videoId} requires processing: ${directPlayback.reason || 'incompatible media'}`)
-
-    await videoQueue.add('process-video', {
+    return recordDurableTask(tx, 'PROCESS_VIDEO', `process-video:${video.id}`, {
       videoId: video.id,
       originalStoragePath: video.originalStoragePath,
       projectId: video.projectId,
     })
+  })
 
-    logMessage(`[UPLOAD] Video ${videoId} queued for worker processing`)
-  }
+  logMessage(`[UPLOAD] Video ${videoId} queued for default 720p processing`)
+
+  await dispatchDurableTask(task.id)
+
+  logMessage(`[UPLOAD] Video ${videoId} queued for worker processing`)
 
   // moveFile already removed the temp data file; clean the .json sidecar
   await cleanupTUSMetadata(tusFilePath)
@@ -385,31 +382,23 @@ async function handleAssetUploadFinish(tusFilePath: string, upload: any, assetId
     throw new Error(`Asset record not found for upload completion: ${assetId}`)
   }
 
-  const fileSize = await verifyUploadedFile(tusFilePath, upload.size)
-
-  await validateUploadedAssetFile(tusFilePath, upload.metadata?.filename as string)
-
   await initStorage()
 
   const actualFileType = upload.metadata?.filetype as string || 'application/octet-stream'
-  await moveFile(tusFilePath, asset.storagePath, fileSize, actualFileType)
+  const fileSize = await ensureTusFileStored(tusFilePath, asset.storagePath, upload, validateUploadedAssetFile, actualFileType)
 
-  await prisma.videoAsset.update({
-    where: { id: assetId },
-    data: {
-      fileType: actualFileType,
-      fileSize: BigInt(fileSize),
-      uploadCompletedAt: new Date(),
-    },
+  const task = await prisma.$transaction(async (tx) => {
+    await tx.videoAsset.update({
+      where: { id: assetId },
+      data: { fileType: actualFileType, fileSize: BigInt(fileSize), uploadCompletedAt: new Date() },
+    })
+    return recordDurableTask(tx, 'PROCESS_ASSET', `process-asset:${asset.id}`, {
+      assetId: asset.id,
+      storagePath: asset.storagePath,
+      ...(asset.category ? { expectedCategory: asset.category } : {}),
+    })
   })
-
-  const assetQueue = getAssetQueue()
-
-  await assetQueue.add('process-asset', {
-    assetId: asset.id,
-    storagePath: asset.storagePath,
-    expectedCategory: asset.category ?? undefined,
-  })
+  await dispatchDurableTask(task.id)
 
   logMessage(`[UPLOAD] Asset uploaded and queued for processing: ${assetId}`)
 
@@ -429,31 +418,23 @@ async function handleProjectUploadFinish(tusFilePath: string, upload: any, proje
     throw new Error(`Upload record not found: ${projectUploadId}`)
   }
 
-  const fileSize = await verifyUploadedFile(tusFilePath, upload.size)
-
-  await validateUploadedAssetFile(tusFilePath, upload.metadata?.filename as string)
-
   await initStorage()
 
   const actualFileType = upload.metadata?.filetype as string || 'application/octet-stream'
-  await moveFile(tusFilePath, projectUpload.storagePath, fileSize, actualFileType)
+  const fileSize = await ensureTusFileStored(tusFilePath, projectUpload.storagePath, upload, validateUploadedAssetFile, actualFileType)
 
-  await prisma.projectUpload.update({
-    where: { id: projectUploadId },
-    data: {
-      fileType: actualFileType,
-      fileSize: BigInt(fileSize),
-      uploadCompletedAt: new Date(),
-    },
+  const task = await prisma.$transaction(async (tx) => {
+    await tx.projectUpload.update({
+      where: { id: projectUploadId },
+      data: { fileType: actualFileType, fileSize: BigInt(fileSize), uploadCompletedAt: new Date() },
+    })
+    return recordDurableTask(tx, 'PROCESS_PROJECT_UPLOAD', `process-project-upload:${projectUpload.id}`, {
+      uploadId: projectUpload.id,
+      storagePath: projectUpload.storagePath,
+      projectId: projectUpload.projectId,
+    })
   })
-
-  // Queue project upload for magic byte MIME detection in worker
-  const projectUploadQueue = getProjectUploadQueue()
-  await projectUploadQueue.add('process-upload', {
-    uploadId: projectUpload.id,
-    storagePath: projectUpload.storagePath,
-    projectId: projectUpload.projectId,
-  })
+  await dispatchDurableTask(task.id)
 
   logMessage(`[UPLOAD] ProjectUpload complete: ${projectUploadId}`)
 
@@ -481,35 +462,48 @@ async function handlePhotoUploadFinish(tusFilePath: string, upload: any, photoId
     throw new Error(`Photo record not found for upload completion: ${photoId}`)
   }
 
-  const fileSize = await verifyUploadedFile(tusFilePath, upload.size)
-
-  await validateUploadedPhotoFile(tusFilePath, upload.metadata?.filename as string)
-
   await initStorage()
 
   const actualFileType = upload.metadata?.filetype as string || 'application/octet-stream'
-  await moveFile(tusFilePath, photo.storagePath, fileSize, actualFileType)
+  const fileSize = await ensureTusFileStored(tusFilePath, photo.storagePath, upload, validateUploadedPhotoFile, actualFileType)
 
-  await prisma.photo.update({
-    where: { id: photoId },
-    data: {
-      fileType: actualFileType,
-      fileSize: BigInt(fileSize),
-      uploadCompletedAt: new Date(),
-    },
+  const task = await prisma.$transaction(async (tx) => {
+    await tx.photo.update({
+      where: { id: photoId },
+      data: { fileType: actualFileType, fileSize: BigInt(fileSize), uploadCompletedAt: new Date() },
+    })
+    return recordDurableTask(tx, 'PROCESS_PHOTO', `process-photo:${photo.id}`, {
+      photoId: photo.id,
+      storagePath: photo.storagePath,
+    })
   })
-
-  const photoQueue = getPhotoQueue()
-  await photoQueue.add('process-photo', {
-    photoId: photo.id,
-    storagePath: photo.storagePath,
-  })
+  await dispatchDurableTask(task.id)
 
   logMessage(`[UPLOAD] Photo uploaded and queued for processing: ${photoId}`)
 
   await cleanupTUSMetadata(tusFilePath)
 
   return {}
+}
+
+async function ensureTusFileStored(
+  tusFilePath: string,
+  finalStoragePath: string,
+  upload: any,
+  validate: (filePath: string, filename?: string) => Promise<void>,
+  contentType: string,
+): Promise<number> {
+  const finalPath = getFilePath(finalStoragePath)
+  if (fs.existsSync(finalPath)) {
+    const storedSize = fs.statSync(finalPath).size
+    if (upload.size && storedSize !== upload.size) throw new Error('Stored upload size does not match TUS metadata')
+    return storedSize
+  }
+
+  const fileSize = await verifyUploadedFile(tusFilePath, upload.size)
+  await validate(tusFilePath, upload.metadata?.filename as string)
+  await moveFile(tusFilePath, finalStoragePath, fileSize, contentType)
+  return fileSize
 }
 
 async function verifyUploadedFile(tusFilePath: string, expectedSize?: number): Promise<number> {

@@ -8,7 +8,7 @@ import { processVideo } from './video-processor'
 import { processAsset } from './asset-processor'
 import { processProjectUpload } from './project-upload-processor'
 import { processPhoto } from './photo-processor'
-import { processAdminNotifications } from './admin-notifications'
+import { processAdminNotifications } from './studio-notifications'
 import { processClientNotifications } from './client-notifications'
 import { processExternalNotificationJob } from './external-notifications/processExternalNotificationJob'
 import { createCleanPreviewWorker } from './clean-preview-processor'
@@ -16,6 +16,7 @@ import { processDueDateReminders } from './due-date-reminders'
 import { cleanupOldTempFiles, ensureTempDir } from './cleanup'
 import { runPreviewThumbnailBackfill } from './backfill'
 import { logError, logMessage } from '../lib/logging'
+import { dispatchPendingDurableTasks } from '../lib/durable-tasks'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -44,6 +45,9 @@ async function main() {
   }
 
   await initStorage()
+  await dispatchPendingDurableTasks().catch((err) => {
+    logError('Initial durable task dispatch failed', err)
+  })
 
   if (DEBUG) {
     logMessage('[WORKER DEBUG] Storage initialized')
@@ -274,11 +278,18 @@ async function main() {
     await cleanupOldTempFiles()
   }, ONE_HOUR_MS)
 
+  const durableTaskInterval = setInterval(async () => {
+    await dispatchPendingDurableTasks().catch((err) => {
+      logError('Scheduled durable task dispatch failed', err)
+    })
+  }, 60_000)
+
   // Handle shutdown gracefully
   process.on('SIGTERM', async () => {
     logMessage('SIGTERM received, closing workers...')
     clearInterval(tusCleanupInterval)
     clearInterval(tempCleanupInterval)
+    clearInterval(durableTaskInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),
@@ -297,6 +308,7 @@ async function main() {
     logMessage('SIGINT received, closing workers...')
     clearInterval(tusCleanupInterval)
     clearInterval(tempCleanupInterval)
+    clearInterval(durableTaskInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),

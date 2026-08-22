@@ -15,6 +15,7 @@ const DEBUG = process.env.DEBUG_WORKER === 'true'
 const THUMBNAIL_SIZE = 512
 const THUMBNAIL_QUALITY = 75
 
+
 /**
  * Generate a webp preview thumbnail for image/video uploads.
  * Best-effort: failures leave thumbnailPath null (UI falls back to a type icon).
@@ -78,6 +79,11 @@ export async function processProjectUpload(job: Job<ProjectUploadProcessingJob>)
 
   logMessage(`[WORKER] Processing project upload ${uploadId}`)
 
+  await prisma.projectUpload.update({
+    where: { id: uploadId },
+    data: { transcodeStatus: 'PROCESSING', transcodeError: null },
+  })
+
   if (DEBUG) {
     logMessage(`[WORKER DEBUG] Project upload job data: ${JSON.stringify(job.data, null, 2)}`)
   }
@@ -130,6 +136,9 @@ export async function processProjectUpload(job: Job<ProjectUploadProcessingJob>)
       where: { id: uploadId },
       data: {
         fileType: detectedMimeType,
+        transcodeStatus: 'READY',
+        transcodeProgress: 100,
+        transcodeError: null,
         ...(thumbnailPath ? { thumbnailPath } : {}),
       }
     })
@@ -144,7 +153,9 @@ export async function processProjectUpload(job: Job<ProjectUploadProcessingJob>)
       await prisma.projectUpload.update({
         where: { id: uploadId },
         data: {
-          fileType: 'ERROR'
+          fileType: 'ERROR',
+          transcodeStatus: 'ERROR',
+          transcodeError: error instanceof Error ? error.message : '处理失败',
         }
       })
     } catch (updateError) {

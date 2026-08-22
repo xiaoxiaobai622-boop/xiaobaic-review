@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { deleteFile } from '@/lib/storage'
 import { requireApiAdmin } from '@/lib/auth'
 import { getAutoApproveProject } from '@/lib/settings'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
+import { canAccessProject } from '@/lib/project-access'
+import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
 export const runtime = 'nodejs'
 
@@ -40,6 +41,7 @@ export async function GET(
       where: { id },
       select: {
         id: true,
+        projectId: true,
         name: true,
         status: true,
         processingProgress: true,
@@ -52,6 +54,10 @@ export async function GET(
 
     if (!video) {
   return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
+    }
+
+    if (!(await canAccessProject(prisma, authResult, video.projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
     return NextResponse.json(video)
@@ -174,6 +180,10 @@ export async function PATCH(
   return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
 
+    if (!(await canAccessProject(prisma, authResult, video.projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
     if (approved) {
       await prisma.video.updateMany({
         where: {
@@ -246,6 +256,9 @@ export async function DELETE(
     const video = await prisma.video.findUnique({
       where: { id },
       include: {
+        project: {
+          select: { id: true },
+        },
         assets: true,
       }
     })
@@ -254,57 +267,44 @@ export async function DELETE(
       return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
 
-    try {
-      // Only delete asset files if no other assets share the same storage path
-      for (const asset of video.assets) {
-        const sharedCount = await prisma.videoAsset.count({
-          where: {
-            storagePath: asset.storagePath,
-            id: { not: asset.id },
-          },
-        })
-
-        if (sharedCount === 0) {
-          await deleteFile(asset.storagePath)
-        }
-      }
-
-      if (video.originalStoragePath) {
-        await deleteFile(video.originalStoragePath)
-      }
-
-      if (video.preview1080Path) {
-        await deleteFile(video.preview1080Path)
-      }
-      if (video.preview720Path) {
-        await deleteFile(video.preview720Path)
-      }
-
-      if (video.thumbnailPath) {
-        const thumbnailSharedAssets = await prisma.videoAsset.count({
-          where: {
-            storagePath: video.thumbnailPath,
-            videoId: { not: id },
-          },
-        })
-        const thumbnailSharedVideos = await prisma.video.count({
-          where: {
-            thumbnailPath: video.thumbnailPath,
-            id: { not: id },
-          },
-        })
-
-        if (thumbnailSharedAssets === 0 && thumbnailSharedVideos === 0) {
-          await deleteFile(video.thumbnailPath)
-        }
-      }
-    } catch (error) {
-      logError(`Failed to delete files for video ${video.id}:`, error)
+    if (!(await canAccessProject(prisma, authResult, video.project.id))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    await prisma.video.delete({
-      where: { id: id },
+    const paths = [
+      video.originalStoragePath,
+      video.preview2160Path,
+      video.preview1080Path,
+      video.preview720Path,
+      video.cleanPreview2160Path,
+      video.cleanPreview1080Path,
+      video.cleanPreview720Path,
+    ].filter((path): path is string => Boolean(path))
+
+    for (const asset of video.assets) {
+      const sharedCount = await prisma.videoAsset.count({
+        where: { storagePath: asset.storagePath, id: { not: asset.id } },
+      })
+      if (sharedCount === 0) paths.push(asset.storagePath)
+    }
+
+    if (video.thumbnailPath) {
+      const [thumbnailSharedAssets, thumbnailSharedVideos] = await Promise.all([
+        prisma.videoAsset.count({ where: { storagePath: video.thumbnailPath, videoId: { not: id } } }),
+        prisma.video.count({ where: { thumbnailPath: video.thumbnailPath, id: { not: id } } }),
+      ])
+      if (thumbnailSharedAssets === 0 && thumbnailSharedVideos === 0) paths.push(video.thumbnailPath)
+    }
+
+    const task = await prisma.$transaction(async (tx) => {
+      const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-video-storage:${id}`, {
+        paths: [...new Set(paths)],
+        directories: [],
+      })
+      await tx.video.delete({ where: { id } })
+      return durableTask
     })
+    await dispatchDurableTask(task.id)
 
     return NextResponse.json({
       success: true,

@@ -2,12 +2,12 @@
 
 import { useAuth } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
-import { Bug, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, Settings, Shield, User, Users } from 'lucide-react'
+import { Bug, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, Settings, User, UserRound, Users } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import ThemeToggle from '@/components/ThemeToggle'
+import TeamSwitcher from '@/components/TeamSwitcher'
 import { useEffect, useRef, useState } from 'react'
-import { apiFetch } from '@/lib/api-client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useTranslations } from 'next-intl'
 
@@ -23,27 +23,9 @@ function GithubIcon({ className }: { className?: string }) {
 export default function AdminHeader() {
   const { user, logout } = useAuth()
   const pathname = usePathname()
-  const [showSecurityDashboard, setShowSecurityDashboard] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const t = useTranslations('nav')
   const ta = useTranslations('auth')
-
-  // Fetch security settings to check if security dashboard should be shown
-  useEffect(() => {
-    async function fetchSecuritySettings() {
-      try {
-        const response = await apiFetch('/api/settings')
-        if (response.ok) {
-          const data = await response.json()
-          setShowSecurityDashboard(data.security?.viewSecurityEvents ?? false)
-        }
-      } catch (error) {
-        // Security settings fetch failed - using defaults
-      }
-    }
-
-    fetchSecuritySettings()
-  }, [])
 
   const userMenuRef = useRef<HTMLDivElement>(null)
 
@@ -62,38 +44,42 @@ export default function AdminHeader() {
   if (!user) return null
 
   const repoUrl = 'https://github.com/MansiVisuals/ViTransfer'
-  const websiteUrl = 'https://www.vitransfer.com'
+  const websiteUrl = 'https://mle6.cn'
   const appVersion = process.env.NEXT_PUBLIC_APP_VERSION
 
   const navLinks: Array<{ href: string; label: string; icon: typeof FolderKanban; title?: string }> = [
-    { href: '/admin/projects', label: t('projects'), icon: FolderKanban },
-    ...(user.role === 'ADMIN' ? [
-      { href: '/admin/users', label: t('users'), icon: Users },
-      { href: '/admin/settings', label: t('settings'), icon: Settings },
+    { href: '/studio/projects', label: t('projects'), icon: FolderKanban },
+    { href: '/studio/team', label: '团队', icon: Users },
+    ...(user.teamRole === 'OWNER' || user.teamRole === 'ADMIN' ? [
+      { href: '/studio/team/settings', label: '团队设置', icon: Settings },
     ] : []),
   ]
 
-  // Add Security link if enabled
-  if (user.role === 'ADMIN' && showSecurityDashboard) {
-    navLinks.push({ href: '/admin/security', label: t('security'), icon: Shield })
-  }
+  const teamRoleLabel = user.teamRole === 'OWNER'
+    ? '创建人'
+    : user.teamRole === 'ADMIN'
+      ? '管理员'
+      : user.teamRole === 'MEMBER'
+        ? '成员'
+        : '未加入团队'
 
   return (
     <div className="bg-card border-b border-border/50 shadow-elevation-sm backdrop-blur-sm">
       <div className="w-full px-3 sm:px-4 lg:px-6 py-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-6 flex-1 min-w-0">
+            <TeamSwitcher />
             <nav className="flex gap-1 sm:gap-2 overflow-x-auto">
               {navLinks.map((link) => {
                 const Icon = link.icon
-                const isActive = pathname === link.href || (link.href !== '/admin/projects' && pathname?.startsWith(link.href))
+                const isActive = pathname === link.href || (link.href !== '/studio/projects' && pathname?.startsWith(link.href))
 
                 return (
                   <Link
                     key={link.href}
                     href={link.href}
                     title={link.title || link.label || undefined}
-                    className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                    className={`flex min-h-11 items-center gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
                       isActive
                         ? 'bg-primary text-primary-foreground shadow-elevation'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -112,7 +98,7 @@ export default function AdminHeader() {
             <Dialog>
               <DialogTrigger asChild>
                 <button
-                  className="p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
                   aria-label={t('aboutViTransfer')}
                   title={t('about')}
                 >
@@ -182,7 +168,7 @@ export default function AdminHeader() {
             <div ref={userMenuRef} className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
                 aria-label={user.name || user.email}
                 title={user.name || user.email}
               >
@@ -193,9 +179,17 @@ export default function AdminHeader() {
                   <div className="px-3 py-2.5 border-b border-border">
                     <p className="text-sm font-medium truncate">{user.name || user.email}</p>
                     {user.name && <p className="text-xs text-muted-foreground truncate">{user.email}</p>}
-                    <p className="text-xs text-muted-foreground mt-0.5">{user.role}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{teamRoleLabel}</p>
                   </div>
                   <div className="p-1">
+                    <Link
+                      href="/profile"
+                      onClick={() => setShowUserMenu(false)}
+                      className="flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-accent transition-colors"
+                    >
+                      <UserRound className="w-4 h-4" />
+                      个人中心
+                    </Link>
                     <button
                       onClick={() => { setShowUserMenu(false); logout() }}
                       className="flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-md text-destructive hover:bg-destructive/10 transition-colors"

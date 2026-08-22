@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { updateRecipient, deleteRecipient } from '@/lib/recipients'
 import { invalidateSessionsByEmail } from '@/lib/session-invalidation'
 import { rateLimit } from '@/lib/rate-limit'
@@ -56,6 +57,9 @@ export async function PATCH(
 
   try {
     const { id: projectId, rid: recipientId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const body = await request.json()
 
     // Validate input
@@ -140,6 +144,9 @@ export async function DELETE(
 
   try {
     const { id: projectId, rid: recipientId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     // Verify the recipient belongs to the project in the URL (prevents cross-project IDOR)
     const recipientToDelete = await prisma.projectRecipient.findFirst({

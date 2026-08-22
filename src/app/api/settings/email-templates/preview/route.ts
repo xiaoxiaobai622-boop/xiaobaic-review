@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import {
   replacePlaceholders,
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const settingsMessages = messages?.settings || {}
   const emailTemplateMessages = settingsMessages.emailTemplates || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -224,7 +224,7 @@ function generateSampleValues(
       COMMENT_CONTENT: commentContent,
       TIMECODE: sampleTcPill2,
       ATTACHMENTS: `<div style="margin-top: 12px; padding: 10px 14px; border-radius: 8px; border: 1px solid ${brand.border}; background: ${brand.surfaceAlt};"><div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: ${brand.muted}; margin-bottom: 6px; font-weight: 700;">${attachmentLabel}</div><div style="font-size: 13px; color: ${brand.text}; line-height: 1.8;">Client-reference.mov</div></div>`,
-      ADMIN_URL: `${appDomain}/admin`,
+      ADMIN_URL: `${appDomain}/studio`,
     },
     ADMIN_PROJECT_APPROVED: {
       ...base,
@@ -233,7 +233,7 @@ function generateSampleValues(
       VIDEO_NAME: videoName,
       APPROVAL_STATUS: approvalStatus,
       APPROVAL_ACTION: approvalAction,
-      ADMIN_URL: `${appDomain}/admin`,
+      ADMIN_URL: `${appDomain}/studio`,
     },
     PROJECT_GENERAL: {
       ...base,
@@ -264,7 +264,7 @@ function generateSampleValues(
       PROJECT_TITLE: projectTitle,
       DUE_DATE: dueDate,
       REMINDER_TYPE: reminderType,
-      ADMIN_URL: `${appDomain}/admin`,
+      ADMIN_URL: `${appDomain}/studio`,
     },
     OTP_VERIFICATION: {
       ...base,
@@ -287,7 +287,7 @@ function generateSampleValues(
       SUMMARY_TEXT: '12 comments across 3 projects',
       PERIOD: 'today',
       SUMMARY_PROJECTS: '<div class="secondary-box"><div style="font-size:14px;">Summer Campaign 2026 — 5 comments</div></div>',
-      ADMIN_URL: `${appDomain}/admin/projects`,
+      ADMIN_URL: `${appDomain}/studio/projects`,
     },
     ADMIN_CLIENT_UPLOAD: {
       ...base,
@@ -296,7 +296,7 @@ function generateSampleValues(
       UPLOADER_EMAIL: ex.CLIENT_EMAIL || 'jane@example.com',
       FILE_COUNT: '2',
       FILE_LIST: `<div class="secondary-box"><div style="font-size:14px;">• Storyboard-v2.pdf</div><div style="font-size:14px;">• VO-notes.txt</div></div>`,
-      ADMIN_URL: `${appDomain}/admin/projects/sample-id`,
+      ADMIN_URL: `${appDomain}/studio/projects/sample-id`,
     },
   }
 

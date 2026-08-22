@@ -38,7 +38,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const { id: projectId } = await params
-    const body = await request.json()
+    // Parse body defensively: an empty/malformed body should fail validation
+    // (400) instead of throwing and returning a generic 500.
+    const body = await request.json().catch(() => ({}))
     const parsed = approveSchema.safeParse(body)
 
     if (!parsed.success) {

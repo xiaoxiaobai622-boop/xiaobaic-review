@@ -1,5 +1,7 @@
 .page {
-  min-height: 100svh;
+  position: relative;
+  height: 100svh;
+  overflow: hidden;
   background: #090a0d;
   color: #fff;
   letter-spacing: 0;
@@ -8,7 +10,7 @@
 .hero {
   position: relative;
   display: grid;
-  min-height: max(700px, 91svh);
+  height: 100svh;
   overflow: hidden;
   isolation: isolate;
 }
@@ -23,6 +25,12 @@
 .videoStage {
   z-index: -4;
   background: #111318;
+}
+
+.videoStageFallback {
+  background:
+    linear-gradient(135deg, rgba(29, 34, 45, 0.95), rgba(7, 9, 13, 0.98)),
+    #111318;
 }
 
 .heroVideo {
@@ -171,6 +179,33 @@
   line-height: 1.8;
 }
 
+.heroActions {
+  display: flex;
+  justify-content: center;
+  margin-top: 34px;
+}
+
+.primaryCta {
+  display: inline-flex;
+  min-width: 180px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #fff;
+  color: #111318;
+  font-size: 15px;
+  font-weight: 650;
+  text-decoration: none;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.primaryCta:hover {
+  background: #f2f4f8;
+  transform: translateY(-2px);
+}
+
 .sceneStatus {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -231,8 +266,14 @@
 }
 
 .capabilityBand {
-  padding: 58px 24px 64px;
-  background: #090a0d;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 46px 24px 30px;
+  box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(4, 6, 10, 0), rgba(4, 6, 10, 0.88));
 }
 
 .capabilityInner {
@@ -240,13 +281,14 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   width: min(1080px, 100%);
   margin: 0 auto;
+  gap: 24px;
 }
 
 .capability {
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  padding: 8px 42px;
+  padding: 8px 24px;
   border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
 
@@ -275,8 +317,34 @@
 .capability p {
   margin: 7px 0 0;
   color: rgba(255, 255, 255, 0.48);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.55;
+}
+
+.siteFooter {
+  display: block;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.siteFooter a {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  line-height: 1.6;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.siteFooter a:hover {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.siteFooter a:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid #fff;
+  outline-offset: 4px;
 }
 
 @keyframes sceneProgress {
@@ -290,7 +358,7 @@
 
 @media (max-width: 720px) {
   .hero {
-    min-height: max(680px, 91svh);
+    height: 100svh;
   }
 
   .header {
@@ -331,6 +399,24 @@
     font-size: 23px;
   }
 
+  .primaryCta {
+    min-width: 150px;
+    height: 44px;
+    font-size: 14px;
+  }
+
+  .capabilityBand {
+    padding: 30px 16px 22px;
+  }
+
+  .capabilityInner {
+    gap: 10px;
+  }
+
+  .capability {
+    padding: 0 12px;
+  }
+
   .description {
     max-width: 330px;
     margin-top: 14px;
@@ -366,9 +452,22 @@
   .capability:last-child {
     border-bottom: 0;
   }
+
+  .siteFooter {
+    margin-top: 24px;
+    padding-top: 20px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .videoStage {
+    background: #111318;
+  }
+
+  .heroVideo {
+    display: none;
+  }
+
   .heroVideo,
   .loginButton {
     transition: none;

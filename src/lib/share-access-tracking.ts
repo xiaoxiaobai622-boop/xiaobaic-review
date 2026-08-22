@@ -2,7 +2,7 @@ import { prisma } from './db'
 import { NextRequest } from 'next/server'
 import { getSecuritySettings } from './video-access'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
-import { generateShareUrl, getAppUrl } from '@/lib/url'
+import { generateProjectShareUrlById, getAppUrl } from '@/lib/url'
 import { getClientIpAddress } from '@/lib/utils'
 import { anonymizeIp } from '@/lib/ip-anonymization'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -76,7 +76,9 @@ export async function trackSharePageAccess(params: {
     title: (notificationsText?.shareLinkOpenedTitle || 'Share Link Opened: {projectTitle}')
       .replace('{projectTitle}', project?.title || notificationsText?.unknownProject || 'Unknown Project'),
     body: await (async () => {
-      const shareUrl = project?.slug ? await generateShareUrl(project.slug, request).catch(() => '') : ''
+      const shareUrl = project?.id
+        ? await generateProjectShareUrlById(project.id, request).catch(() => '')
+        : ''
       const baseUrl = await getAppUrl(request).catch(() => '')
       const person = email || notificationsText?.someone || 'Someone'
       const projectTitle = project?.title || notificationsText?.unknownProject || 'Unknown Project'

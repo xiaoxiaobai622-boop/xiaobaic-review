@@ -1,6 +1,8 @@
 import { clearTokens, getAccessToken, getRefreshToken, setTokens, withAuthRefreshLock } from './token-store'
 import { logError } from './logging'
 import { getDeviceAuthHeaders } from './device-id'
+import { getActiveTeamId } from './team-store'
+import { getPlatformAccessToken } from './platform-token-store'
 
 let isRedirecting = false
 let refreshInFlight: Promise<boolean> | null = null
@@ -9,7 +11,7 @@ export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<Response> {
-  const requestInit = withAuthHeader(init)
+  const requestInit = withAuthHeader(input, init)
 
   try {
     const response = await fetch(input, requestInit)
@@ -22,7 +24,7 @@ export async function apiFetch(
     if (response.status === 401) {
       const refreshed = await attemptRefresh()
       if (refreshed) {
-        const retryResponse = await fetch(input, withAuthHeader(init))
+        const retryResponse = await fetch(input, withAuthHeader(input, init))
         if (retryResponse.status !== 401) {
           return retryResponse
         }
@@ -106,17 +108,21 @@ export async function apiDelete<T = any>(
   })
 }
 
-function withAuthHeader(init?: RequestInit): RequestInit {
+function withAuthHeader(input: RequestInfo | URL, init?: RequestInit): RequestInit {
   const headers = new Headers(init?.headers || {})
   // Only inject the stored admin token when no Authorization header was
   // explicitly provided.  Share-page uploads pass their own bearer token;
   // overwriting it with a stale admin token would break auth.
   if (!headers.has('Authorization')) {
-    const token = getAccessToken()
+    const isPlatformRequest =
+      typeof input === 'string' && input.startsWith('/api/platform/')
+    const token = isPlatformRequest ? getPlatformAccessToken() : getAccessToken()
     if (token) {
       headers.set('Authorization', `Bearer ${token}`)
     }
   }
+  const teamId = getActiveTeamId()
+  if (teamId) headers.set('X-Team-Id', teamId)
   return { ...init, headers }
 }
 

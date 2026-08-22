@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
+import { getRequestedTeamId, resolveActiveTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -26,8 +27,13 @@ export async function GET(
     return NextResponse.json({ error: '请输入三位项目 ID' }, { status: 400 })
   }
 
-  const project = await prisma.project.findUnique({
-    where: { projectCode: code },
+  const teamId = await resolveActiveTeamId(user, getRequestedTeamId(request))
+  if (!teamId) {
+    return NextResponse.json({ error: '你还没有加入任何团队' }, { status: 403 })
+  }
+
+  const project = await prisma.project.findFirst({
+    where: { teamId, projectCode: code },
     select: { id: true, title: true, slug: true, projectCode: true, status: true },
   })
   if (!project) {

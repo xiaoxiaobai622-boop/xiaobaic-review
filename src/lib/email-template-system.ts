@@ -104,7 +104,7 @@ const TEMPLATE_PLACEHOLDERS: Record<EmailTemplateType, PlaceholderDefinition[]> 
     { key: '{{COMMENT_CONTENT}}', description: 'The comment text', example: 'Could we adjust the color grading?' },
     { key: '{{TIMECODE}}', description: 'Clickable timecode pill linking to the comment (if any)', example: '00:01:23:15' },
     { key: '{{ATTACHMENTS}}', description: 'List of attached files (shown only if files were uploaded)', example: '' },
-    { key: '{{ADMIN_URL}}', description: 'Link to admin panel', example: 'https://review.acme.com/admin' },
+    { key: '{{ADMIN_URL}}', description: 'Link to admin panel', example: 'https://review.acme.com/studio' },
   ],
   ADMIN_PROJECT_APPROVED: [
     ...COMMON_PLACEHOLDERS,
@@ -113,7 +113,7 @@ const TEMPLATE_PLACEHOLDERS: Record<EmailTemplateType, PlaceholderDefinition[]> 
     { key: '{{VIDEO_NAME}}', description: 'Name of approved deliverable (for partial approvals)', example: 'Main Video' },
     { key: '{{APPROVAL_STATUS}}', description: 'Approval status (capitalized, for subject lines)', example: 'Approved' },
     { key: '{{APPROVAL_ACTION}}', description: 'Approval action (lowercase, for body text)', example: 'approved' },
-    { key: '{{ADMIN_URL}}', description: 'Link to admin panel', example: 'https://review.acme.com/admin' },
+    { key: '{{ADMIN_URL}}', description: 'Link to admin panel', example: 'https://review.acme.com/studio' },
   ],
   PROJECT_GENERAL: [
     ...COMMON_PLACEHOLDERS,
@@ -140,7 +140,7 @@ const TEMPLATE_PLACEHOLDERS: Record<EmailTemplateType, PlaceholderDefinition[]> 
     { key: '{{PROJECT_TITLE}}', description: 'Title of the project', example: 'Summer Campaign 2026' },
     { key: '{{DUE_DATE}}', description: 'Formatted due date', example: 'March 15, 2026' },
     { key: '{{REMINDER_TYPE}}', description: 'When the project is due (e.g., tomorrow, in 7 days)', example: 'tomorrow' },
-    { key: '{{ADMIN_URL}}', description: 'Link to admin panel', example: 'https://review.acme.com/admin' },
+    { key: '{{ADMIN_URL}}', description: 'Link to admin panel', example: 'https://review.acme.com/studio' },
   ],
   OTP_VERIFICATION: [
     ...COMMON_PLACEHOLDERS,
@@ -163,7 +163,7 @@ const TEMPLATE_PLACEHOLDERS: Record<EmailTemplateType, PlaceholderDefinition[]> 
     { key: '{{SUMMARY_TEXT}}', description: 'Summary counts text', example: '12 comments across 3 projects' },
     { key: '{{PERIOD}}', description: 'Schedule period text', example: 'today' },
     { key: '{{SUMMARY_PROJECTS}}', description: 'Rendered project summary HTML', example: '' },
-    { key: '{{ADMIN_URL}}', description: 'Link to admin dashboard', example: 'https://review.acme.com/admin/projects' },
+    { key: '{{ADMIN_URL}}', description: 'Link to admin dashboard', example: 'https://review.acme.com/studio/projects' },
   ],
   ADMIN_CLIENT_UPLOAD: [
     ...COMMON_PLACEHOLDERS,
@@ -171,7 +171,7 @@ const TEMPLATE_PLACEHOLDERS: Record<EmailTemplateType, PlaceholderDefinition[]> 
     { key: '{{UPLOADER_EMAIL}}', description: 'Email of the uploader', example: 'john@acme.com' },
     { key: '{{FILE_COUNT}}', description: 'Number of files uploaded', example: '3' },
     { key: '{{FILE_LIST}}', description: 'Rendered list of uploaded files', example: '' },
-    { key: '{{ADMIN_URL}}', description: 'Link to project uploads page', example: 'https://review.acme.com/admin/projects/xxx' },
+    { key: '{{ADMIN_URL}}', description: 'Link to project uploads page', example: 'https://review.acme.com/studio/projects/xxx' },
   ],
 }
 

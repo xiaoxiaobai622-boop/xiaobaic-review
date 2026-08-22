@@ -32,7 +32,7 @@ export function generateICalFeed(projects: CalendarProject[], domain: string): s
       `DTSTART;VALUE=DATE:${dtstart}`,
       `DTEND;VALUE=DATE:${dtend}`,
       `SUMMARY:${escapeICalText(summary)}`,
-      `URL:${domain}/admin/projects/${project.id}`,
+      `URL:${domain}/studio/projects/${project.id}`,
       `STATUS:CONFIRMED`,
       'END:VEVENT',
     ].join('\r\n')

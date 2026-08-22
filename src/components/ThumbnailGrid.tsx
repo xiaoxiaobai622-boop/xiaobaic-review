@@ -8,6 +8,7 @@ import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import type { ShareViewMode } from './ShareViewToggle'
 import { cn } from '@/lib/utils'
+import { countCommentsByLatestVideoName, getLatestVideo } from '@/lib/video-comment-counts'
 
 interface ThumbnailGridProps {
   videosByName: Record<string, any[]>
@@ -27,14 +28,6 @@ interface ThumbnailGridProps {
   /** Album count for the hero meta line (0 hides the entry) */
   albumCount?: number
   comments?: Array<{ videoId?: string | null }>
-}
-
-function getLatestVideo(videos: any[]) {
-  return videos.reduce((latest, video) => {
-    if (!latest) return video
-    if (video.version !== latest.version) return video.version > latest.version ? video : latest
-    return new Date(video.createdAt).getTime() > new Date(latest.createdAt).getTime() ? video : latest
-  }, null as any)
 }
 
 function formatBeijingUploadTime(value?: string | Date): string {
@@ -84,30 +77,9 @@ export default function ThumbnailGrid({
   const [showApproveHint, setShowApproveHint] = useState(false)
   const approveHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sort videos: For review (not approved) first, then approved, both alphabetically
+  // Keep the project order stable; approval is a state, not a sort priority.
   const videoNames = useMemo(() => {
-    const names = Object.keys(videosByName)
-
-    // Separate into review and approved
-    const forReview: string[] = []
-    const approved: string[] = []
-
-    names.forEach(name => {
-      const videos = videosByName[name]
-      const hasApprovedVideo = videos.some((v: any) => v.approved === true)
-      if (hasApprovedVideo) {
-        approved.push(name)
-      } else {
-        forReview.push(name)
-      }
-    })
-
-    // Sort each group alphabetically
-    forReview.sort((a, b) => a.localeCompare(b))
-    approved.sort((a, b) => a.localeCompare(b))
-
-    // Return: review first, then approved
-    return [...forReview, ...approved]
+    return Object.keys(videosByName).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   }, [videosByName])
 
   const videoCount = videoNames.length
@@ -115,17 +87,7 @@ export default function ThumbnailGrid({
     videosByName[name].some((v: any) => v.approved === true)
   ).length
   const commentCountByName = useMemo(() => {
-    const videoNamesById = new Map<string, string>()
-    Object.entries(videosByName).forEach(([name, versions]) => {
-      versions.forEach((video: any) => videoNamesById.set(video.id, name))
-    })
-    const counts = new Map<string, number>()
-    comments.forEach((comment) => {
-      if (!comment.videoId) return
-      const name = videoNamesById.get(comment.videoId)
-      if (name) counts.set(name, (counts.get(name) || 0) + 1)
-    })
-    return counts
+    return countCommentsByLatestVideoName(videosByName, comments)
   }, [comments, videosByName])
 
   // With nothing approved yet, the button explains the workflow instead of downloading

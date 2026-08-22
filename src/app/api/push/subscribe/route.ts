@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { NOTIFICATION_EVENT_TYPES } from '@/lib/external-notifications/constants'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const webPushMessages = messages?.settings?.webPush || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const webPushMessages = messages?.settings?.webPush || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -158,7 +158,7 @@ export async function PATCH(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const webPushMessages = messages?.settings?.webPush || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }

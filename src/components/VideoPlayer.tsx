@@ -15,6 +15,7 @@ import { useAnnotationDrawing } from '@/hooks/useAnnotationDrawing'
 import { AnnotationData } from '@/types/annotations'
 import { secondsToTimecode } from '@/lib/timecode'
 import { logError } from '@/lib/logging'
+import { filterCommentsForVideo } from '@/lib/video-comment-filter'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -38,9 +39,11 @@ interface VideoPlayerProps {
   activeVideoName?: string // The video group name (for maintaining selection after reload)
   initialSeekTime?: number | null // Initial timestamp to seek to (from URL params)
   initialVideoIndex?: number // Initial video index to select (from URL params)
+  followLatestVersion?: boolean // Follow a newly inserted latest version until the user explicitly selects one
   allowAssetDownload?: boolean // Allow clients to download assets
   clientCanApprove?: boolean // Allow clients to approve videos (false = admin only)
   shareToken?: string | null
+  onDownloadToken?: (videoId: string) => Promise<string | null>
   hideDownloadButton?: boolean // Hide download button completely (for admin share view)
   comments?: CommentWithReplies[] // Comments for timeline markers
   timestampDisplayMode?: 'TIMECODE' | 'AUTO' // Timestamp display format (default: TIMECODE)
@@ -73,9 +76,11 @@ export default function VideoPlayer({
   activeVideoName,
   initialSeekTime = null,
   initialVideoIndex = 0,
+  followLatestVersion = false,
   allowAssetDownload = true,
   clientCanApprove = true, // Default to true (clients can approve)
   shareToken = null,
+  onDownloadToken,
   hideDownloadButton = false, // Default to false (show download button)
   comments = [], // Default to empty array
   timestampDisplayMode = 'TIMECODE', // Default to TIMECODE format
@@ -89,8 +94,12 @@ export default function VideoPlayer({
 }: VideoPlayerProps) {
   const t = useTranslations('videos')
   const tControls = useTranslations('controls')
-  const [selectedVideoIndex, setSelectedVideoIndex] = useState(initialVideoIndex)
+  // null means automatic selection. This lets a default viewer follow a newly
+  // published latest version while preserving a version chosen by the user.
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
   const [videoUrl, setVideoUrl] = useState<string>('')
+  const [videoCrossOrigin, setVideoCrossOrigin] = useState<'anonymous' | null>('anonymous')
+  const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<'720p' | '1080p' | '2160p'>(defaultQuality)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const [videoDuration, setVideoDuration] = useState(0)
@@ -138,8 +147,18 @@ export default function VideoPlayer({
   // version's actions; it must not make older versions impossible to review.
   const displayVideos = useMemo(() => videos, [videos])
 
-  const safeIndex = Math.min(selectedVideoIndex, displayVideos.length - 1)
-  const selectedVideo = displayVideos[safeIndex >= 0 ? safeIndex : 0]
+  const explicitVideoIndex = selectedVideoId
+    ? displayVideos.findIndex((video) => video.id === selectedVideoId)
+    : -1
+  const automaticVideoIndex = followLatestVersion ? 0 : initialVideoIndex
+  const selectedVideoIndex = explicitVideoIndex >= 0
+    ? explicitVideoIndex
+    : Math.max(0, Math.min(automaticVideoIndex, displayVideos.length - 1))
+  const selectedVideo = displayVideos[selectedVideoIndex]
+  const selectedVideoComments = useMemo(
+    () => filterCommentsForVideo(comments, selectedVideo?.id),
+    [comments, selectedVideo?.id],
+  )
 
   // Comparison mode state
   const [showComparison, setShowComparison] = useState(false)
@@ -155,6 +174,23 @@ export default function VideoPlayer({
   } | null>(null)
 
   const annotationDrawing = useAnnotationDrawing()
+  const getAnnotationData = annotationDrawing.getAnnotationData
+  const resetAnnotationDrawing = annotationDrawing.reset
+  const previousAnnotationVideoIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const currentVideoId = selectedVideo?.id ?? null
+    const previousVideoId = previousAnnotationVideoIdRef.current
+
+    if (previousVideoId && currentVideoId && previousVideoId !== currentVideoId) {
+      setIsDrawingMode(false)
+      setPendingAnnotation(null)
+      resetAnnotationDrawing()
+      window.dispatchEvent(new CustomEvent('annotationCleared'))
+    }
+
+    previousAnnotationVideoIdRef.current = currentVideoId
+  }, [selectedVideo?.id, resetAnnotationDrawing])
 
   useEffect(() => {
     const handleEnterDrawing = (e: CustomEvent) => {
@@ -178,35 +214,70 @@ export default function VideoPlayer({
     }
   }, [selectedVideo?.fps, annotationDrawing])
 
-  const handleDrawingDone = useCallback(() => {
-    const data = annotationDrawing.getAnnotationData()
-    setIsDrawingMode(false)
-
-    if (data) {
-      // Store as pending so the overlay keeps showing the drawing
-      setPendingAnnotation({
-        annotations: data,
-        timecode: drawingTimecodeStart,
-        timecodeEnd: drawingTimecodeEnd,
-      })
-
-      window.dispatchEvent(
-        new CustomEvent('annotationComplete', {
-          detail: {
-            annotations: data,
-            timecodeStart: drawingTimecodeStart,
-            timecodeEnd: drawingTimecodeEnd,
-            videoId: selectedVideo?.id,
-          },
-        })
-      )
-    }
-  }, [annotationDrawing, drawingTimecodeStart, drawingTimecodeEnd, selectedVideo?.id])
-
   const handleDrawingCancel = useCallback(() => {
     setIsDrawingMode(false)
     setPendingAnnotation(null)
-  }, [])
+    annotationDrawing.reset()
+    window.dispatchEvent(new CustomEvent('annotationCleared'))
+  }, [annotationDrawing])
+
+  useEffect(() => {
+    if (!isDrawingMode) return
+
+    const annotations = getAnnotationData()
+    setPendingAnnotation(annotations ? {
+      annotations,
+      timecode: drawingTimecodeStart,
+      timecodeEnd: drawingTimecodeEnd,
+    } : null)
+
+    window.dispatchEvent(new CustomEvent('annotationDraftChanged', {
+      detail: {
+        annotations,
+        timecodeStart: drawingTimecodeStart,
+        timecodeEnd: drawingTimecodeEnd,
+        videoId: selectedVideo?.id,
+      },
+    }))
+  }, [
+    isDrawingMode,
+    annotationDrawing.shapes,
+    getAnnotationData,
+    drawingTimecodeStart,
+    drawingTimecodeEnd,
+    selectedVideo?.id,
+  ])
+
+  useEffect(() => {
+    const handleGetAnnotationDraft = (event: Event) => {
+      const callback = (event as CustomEvent).detail?.callback
+      if (typeof callback !== 'function' || !isDrawingMode) return
+
+      callback({
+        annotations: getAnnotationData(),
+        timecodeStart: drawingTimecodeStart,
+        timecodeEnd: drawingTimecodeEnd,
+        videoId: selectedVideo?.id ?? null,
+      })
+    }
+    const handleAnnotationSubmitted = () => {
+      if (!isDrawingMode) return
+      setIsDrawingMode(false)
+    }
+
+    window.addEventListener('getAnnotationDraft', handleGetAnnotationDraft)
+    window.addEventListener('annotationSubmitted', handleAnnotationSubmitted)
+    return () => {
+      window.removeEventListener('getAnnotationDraft', handleGetAnnotationDraft)
+      window.removeEventListener('annotationSubmitted', handleAnnotationSubmitted)
+    }
+  }, [
+    isDrawingMode,
+    getAnnotationData,
+    drawingTimecodeStart,
+    drawingTimecodeEnd,
+    selectedVideo?.id,
+  ])
 
   useEffect(() => {
     const clear = () => setPendingAnnotation(null)
@@ -233,7 +304,7 @@ export default function VideoPlayer({
     const selectVersion = (event: Event) => {
       const videoId = (event as CustomEvent).detail?.videoId
       const targetIndex = displayVideos.findIndex((video) => video.id === videoId)
-      if (targetIndex >= 0) setSelectedVideoIndex(targetIndex)
+      if (targetIndex >= 0) setSelectedVideoId(videoId)
     }
     const openComparison = () => {
       if (displayVideos.length >= 2) {
@@ -257,12 +328,16 @@ export default function VideoPlayer({
   useEffect(() => {
     if (!activeVideoName) return
     if (previousVideoNameRef.current && previousVideoNameRef.current !== activeVideoName) {
-      setSelectedVideoIndex(0)
+      setSelectedVideoId(null)
       setVideoUrl('')
       currentTimeRef.current = 0
     }
     previousVideoNameRef.current = activeVideoName
   }, [activeVideoName])
+
+  useEffect(() => {
+    setSelectedVideoId(null)
+  }, [followLatestVersion, initialVideoIndex])
 
   // Safety check: ensure selectedVideo exists before accessing properties
   const isVideoApproved = selectedVideo ? (selectedVideo as any).approved === true : false
@@ -318,7 +393,8 @@ export default function VideoPlayer({
         if (url) {
           currentTimeRef.current = 0
           setResolvedPlaybackQuality(qualityUsed)
-
+          setVideoCrossOrigin('anonymous')
+          setVideoLoadFailed(false)
           setVideoUrl(url)
         }
       } catch (error) {
@@ -327,6 +403,12 @@ export default function VideoPlayer({
 
     loadVideoUrl()
   }, [selectedVideo, defaultQuality])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !videoUrl) return
+    video.load()
+  }, [videoCrossOrigin, videoUrl])
 
   useEffect(() => {
     const video = videoRef.current
@@ -360,7 +442,10 @@ export default function VideoPlayer({
   useEffect(() => {
     const handleGetCurrentTime = (e: CustomEvent) => {
       if (e.detail.callback) {
-        e.detail.callback(currentTimeRef.current, selectedVideoIdRef.current)
+        // Read the media element directly so sending a comment never uses the
+        // throttled display value from the timeline.
+        const exactTime = videoRef.current?.currentTime ?? currentTimeRef.current
+        e.detail.callback(exactTime, selectedVideoIdRef.current)
       }
     }
 
@@ -388,10 +473,10 @@ export default function VideoPlayer({
     const handleSeekToTime = (e: CustomEvent) => {
       const { timestamp, videoId } = e.detail
 
-      if (videoId && videoId !== selectedVideo.id) {
+      if (videoId && videoId !== selectedVideo?.id) {
         const targetVideoIndex = displayVideos.findIndex(v => v.id === videoId)
         if (targetVideoIndex !== -1) {
-          setSelectedVideoIndex(targetVideoIndex)
+          setSelectedVideoId(videoId)
           setTimeout(() => {
             if (videoRef.current) {
               videoRef.current.pause()
@@ -419,7 +504,7 @@ export default function VideoPlayer({
     return () => {
       window.removeEventListener('seekToTime' as any, handleSeekToTime as EventListener)
     }
-  }, [selectedVideo.id, displayVideos])
+  }, [selectedVideo?.id, displayVideos])
 
   useEffect(() => {
     const handlePauseForComment = () => {
@@ -448,14 +533,24 @@ export default function VideoPlayer({
 
       const video = videoRef.current
 
-      // Ctrl+Space: Play/Pause
-      if (e.ctrlKey && e.code === 'Space') {
+      const target = e.target as HTMLElement | null
+      const isEditableTarget = Boolean(
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      )
+
+      // Space: Play/Pause from anywhere in the review screen
+      if (e.code === 'Space' && !isEditableTarget) {
         e.preventDefault()
         e.stopPropagation()
         if (video.paused) {
-          video.play()
+          void video.play()
+          setIsPlaying(true)
         } else {
           video.pause()
+          setIsPlaying(false)
         }
         return
       }
@@ -820,7 +915,7 @@ export default function VideoPlayer({
             return (
               <Button
                 key={video.id}
-                onClick={() => setSelectedVideoIndex(index)}
+                onClick={() => setSelectedVideoId(video.id)}
                 variant={selectedVideoIndex === index ? 'default' : 'outline'}
                 size="sm"
                 className="whitespace-nowrap relative"
@@ -884,7 +979,14 @@ export default function VideoPlayer({
                 onLoadedMetadata={handleLoadedMetadata}
                 onContextMenu={!isAdmin ? (e) => e.preventDefault() : undefined}
                 onClick={isDrawingMode ? undefined : handlePlayPause}
-                crossOrigin="anonymous"
+                crossOrigin={videoCrossOrigin || undefined}
+                onError={() => {
+                  if (videoCrossOrigin === 'anonymous') {
+                    setVideoCrossOrigin(null)
+                  } else {
+                    setVideoLoadFailed(true)
+                  }
+                }}
                 playsInline
                 loop={isLooping}
                 preload="metadata"
@@ -893,9 +995,15 @@ export default function VideoPlayer({
                 x-webkit-airplay="allow"
               />
 
+              {videoLoadFailed && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-4 text-center text-sm text-muted-foreground">
+                  视频加载失败，请刷新页面或检查网络后重试。
+                </div>
+              )}
+
                 {/* Annotation Overlay (read-only, renders saved drawing annotations during playback) */}
                 <AnnotationOverlay
-                  comments={comments as any[]}
+                  comments={selectedVideoComments as any[]}
                   currentTime={currentTimeState}
                   videoFps={selectedVideo?.fps || 24}
                   containerRef={videoWrapperRef}
@@ -922,13 +1030,11 @@ export default function VideoPlayer({
                       strokeWidth={annotationDrawing.strokeWidth}
                       opacity={annotationDrawing.opacity}
                       canUndo={annotationDrawing.undoStack.length > 0}
-                      hasShapes={annotationDrawing.hasShapes}
                       onColorChange={annotationDrawing.setActiveColor}
                       onToolChange={annotationDrawing.setActiveTool}
                       onStrokeWidthChange={annotationDrawing.setStrokeWidth}
                       onOpacityChange={annotationDrawing.setOpacity}
                       onUndo={annotationDrawing.undo}
-                      onDone={handleDrawingDone}
                       onCancel={handleDrawingCancel}
                     />
                   </>
@@ -978,6 +1084,7 @@ export default function VideoPlayer({
                 >
                   <CustomVideoControls
                     videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+                    previewVideoUrl={videoUrl}
                     videoDuration={videoDuration}
                     currentTime={currentTimeState}
                     isPlaying={isPlaying}
@@ -992,7 +1099,7 @@ export default function VideoPlayer({
                     onFrameStep={handleFrameStep}
                     isLooping={isLooping}
                     onToggleLoop={handleToggleLoop}
-                    comments={comments}
+                    comments={selectedVideoComments}
                     videoFps={selectedVideo?.fps || 24}
                     videoId={selectedVideo?.id}
                     isAdmin={isAdmin}
@@ -1060,6 +1167,7 @@ export default function VideoPlayer({
         hideDownloadButton={hideDownloadButton}
         allowAssetDownload={allowAssetDownload}
         shareToken={shareToken}
+        onDownloadToken={onDownloadToken}
         activeVideoName={activeVideoName}
         authenticatedEmail={authenticatedEmail}
         authenticatedName={authenticatedName}

@@ -36,6 +36,7 @@ interface ProjectInfoProps {
   hideDownloadButton?: boolean
   allowAssetDownload?: boolean
   shareToken?: string | null
+  onDownloadToken?: (videoId: string) => Promise<string | null>
   activeVideoName?: string
   authenticatedEmail?: string | null
   authenticatedName?: string | null
@@ -63,6 +64,7 @@ export default function ProjectInfo({
   hideDownloadButton = false,
   allowAssetDownload = true,
   shareToken = null,
+  onDownloadToken,
   activeVideoName,
   authenticatedEmail = null,
   authenticatedName = null,
@@ -117,7 +119,12 @@ export default function ProjectInfo({
   }
 
   const handleDownload = async () => {
-    const downloadUrl = (selectedVideo as any).downloadUrl
+    let downloadUrl = (selectedVideo as any).downloadUrl as string | null | undefined
+    if (!downloadUrl && onDownloadToken) {
+      setCheckingAssets(true)
+      downloadUrl = await onDownloadToken(selectedVideo.id)
+      setCheckingAssets(false)
+    }
     if (!downloadUrl) {
       alert(t('downloadApprovedOnly'))
       return

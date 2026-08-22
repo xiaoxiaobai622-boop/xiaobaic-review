@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { parseBearerToken, verifyAdminAccessToken, verifyShareToken } from '@/lib/auth'
+import { hasWebsiteLoginSession, parseBearerToken, verifyAdminAccessToken, verifyShareToken } from '@/lib/auth'
 
 interface S3UploadTarget {
   videoId?: string
@@ -29,6 +29,61 @@ interface S3AuthFailure {
 
 export type S3AuthResult = S3AuthSuccess | S3AuthShareSuccess | S3AuthFailure
 
+async function resolveProjectId(target: S3UploadTarget): Promise<string | null> {
+  if (target.videoId) {
+    const video = await prisma.video.findUnique({
+      where: { id: target.videoId },
+      select: { projectId: true },
+    })
+    return video?.projectId || null
+  }
+  if (target.assetId) {
+    const asset = await prisma.videoAsset.findUnique({
+      where: { id: target.assetId },
+      select: { video: { select: { projectId: true } } },
+    })
+    return asset?.video.projectId || null
+  }
+  if (target.projectUploadId) {
+    const upload = await prisma.projectUpload.findUnique({
+      where: { id: target.projectUploadId },
+      select: { projectId: true },
+    })
+    return upload?.projectId || null
+  }
+  if (target.photoId) {
+    const photo = await prisma.photo.findUnique({
+      where: { id: target.photoId },
+      select: { album: { select: { projectId: true } } },
+    })
+    return photo?.album.projectId || null
+  }
+  return null
+}
+
+export async function canUserAdministerUploadTarget(userId: string, target: S3UploadTarget): Promise<boolean> {
+  const projectId = await resolveProjectId(target)
+  if (!projectId) return false
+
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      team: {
+        status: 'ACTIVE',
+        members: {
+          some: {
+            userId,
+            status: 'ACTIVE',
+            role: { in: ['OWNER', 'ADMIN'] },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  })
+  return Boolean(project)
+}
+
 /**
  * Authenticate the request and verify upload ownership.
  *
@@ -56,17 +111,25 @@ export async function verifyS3UploadAccess(
     }
   }
 
-  // ── Parse and verify bearer token ──────────────────────────────────────────
-  const bearer = parseBearerToken(request)
-  if (!bearer) {
+  // Account auth and share access are independent. Reverse-share uploads need
+  // both: the account proves the uploader is signed in, while the share token
+  // limits the upload to this project and share session.
+  const accountBearer = parseBearerToken(request)
+  const explicitShareBearer = parseBearerToken(request, 'x-share-token')
+  if (!accountBearer && !explicitShareBearer) {
     return { errorResponse: NextResponse.json({ error: 'Authentication required' }, { status: 401 }) }
   }
 
-  const adminPayload = await verifyAdminAccessToken(bearer)
-  const isAdmin = !!adminPayload?.role && adminPayload.role === 'ADMIN'
+  const adminPayload = accountBearer ? await verifyAdminAccessToken(accountBearer) : null
+  let isAdmin = false
+
+  if (adminPayload) {
+    isAdmin = await canUserAdministerUploadTarget(adminPayload.userId, target)
+  }
 
   if (!isAdmin) {
-    const sharePayload = await verifyShareToken(bearer)
+    const shareBearer = explicitShareBearer || accountBearer
+    const sharePayload = shareBearer ? await verifyShareToken(shareBearer) : null
     if (!sharePayload) {
       return { errorResponse: NextResponse.json({ error: 'Access denied' }, { status: 403 }) }
     }
@@ -81,16 +144,21 @@ export async function verifyS3UploadAccess(
       if (!assetId && !projectUploadId) {
         return { errorResponse: NextResponse.json({ error: 'Share tokens can only upload assets or project files' }, { status: 403 }) }
       }
-      if (!sharePayload.permissions?.includes('comment')) {
-        return { errorResponse: NextResponse.json({ error: 'Comment permission required' }, { status: 403 }) }
-      }
-      if (sharePayload.guest) {
-        return { errorResponse: NextResponse.json({ error: 'Guest access cannot upload files' }, { status: 403 }) }
+      if (assetId) {
+        if (!sharePayload.permissions?.includes('comment')) {
+          return { errorResponse: NextResponse.json({ error: 'Comment permission required' }, { status: 403 }) }
+        }
+        if (sharePayload.guest) {
+          return { errorResponse: NextResponse.json({ error: 'Guest access cannot upload files' }, { status: 403 }) }
+        }
       }
     }
 
     // ── Verify ownership + feature flags for projectUploadId ─────────────────
     if (projectUploadId) {
+      if (!(await hasWebsiteLoginSession(request))) {
+        return { errorResponse: NextResponse.json({ error: '请登录后上传素材' }, { status: 401 }) }
+      }
       const projectUpload = await prisma.projectUpload.findUnique({
         where: { id: projectUploadId },
         select: { storagePath: true, projectId: true, uploadedBySessionId: true },

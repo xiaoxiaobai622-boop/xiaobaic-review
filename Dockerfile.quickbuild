@@ -1,0 +1,11 @@
+FROM vitransfer-local:zh
+
+WORKDIR /app
+COPY . .
+
+ENV NODE_ENV=production
+ENV NEXT_PHASE=
+
+RUN npx prisma generate \
+    && NEXT_PHASE=phase-production-build SKIP_ENV_VALIDATION=1 npm run build \
+    && rm -rf .next/cache

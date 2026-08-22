@@ -66,8 +66,32 @@ export async function invalidateShareTokensByProject(projectId: string): Promise
     })
 
     const invalidated = await revokeShareSessions(sessions.map((session) => session.sessionId))
-    logMessage(`[SESSION_INVALIDATION] Invalidated ${invalidated} share sessions for project ${projectId}`)
-    return invalidated
+    const redis = getRedis()
+    const tokenStream = redis.scanStream({ match: 'video_access:*', count: 100 })
+    let invalidatedContentTokens = 0
+
+    for await (const keys of tokenStream) {
+      for (const key of keys) {
+        const raw = await redis.get(key)
+        if (!raw) continue
+        try {
+          const data = JSON.parse(raw) as { projectId?: string; sessionId?: string; videoId?: string; quality?: string }
+          if (data.projectId !== projectId) continue
+          const pipeline = redis.pipeline().del(key)
+          if (data.sessionId && data.videoId && data.quality) {
+            pipeline.del(`video_token_cache:${data.sessionId}:${data.videoId}:${data.quality}`)
+          }
+          await pipeline.exec()
+          invalidatedContentTokens += 1
+        } catch {
+          // Invalid token data is ignored here and rejected by token verification.
+        }
+      }
+    }
+    if (invalidatedContentTokens > 0) await redis.incr('video_token_rev_version')
+
+    logMessage(`[SESSION_INVALIDATION] Invalidated ${invalidated} share sessions and ${invalidatedContentTokens} content tokens for project ${projectId}`)
+    return invalidated + invalidatedContentTokens
   } catch (error) {
     logError('[SESSION_INVALIDATION] Error invalidating share sessions:', error)
     throw error

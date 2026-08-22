@@ -28,11 +28,10 @@ export default function SessionMonitor() {
   const inactivityTimeoutRef = useRef<number>(DEFAULT_INACTIVITY_TIMEOUT_MS)
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(LAST_ACTIVITY_KEY)
-    const initialActivity = readLastActivity()
+    const initialActivity = Date.now()
     lastActivityRef.current = initialActivity
     lastActivityWriteRef.current = initialActivity
-    if (!stored) window.localStorage.setItem(LAST_ACTIVITY_KEY, String(initialActivity))
+    window.localStorage.setItem(LAST_ACTIVITY_KEY, String(initialActivity))
   }, [])
 
   useEffect(() => {

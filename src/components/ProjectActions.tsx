@@ -57,7 +57,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
   const canApproveProject = readyVideos.length > 0 && allVideosHaveApprovedVersion
 
   const handleViewSharePage = () => {
-    router.push(`/admin/projects/${project.id}/share`)
+    router.push(`/studio/projects/${project.id}/share`)
   }
 
   const handleToggleApproval = async () => {
@@ -147,7 +147,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
 
     apiDelete(`/api/projects/${project.id}`)
       .then(() => {
-        router.push('/admin/projects')
+        router.push('/studio/projects')
         router.refresh()
       })
       .catch(() => {
@@ -313,7 +313,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
             variant="outline"
             size="default"
             className="w-full"
-            onClick={() => router.push(`/admin/projects/${project.id}/analytics`)}
+            onClick={() => router.push(`/studio/projects/${project.id}/analytics`)}
           >
             <BarChart3 className="w-4 h-4 mr-2" />
             {t('viewAnalytics')}

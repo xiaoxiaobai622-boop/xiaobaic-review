@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { testEmailConnection } from '@/lib/email'
 import { emailSchema } from '@/lib/validation'
 import { rateLimit } from '@/lib/rate-limit'
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // SECURITY: Require admin authentication
-    const authResult = await requireApiAdmin(request)
+    const authResult = await requirePlatformAdmin(request)
     if (authResult instanceof Response) {
       return authResult
     }

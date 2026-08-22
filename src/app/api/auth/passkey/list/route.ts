@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { getUserPasskeys } from '@/lib/passkey'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Require admin authentication
-    const user = await requireApiAdmin(request)
+    const user = await requirePlatformAdmin(request)
     if (user instanceof Response) return user
 
     // Rate limiting: 60 requests per minute

@@ -42,7 +42,7 @@ export async function ensureDefaultAdmin() {
     // This prevents recreating default admin after it's been changed/removed
     const anyAdmin = await prisma.user.findFirst({
       where: {
-        role: 'ADMIN'
+        isPlatformAdmin: true,
       }
     })
 
@@ -104,6 +104,7 @@ export async function ensureDefaultAdmin() {
         password: hashedPassword,
         name: process.env.ADMIN_NAME || 'Admin',
         role: 'ADMIN',
+        isPlatformAdmin: true,
       },
     })
 

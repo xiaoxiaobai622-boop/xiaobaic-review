@@ -2,7 +2,7 @@ import { prisma } from '../lib/db'
 import { getEmailSettings, getRecipientLocale, sendEmail } from '../lib/email'
 import { generateNotificationSummaryEmail } from '../lib/email-templates'
 import { getProjectRecipients } from '../lib/recipients'
-import { generateShareUrl } from '../lib/url'
+import { generateProjectShareUrlById } from '../lib/url'
 import { getRedis } from '../lib/redis'
 import { buildUnsubscribeUrl, generateRecipientUnsubscribeToken } from '../lib/unsubscribe'
 import { getPeriodString, shouldSendNow, sendNotificationsWithRetry, normalizeNotificationDataTimecode } from './notification-helpers'
@@ -100,7 +100,7 @@ export async function processClientNotifications() {
       }
 
       const period = getPeriodString(project.clientNotificationSchedule)
-      const shareUrl = await generateShareUrl(project.slug)
+      const shareUrl = await generateProjectShareUrlById(project.id)
 
       // Filter out cancelled notifications
       const redis = getRedis()

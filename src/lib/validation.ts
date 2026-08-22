@@ -201,6 +201,7 @@ export const createUserSchema = z.object({
   // Team accounts can be administrators or members. Keep this aligned with
   // the admin user form, which sends MEMBER for ordinary team users.
   role: z.enum(['ADMIN', 'MEMBER']).optional(),
+  isPlatformAdmin: z.boolean().optional(),
   projectAccessScope: z.enum(['ALL_PROJECTS', 'ASSIGNED_ONLY']).optional(),
   projectIds: z.array(cuidSchema).optional(),
 }).superRefine((data, ctx) => {
@@ -412,6 +413,7 @@ export const createCommentSchema = z.object({
   content: contentSchema,
   authorName: safeStringSchema(1, 255).optional().nullable(),
   authorEmail: emailSchema.optional().nullable(),
+  category: z.enum(['PICTURE', 'AUDIO', 'SUBTITLE', 'EDITING', 'OTHER']).optional().nullable(),
   recipientId: cuidSchema.optional().nullable(),
   parentId: cuidSchema.optional(),
   isInternal: z.boolean().optional(),

@@ -3,7 +3,7 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { authorizeDeviceCode } from '@/lib/device-code'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { logSecurityEvent } from '@/lib/video-access'
 import { getClientIpAddress } from '@/lib/utils'
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Require authenticated admin (role-checked, not just any authenticated user).
-    const userOrResponse = await requireApiAdmin(request)
+    const userOrResponse = await requirePlatformAdmin(request)
     if (userOrResponse instanceof Response) return userOrResponse
     const user = userOrResponse
 

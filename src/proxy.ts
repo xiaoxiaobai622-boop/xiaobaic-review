@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 const DANGEROUS_PROTOCOL = /^(javascript|data|vbscript):/i
-const PUBLIC_MEDIA_ORIGIN = 'https://static.xiaobaic.cn'
+const PUBLIC_MEDIA_ORIGIN = 'https://mle6.cn'
+const NEURALYN_ORIGIN = 'https://d8j0ntlcm91z4.cloudfront.net'
 
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
@@ -11,7 +12,7 @@ export async function proxy(request: NextRequest) {
   if (url.pathname === '/login') {
     const returnUrl = url.searchParams.get('returnUrl')
     if (returnUrl && (!returnUrl.startsWith('/') || returnUrl.startsWith('//'))) {
-      url.searchParams.set('returnUrl', '/admin/projects')
+      url.searchParams.set('returnUrl', '/studio/projects')
       return NextResponse.redirect(url)
     }
   }
@@ -36,6 +37,7 @@ export async function proxy(request: NextRequest) {
   // Derive S3 origin for CSP — presigned redirects go directly to the S3 endpoint
   let s3Origin = ''
   let s3BucketOrigin = ''
+  let mediaCdnOrigin = ''
   if (process.env.STORAGE_PROVIDER === 's3' && process.env.S3_ENDPOINT) {
     try {
       const endpoint = new URL(process.env.S3_ENDPOINT)
@@ -43,6 +45,12 @@ export async function proxy(request: NextRequest) {
       if (process.env.S3_FORCE_PATH_STYLE === 'false' && process.env.S3_BUCKET) {
         s3BucketOrigin = `${endpoint.protocol}//${process.env.S3_BUCKET}.${endpoint.host}`
       }
+    } catch {}
+  }
+
+  if (process.env.MEDIA_CDN_BASE_URL) {
+    try {
+      mediaCdnOrigin = new URL(process.env.MEDIA_CDN_BASE_URL).origin
     } catch {}
   }
 
@@ -66,10 +74,10 @@ export async function proxy(request: NextRequest) {
     `script-src 'self' 'nonce-${nonce}'${developmentScriptSource} https://static.cloudflareinsights.com`,
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
+    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com ${NEURALYN_ORIGIN}${mediaCdnOrigin ? ` ${mediaCdnOrigin}` : ''}${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
-    `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN}${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
+    `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN} ${NEURALYN_ORIGIN}${mediaCdnOrigin ? ` ${mediaCdnOrigin}` : ''}${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

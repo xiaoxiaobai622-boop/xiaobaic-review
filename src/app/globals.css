@@ -17,12 +17,12 @@
     --popover: 220 14% 96%;
     --popover-foreground: 0 0% 13%;
 
-    /* Primary - Blue (#007AFF) */
+    /* Primary - Trust Navy */
     --primary: 211 100% 50%;
     --primary-foreground: 0 0% 100%;
     --primary-visible: 211 100% 95%;
 
-    /* Secondary - Gray */
+    /* Secondary - Signature Blue */
     --secondary: 220 14% 89%;
     --secondary-foreground: 0 0% 13%;
 
@@ -83,6 +83,7 @@
 
   /* Dark Mode Theme */
   .dark {
+    color-scheme: dark;
     /* Base colors - dark theme */
     --background: 0 0% 7%;
     --foreground: 0 0% 98%;
@@ -95,7 +96,7 @@
     --popover: 0 0% 12%;
     --popover-foreground: 0 0% 98%;
 
-    /* Primary - Bright Blue (#0A84FF) */
+    /* Primary - High-contrast blue */
     --primary: 209 100% 60%;
     --primary-foreground: 0 0% 100%;
     --primary-visible: 209 100% 20%;
@@ -166,6 +167,40 @@
   /* Smooth scrolling */
   html {
     scroll-behavior: smooth;
+    scroll-padding-top: var(--admin-header-height);
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 200;
+    border-radius: 0 0 0.5rem 0;
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .skip-link:focus {
+    left: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 

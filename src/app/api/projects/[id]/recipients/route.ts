@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { getProjectRecipients, addRecipient } from '@/lib/recipients'
 import { z } from 'zod'
 import { rateLimit } from '@/lib/rate-limit'
@@ -47,6 +49,9 @@ export async function GET(
 
   try {
     const { id: projectId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const recipients = await getProjectRecipients(projectId)
 
     return NextResponse.json({ recipients })
@@ -74,6 +79,9 @@ export async function POST(
 
   try {
     const { id: projectId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const body = await request.json()
 
     // Validate input

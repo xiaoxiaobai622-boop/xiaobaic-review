@@ -76,8 +76,9 @@ export async function POST(
       }
     }
 
-    // Generate video access token (we use video access tokens for assets too); tag admin sessions
-    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${Date.now()}` : `guest:${Date.now()}`)
+    // Generate video access token (we use video access tokens for assets too); tag admin sessions.
+    // Stable admin session id so repeated downloads reuse the cached token.
+    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${project.id}` : `guest:${Date.now()}`)
     const token = await generateVideoAccessToken(
       videoId,
       project.id,

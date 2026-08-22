@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { hashPassword, validateSixDigitPassword } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createUserSchema } from '@/lib/validation'
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const usersMessages = messages?.users || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
         username: true,
         name: true,
         role: true,
+        isPlatformAdmin: true,
         projectAccessScope: true,
         projectMemberships: {
           select: { project: { select: { id: true, title: true, projectCode: true } } },
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const usersMessages = messages?.users || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
       password,
       name,
       role: validatedRole,
+      isPlatformAdmin = false,
       projectAccessScope: validatedProjectAccessScope,
       projectIds: validatedProjectIds = [],
     } = validation.data
@@ -168,33 +170,35 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await prisma.user.create({
-      data: {
-        email: resolvedEmail,
-        phone: phone || null,
-        username: username || null,
-        password: hashedPassword,
-        name: name || null,
-        role,
-        projectAccessScope,
-        projectMemberships: projectAccessScope === 'ASSIGNED_ONLY'
-          ? { create: projectIds.map((projectId) => ({ projectId })) }
-          : undefined,
-      },
-      select: {
-        id: true,
-        email: true,
-        phone: true,
-        username: true,
-        name: true,
-        role: true,
-        projectAccessScope: true,
-        projectMemberships: {
-          select: { project: { select: { id: true, title: true, projectCode: true } } },
+        data: {
+          email: resolvedEmail,
+          phone: phone || null,
+          username: username || null,
+          password: hashedPassword,
+          name: name || null,
+          role,
+          isPlatformAdmin,
+          projectAccessScope,
+          projectMemberships: projectAccessScope === 'ASSIGNED_ONLY'
+            ? { create: projectIds.map((projectId) => ({ projectId })) }
+            : undefined,
         },
-        createdAt: true,
-        updatedAt: true,
-      },
-    })
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          username: true,
+          name: true,
+          role: true,
+          isPlatformAdmin: true,
+          projectAccessScope: true,
+          projectMemberships: {
+            select: { project: { select: { id: true, title: true, projectCode: true } } },
+          },
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
 
     return NextResponse.json({ user }, { status: 201 })
   } catch (error) {

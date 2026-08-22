@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -36,6 +37,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { projectId, originalFileName, originalFileSize, name, mimeType } = body
+    if (!projectId || !(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     // Validate required fields
     if (!name || !name.trim()) {
@@ -60,57 +64,62 @@ export async function POST(request: NextRequest) {
 
     const sanitizedOriginalFileName = fileValidation.sanitizedFilename || sanitizeFilename(originalFileName || 'upload.mp4')
 
-    // Get the project and existing videos with the same name
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: {
-        videos: {
-          where: { name: videoName },
+    const result = await prisma.$transaction(async (tx) => {
+      // Serialize version allocation for this project/name pair. The database
+      // unique constraint remains the final guard against duplicate versions.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${projectId}:${videoName}`}))`
+
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { enableRevisions: true, maxRevisions: true },
+      })
+      if (!project) return { kind: 'missing' as const }
+
+      const [existingVersionCount, latest] = await Promise.all([
+        tx.video.count({ where: { projectId, name: videoName } }),
+        tx.video.findFirst({
+          where: { projectId, name: videoName },
           orderBy: { version: 'desc' },
-          take: 1,
-        },
-      },
-    })
+          select: { version: true },
+        }),
+      ])
 
-    if (!project) {
-  return NextResponse.json({ error: videoMessages.projectNotFoundApi || 'Project not found' }, { status: 404 })
-    }
-
-    // Calculate next version number for this specific video name
-    const nextVersion = project.videos.length > 0 ? project.videos[0].version + 1 : 1
-
-    // Check if revisions are enabled and validate (per-video tracking)
-    if (project.enableRevisions && project.maxRevisions > 0) {
-      // Count existing versions for this specific video name (project.videos is already filtered by name)
-      const existingVersionCount = project.videos.length
-
-      if (existingVersionCount >= project.maxRevisions) {
-        return NextResponse.json(
-          { error: (videoMessages.maxRevisionsExceeded || 'Maximum revisions ({maxRevisions}) exceeded for this video').replace('{maxRevisions}', String(project.maxRevisions)) },
-          { status: 400 }
-        )
+      if (project.enableRevisions && project.maxRevisions > 0 && existingVersionCount >= project.maxRevisions) {
+        return { kind: 'limit' as const, maxRevisions: project.maxRevisions }
       }
-    }
 
-    // Create video record
-    const video = await prisma.video.create({
-      data: {
-        projectId,
-        name: videoName,
-        version: nextVersion,
-        versionLabel: `v${nextVersion}`,
-        originalFileName,
-        originalFileSize: BigInt(originalFileSize),
-        originalStoragePath: `projects/${projectId}/videos/original-${Date.now()}-${sanitizedOriginalFileName}`,
-        fileType: mimeType || 'video/mp4',
-        uploadedBy: authResult.id,
-        uploadedByName: authResult.name || authResult.email,
-        status: 'UPLOADING',
-        duration: 0,
-        width: 0,
-        height: 0,
-      },
+      const nextVersion = (latest?.version ?? 0) + 1
+      const video = await tx.video.create({
+        data: {
+          projectId,
+          name: videoName,
+          version: nextVersion,
+          versionLabel: `v${nextVersion}`,
+          originalFileName,
+          originalFileSize: BigInt(originalFileSize),
+          originalStoragePath: `projects/${projectId}/videos/original-${Date.now()}-${sanitizedOriginalFileName}`,
+          fileType: mimeType || 'video/mp4',
+          uploadedBy: authResult.id,
+          uploadedByName: authResult.name || authResult.email,
+          status: 'UPLOADING',
+          duration: 0,
+          width: 0,
+          height: 0,
+        },
+      })
+      return { kind: 'created' as const, video }
     })
+
+    if (result.kind === 'missing') {
+      return NextResponse.json({ error: videoMessages.projectNotFoundApi || 'Project not found' }, { status: 404 })
+    }
+    if (result.kind === 'limit') {
+      return NextResponse.json(
+        { error: (videoMessages.maxRevisionsExceeded || 'Maximum revisions ({maxRevisions}) exceeded for this video').replace('{maxRevisions}', String(result.maxRevisions)) },
+        { status: 400 }
+      )
+    }
+    const video = result.video
 
     // Return videoId - TUS will handle upload directly
     return NextResponse.json({

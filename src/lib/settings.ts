@@ -1,6 +1,7 @@
 import { prisma } from './db'
 import { getRedis } from './redis'
 import { logError, logMessage } from '@/lib/logging'
+import { isTeamFeatureEnabled } from '@/lib/platform-access'
 
 // Simple in-memory cache for frequently read settings to avoid repeated DB hits
 const SETTINGS_CACHE_TTL_MS = 60_000
@@ -76,6 +77,84 @@ export async function getAutoApproveProject(): Promise<boolean> {
   } catch (error) {
     logError('Error fetching auto-approve setting:', error)
     return true // Default to enabled on error
+  }
+}
+
+export async function getProjectDefaults(teamId: string) {
+  const [teamSettings, globalSettings, video1080, video2160, skipTranscoding, reverseShare] = await Promise.all([
+    prisma.teamSettings.findUnique({
+      where: { teamId },
+      select: {
+        defaultWatermarkEnabled: true,
+        defaultWatermarkText: true,
+        defaultWatermarkPositions: true,
+        defaultWatermarkOpacity: true,
+        defaultWatermarkFontSize: true,
+        defaultApplyPreviewLut: true,
+        maxUploadSizeGB: true,
+        defaultTimestampDisplay: true,
+        defaultUsePreviewForApprovedPlayback: true,
+        defaultAllowClientAssetUpload: true,
+        defaultAllowReverseShare: true,
+        defaultShowClientTutorial: true,
+        defaultAllowAssetDownload: true,
+        defaultClientCanApprove: true,
+        autoApproveProject: true,
+      },
+    }),
+    prisma.settings.findUnique({
+      where: { id: 'default' },
+      select: {
+        defaultPreviewResolution: true,
+        defaultSkipTranscoding: true,
+        defaultWatermarkEnabled: true,
+        defaultWatermarkText: true,
+        defaultWatermarkPositions: true,
+        defaultWatermarkOpacity: true,
+        defaultWatermarkFontSize: true,
+        defaultApplyPreviewLut: true,
+        maxUploadSizeGB: true,
+        defaultTimestampDisplay: true,
+        defaultUsePreviewForApprovedPlayback: true,
+        defaultAllowClientAssetUpload: true,
+        defaultAllowReverseShare: true,
+        defaultShowClientTutorial: true,
+        defaultAllowAssetDownload: true,
+        defaultClientCanApprove: true,
+        autoApproveProject: true,
+      },
+    }),
+    isTeamFeatureEnabled(teamId, 'video_1080p'),
+    isTeamFeatureEnabled(teamId, 'video_2160p'),
+    isTeamFeatureEnabled(teamId, 'skip_transcoding'),
+    isTeamFeatureEnabled(teamId, 'reverse_share'),
+  ])
+
+  let previewResolution = globalSettings?.defaultPreviewResolution || '720p'
+  if (previewResolution === '2160p' && !video2160) {
+    previewResolution = video1080 ? '1080p' : '720p'
+  } else if (previewResolution === '1080p' && !video1080) {
+    previewResolution = '720p'
+  }
+
+  return {
+    defaultPreviewResolution: previewResolution,
+    defaultSkipTranscoding: skipTranscoding ? (globalSettings?.defaultSkipTranscoding ?? false) : false,
+    defaultWatermarkEnabled: teamSettings?.defaultWatermarkEnabled ?? globalSettings?.defaultWatermarkEnabled ?? true,
+    defaultWatermarkText: teamSettings?.defaultWatermarkText ?? globalSettings?.defaultWatermarkText ?? null,
+    defaultWatermarkPositions: teamSettings?.defaultWatermarkPositions || globalSettings?.defaultWatermarkPositions || 'center',
+    defaultWatermarkOpacity: teamSettings?.defaultWatermarkOpacity ?? globalSettings?.defaultWatermarkOpacity ?? 30,
+    defaultWatermarkFontSize: teamSettings?.defaultWatermarkFontSize || globalSettings?.defaultWatermarkFontSize || 'medium',
+    defaultApplyPreviewLut: teamSettings?.defaultApplyPreviewLut ?? globalSettings?.defaultApplyPreviewLut ?? true,
+    maxUploadSizeGB: teamSettings?.maxUploadSizeGB ?? globalSettings?.maxUploadSizeGB ?? 1,
+    defaultTimestampDisplay: teamSettings?.defaultTimestampDisplay || globalSettings?.defaultTimestampDisplay || 'TIMECODE',
+    defaultUsePreviewForApprovedPlayback: teamSettings?.defaultUsePreviewForApprovedPlayback ?? globalSettings?.defaultUsePreviewForApprovedPlayback ?? false,
+    defaultAllowClientAssetUpload: teamSettings?.defaultAllowClientAssetUpload ?? globalSettings?.defaultAllowClientAssetUpload ?? false,
+    defaultAllowReverseShare: reverseShare ? (teamSettings?.defaultAllowReverseShare ?? globalSettings?.defaultAllowReverseShare ?? true) : false,
+    defaultShowClientTutorial: teamSettings?.defaultShowClientTutorial ?? globalSettings?.defaultShowClientTutorial ?? true,
+    defaultAllowAssetDownload: teamSettings?.defaultAllowAssetDownload ?? globalSettings?.defaultAllowAssetDownload ?? true,
+    defaultClientCanApprove: teamSettings?.defaultClientCanApprove ?? globalSettings?.defaultClientCanApprove ?? true,
+    autoApproveProject: teamSettings?.autoApproveProject ?? globalSettings?.autoApproveProject ?? true,
   }
 }
 

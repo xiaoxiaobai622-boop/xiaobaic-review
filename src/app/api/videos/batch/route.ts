@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -55,6 +56,17 @@ export async function PATCH(request: NextRequest) {
         { error: videoMessages.invalidBatchName || 'name must be a non-empty string' },
         { status: 400 }
       )
+    }
+
+    const targetVideos = await prisma.video.findMany({
+      where: { id: { in: videoIds } },
+      select: { projectId: true },
+    })
+    const projectIds = [...new Set(targetVideos.map((video) => video.projectId))]
+    for (const projectId of projectIds) {
+      if (!(await canAccessProject(prisma, authResult, projectId))) {
+        return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+      }
     }
 
     // Update all videos in a single query

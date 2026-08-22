@@ -182,20 +182,9 @@ export async function GET(
       videosByName[name].sort((a: any, b: any) => b.version - a.version)
     })
 
-    const sortedVideosByName: Record<string, any[]> = {}
-    const sortedKeys = Object.keys(videosByName).sort((nameA, nameB) => {
-      const hasApprovedA = videosByName[nameA].some((v: any) => v.approved)
-      const hasApprovedB = videosByName[nameB].some((v: any) => v.approved)
-
-      if (hasApprovedA !== hasApprovedB) {
-        return hasApprovedA ? 1 : -1
-      }
-      return 0
-    })
-
-    sortedKeys.forEach(key => {
-      sortedVideosByName[key] = videosByName[key]
-    })
+    // Approval is a state badge, not a sort priority. Keep the natural
+    // project/video order so an approved video does not jump to the end.
+    const sortedVideosByName: Record<string, any[]> = videosByName
 
     const [smtpConfigured, globalSettings, primaryRecipient, photoAlbumCount] = await Promise.all([
       isSmtpConfigured(),

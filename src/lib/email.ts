@@ -374,7 +374,7 @@ export function buildTimecodeDeepLink(shareUrl: string, opts: { videoName?: stri
 export function buildAdminTimecodeDeepLink(appDomain: string, projectId: string, opts: { videoName?: string; commentId?: string; timecode?: string | null; fps?: number | null }): string | null {
   if (!opts.timecode || !appDomain) return null
   try {
-    let path = `/admin/projects/${projectId}/share`
+    let path = `/studio/projects/${projectId}/share`
     const params = new URLSearchParams()
     if (opts.videoName) params.set('video', opts.videoName)
     if (opts.commentId) params.set('comment', opts.commentId)
@@ -696,7 +696,7 @@ export async function sendEmail({
     const settings = await getEmailSettings()
     const transporter = await createTransporter()
 
-    const fromAddress = settings.smtpFromAddress || settings.smtpUsername || 'noreply@vitransfer.com'
+    const fromAddress = settings.smtpFromAddress || settings.smtpUsername || 'noreply@mle6.cn'
     const companyName = sanitizeEmailHeader(settings.companyName || 'ViTransfer')
 
     const info = await transporter.sendMail({
@@ -1054,7 +1054,7 @@ export async function sendAdminCommentNotificationEmail({
     ? buildAdminTimecodeDeepLink(settings.appDomain, projectId, { videoName, commentId, timecode, fps })
     : buildTimecodeDeepLink(shareUrl, { videoName, commentId, timecode, fps })
   const timecodeText = renderTimecodePill(timecode, tcLink, brand)
-  const adminUrl = settings.appDomain ? `${settings.appDomain}/admin` : ''
+  const adminUrl = settings.appDomain ? `${settings.appDomain}/studio` : ''
 
   // Build attachments HTML
   const attachmentsHtml = attachmentNames && attachmentNames.length > 0
@@ -1169,7 +1169,7 @@ export async function sendAdminProjectApprovedEmail({
     '{{VIDEO_NAME}}': videoName,
     '{{APPROVAL_STATUS}}': action,
     '{{APPROVAL_ACTION}}': actionLower,
-    '{{ADMIN_URL}}': `${appDomain}/admin`,
+    '{{ADMIN_URL}}': `${appDomain}/studio`,
     '{{COMPANY_NAME}}': companyName,
   }
   const safePlaceholderValues = sanitizePlaceholderValues(placeholderValues)
@@ -1446,7 +1446,7 @@ export async function sendDueDateReminderEmail({
 
   const template = await getEmailTemplate('DUE_DATE_REMINDER', locale)
 
-  const adminUrl = settings.appDomain ? `${settings.appDomain}/admin` : ''
+  const adminUrl = settings.appDomain ? `${settings.appDomain}/studio` : ''
 
   const placeholderValues: Record<string, string> = {
     '{{RECIPIENT_NAME}}': 'Admin',
@@ -1598,7 +1598,7 @@ export async function sendAdminClientUploadEmail({
     </div>
   ` : ''
 
-  const adminUrl = `${appDomain}/login?returnUrl=${encodeURIComponent(`/admin/projects/${projectId}`)}`
+  const adminUrl = `${appDomain}/login?returnUrl=${encodeURIComponent(`/studio/projects/${projectId}`)}`
 
   const placeholderValues: Record<string, string> = {
     '{{RECIPIENT_NAME}}': 'Admin',

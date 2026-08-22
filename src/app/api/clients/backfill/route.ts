@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { getRequestedTeamId, resolveActiveTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -17,6 +18,8 @@ export async function POST(request: NextRequest) {
   if (authResult instanceof Response) {
     return authResult
   }
+  const teamId = await resolveActiveTeamId(authResult, getRequestedTeamId(request))
+  if (!teamId) return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
 
   // 2. RATE LIMITING
   const rateLimitResult = await rateLimit(request, {
@@ -38,6 +41,7 @@ export async function POST(request: NextRequest) {
     // Get all projects with company names or recipients
     const projects = await prisma.project.findMany({
       where: {
+        teamId,
         OR: [
           { companyName: { not: null } },
           { recipients: { some: {} } }
@@ -66,14 +70,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Find or create company atomically (avoids race on concurrent backfill runs)
-      const before = await prisma.clientCompany.findUnique({
-        where: { name: companyName },
+      const before = await prisma.clientCompany.findFirst({
+        where: { teamId, name: companyName },
         select: { id: true }
       })
       const company = await prisma.clientCompany.upsert({
-        where: { name: companyName },
-        create: { name: companyName },
-        update: {}
+        where: { teamId_name: { teamId, name: companyName } },
+        create: { teamId, name: companyName },
+        update: {},
       })
       if (!before) stats.companiesCreated++
 

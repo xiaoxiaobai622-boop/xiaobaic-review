@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
@@ -35,6 +36,9 @@ export async function POST(
 
   try {
     const { id: projectId, uploadId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     const upload = await prisma.projectUpload.findFirst({
       where: { id: uploadId, projectId },

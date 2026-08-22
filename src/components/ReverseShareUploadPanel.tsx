@@ -25,6 +25,8 @@ import {
 import { useS3MultipartUpload } from '@/hooks/useS3MultipartUpload'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 import { ALL_ALLOWED_EXTENSIONS, ACCEPTED_FILE_INPUT } from '@/lib/asset-validation'
+import { getAccessToken } from '@/lib/token-store'
+import { apiFetch } from '@/lib/api-client'
 
 const ALLOWED_EXTENSIONS = new Set(ALL_ALLOWED_EXTENSIONS)
 
@@ -50,6 +52,8 @@ interface ReverseShareUploadPanelProps {
   autoOpen?: boolean
   variant?: 'dialog' | 'embedded'
   triggerLabel?: string
+  isReviewAuthenticated?: boolean
+  onRequireLogin?: () => void
 }
 
 const DEFAULT_MAX_FILES = 10
@@ -62,6 +66,8 @@ export default function ReverseShareUploadPanel({
   autoOpen = false,
   variant = 'dialog',
   triggerLabel,
+  isReviewAuthenticated = true,
+  onRequireLogin,
 }: ReverseShareUploadPanelProps) {
   const t = useTranslations('share')
   const tc = useTranslations('common')
@@ -81,6 +87,24 @@ export default function ReverseShareUploadPanel({
   const atLimit = items.length >= MAX_FILES
   const hasFiles = items.length > 0
   const hasPending = items.some((i) => i.status === 'pending')
+  const accountAuthenticated = isReviewAuthenticated || Boolean(getAccessToken())
+
+  const accountShareHeaders = useCallback((includeContentType = false): Record<string, string> => {
+    return {
+      ...(includeContentType ? { 'Content-Type': 'application/json' } : {}),
+      'X-Share-Token': `Bearer ${shareToken}`,
+    }
+  }, [shareToken])
+
+  const requestFilePicker = useCallback(() => {
+    // The parent can briefly hold the previous auth state immediately after
+    // login. The token store is the authoritative synchronous fallback.
+    if (!accountAuthenticated) {
+      onRequireLogin?.()
+      return
+    }
+    fileInputRef.current?.click()
+  }, [accountAuthenticated, onRequireLogin])
 
   useEffect(() => {
     if (autoOpen) setOpen(true)
@@ -137,12 +161,9 @@ export default function ReverseShareUploadPanel({
     let uploadId: string
 
     try {
-      const response = await fetch(`/api/share/${shareSlug}/project-uploads`, {
+      const response = await apiFetch(`/api/share/${shareSlug}/project-uploads`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${shareToken}`,
-        },
+        headers: accountShareHeaders(true),
         body: JSON.stringify({ fileName: item.file.name, fileSize: item.file.size }),
       })
 
@@ -166,7 +187,7 @@ export default function ReverseShareUploadPanel({
         s3AbortKeysRef.current.set(item.id, s3Key)
         startS3Upload(
           item.file,
-          { projectUploadId: uploadId, bearerToken: shareToken },
+          { projectUploadId: uploadId, shareToken },
           {
             onProgress: (bytesUploaded, bytesTotal) => {
               const pct = Math.round((bytesUploaded / bytesTotal) * 100)
@@ -183,9 +204,9 @@ export default function ReverseShareUploadPanel({
               setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: err.message, uploadId } : i)))
               s3AbortKeysRef.current.delete(item.id)
               clearUploadMetadata(item.file)
-              fetch(`/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
+              apiFetch(`/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${shareToken}` },
+                headers: accountShareHeaders(),
               }).catch(() => {})
               resolve(false)
             },
@@ -234,9 +255,9 @@ export default function ReverseShareUploadPanel({
           resetTusAuthRetry(uploadRef.current)
           clearUploadMetadata(item.file)
           clearTUSFingerprint(item.file)
-          fetch(`/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
+          apiFetch(`/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
             method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${shareToken}` },
+            headers: accountShareHeaders(),
           }).catch(() => {})
           resolve(false)
         },
@@ -284,7 +305,7 @@ export default function ReverseShareUploadPanel({
   const handleUploadMore = () => {
     setItems([])
     setAllDone(false)
-    window.setTimeout(() => fileInputRef.current?.click(), 0)
+    window.setTimeout(requestFilePicker, 0)
   }
 
   const handleOpenChange = (next: boolean) => {
@@ -319,6 +340,10 @@ export default function ReverseShareUploadPanel({
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
+    if (!accountAuthenticated) {
+      onRequireLogin?.()
+      return
+    }
     const droppedFiles = Array.from(e.dataTransfer.files)
     if (!atLimit && !isUploading && droppedFiles.length > 0) addFiles(droppedFiles)
   }
@@ -334,11 +359,11 @@ export default function ReverseShareUploadPanel({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onClick={atLimit || isUploading ? undefined : () => fileInputRef.current?.click()}
+      onClick={atLimit || isUploading ? undefined : requestFilePicker}
       onKeyDown={(event) => {
         if (!atLimit && !isUploading && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault()
-          fileInputRef.current?.click()
+          requestFilePicker()
         }
       }}
       role="button"
@@ -483,7 +508,13 @@ export default function ReverseShareUploadPanel({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (!accountAuthenticated) {
+            onRequireLogin?.()
+            return
+          }
+          setOpen(true)
+        }}
         className="p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm flex items-center gap-1.5"
         aria-label={triggerLabel || t('submitFiles')}
       >
@@ -504,7 +535,7 @@ export default function ReverseShareUploadPanel({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              onClick={atLimit ? undefined : () => fileInputRef.current?.click()}
+              onClick={atLimit ? undefined : requestFilePicker}
               className={`
                 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-all cursor-pointer
                 ${atLimit

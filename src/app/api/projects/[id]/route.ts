@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getInvalidWatermarkCharacters } from '@/lib/watermark'
 import { prisma } from '@/lib/db'
-import { deleteFile, deleteDirectory } from '@/lib/storage'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { canAccessProject, canAdministerProject } from '@/lib/project-access'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { isSmtpConfigured } from '@/lib/settings'
 import { flushPendingClientNotifications } from '@/lib/notifications'
@@ -14,6 +13,12 @@ import { updateProjectSchema } from '@/lib/validation'
 import { syncCompanyToDirectory } from '@/lib/client-directory-sync'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
+import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import {
+  checkWechatText,
+  CONTENT_SECURITY_ERROR,
+  CONTENT_VIOLATION_MESSAGE,
+} from '@/lib/wechat-content-security'
 
 export const runtime = 'nodejs'
 
@@ -53,6 +58,11 @@ export async function GET(
       include: {
         videos: {
           orderBy: { version: 'desc' },
+          include: {
+            sourceUpload: {
+              select: { id: true, transcodeStatus: true },
+            },
+          },
         },
         comments: {
           where: { parentId: null },
@@ -151,12 +161,31 @@ export async function PATCH(
 
   try {
     const { id } = await params
+    if (!(await canAdministerProject(prisma, authResult, id))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const body = await request.json()
     const parsed = updateProjectSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 })
     }
     const validatedBody = parsed.data
+
+    const securityFields = [
+      { value: validatedBody.title, scene: 1 },
+      { value: validatedBody.description, scene: 3 },
+      { value: validatedBody.companyName, scene: 3 },
+      { value: validatedBody.watermarkText, scene: 3 },
+    ]
+    for (const field of securityFields) {
+      const securityCheck = await checkWechatText(field.value, { userId: authResult.id, scene: field.scene as 1 | 2 | 3 | 4 })
+      if (!securityCheck.passed) {
+        return NextResponse.json(
+          { error: securityCheck.error },
+          { status: securityCheck.error === CONTENT_VIOLATION_MESSAGE ? 400 : 503 },
+        )
+      }
+    }
 
     const updateData: any = {}
 
@@ -507,6 +536,9 @@ export async function DELETE(
 
   try {
     const { id } = await params
+    if (!(await canAdministerProject(prisma, authResult, id))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const project = await prisma.project.findUnique({
       where: { id },
       include: {
@@ -540,24 +572,6 @@ export async function DELETE(
     }
     filePaths.push(...project.projectUploads.map((upload) => upload.storagePath))
 
-    for (const filePath of filePaths) {
-      if (!filePath) continue
-      try {
-        await deleteFile(filePath)
-      } catch (error) {
-        logError(`Failed to delete file ${filePath} for project ${id}:`, error)
-        // Continue deleting remaining files even if one fails
-      }
-    }
-
-    // Final sweep: remove the project directory and any stray/empty folders.
-    try {
-      await deleteDirectory(`projects/${id}`)
-    } catch (error) {
-      logError(`Failed to delete project directory for ${id}:`, error)
-      // Continue even if directory deletion fails
-    }
-
     // SECURITY: Invalidate all share sessions for this project before deletion
     try {
       const invalidatedCount = await invalidateShareTokensByProject(id)
@@ -567,10 +581,15 @@ export async function DELETE(
       // Continue with deletion even if session invalidation fails
     }
 
-    // Delete project and all related data (cascade will handle videos, comments, shares)
-    await prisma.project.delete({
-      where: { id: id },
+    const task = await prisma.$transaction(async (tx) => {
+      const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-project-storage:${id}`, {
+        paths: [...new Set(filePaths.filter((path): path is string => Boolean(path)))],
+        directories: [`projects/${id}`],
+      })
+      await tx.project.delete({ where: { id } })
+      return durableTask
     })
+    await dispatchDurableTask(task.id)
 
     return NextResponse.json({
       success: true,

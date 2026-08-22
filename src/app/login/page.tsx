@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
@@ -8,13 +8,17 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/ui/password-input'
-import { ArrowLeft, ArrowRight, MessageCircle } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Phone } from 'lucide-react'
 import { setTokens, clearTokens } from '@/lib/token-store'
 import BrandLogo from '@/components/BrandLogo'
 import { AnimatedCharacters } from '@/components/ui/animated-characters'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
+import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
 
 type FocusedField = 'phone' | 'password' | null
+type LoginMode = 'password' | 'sms'
+type LoginView = 'wechat' | 'phone'
+const PHONE_REGEX = /^1[3-9]\d{9}$/
 
 function LoginCharacters({
   focusedField,
@@ -97,23 +101,126 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const requestedReturnUrl = searchParams?.get('returnUrl')
-  const rawReturnUrl = requestedReturnUrl || '/admin/projects'
+  const rawReturnUrl = requestedReturnUrl || '/studio/projects'
   // SECURITY: Only allow relative paths — prevents javascript: and open redirect attacks
-  const returnUrl = rawReturnUrl.startsWith('/') && !rawReturnUrl.startsWith('//') ? rawReturnUrl : '/admin/projects'
+  const returnUrl = rawReturnUrl.startsWith('/') && !rawReturnUrl.startsWith('//') ? rawReturnUrl : '/studio/projects'
   const sessionExpired = searchParams?.get('sessionExpired') === 'true'
 
+  const [mode, setMode] = useState<LoginMode>('password')
+  const [view, setView] = useState<LoginView>('wechat')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sendingCode, setSendingCode] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const [focusedField, setFocusedField] = useState<FocusedField>(null)
   const [passwordVisible, setPasswordVisible] = useState(false)
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldown])
+
+  function switchMode(nextMode: LoginMode) {
+    setMode(nextMode)
+    setError('')
+    setCode('')
+    setCodeSent(false)
+    setCooldown(0)
+  }
+
+  function applyTokens(data: { tokens?: { accessToken?: string; refreshToken?: string } }) {
+    if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
+      setTokens({
+        accessToken: data.tokens.accessToken,
+        refreshToken: data.tokens.refreshToken,
+      })
+    } else {
+      clearTokens()
+    }
+  }
+
+  async function handleSendCode() {
+    setError('')
+    if (!PHONE_REGEX.test(phone)) {
+      setError(t('invalidPhone'))
+      return
+    }
+
+    setSendingCode(true)
+    try {
+      const response = await fetch('/api/auth/sms/send-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getDeviceAuthHeaders(),
+        },
+        body: JSON.stringify({ phone }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setError(data.error || t('smsSendFailed'))
+        return
+      }
+      setCodeSent(true)
+      setCooldown(60)
+    } catch {
+      setError(t('smsSendFailed'))
+    } finally {
+      setSendingCode(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
 
     try {
+      if (mode === 'sms') {
+        if (!PHONE_REGEX.test(phone)) {
+          setError(t('invalidPhone'))
+          setLoading(false)
+          return
+        }
+        if (!/^\d{6}$/.test(code)) {
+          setError(t('invalidCode'))
+          setLoading(false)
+          return
+        }
+
+        const response = await fetch('/api/auth/sms/verify-code', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getDeviceAuthHeaders(),
+          },
+          body: JSON.stringify({ phone, code }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          setError(data.error || t('loginFailed'))
+          setLoading(false)
+          return
+        }
+
+        applyTokens(data)
+        if (data.needsOnboarding) {
+          const onboardingUrl = `/onboarding?returnUrl=${encodeURIComponent(returnUrl)}`
+          router.replace(onboardingUrl)
+          router.refresh()
+          return
+        }
+        const destination = returnUrl
+        router.push(destination)
+        router.refresh()
+        return
+      }
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -131,31 +238,15 @@ function LoginForm() {
         return
       }
 
-      if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
-        setTokens({
-          accessToken: data.tokens.accessToken,
-          refreshToken: data.tokens.refreshToken,
-        })
-      } else {
-        clearTokens()
-      }
+      applyTokens(data)
 
-      // Members signing in from the home page should land in their profile,
-      // while an explicit review return URL must be preserved.
-      const destination = data.user?.role === 'MEMBER' && !requestedReturnUrl
-        ? '/profile'
-        : returnUrl
+      const destination = returnUrl
       router.push(destination)
       router.refresh()
     } catch (err) {
       setError(tc('errorTryAgain'))
       setLoading(false)
     }
-  }
-
-  const startWechatLogin = () => {
-    const returnPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
-    window.location.href = `/api/auth/wechat/start?returnUrl=${encodeURIComponent(returnPath)}`
   }
 
   return (
@@ -194,10 +285,24 @@ function LoginForm() {
               </div>
             </div>
 
-            <div className="mb-9">
-              <h1 className="text-3xl font-semibold text-foreground">{t('welcomeBack')}</h1>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('signInDescription')}</p>
-            </div>
+            {view === 'phone' ? (
+              <>
+                <div className="mb-9">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h1 className="text-3xl font-semibold text-foreground">{t('welcomeBack')}</h1>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('signInDescription')}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-9 px-2 text-muted-foreground"
+                      onClick={() => setView('wechat')}
+                    >
+                      微信扫码
+                    </Button>
+                  </div>
+                </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
               {sessionExpired && (
@@ -214,16 +319,42 @@ function LoginForm() {
                 </div>
               )}
 
+              <div className="grid grid-cols-2 rounded-md bg-muted p-1" role="tablist" aria-label="登录方式">
+                <button
+                  type="button"
+                  onClick={() => switchMode('password')}
+                  className={`h-9 rounded text-sm font-medium transition-colors ${mode === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+                >
+                  {t('passwordLogin')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchMode('sms')}
+                  className={`h-9 rounded text-sm font-medium transition-colors ${mode === 'sms' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+                >
+                  <Phone className="mr-1.5 inline h-3.5 w-3.5" />
+                  {t('smsLogin')}
+                </button>
+              </div>
+
               <div className="space-y-2.5">
-                <Label htmlFor="phone" className="text-sm font-medium">手机号</Label>
+                <Label htmlFor="phone" className="text-sm font-medium">{t('phone')}</Label>
                 <Input
                   id="phone"
                   type="tel"
                   inputMode="numeric"
                   className="h-12 rounded-md bg-transparent px-4"
-                  placeholder="请输入手机号"
+                  placeholder={t('phonePlaceholder')}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  onChange={(e) => {
+                    const nextPhone = e.target.value.replace(/\D/g, '').slice(0, 11)
+                    setPhone(nextPhone)
+                    if (mode === 'sms') {
+                      setCode('')
+                      setCodeSent(false)
+                      setCooldown(0)
+                    }
+                  }}
                   onFocus={() => setFocusedField('phone')}
                   onBlur={() => setFocusedField(null)}
                   required
@@ -235,55 +366,104 @@ function LoginForm() {
                 />
               </div>
 
-              <div className="space-y-2.5">
-                <Label htmlFor="password" className="text-sm font-medium">密码登录</Label>
-                <PasswordInput
-                  id="password"
-                  className="h-12 rounded-md bg-transparent px-4"
-                  placeholder={t('passwordPlaceholder')}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => setFocusedField('password')}
-                  onBlur={() => setFocusedField(null)}
-                  onVisibilityChange={setPasswordVisible}
-                  required
-                  name="site-login-password"
-                  autoComplete="new-password"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  disabled={loading}
-                />
-                <div className="flex justify-end pt-0.5">
-                  <Link
-                    href="/forgot-password"
-                    className="text-sm text-muted-foreground transition-colors hover:text-primary"
-                  >
-                    {t('forgotPassword')}
-                  </Link>
+              {mode === 'password' ? (
+                <div className="space-y-2.5">
+                  <Label htmlFor="password" className="text-sm font-medium">{t('password')}</Label>
+                  <PasswordInput
+                    id="password"
+                    className="h-12 rounded-md bg-transparent px-4"
+                    placeholder={t('passwordPlaceholder')}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onFocus={() => setFocusedField('password')}
+                    onBlur={() => setFocusedField(null)}
+                    onVisibilityChange={setPasswordVisible}
+                    required
+                    name="site-login-password"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    disabled={loading}
+                  />
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <Label htmlFor="login-code" className="text-sm font-medium">{t('verificationCode')}</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="login-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      className="h-12 min-w-0 flex-1 rounded-md bg-transparent px-4"
+                      placeholder={t('verificationCodePlaceholder')}
+                      value={code}
+                      onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+                      onFocus={() => setFocusedField(null)}
+                      onBlur={() => setFocusedField(null)}
+                      required
+                      name="site-login-code"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      disabled={loading}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12 w-32 shrink-0 rounded-md"
+                      disabled={sendingCode || cooldown > 0 || phone.length !== 11}
+                      onClick={handleSendCode}
+                    >
+                      {sendingCode
+                        ? t('sendingCode')
+                        : cooldown > 0
+                          ? `${cooldown}s`
+                          : codeSent
+                            ? t('resendCode')
+                            : t('sendCode')}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <Button
                 type="submit"
                 variant="default"
                 size="lg"
                 className="h-12 w-full rounded-md"
-                disabled={loading}
+                disabled={loading || (mode === 'sms' && (code.length !== 6 || !codeSent))}
               >
-                {loading ? t('signingIn') : t('signIn')}
+                {loading ? (mode === 'sms' ? t('verifying') : t('signingIn')) : t('signIn')}
                 {!loading && <ArrowRight className="ml-auto h-4 w-4" />}
               </Button>
 
-              <div className="relative py-1">
-                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-                <div className="relative flex justify-center"><span className="bg-background px-3 text-xs text-muted-foreground">或</span></div>
+              </form>
+              </>
+            ) : (
+              <div className="text-center">
+                <h1 className="text-3xl font-semibold text-foreground">微信扫码登录</h1>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">请使用微信扫码，登录后进入团队后台</p>
+
+                <WechatMiniQrLogin
+                  inline
+                  returnUrl={returnUrl}
+                  className="mt-6"
+                />
+
+                <div className="mt-6">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-11 text-muted-foreground"
+                    onClick={() => setView('phone')}
+                  >
+                    <Phone className="mr-2 h-4 w-4" />
+                    使用手机号登录
+                  </Button>
+                </div>
               </div>
-
-              <Button type="button" variant="outline" className="h-12 w-full border-[#07c160]/50 text-[#079c4e]" onClick={startWechatLogin}>
-                <MessageCircle className="mr-2 h-4 w-4" />微信登录
-              </Button>
-
-            </form>
+            )}
 
             <p className="mt-8 text-center text-xs text-muted-foreground">目前仅限内部团队成员访问</p>
           </div>

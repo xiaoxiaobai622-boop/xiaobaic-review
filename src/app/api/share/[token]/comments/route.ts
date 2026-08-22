@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getPrimaryRecipient } from '@/lib/recipients'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { sanitizeComment } from '@/lib/comment-sanitization'
 import { getRateLimitSettings } from '@/lib/settings'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -76,12 +77,8 @@ export async function GET(
       return accessCheck.errorResponse!
     }
 
-    const { isAdmin, isAuthenticated, isGuest } = accessCheck
-
-    // Block guest users from seeing comments (guests only have 'view' permission)
-    if (isGuest) {
-      return NextResponse.json([])
-    }
+    const { isAdmin, isAuthenticated } = accessCheck
+    const viewer = await getCurrentUserFromRequest(request)
 
     const assetSelect = {
       select: {
@@ -134,6 +131,7 @@ export async function GET(
       isAdmin,
       isAuthenticated,
       fallbackName,
+      viewer?.id,
     ))
 
     return NextResponse.json(sanitizedComments)

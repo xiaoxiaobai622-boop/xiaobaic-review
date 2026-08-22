@@ -115,7 +115,8 @@ export async function POST(
 
     // Store token in Redis with asset IDs and metadata (15 minute TTL)
     const redis = getRedis()
-    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${Date.now()}` : `guest:${Date.now()}`)
+    // Stable admin session id so repeated downloads reuse the cached token
+    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${project.id}` : `guest:${Date.now()}`)
     const ipAddress = getClientIpAddress(request)
     const userAgentHash = crypto
       .createHash('sha256')

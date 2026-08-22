@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
-import { deleteDirectory } from '@/lib/storage'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
 export const runtime = 'nodejs'
 
@@ -30,6 +31,9 @@ export async function PATCH(
   const authResult = await requireApiAdmin(request)
   if (authResult instanceof Response) {
     return authResult
+  }
+  if (!(await canAccessProject(prisma, authResult, projectId))) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
   const rateLimitResult = await rateLimit(request, {
@@ -98,6 +102,9 @@ export async function DELETE(
   if (authResult instanceof Response) {
     return authResult
   }
+  if (!(await canAccessProject(prisma, authResult, projectId))) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -116,14 +123,15 @@ export async function DELETE(
       return NextResponse.json({ error: photoMessages.albumNotFound || 'Album not found' }, { status: 404 })
     }
 
-    await prisma.photoAlbum.delete({ where: { id: albumId } })
-
-    // Remove album files (originals + thumbnails) from storage
-    try {
-      await deleteDirectory(`projects/${projectId}/photos/${albumId}`)
-    } catch (storageError) {
-      logError('Error deleting album storage directory:', storageError)
-    }
+    const task = await prisma.$transaction(async (tx) => {
+      const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-photo-album-storage:${albumId}`, {
+        paths: [],
+        directories: [`projects/${projectId}/photos/${albumId}`],
+      })
+      await tx.photoAlbum.delete({ where: { id: albumId } })
+      return durableTask
+    })
+    await dispatchDurableTask(task.id)
 
     return NextResponse.json({ ok: true })
   } catch (error) {

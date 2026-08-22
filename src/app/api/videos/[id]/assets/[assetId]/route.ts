@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAdministerProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getFilePath, deleteFile, sanitizeFilenameForHeader, isS3Mode, createWebReadableStream } from '@/lib/storage'
 import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
@@ -205,6 +206,10 @@ export async function DELETE(
 
     if (!asset || asset.videoId !== videoId) {
   return NextResponse.json({ error: messages?.share?.assetNotFound || 'Asset not found' }, { status: 404 })
+    }
+
+    if (!(await canAdministerProject(prisma, authResult, asset.video.projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
     // Check if this asset is being used as the video's thumbnail

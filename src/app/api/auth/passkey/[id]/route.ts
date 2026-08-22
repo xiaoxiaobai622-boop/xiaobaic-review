@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { deletePasskey, updatePasskeyName } from '@/lib/passkey'
 import { invalidateAdminSessions, clearPasskeyChallenges } from '@/lib/session-invalidation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -19,7 +19,7 @@ export async function DELETE(
   const authMessages = messages?.auth || {}
 
   try {
-    const user = await requireApiAdmin(request)
+    const user = await requirePlatformAdmin(request)
     if (user instanceof Response) return user
 
     const { id: credentialId } = await params
@@ -63,7 +63,7 @@ export async function PATCH(
   const authMessages = messages?.auth || {}
 
   try {
-    const user = await requireApiAdmin(request)
+    const user = await requirePlatformAdmin(request)
     if (user instanceof Response) return user
 
     const { id: credentialId } = await params

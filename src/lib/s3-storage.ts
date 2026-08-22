@@ -2,6 +2,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
@@ -68,6 +69,8 @@ function getS3Bucket(): string {
   return bucket
 }
 
+const cdnUrlCache = new Map<string, { url: string; expiresAt: number }>()
+
 function getCdnStreamUrl(key: string, expirySeconds: number): string | null {
   if (process.env.MEDIA_CDN_ENABLED !== 'true') return null
 
@@ -78,14 +81,23 @@ function getCdnStreamUrl(key: string, expirySeconds: number): string | null {
   }
 
   const encodedPath = `/${key.split('/').map(encodeURIComponent).join('/')}`
-  const timestamp = Math.floor(Date.now() / 1000) + expirySeconds
+  const now = Math.floor(Date.now() / 1000)
+  const cacheKey = `${encodedPath}:${expirySeconds}`
+  const cached = cdnUrlCache.get(cacheKey)
+  if (cached && cached.expiresAt > now + 60) {
+    return cached.url
+  }
+
+  const timestamp = now + expirySeconds
   const rand = '0'
   const uid = '0'
   const digest = createHash('md5')
     .update(`${encodedPath}-${timestamp}-${rand}-${uid}-${authKey}`)
     .digest('hex')
 
-  return `${baseUrl}${encodedPath}?auth_key=${timestamp}-${rand}-${uid}-${digest}`
+  const url = `${baseUrl}${encodedPath}?auth_key=${timestamp}-${rand}-${uid}-${digest}`
+  cdnUrlCache.set(cacheKey, { url, expiresAt: timestamp })
+  return url
 }
 
 function formatS3Error(operation: string, key: string, err: unknown): Error {
@@ -101,22 +113,40 @@ function formatS3Error(operation: string, key: string, err: unknown): Error {
  * upload. Smaller buffers go via a single PUT. Streams of unknown size are
  * always multipart so we never have to buffer the whole file in RAM.
  */
+const MULTIPART_THRESHOLD = 100 * 1024 * 1024
+const PART_SIZE = 25 * 1024 * 1024
+const THUMBNAIL_CACHE_CONTROL = 'public, max-age=86400, immutable'
+const VIDEO_CACHE_CONTROL = 'public, max-age=3600'
+
+function getMediaCacheControl(key: string): string | undefined {
+  if (key.includes('/thumbnail.') || key.includes('/thumbs/')) {
+    return THUMBNAIL_CACHE_CONTROL
+  }
+  if (key.includes('/preview-') && key.endsWith('.mp4')) {
+    return VIDEO_CACHE_CONTROL
+  }
+  return undefined
+}
+
 export async function s3UploadFile(
   key: string,
   body: Readable | Buffer,
   contentType: string = 'application/octet-stream',
   size?: number
 ): Promise<void> {
-  const MULTIPART_THRESHOLD = 100 * 1024 * 1024
-  const PART_SIZE = 25 * 1024 * 1024
-
   if (Buffer.isBuffer(body)) {
     if (body.length >= MULTIPART_THRESHOLD) {
       return s3UploadFileMultipart(key, body, contentType, body.length, PART_SIZE)
     }
     try {
       await getS3Client().send(
-        new PutObjectCommand({ Bucket: getS3Bucket(), Key: key, Body: body, ContentType: contentType })
+        new PutObjectCommand({
+          Bucket: getS3Bucket(),
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
+        })
       )
     } catch (err) {
       throw formatS3Error('PUT', key, err)
@@ -134,6 +164,7 @@ export async function s3UploadFile(
           Body: body,
           ContentType: contentType,
           ContentLength: size,
+          ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
         })
       )
     } catch (err) {
@@ -258,6 +289,31 @@ export async function s3DownloadFile(key: string): Promise<Readable> {
   return res.Body as Readable
 }
 
+/** Move an object within the bucket by copying then deleting the source. */
+export async function s3MoveFile(sourceKey: string, destKey: string): Promise<void> {
+  const client = getS3Client()
+  const bucket = getS3Bucket()
+  const encodedSource = sourceKey.split('/').map(encodeURIComponent).join('/')
+
+  try {
+    await client.send(
+      new CopyObjectCommand({
+        Bucket: bucket,
+        Key: destKey,
+        CopySource: `${bucket}/${encodedSource}`,
+      })
+    )
+  } catch (err) {
+    throw formatS3Error('COPY', destKey, err)
+  }
+
+  try {
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: sourceKey }))
+  } catch (err) {
+    throw formatS3Error('DELETE', sourceKey, err)
+  }
+}
+
 /** Delete a single object. */
 export async function s3DeleteFile(key: string): Promise<void> {
   try {
@@ -315,7 +371,12 @@ export async function s3InitiateMultipartUpload(
   contentType: string = 'application/octet-stream'
 ): Promise<string> {
   const res = await getS3Client().send(
-    new CreateMultipartUploadCommand({ Bucket: getS3Bucket(), Key: key, ContentType: contentType })
+    new CreateMultipartUploadCommand({
+      Bucket: getS3Bucket(),
+      Key: key,
+      ContentType: contentType,
+      ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
+    })
   )
   if (!res.UploadId) throw new Error('Failed to initiate multipart upload')
   return res.UploadId

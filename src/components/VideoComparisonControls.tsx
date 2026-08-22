@@ -103,6 +103,19 @@ export default function VideoComparisonControls({
     setHoveredTime(null)
   }, [])
 
+  const handleTimelineKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!videoDuration) return
+    const step = videoFps ? 1 / videoFps : 1
+    let nextTime: number | null = null
+    if (event.key === 'ArrowLeft') nextTime = Math.max(0, currentTime - (event.shiftKey ? 5 : step))
+    if (event.key === 'ArrowRight') nextTime = Math.min(videoDuration, currentTime + (event.shiftKey ? 5 : step))
+    if (event.key === 'Home') nextTime = 0
+    if (event.key === 'End') nextTime = videoDuration
+    if (nextTime === null) return
+    event.preventDefault()
+    onSeek(nextTime)
+  }, [currentTime, onSeek, videoDuration, videoFps])
+
   useEffect(() => {
     const handleMouseUp = () => {
       if (isDragging) setIsDragging(false)
@@ -125,6 +138,13 @@ export default function VideoComparisonControls({
           onTouchStart={handleTimelineTouchStart}
           onTouchMove={handleTimelineTouchMove}
           onTouchEnd={handleTimelineTouchEnd}
+          role="slider"
+          tabIndex={0}
+          aria-label="对比视频时间轴"
+          aria-valuemin={0}
+          aria-valuemax={videoDuration}
+          aria-valuenow={Math.min(videoDuration, Math.max(0, currentTime))}
+          onKeyDown={handleTimelineKeyDown}
         >
           {/* Background Track */}
           <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 sm:h-2 bg-white/20 rounded-full overflow-hidden">

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { getRequestedTeamId, resolveActiveTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeText } from '@/lib/security/html-sanitization'
 import { safeParseBody } from '@/lib/validation'
@@ -19,6 +20,8 @@ export async function GET(request: NextRequest) {
   if (authResult instanceof Response) {
     return authResult
   }
+  const teamId = await resolveActiveTeamId(authResult, getRequestedTeamId(request))
+  if (!teamId) return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
 
   // 2. RATE LIMITING
   const rateLimitResult = await rateLimit(request, {
@@ -34,13 +37,16 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')?.toLowerCase() || ''
 
     const companies = await prisma.clientCompany.findMany({
-      where: search ? {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { contacts: { some: { name: { contains: search, mode: 'insensitive' } } } },
-          { contacts: { some: { email: { contains: search, mode: 'insensitive' } } } },
-        ]
-      } : undefined,
+      where: {
+        teamId,
+        ...(search ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { contacts: { some: { name: { contains: search, mode: 'insensitive' } } } },
+            { contacts: { some: { email: { contains: search, mode: 'insensitive' } } } },
+          ]
+        } : {}),
+      },
       include: {
         contacts: {
           orderBy: { name: 'asc' }
@@ -70,6 +76,8 @@ export async function POST(request: NextRequest) {
   if (authResult instanceof Response) {
     return authResult
   }
+  const teamId = await resolveActiveTeamId(authResult, getRequestedTeamId(request))
+  if (!teamId) return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
 
   // 2. RATE LIMITING
   const rateLimitResult = await rateLimit(request, {
@@ -97,8 +105,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for duplicate
-    const existing = await prisma.clientCompany.findUnique({
-      where: { name: trimmedName }
+    const existing = await prisma.clientCompany.findFirst({
+      where: { teamId, name: trimmedName }
     })
 
     if (existing) {
@@ -106,7 +114,7 @@ export async function POST(request: NextRequest) {
     }
 
     const company = await prisma.clientCompany.create({
-      data: { name: trimmedName },
+      data: { teamId, name: trimmedName },
       include: {
         contacts: true,
         _count: { select: { projects: true } }

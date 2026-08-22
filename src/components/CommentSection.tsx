@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { Comment, Video } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { CheckCircle2, MessageSquare, ChevronDown, ChevronUp, Info } from 'lucide-react'
+import { CheckCircle2, MessageSquare, ChevronDown, ChevronUp, Filter, Info } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import MessageBubble from './MessageBubble'
@@ -13,7 +13,8 @@ import CommentInput from './CommentInput'
 import { useCommentManagement } from '@/hooks/useCommentManagement'
 import { formatDate } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-client'
-import { formatCommentTimestamp, timecodeToSeekSeconds } from '@/lib/timecode'
+import { formatCommentTimestamp, timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
+import { COMMENT_CATEGORIES, getCommentCategory, type CommentCategory } from '@/lib/comment-categories'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -80,6 +81,8 @@ export default function CommentSection({
   const [isMobileCollapsed, setIsMobileCollapsed] = useState(initialMobileCollapsed)
   const [resolvedOverrides, setResolvedOverrides] = useState<Record<string, boolean>>({})
   const [composerTarget, setComposerTarget] = useState<HTMLElement | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'RESOLVED'>('ALL')
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | CommentCategory>('ALL')
 
   useEffect(() => {
     const resolveComposer = () => {
@@ -99,6 +102,7 @@ export default function CommentSection({
   const {
     comments,
     newComment,
+    selectedCategory,
     selectedTimestamp,
     selectedVideoId,
     selectedVideoFps,
@@ -111,6 +115,7 @@ export default function CommentSection({
     selectedTimecodeEnd,
     isSelectingTimecodeEnd,
     handleCommentChange,
+    handleCategoryChange,
     handleSubmitComment,
     handleReply,
     handleCancelReply,
@@ -134,8 +139,6 @@ export default function CommentSection({
     authenticatedName,
   })
 
-  // Auto-scroll to latest comment (like messaging apps)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [localComments, setLocalComments] = useState<CommentWithReplies[]>(initialComments)
 
@@ -145,8 +148,8 @@ export default function CommentSection({
       const response = isAdminView
         ? await apiFetch(`/api/comments?projectId=${projectId}`)
         : shareToken && _projectSlug
-          ? await fetch(`/api/share/${encodeURIComponent(_projectSlug)}/comments`, {
-              headers: { Authorization: `Bearer ${shareToken}` },
+          ? await apiFetch(`/api/share/${encodeURIComponent(_projectSlug)}/comments`, {
+              headers: { 'X-Share-Token': `Bearer ${shareToken}` },
             })
           : null
 
@@ -159,7 +162,7 @@ export default function CommentSection({
     } catch (error) {
       // Silent fail - keep showing existing comments
     }
-  }, [isAdminView, projectId, shareToken])
+  }, [isAdminView, projectId, shareToken, _projectSlug])
 
   // Initialize localComments only (no polling - hook handles optimistic updates)
   useEffect(() => {
@@ -262,8 +265,32 @@ export default function CommentSection({
     return mergedComments.filter(comment => comment.videoId === selectedVideoId)
   })()
 
-  const sortedComments = [...displayComments].sort((a, b) => {
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  const filteredByStatusAndCategory = displayComments.filter((comment) => {
+    const resolved = resolvedOverrides[comment.id] ?? (comment as any).resolved === true
+    if (statusFilter === 'OPEN' && resolved) return false
+    if (statusFilter === 'RESOLVED' && !resolved) return false
+    if (categoryFilter !== 'ALL' && (comment as any).category !== categoryFilter) return false
+    return true
+  })
+
+  const sortedComments = [...filteredByStatusAndCategory].sort((a, b) => {
+    const getTimelineSeconds = (comment: Comment) => {
+      if (!comment.timecode) return Number.POSITIVE_INFINITY
+
+      const fps = videos.find(video => video.id === comment.videoId)?.fps || 24
+      try {
+        return timecodeToSeconds(comment.timecode, fps)
+      } catch {
+        return Number.POSITIVE_INFINITY
+      }
+    }
+
+    const aTimelineSeconds = getTimelineSeconds(a)
+    const bTimelineSeconds = getTimelineSeconds(b)
+    if (aTimelineSeconds !== bTimelineSeconds) return aTimelineSeconds - bTimelineSeconds
+
+    const createdAtDifference = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    return createdAtDifference || a.id.localeCompare(b.id)
   })
 
   sortedComments.forEach(comment => {
@@ -274,13 +301,10 @@ export default function CommentSection({
     }
   })
 
-  // Auto-scroll to bottom when new comments appear
-  // Scrolls only the messages container, not the entire page
-  useEffect(() => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
-    }
-  }, [displayComments.length])
+  const latestComment = sortedComments.reduce<CommentWithReplies | null>((latest, comment) => {
+    if (!latest) return comment
+    return new Date(comment.createdAt).getTime() > new Date(latest.createdAt).getTime() ? comment : latest
+  }, null)
 
   const isCurrentVideoAllowed = () => {
     if (!restrictToLatestVersion) return true
@@ -331,7 +355,7 @@ export default function CommentSection({
       const video = videos.find(v => v.id === videoId)
       if (!video) return
 
-      const adminShareUrl = `/admin/projects/${projectId}/share?video=${encodeURIComponent(video.name)}&version=${videoVersion || video.version}&t=${Math.floor(timestamp)}`
+      const adminShareUrl = `/studio/projects/${projectId}/share?video=${encodeURIComponent(video.name)}&version=${videoVersion || video.version}&t=${encodeURIComponent(timestamp.toFixed(6))}`
       window.location.href = adminShareUrl
     }
   }
@@ -392,6 +416,55 @@ export default function CommentSection({
             <span>信息</span>
           </Button>
         </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="mr-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+            <Filter className="h-3 w-3" />
+            筛选
+          </span>
+          <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5">
+            {([
+              ['ALL', '全部'],
+              ['OPEN', '未解决'],
+              ['RESOLVED', '已解决'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setStatusFilter(value)}
+                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                  statusFilter === value
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <select
+            aria-label="按标签筛选"
+            value={categoryFilter}
+            onChange={(event) => setCategoryFilter(event.target.value as 'ALL' | CommentCategory)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="ALL">全部标签</option>
+            {COMMENT_CATEGORIES.map((category) => (
+              <option key={category.value} value={category.value}>{category.label}</option>
+            ))}
+          </select>
+          {(statusFilter !== 'ALL' || categoryFilter !== 'ALL') && (
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('ALL')
+                setCategoryFilter('ALL')
+              }}
+              className="h-7 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              清除
+            </button>
+          )}
+        </div>
         {selectedVideoId && currentVideo && !isAdminView && (
           <p className="text-xs text-muted-foreground mt-1">
             {commentsDisabled
@@ -431,6 +504,8 @@ export default function CommentSection({
               onCommentChange={handleCommentChange}
               onSubmit={handleSubmitWithAuth}
               loading={loading}
+              selectedCategory={selectedCategory}
+              onCategoryChange={handleCategoryChange}
               selectedTimestamp={selectedTimestamp}
               onClearTimestamp={handleClearTimestamp}
               selectedVideoFps={selectedVideoFps}
@@ -480,7 +555,7 @@ export default function CommentSection({
             </span>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                {sortedComments.length > 0 ? formatMessageTime(sortedComments[sortedComments.length - 1].createdAt) : ''}
+                {latestComment ? formatMessageTime(latestComment.createdAt) : ''}
               </span>
               {isMobileCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </div>
@@ -537,12 +612,13 @@ export default function CommentSection({
                       isReply={false}
                       onReply={() => handleReply(comment.id, comment.videoId)}
                       onSeekToTimecode={handleSeekToTimecode}
-                      onDelete={isAdminView ? () => handleDeleteComment(comment.id) : undefined}
+                      onDelete={isAdminView || (comment as any).canDelete ? () => handleDeleteComment(comment.id) : undefined}
                       formatMessageTime={formatMessageTime}
                       commentsDisabled={commentsDisabled}
                       sequenceNumber={sequenceNumber}
                       replies={replies}
-                      onDeleteReply={isAdminView ? handleDeleteComment : undefined}
+                      onDeleteReply={handleDeleteComment}
+                      canDeleteReply={(reply: any) => isAdminView || Boolean(reply.canDelete)}
                       timestampLabel={timestampLabel}
                       timecodeEndLabel={timecodeEndLabel}
                       hasAnnotation={hasAnnotation}
@@ -552,8 +628,6 @@ export default function CommentSection({
                   </div>
                 )
               })}
-              {/* Invisible anchor for auto-scroll */}
-              <div ref={messagesEndRef} />
             </>
           )}
         </div>
@@ -565,6 +639,8 @@ export default function CommentSection({
           onCommentChange={handleCommentChange}
           onSubmit={handleSubmitWithAuth}
           loading={loading}
+          selectedCategory={selectedCategory}
+          onCategoryChange={handleCategoryChange}
           selectedTimestamp={selectedTimestamp}
           onClearTimestamp={handleClearTimestamp}
           selectedVideoFps={selectedVideoFps}

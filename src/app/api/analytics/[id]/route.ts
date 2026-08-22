@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 export const runtime = 'nodejs'
@@ -34,6 +35,9 @@ export async function GET(
 
   try {
     const { id } = await params
+    if (!(await canAccessProject(prisma, authResult, id))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     const project = await prisma.project.findUnique({
       where: { id },
