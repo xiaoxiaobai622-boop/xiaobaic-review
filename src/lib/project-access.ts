@@ -7,35 +7,93 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 
 type DbClient = PrismaClient | Prisma.TransactionClient
 
-export function projectAccessWhere(user: AuthUser): Prisma.ProjectWhereInput {
-  if (user.role === 'ADMIN') return {}
-  if (user.projectAccessScope === 'ALL_PROJECTS') return {}
+export function projectAccessWhere(user: AuthUser, teamId?: string | null): Prisma.ProjectWhereInput {
+  const scopedTeamId = teamId || user.authorizedTeamId
   return {
-    OR: [
-      { createdById: user.id },
-      { members: { some: { userId: user.id } } },
-    ],
+    team: {
+      members: {
+        some: {
+          userId: user.id,
+          status: 'ACTIVE',
+        },
+      },
+    },
+    ...(scopedTeamId ? { teamId: scopedTeamId } : {}),
+    ...(user.teamRole === 'MEMBER' && user.projectAccessScope === 'ASSIGNED_ONLY'
+      ? { members: { some: { userId: user.id } } }
+      : {}),
   }
 }
 
 export async function canAccessProject(db: DbClient, user: AuthUser, projectId: string) {
-  if (user.role === 'ADMIN') return true
-  const actor = await db.user.findUnique({
-    where: { id: user.id },
-    select: { projectAccessScope: true },
-  })
-  if (!actor) return false
-  if (actor.projectAccessScope === 'ALL_PROJECTS') return true
-  const membership = await db.projectMember.findUnique({
-    where: { projectId_userId: { projectId, userId: user.id } },
+  // The request user may not carry the selected team's role (for example on
+  // direct video-token requests). Resolve access from the membership stored on
+  // the project's own team so a member cannot bypass project assignments.
+  const assignmentAccess: Prisma.ProjectWhereInput = user.projectAccessScope === 'ASSIGNED_ONLY'
+    ? {
+        OR: [
+          {
+            team: {
+              members: {
+                some: {
+                  userId: user.id,
+                  status: 'ACTIVE',
+                  role: { in: ['OWNER', 'ADMIN'] },
+                },
+              },
+            },
+          },
+          { members: { some: { userId: user.id } } },
+        ],
+      }
+    : {}
+
+  const project = await db.project.findFirst({
+    where: {
+      id: projectId,
+      ...(user.authorizedTeamId ? { teamId: user.authorizedTeamId } : {}),
+      team: {
+        members: {
+          some: {
+            userId: user.id,
+            status: 'ACTIVE',
+          },
+        },
+      },
+      ...assignmentAccess,
+    },
     select: { id: true },
   })
-  return Boolean(membership)
+  return Boolean(project)
 }
 
-export async function nextProjectCode(db: DbClient) {
+export async function canAdministerProject(db: DbClient, user: AuthUser, projectId: string) {
+  const project = await db.project.findFirst({
+    where: {
+      id: projectId,
+      ...(user.authorizedTeamId ? { teamId: user.authorizedTeamId } : {}),
+      team: {
+        status: 'ACTIVE',
+        members: {
+          some: {
+            userId: user.id,
+            status: 'ACTIVE',
+            role: { in: ['OWNER', 'ADMIN'] },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  })
+  return Boolean(project)
+}
+
+export async function nextProjectCode(db: DbClient, teamId: string) {
   await db.$executeRaw`SELECT pg_advisory_xact_lock(86230401)`
-  const existing = await db.project.findMany({ select: { projectCode: true } })
+  const existing = await db.project.findMany({
+    where: { teamId },
+    select: { projectCode: true },
+  })
   const used = new Set(existing.map((item) => Number(item.projectCode)))
   for (let value = 1; value <= 999; value += 1) {
     if (!used.has(value)) return String(value).padStart(3, '0')
@@ -82,7 +140,7 @@ export async function verifyProjectAccess(
 
   // Check if user is admin (admins bypass password protection)
   const currentUser = await getCurrentUserFromRequest(request)
-  const isAdmin = currentUser?.role === 'ADMIN'
+  const isAdmin = Boolean(currentUser)
   const shareContext = await getShareContext(request)
 
   const hasTeamAccess = currentUser
@@ -95,7 +153,9 @@ export async function verifyProjectAccess(
       isAdmin: true,
       isAuthenticated: true,
       permissions: ['view', 'comment', 'download', 'approve'],
-      shareTokenSessionId: `${isAdmin ? 'admin' : 'member'}:${currentUser.id}`,
+      shareTokenSessionId: currentUser.sessionId
+        ? `admin:${currentUser.sessionId}`
+        : `member:${currentUser.id}`,
     }
   }
 

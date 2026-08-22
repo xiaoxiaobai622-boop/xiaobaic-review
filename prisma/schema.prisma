@@ -17,24 +17,32 @@ model User {
   username  String?  @unique
   password  String
   name      String?
+  avatarUrl String?
+  onboardingCompleted Boolean @default(true)
   role      UserRole @default(ADMIN)
+  isPlatformAdmin Boolean @default(false)
   projectAccessScope ProjectAccessScope @default(ALL_PROJECTS)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   projects          Project[]
+  createdTeams      Team[]          @relation("TeamCreator")
+  teamMemberships   TeamMember[]
+  teamJoinRequests  TeamJoinRequest[]
   comments          Comment[]
   passkeys          PasskeyCredential[]
   pushSubscriptions PushSubscription[]
   calendarToken     CalendarToken?
   savedViews        AdminSavedView[]
   projectMemberships ProjectMember[]
+  wechatIdentities  WechatIdentity[]
 }
 
 // WeChat identities are separate from admin users. The unionId index allows a
 // future mini-program identity to be linked to the same person safely.
 model WechatIdentity {
   id        String   @id @default(cuid())
+  userId    String?
   platform  String   @default("WEB")
   openId    String
   unionId   String?
@@ -43,8 +51,11 @@ model WechatIdentity {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   @@unique([platform, openId])
   @@index([unionId])
+  @@index([userId])
 }
 
 // Saved filter/sort presets for the admin Projects Dashboard.
@@ -71,11 +82,193 @@ enum ProjectAccessScope {
   ASSIGNED_ONLY
 }
 
+model DurableTask {
+  id          String    @id @default(cuid())
+  kind        String
+  dedupeKey   String    @unique
+  payload     Json
+  attempts    Int       @default(0)
+  availableAt DateTime  @default(now())
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([availableAt, createdAt])
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  shareKey     String   @unique
+  avatarUrl    String?
+  status       String   @default("ACTIVE")
+  createdById  String
+  createdBy    User     @relation("TeamCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members      TeamMember[]
+  projects     Project[]
+  invites      TeamInvite[]
+  joinRequests TeamJoinRequest[]
+  settings     TeamSettings?
+  clientCompanies ClientCompany[]
+  featureGrants TeamFeatureGrant[]
+  quota        TeamQuota?
+
+  @@index([createdById])
+}
+
+model PlatformFeature {
+  key            String   @id
+  name           String
+  category       String
+  defaultEnabled Boolean  @default(true)
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  grants TeamFeatureGrant[]
+}
+
+model TeamFeatureGrant {
+  id         String   @id @default(cuid())
+  teamId     String
+  featureKey String
+  enabled    Boolean  @default(true)
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  team    Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  feature PlatformFeature @relation(fields: [featureKey], references: [key], onDelete: Cascade)
+
+  @@unique([teamId, featureKey])
+  @@index([featureKey])
+}
+
+model TeamQuota {
+  id          String   @id @default(cuid())
+  teamId      String   @unique
+  maxMembers  Int      @default(10)
+  maxProjects Int      @default(5)
+  maxVideos   Int      @default(50)
+  maxStorageGB Int     @default(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+}
+
+model TeamSettings {
+  id        String   @id @default(cuid())
+  teamId    String   @unique
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  defaultWatermarkEnabled  Boolean @default(true)
+  defaultWatermarkText     String?
+  defaultWatermarkPositions String @default("center")
+  defaultWatermarkOpacity   Int     @default(30)
+  defaultWatermarkFontSize  String  @default("medium")
+  defaultApplyPreviewLut    Boolean @default(true)
+  maxUploadSizeGB           Int     @default(1)
+  defaultTimestampDisplay   String  @default("TIMECODE")
+  defaultUsePreviewForApprovedPlayback Boolean @default(false)
+  defaultAllowClientAssetUpload Boolean @default(false)
+  defaultAllowReverseShare  Boolean @default(true)
+  defaultShowClientTutorial Boolean @default(true)
+  defaultAllowAssetDownload Boolean @default(true)
+  defaultClientCanApprove   Boolean @default(true)
+  autoApproveProject        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TeamMember {
+  id        String           @id @default(cuid())
+  teamId    String
+  userId    String
+  role      TeamRole         @default(MEMBER)
+  status    TeamMemberStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  team      Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model TeamInvite {
+  id          String       @id @default(cuid())
+  teamId      String
+  email       String?
+  phone       String?
+  role        TeamRole     @default(MEMBER)
+  token       String       @unique
+  status      InviteStatus @default(PENDING)
+  createdById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime     @default(now())
+
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, status])
+  @@index([createdById])
+  @@index([expiresAt])
+}
+
+model TeamJoinRequest {
+  id           String          @id @default(cuid())
+  teamId       String
+  userId       String
+  message      String?
+  status       JoinRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime        @default(now())
+
+  team         Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId, status])
+  @@index([userId])
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum TeamMemberStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Project {
   id              String  @id @default(cuid())
-  projectCode     String  @unique
+  projectCode     String
   title           String
   slug            String  @unique
+  shareSlug       String
   description     String?
   companyName     String? // Optional company/brand name (display priority: companyName → primary recipient → 'Client')
   sharePassword   String?
@@ -139,6 +332,9 @@ model Project {
   createdBy   User   @relation(fields: [createdById], references: [id])
   createdById String
 
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Restrict)
+
   // Client directory link (optional)
   clientCompanyId String?
   clientCompany   ClientCompany? @relation(fields: [clientCompanyId], references: [id], onDelete: SetNull)
@@ -155,6 +351,9 @@ model Project {
   members           ProjectMember[]
 
   @@index([clientCompanyId])
+  @@index([teamId])
+  @@unique([teamId, projectCode])
+  @@unique([teamId, shareSlug])
 }
 
 enum ProjectStatus {
@@ -241,12 +440,14 @@ model Video {
   updatedAt DateTime @updatedAt
 
   project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceUpload ProjectUpload? @relation("ProjectUploadVideo")
   analytics VideoAnalytics[]
   assets    VideoAsset[]
   comments  Comment[]
 
   @@index([projectId, version])
   @@index([projectId, name])
+  @@unique([projectId, name, version])
 }
 
 model VideoAsset {
@@ -301,6 +502,12 @@ model ProjectUpload {
   uploadedByEmail     String?
 
   uploadCompletedAt DateTime? // null until file transfer finishes; orphaned records stay null
+
+  transcodeStatus   String  @default("NONE") // NONE, PROCESSING, ERROR
+  transcodeProgress Int     @default(0)
+  transcodeError    String?
+  sourceVideoId     String? @unique
+  sourceVideo       Video?  @relation("ProjectUploadVideo", fields: [sourceVideoId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -374,6 +581,7 @@ model Comment {
   content      String
   authorName   String? // made optional to allow anonymous comments
   authorEmail  String?
+  category     String? // client-facing quick tag: PICTURE, AUDIO, SUBTITLE, EDITING, OTHER
   isInternal   Boolean  @default(false) // true = from studio, false = from client
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -398,6 +606,7 @@ model Comment {
 
   @@index([projectId])
   @@index([videoId])
+  @@index([category])
   @@index([parentId])
   @@index([userId])
 }
@@ -778,12 +987,17 @@ model EmailTemplate {
 // Client Directory - Companies/Organizations
 model ClientCompany {
   id        String   @id @default(cuid())
-  name      String   @unique
+  teamId    String
+  name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  team     Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
   contacts ClientContact[]
   projects Project[]
+
+  @@unique([teamId, name])
+  @@index([teamId])
 }
 
 // Calendar Token - Per-user iCal feed authentication

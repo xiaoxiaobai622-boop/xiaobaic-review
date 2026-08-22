@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
+import { countCommentsByLatestVideoName, getLatestVideo } from '@/lib/video-comment-counts'
 
 interface ThumbnailReelProps {
   videosByName: Record<string, any[]>
@@ -59,46 +60,15 @@ export default function ThumbnailReel({
     setIsExpanded(!isExpanded)
   }
 
-  // Sort videos: For review (not approved) first, then approved, both alphabetically
+  // Keep the project order stable; approval is a state, not a sort priority.
   const videoNames = useMemo(() => {
-    const names = Object.keys(videosByName)
-
-    // Separate into review and approved
-    const forReview: string[] = []
-    const approved: string[] = []
-
-    names.forEach(name => {
-      const videos = videosByName[name]
-      const hasApprovedVideo = videos.some((v: any) => v.approved === true)
-      if (hasApprovedVideo) {
-        approved.push(name)
-      } else {
-        forReview.push(name)
-      }
-    })
-
-    // Sort each group alphabetically
-    forReview.sort((a, b) => a.localeCompare(b))
-    approved.sort((a, b) => a.localeCompare(b))
-
-    // Return: review first, then approved
-    return [...forReview, ...approved]
+    return Object.keys(videosByName).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   }, [videosByName])
 
   const activeIndex = videoNames.indexOf(activeVideoName)
   const totalVideos = videoNames.length
   const commentCountByName = useMemo(() => {
-    const videoNamesById = new Map<string, string>()
-    Object.entries(videosByName).forEach(([name, versions]) => {
-      versions.forEach((video: any) => videoNamesById.set(video.id, name))
-    })
-    const counts = new Map<string, number>()
-    comments.forEach((comment) => {
-      if (!comment.videoId) return
-      const name = videoNamesById.get(comment.videoId)
-      if (name) counts.set(name, (counts.get(name) || 0) + 1)
-    })
-    return counts
+    return countCommentsByLatestVideoName(videosByName, comments)
   }, [comments, videosByName])
 
   // Navigation
@@ -215,9 +185,14 @@ export default function ThumbnailReel({
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {beforeToolbarAction}
             {currentVideos.length > 1 && (
-              <Button variant="outline" size="sm" className="hidden h-8 gap-1.5 lg:flex" onClick={() => window.dispatchEvent(new CustomEvent('openReviewComparison'))}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex h-8 gap-1.5 px-2 sm:px-3"
+                onClick={() => window.dispatchEvent(new CustomEvent('openReviewComparison'))}
+              >
                 <GitCompareArrows className="h-4 w-4" />
-                {tVideos('compare')}
+                <span className="hidden sm:inline">{tVideos('compare')}</span>
               </Button>
             )}
 
@@ -249,9 +224,7 @@ export default function ThumbnailReel({
                 {videoNames.map((name) => {
                   const videos = videosByName[name]
                   const hasApprovedVideo = videos.some((v: any) => v.approved === true)
-                  const latestVideo = videos.reduce((latest: any, video: any) => (
-                    !latest || video.version > latest.version ? video : latest
-                  ), null)
+                  const latestVideo = getLatestVideo(videos)
                   const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
                   const feedbackCount = commentCountByName.get(name) || 0
                   const thumbnailUrl = thumbnailsByName.get(name)

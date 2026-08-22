@@ -59,7 +59,7 @@ export function getVideoQueue(): Queue<VideoProcessingJob> {
   
   if (!videoQueueInstance) {
     videoQueueInstance = new Queue<VideoProcessingJob>('video-processing', {
-      connection: getRedisForQueue(),
+      connection: getRedisForQueue() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -73,9 +73,9 @@ export function getVideoQueue(): Queue<VideoProcessingJob> {
           age: 86400, // keep failed jobs for 24 hours
         },
       },
-    })
+    } as any) as unknown as Queue<VideoProcessingJob>
   }
-  return videoQueueInstance
+  return videoQueueInstance!
 }
 
 export function getAssetQueue(): Queue<AssetProcessingJob> {
@@ -86,7 +86,7 @@ export function getAssetQueue(): Queue<AssetProcessingJob> {
 
   if (!assetQueueInstance) {
     assetQueueInstance = new Queue<AssetProcessingJob>('asset-processing', {
-      connection: getRedisForQueue(),
+      connection: getRedisForQueue() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -100,9 +100,9 @@ export function getAssetQueue(): Queue<AssetProcessingJob> {
           age: 86400, // keep failed jobs for 24 hours
         },
       },
-    })
+    } as any) as unknown as Queue<AssetProcessingJob>
   }
-  return assetQueueInstance
+  return assetQueueInstance!
 }
 
 export function getProjectUploadQueue(): Queue<ProjectUploadProcessingJob> {
@@ -113,7 +113,7 @@ export function getProjectUploadQueue(): Queue<ProjectUploadProcessingJob> {
 
   if (!projectUploadQueueInstance) {
     projectUploadQueueInstance = new Queue<ProjectUploadProcessingJob>('project-upload-processing', {
-      connection: getRedisForQueue(),
+      connection: getRedisForQueue() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -127,9 +127,9 @@ export function getProjectUploadQueue(): Queue<ProjectUploadProcessingJob> {
           age: 86400, // keep failed jobs for 24 hours
         },
       },
-    })
+    } as any) as unknown as Queue<ProjectUploadProcessingJob>
   }
-  return projectUploadQueueInstance
+  return projectUploadQueueInstance!
 }
 
 export function getPhotoQueue(): Queue<PhotoProcessingJob> {
@@ -140,7 +140,7 @@ export function getPhotoQueue(): Queue<PhotoProcessingJob> {
 
   if (!photoQueueInstance) {
     photoQueueInstance = new Queue<PhotoProcessingJob>('photo-processing', {
-      connection: getRedisForQueue(),
+      connection: getRedisForQueue() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -154,9 +154,9 @@ export function getPhotoQueue(): Queue<PhotoProcessingJob> {
           age: 86400, // keep failed jobs for 24 hours
         },
       },
-    })
+    } as any) as unknown as Queue<PhotoProcessingJob>
   }
-  return photoQueueInstance
+  return photoQueueInstance!
 }
 
 export function getExternalNotificationQueue(): Queue<ExternalNotificationJob> {
@@ -167,7 +167,7 @@ export function getExternalNotificationQueue(): Queue<ExternalNotificationJob> {
 
   if (!externalNotificationQueueInstance) {
     externalNotificationQueueInstance = new Queue<ExternalNotificationJob>('external-notifications', {
-      connection: getRedisForQueue(),
+      connection: getRedisForQueue() as any,
       defaultJobOptions: {
         attempts: 5,
         backoff: {
@@ -181,10 +181,10 @@ export function getExternalNotificationQueue(): Queue<ExternalNotificationJob> {
           age: 86400, // keep failed jobs for 24 hours
         },
       },
-    })
+    } as any) as unknown as Queue<ExternalNotificationJob>
   }
 
-  return externalNotificationQueueInstance
+  return externalNotificationQueueInstance!
 }
 
 export function getCleanPreviewQueue(): Queue<CleanPreviewJob> {
@@ -195,7 +195,7 @@ export function getCleanPreviewQueue(): Queue<CleanPreviewJob> {
 
   if (!cleanPreviewQueueInstance) {
     cleanPreviewQueueInstance = new Queue<CleanPreviewJob>('clean-preview-processing', {
-      connection: getRedisForQueue(),
+      connection: getRedisForQueue() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -209,10 +209,10 @@ export function getCleanPreviewQueue(): Queue<CleanPreviewJob> {
           age: 86400, // keep failed jobs for 24 hours
         },
       },
-    })
+    } as any) as unknown as Queue<CleanPreviewJob>
   }
 
-  return cleanPreviewQueueInstance
+  return cleanPreviewQueueInstance!
 }
 
 // Export for backward compatibility, but use getter in new code

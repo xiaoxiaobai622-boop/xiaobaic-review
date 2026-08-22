@@ -9,18 +9,32 @@ import {
   registerAdminSession,
   revokeAdminSession,
   touchAdminSession,
-} from './admin-session-registry'
+} from './studio-session-registry'
+import {
+  isPlatformSessionRevoked,
+  registerPlatformSession,
+  revokePlatformSession,
+  touchPlatformSession,
+} from './platform-session-registry'
 import { getRedis } from './redis'
 import { isShareSessionRevoked } from './session-invalidation'
 import { logError, logWarn } from './logging'
+import { getRequestedTeamId } from './team-access'
+import { WECHAT_SESSION_COOKIE, verifyWechatSession } from './wechat-auth'
 
 export interface AuthUser {
   id: string
   email: string
   phone?: string | null
   name: string | null
+  avatarUrl?: string | null
+  onboardingCompleted?: boolean
   role: string
+  isPlatformAdmin?: boolean
   projectAccessScope?: string
+  sessionId?: string
+  authorizedTeamId?: string
+  teamRole?: 'OWNER' | 'ADMIN' | 'MEMBER'
 }
 
 interface AdminAccessPayload extends jwt.JwtPayload {
@@ -33,6 +47,23 @@ interface AdminAccessPayload extends jwt.JwtPayload {
 
 interface AdminRefreshPayload extends jwt.JwtPayload {
   type: 'admin_refresh'
+  userId: string
+  email: string
+  role: string
+  sessionId: string
+  rotationId: string
+}
+
+interface PlatformAccessPayload extends jwt.JwtPayload {
+  type: 'platform_access'
+  userId: string
+  email: string
+  role: string
+  sessionId: string
+}
+
+interface PlatformRefreshPayload extends jwt.JwtPayload {
+  type: 'platform_refresh'
   userId: string
   email: string
   role: string
@@ -61,10 +92,14 @@ function safeParseInt(value: string | undefined, fallback: number): number {
 const ADMIN_ACCESS_SECRET = process.env.JWT_SECRET
 const ADMIN_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET
 const SHARE_TOKEN_SECRET = process.env.SHARE_TOKEN_SECRET
+const PLATFORM_ACCESS_SECRET = process.env.PLATFORM_JWT_SECRET || process.env.JWT_SECRET
+const PLATFORM_REFRESH_SECRET = process.env.PLATFORM_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET
 
 const ACCESS_TOKEN_DURATION = safeParseInt(process.env.ADMIN_ACCESS_TTL_SECONDS, 60 * 60) // 1 hour
 const REFRESH_TOKEN_DURATION = safeParseInt(process.env.ADMIN_REFRESH_TTL_SECONDS, 30 * 24 * 60 * 60) // 30 days
 const SHARE_TOKEN_DURATION = safeParseInt(process.env.SHARE_TOKEN_TTL_SECONDS, 45 * 60) // 45 minutes
+const PLATFORM_ACCESS_TOKEN_DURATION = safeParseInt(process.env.PLATFORM_ACCESS_TTL_SECONDS, 2 * 60 * 60)
+const PLATFORM_REFRESH_TOKEN_DURATION = safeParseInt(process.env.PLATFORM_REFRESH_TTL_SECONDS, 12 * 60 * 60)
 const DUMMY_BCRYPT_HASH = '$2a$14$aoLibk0GEJrzo6fSqPoQIONMGynUKWEoQhkCrFcEapn6I.WzXXdki'
 
 if (process.env.SKIP_ENV_VALIDATION !== '1') {
@@ -234,7 +269,7 @@ export async function refreshAdminTokens(params: {
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true, role: true },
+    select: { id: true, email: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true },
   })
   if (!user) {
     await revokeToken(refreshToken, remainingTtl(refreshToken, ADMIN_REFRESH_SECRET))
@@ -259,6 +294,134 @@ export async function refreshAdminTokens(params: {
     refreshExpiresAt: Date.now() + REFRESH_TOKEN_DURATION * 1000,
     sessionId: payload.sessionId,
   }
+}
+
+function signPlatformAccess(user: AuthUser, sessionId: string, ttlSeconds?: number) {
+  if (!PLATFORM_ACCESS_SECRET) throw new Error('PLATFORM_JWT_SECRET missing')
+  const payload: PlatformAccessPayload = {
+    type: 'platform_access',
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    sessionId,
+  }
+  return jwt.sign(payload, PLATFORM_ACCESS_SECRET, {
+    expiresIn: ttlSeconds || PLATFORM_ACCESS_TOKEN_DURATION,
+    algorithm: 'HS256',
+  })
+}
+
+function signPlatformRefresh(user: AuthUser, sessionId: string, rotationId: string) {
+  if (!PLATFORM_REFRESH_SECRET) throw new Error('PLATFORM_REFRESH_SECRET missing')
+  const payload: PlatformRefreshPayload = {
+    type: 'platform_refresh',
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    sessionId,
+    rotationId,
+  }
+  return jwt.sign(payload, PLATFORM_REFRESH_SECRET, {
+    expiresIn: PLATFORM_REFRESH_TOKEN_DURATION,
+    algorithm: 'HS256',
+  })
+}
+
+export async function verifyPlatformAccessToken(token: string): Promise<PlatformAccessPayload | null> {
+  try {
+    if (!PLATFORM_ACCESS_SECRET) return null
+    const decoded = jwt.verify(token, PLATFORM_ACCESS_SECRET, { algorithms: ['HS256'] }) as PlatformAccessPayload
+    if (decoded.type !== 'platform_access') return null
+    if (await isTokenRevoked(token)) return null
+    if (await isUserTokensRevoked(decoded.userId, decoded.iat)) return null
+    if (await isPlatformSessionRevoked(decoded.sessionId)) return null
+    return decoded
+  } catch {
+    return null
+  }
+}
+
+export async function issuePlatformTokens(user: AuthUser, fingerprintHash?: string) {
+  const sessionId = crypto.randomUUID()
+  const rotationId = crypto.randomUUID()
+  const accessToken = signPlatformAccess(user, sessionId)
+  const refreshToken = signPlatformRefresh(user, sessionId, rotationId)
+
+  await registerPlatformSession(user.id, sessionId, fingerprintHash)
+
+  return {
+    accessToken,
+    refreshToken,
+    accessExpiresAt: Date.now() + PLATFORM_ACCESS_TOKEN_DURATION * 1000,
+    refreshExpiresAt: Date.now() + PLATFORM_REFRESH_TOKEN_DURATION * 1000,
+    sessionId,
+  }
+}
+
+export async function refreshPlatformTokens(params: {
+  refreshToken: string
+  fingerprintHash?: string
+}) {
+  const { refreshToken, fingerprintHash } = params
+  let payload: PlatformRefreshPayload
+  try {
+    if (!PLATFORM_REFRESH_SECRET) return null
+    const decoded = jwt.verify(refreshToken, PLATFORM_REFRESH_SECRET, { algorithms: ['HS256'] }) as PlatformRefreshPayload
+    if (decoded.type !== 'platform_refresh') return null
+    payload = decoded
+  } catch {
+    return null
+  }
+
+  if (await isTokenRevoked(refreshToken)) {
+    await revokePlatformSession(payload.sessionId)
+    return null
+  }
+  if (await isUserTokensRevoked(payload.userId, payload.iat)) return null
+  if (await isPlatformSessionRevoked(payload.sessionId)) return null
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { id: true, email: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true },
+  })
+  if (!user || user.role !== 'ADMIN') {
+    await revokePlatformSession(payload.sessionId)
+    return null
+  }
+
+  const rotationId = crypto.randomUUID()
+  const accessToken = signPlatformAccess(user, payload.sessionId)
+  const newRefreshToken = signPlatformRefresh(user, payload.sessionId, rotationId)
+
+  await revokeToken(refreshToken, remainingTtl(refreshToken, PLATFORM_REFRESH_SECRET))
+  await touchPlatformSession(payload.sessionId)
+
+  return {
+    accessToken,
+    refreshToken: newRefreshToken,
+    accessExpiresAt: Date.now() + PLATFORM_ACCESS_TOKEN_DURATION * 1000,
+    refreshExpiresAt: Date.now() + PLATFORM_REFRESH_TOKEN_DURATION * 1000,
+    sessionId: payload.sessionId,
+  }
+}
+
+export async function getPlatformUserFromRequest(request: NextRequest): Promise<AuthUser | null> {
+  const bearer = parseBearerToken(request)
+  if (!bearer) return null
+  const payload = await verifyPlatformAccessToken(bearer)
+  if (!payload || payload.role !== 'ADMIN') return null
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, projectAccessScope: true },
+  })
+  return user && user.role === 'ADMIN' ? { ...user, sessionId: payload.sessionId } : null
+}
+
+export async function requirePlatformAuth(request: NextRequest): Promise<AuthUser | Response> {
+  const user = await getPlatformUserFromRequest(request)
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  return user
 }
 
 export async function revokePresentedTokens(tokens: { accessToken?: string | null; refreshToken?: string | null }) {
@@ -298,6 +461,8 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
         email: true,
         phone: true,
         name: true,
+        avatarUrl: true,
+        onboardingCompleted: true,
         role: true,
         projectAccessScope: true,
         password: true,
@@ -319,6 +484,8 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
       email: user.email,
       phone: user.phone,
       name: user.name,
+      avatarUrl: user.avatarUrl,
+      onboardingCompleted: user.onboardingCompleted,
       role: user.role,
       projectAccessScope: user.projectAccessScope,
     }
@@ -330,16 +497,47 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
 
 export async function getCurrentUserFromRequest(request: NextRequest): Promise<AuthUser | null> {
   const bearer = parseBearerToken(request)
-  if (!bearer) return null
-  const payload = await verifyAdminAccessToken(bearer)
-  if (!payload) return null
+  if (bearer) {
+    const payload = await verifyAdminAccessToken(bearer)
+    if (payload) {
+      return prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, projectAccessScope: true },
+      })
+    }
+  }
 
-  const user = await prisma.user.findUnique({
-    where: { id: payload.userId },
-    select: { id: true, email: true, phone: true, name: true, role: true, projectAccessScope: true },
+  // WeChat QR login also establishes a signed browser session. Treat a linked
+  // identity as the same account session so share-page actions such as upload
+  // do not appear logged in in the UI while failing JWT-only API checks.
+  const wechatToken = request.cookies.get(WECHAT_SESSION_COOKIE)?.value
+  const wechatSession = wechatToken ? verifyWechatSession(wechatToken) : null
+  if (!wechatSession) return null
+
+  const identity = await prisma.wechatIdentity.findUnique({
+    where: { id: wechatSession.identityId },
+    select: { userId: true },
   })
+  if (!identity?.userId) return null
 
-  return user
+  return prisma.user.findUnique({
+    where: { id: identity.userId },
+    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, projectAccessScope: true },
+  })
+}
+
+export async function hasWebsiteLoginSession(request: NextRequest): Promise<boolean> {
+  if (await getCurrentUserFromRequest(request)) return true
+
+  const wechatToken = request.cookies.get(WECHAT_SESSION_COOKIE)?.value
+  const wechatSession = wechatToken ? verifyWechatSession(wechatToken) : null
+  if (!wechatSession) return false
+
+  const identity = await prisma.wechatIdentity.findUnique({
+    where: { id: wechatSession.identityId },
+    select: { id: true },
+  })
+  return Boolean(identity)
 }
 
 export async function requireApiAdmin(request: NextRequest): Promise<AuthUser | Response> {
@@ -347,18 +545,80 @@ export async function requireApiAdmin(request: NextRequest): Promise<AuthUser | 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (user.role !== 'ADMIN') {
+  const requestedTeamId = getRequestedTeamId(request)
+  const membership = requestedTeamId
+    ? await prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: requestedTeamId, userId: user.id } },
+        select: { teamId: true, role: true, status: true, team: { select: { status: true } } },
+      })
+    : await prisma.teamMember.findFirst({
+        where: {
+          userId: user.id,
+          status: 'ACTIVE',
+          team: { status: 'ACTIVE' },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { teamId: true, role: true, status: true, team: { select: { status: true } } },
+      })
+  if (
+    !membership ||
+    membership.status !== 'ACTIVE' ||
+    (membership.team && membership.team.status !== 'ACTIVE') ||
+    !['OWNER', 'ADMIN'].includes(membership.role)
+  ) {
     return NextResponse.json({ error: 'Administrator permission required' }, { status: 403 })
   }
+  if (!user.phone) {
+    return NextResponse.json({ error: '进入团队后台前请先绑定手机号', code: 'PHONE_REQUIRED' }, { status: 403 })
+  }
+  return { ...user, authorizedTeamId: membership.teamId, teamRole: membership.role }
+}
+
+export async function requirePlatformAdmin(request: NextRequest): Promise<AuthUser | Response> {
+  const user = await getCurrentUserFromRequest(request)
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Platform administration is intentionally independent from team roles.
+  // Team owners are not allowed to manage users from other teams.
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Platform administrator permission required' }, { status: 403 })
+  }
+
   return user
 }
 
 export async function requireApiUser(request: NextRequest): Promise<AuthUser | Response> {
   const user = await getCurrentUserFromRequest(request)
-  if (!user || (user.role !== 'ADMIN' && user.role !== 'MEMBER')) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  return user
+  const requestedTeamId = getRequestedTeamId(request)
+  const firstMembership = requestedTeamId
+    ? await prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: requestedTeamId, userId: user.id } },
+        select: { id: true, teamId: true, role: true, status: true, team: { select: { status: true } } },
+      })
+    : await prisma.teamMember.findFirst({
+        where: {
+          userId: user.id,
+          status: 'ACTIVE',
+          team: { status: 'ACTIVE' },
+        },
+        select: { id: true, teamId: true, role: true, status: true, team: { select: { status: true } } },
+      })
+  if (
+    !firstMembership ||
+    firstMembership.status !== 'ACTIVE' ||
+    (firstMembership.team && firstMembership.team.status !== 'ACTIVE')
+  ) {
+    return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
+  }
+  if (!user.phone) {
+    return NextResponse.json({ error: '进入团队前请先绑定手机号', code: 'PHONE_REQUIRED' }, { status: 403 })
+  }
+  return { ...user, authorizedTeamId: firstMembership.teamId, teamRole: firstMembership.role }
 }
 
 export async function getShareContext(request: NextRequest): Promise<SharePayload | null> {

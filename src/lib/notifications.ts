@@ -3,7 +3,7 @@ import { prisma } from './db'
 import { sendCommentNotificationEmail, sendAdminCommentNotificationEmail, sendProjectApprovedEmail, sendAdminProjectApprovedEmail, getEmailSettings, sendEmail, getRecipientLocale } from './email'
 import { generateNotificationSummaryEmail, generateAdminSummaryEmail } from './email-templates'
 import { getProjectRecipients } from './recipients'
-import { generateShareUrl } from './url'
+import { generateProjectShareUrlById } from './url'
 import { getRedis } from './redis'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
 import { buildUnsubscribeUrl, generateRecipientUnsubscribeToken } from './unsubscribe'
@@ -43,7 +43,7 @@ export async function sendImmediateNotification(context: NotificationContext, ta
     return
   }
 
-  const shareUrl = await generateShareUrl(project.slug)
+  const shareUrl = await generateProjectShareUrlById(project.id)
   const videoName = video?.name || 'Unknown Video'
   const versionLabel = video?.versionLabel || 'Unknown Version'
   const authorEmail = comment.authorEmail?.toLowerCase() || null
@@ -242,11 +242,11 @@ export async function handleApprovalNotification(context: ApprovalNotificationCo
 async function sendApprovalImmediately(context: ApprovalNotificationContext) {
   const { project, video, approvedVideos, approved, authorName, authorEmail, isComplete = false } = context
 
-  const shareUrl = await generateShareUrl(project.slug)
+  const shareUrl = await generateProjectShareUrlById(project.id)
   let adminShareUrl = ''
   try {
     const origin = new URL(shareUrl).origin
-    const returnUrl = `/admin/projects/${project.id}/share`
+    const returnUrl = `/studio/projects/${project.id}/share`
     adminShareUrl = `${origin}/login?returnUrl=${encodeURIComponent(returnUrl)}`
   } catch {
     adminShareUrl = ''
@@ -417,7 +417,7 @@ export async function flushPendingAdminNotifications(): Promise<void> {
         projectGroups[projectId] = {
           projectId,
           projectTitle: notification.project.title,
-          shareUrl: await generateShareUrl(notification.project.slug),
+          shareUrl: await generateProjectShareUrlById(notification.project.id),
           notifications: []
         }
       }
@@ -542,7 +542,7 @@ export async function flushPendingClientNotifications(projectId: string): Promis
 
     const emailSettings = await getEmailSettings()
     const companyName = emailSettings.companyName || 'ViTransfer'
-    const shareUrl = await generateShareUrl(project.slug)
+    const shareUrl = await generateProjectShareUrlById(project.id)
     const notifications = validNotifications.map(n =>
       normalizeNotificationDataTimecode(n.data as any)
     )

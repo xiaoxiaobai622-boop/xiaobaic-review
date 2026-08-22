@@ -7,7 +7,6 @@ import { getFilePath, sanitizeFilenameForHeader, getVideoContentType, isS3Mode, 
 import { s3GetPresignedDownloadUrl, s3GetPresignedStreamUrl, s3FileExists } from '@/lib/s3-storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { getClientIpAddress } from '@/lib/utils'
-import { getAuthContext } from '@/lib/auth'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import {
@@ -67,8 +66,6 @@ export async function GET(
       return ipRateLimitResult
     }
 
-    const authContext = await getAuthContext(request)
-
     const redis = getRedis()
     const tokenKey = `video_access:${token}`
     const rawTokenData = await redis.get(tokenKey)
@@ -81,23 +78,15 @@ export async function GET(
 
     const sessionId = preliminaryTokenData.sessionId
 
-    // Determine if this is an admin request (JWT token OR explicit isAdmin flag in token data)
-    const isAdminRequest = authContext.isAdmin || preliminaryTokenData.isAdmin === true
-
-    if (isAdminRequest) {
-      const project = await prisma.project.findUnique({
-        where: { id: preliminaryTokenData.projectId },
-        select: { id: true }
-      })
-
-      if (!project) {
-  return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
-      }
-    }
-
     if (!sessionId) {
   return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 401 })
     }
+
+    const verifiedToken = await verifyVideoAccessToken(token, request, sessionId)
+    if (!verifiedToken) {
+      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    }
+    const isAdminRequest = verifiedToken.isAdmin === true
 
     // Session-based content rate limiting.
     // Range requests (video scrubbing/seeking) are normal browser behaviour and are
@@ -137,12 +126,6 @@ export async function GET(
           error: shareMessages.videoStreamingRateLimitExceeded || 'Video streaming rate limit exceeded. Please wait a moment.'
         }, { status: 429, headers: { 'Retry-After': String(CONTENT_SESSION_WINDOW_SECONDS) } })
       }
-    }
-
-    const verifiedToken = await verifyVideoAccessToken(token, request, sessionId)
-
-    if (!verifiedToken) {
-  return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     }
 
     const hotlinkCheck = await detectHotlinking(
@@ -305,12 +288,10 @@ export async function GET(
           headers: { 'Cache-Control': 'no-store' },
         })
       } else if (verifiedToken.quality === 'thumbnail') {
-        // Thumbnails are static images that load in under a second — short-lived URL
-        // minimizes the window if the presigned URL leaks.
-        const presignedUrl = await s3GetPresignedStreamUrl(filePath, 300, 'image/jpeg')
+        const presignedUrl = await s3GetPresignedStreamUrl(filePath, 86400, 'image/jpeg')
         return NextResponse.redirect(presignedUrl, {
           status: 302,
-          headers: { 'Cache-Control': 'no-store' },
+          headers: { 'Cache-Control': 'public, max-age=86400, immutable' },
         })
       } else {
         // Streaming (video player): long-lived presigned URL so range requests hit S3 directly
@@ -318,7 +299,7 @@ export async function GET(
         const presignedUrl = await s3GetPresignedStreamUrl(filePath, 14400, ct)
         return NextResponse.redirect(presignedUrl, {
           status: 302,
-          headers: { 'Cache-Control': 'no-store' },
+          headers: { 'Cache-Control': 'public, max-age=3600' },
         })
       }
     }
@@ -340,7 +321,7 @@ export async function GET(
 
     const isThumbnail = verifiedToken.quality === 'thumbnail'
     const cacheControl = isThumbnail
-      ? 'private, no-store, must-revalidate'
+      ? 'public, max-age=86400, immutable'
       : 'public, max-age=3600'
 
     if (isDownload) {

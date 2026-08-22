@@ -6,6 +6,7 @@ import { Clock, Trash2, Brush, Check } from 'lucide-react'
 import DOMPurify from 'isomorphic-dompurify'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachments from './CommentAttachments'
+import { getCommentCategory } from '@/lib/comment-categories'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -22,6 +23,7 @@ interface MessageBubbleProps {
   sequenceNumber?: number
   replies?: Comment[]
   onDeleteReply?: (replyId: string) => void
+  canDeleteReply?: (reply: Comment) => boolean
   timestampLabel?: string | null
   timecodeEndLabel?: string | null
   hasAnnotation?: boolean
@@ -56,6 +58,7 @@ export default function MessageBubble({
   sequenceNumber,
   replies,
   onDeleteReply,
+  canDeleteReply,
   timestampLabel,
   timecodeEndLabel,
   hasAnnotation,
@@ -90,6 +93,7 @@ export default function MessageBubble({
 
   const threadReplies = !isReply && replies && replies.length > 0 ? replies : []
   const hasReplies = threadReplies.length > 0
+  const category = getCommentCategory((comment as any).category)
 
   return (
     <div className="w-full" id={`comment-${comment.id}`}>
@@ -116,6 +120,12 @@ export default function MessageBubble({
               <span className="truncate text-sm font-semibold text-foreground">
                 {effectiveAuthorName || t('anonymous')}
               </span>
+              {!isReply && category && (
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${category.chipClass}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${category.dotClass}`} />
+                  {category.label}
+                </span>
+              )}
             </div>
 
             {!isReply && onToggleResolved && (
@@ -230,7 +240,7 @@ export default function MessageBubble({
                     <span className="flex-shrink-0 text-xs text-muted-foreground">
                       {formatMessageTime(reply.createdAt)}
                     </span>
-                    {onDeleteReply && (
+                    {onDeleteReply && (!canDeleteReply || canDeleteReply(reply)) && (
                       <button
                         onClick={() => onDeleteReply(reply.id)}
                         className="ml-auto text-muted-foreground hover:text-destructive transition-colors"

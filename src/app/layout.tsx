@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AccentColorProvider } from "@/components/AccentColorProvider";
 import { ServiceWorkerProvider } from "@/components/ServiceWorkerProvider";
+import GlobalActivityTracker from "@/components/GlobalActivityTracker";
 import { StorageConfigProvider, type StorageProvider } from "@/components/StorageConfigProvider";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
@@ -59,7 +60,7 @@ export const viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
-  themeColor: '#0a0a0a',
+  themeColor: '#111318',
 }
 
 export default async function RootLayout({
@@ -79,6 +80,7 @@ export default async function RootLayout({
           <StorageConfigProvider provider={storageProvider}>
             <AccentColorProvider />
             <ServiceWorkerProvider />
+            <GlobalActivityTracker />
             <main className="flex-1 min-h-0 flex flex-col">{children}</main>
           </StorageConfigProvider>
         </NextIntlClientProvider>

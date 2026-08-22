@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isS3Mode } from '@/lib/storage'
-import { s3CompleteMultipartUpload } from '@/lib/s3-storage'
+import { s3CompleteMultipartUpload, s3FileExists } from '@/lib/s3-storage'
 import { sanitizeContentType } from '@/lib/file-validation'
 import { verifyS3UploadAccess } from '@/lib/s3-upload-auth'
-import { videoQueue, getAssetQueue, getProjectUploadQueue, getPhotoQueue } from '@/lib/queue'
 import { logError, logMessage } from '@/lib/logging'
 import { rateLimit } from '@/lib/rate-limit'
 import { handleReverseShareUploadNotification } from '@/lib/upload-notifications'
 import type { CompletedPart } from '@aws-sdk/client-s3'
-import { directPlaybackReadyData, probeStoredDirectPlayableMp4 } from '@/lib/direct-video-playback'
+import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
 export const runtime = 'nodejs'
 
@@ -104,9 +103,9 @@ export async function POST(request: NextRequest) {
     // Auth helper already resolved s3Key. For videos, re-check status (TOCTOU guard).
     let s3Key = authResult.s3Key
     let dbVideo: { id: string; originalStoragePath: string; originalFileName: string; projectId: string; status: string } | null = null
-    let dbAsset: { id: string; storagePath: string; category: string | null } | null = null
-    let dbProjectUpload: { id: string; storagePath: string; projectId: string; fileName: string; uploadedByName: string | null; uploadedByEmail: string | null } | null = null
-    let dbPhoto: { id: string; storagePath: string } | null = null
+    let dbAsset: { id: string; storagePath: string; category: string | null; uploadCompletedAt: Date | null } | null = null
+    let dbProjectUpload: { id: string; storagePath: string; projectId: string; fileName: string; uploadedByName: string | null; uploadedByEmail: string | null; uploadCompletedAt: Date | null } | null = null
+    let dbPhoto: { id: string; storagePath: string; uploadCompletedAt: Date | null } | null = null
 
     if (videoId) {
       const video = await prisma.video.findUnique({
@@ -115,6 +114,9 @@ export async function POST(request: NextRequest) {
       })
       if (!video) return NextResponse.json({ error: 'Video record not found' }, { status: 404 })
       if (video.status !== 'UPLOADING') {
+        if (video.status === 'PROCESSING' || video.status === 'READY') {
+          return NextResponse.json({ ok: true, alreadyCompleted: true })
+        }
         return NextResponse.json({ error: 'Video is no longer in UPLOADING state' }, { status: 409 })
       }
       s3Key = video.originalStoragePath
@@ -122,22 +124,25 @@ export async function POST(request: NextRequest) {
     } else if (assetId) {
       dbAsset = await prisma.videoAsset.findUnique({
         where: { id: assetId },
-        select: { id: true, storagePath: true, category: true },
+        select: { id: true, storagePath: true, category: true, uploadCompletedAt: true },
       })
       if (!dbAsset) return NextResponse.json({ error: 'Asset record not found' }, { status: 404 })
+      if (dbAsset.uploadCompletedAt) return NextResponse.json({ ok: true, alreadyCompleted: true })
     } else if (photoId) {
       dbPhoto = await prisma.photo.findUnique({
         where: { id: photoId },
-        select: { id: true, storagePath: true },
+        select: { id: true, storagePath: true, uploadCompletedAt: true },
       })
       if (!dbPhoto) return NextResponse.json({ error: 'Photo record not found' }, { status: 404 })
+      if (dbPhoto.uploadCompletedAt) return NextResponse.json({ ok: true, alreadyCompleted: true })
     } else {
       const pu = await prisma.projectUpload.findUnique({
         where: { id: projectUploadId! },
-        select: { id: true, storagePath: true, projectId: true, fileName: true, uploadedByName: true, uploadedByEmail: true },
+        select: { id: true, storagePath: true, projectId: true, fileName: true, uploadedByName: true, uploadedByEmail: true, uploadCompletedAt: true },
       })
       if (!pu) return NextResponse.json({ error: 'Upload record not found' }, { status: 404 })
       dbProjectUpload = pu
+      if (pu.uploadCompletedAt) return NextResponse.json({ ok: true, alreadyCompleted: true })
     }
 
     // ── Complete the multipart upload on S3 ────────────────────────────────────
@@ -158,94 +163,76 @@ export async function POST(request: NextRequest) {
 
     // CompleteMultipartUpload validates that every part is present and assembles
     // the object atomically.
-    await s3CompleteMultipartUpload(s3Key, uploadId, completedParts)
+    if (!(await s3FileExists(s3Key))) {
+      await s3CompleteMultipartUpload(s3Key, uploadId, completedParts)
+    }
 
     logMessage(`[S3 COMPLETE] Multipart upload complete for key: ${s3Key}`)
 
     // ── Update DB and trigger worker (mirrors TUS onUploadFinish) ─────────────
     if (dbVideo) {
-      const directPlayback = await probeStoredDirectPlayableMp4(
-        dbVideo.originalStoragePath,
-        dbVideo.originalFileName
-      )
-
-      if (directPlayback.compatible && directPlayback.metadata) {
-        await prisma.video.update({
-          where: { id: dbVideo.id },
-          data: directPlaybackReadyData(directPlayback.metadata),
-        })
-        logMessage(`[S3 COMPLETE] Video ${dbVideo.id} is ready for direct playback`)
-      } else {
-        await prisma.video.update({
+      const task = await prisma.$transaction(async (tx) => {
+        await tx.video.update({
           where: { id: dbVideo.id },
           data: { status: 'PROCESSING', processingProgress: 0 },
         })
-
-        await videoQueue.add('process-video', {
+        return recordDurableTask(tx, 'PROCESS_VIDEO', `process-video:${dbVideo.id}`, {
           videoId: dbVideo.id,
           originalStoragePath: dbVideo.originalStoragePath,
           projectId: dbVideo.projectId,
         })
+      })
+      await dispatchDurableTask(task.id)
 
-        logMessage(`[S3 COMPLETE] Video ${dbVideo.id} queued for processing`)
-      }
+      logMessage(`[S3 COMPLETE] Video ${dbVideo.id} queued for default 720p processing`)
     } else if (dbAsset) {
       const actualFileType = sanitizeContentType(contentType)
 
-      await prisma.videoAsset.update({
-        where: { id: dbAsset.id },
-        data: {
-          fileType: actualFileType,
-          fileSize: BigInt(fileSize),
-          uploadCompletedAt: new Date(),
-        },
+      const task = await prisma.$transaction(async (tx) => {
+        await tx.videoAsset.update({
+          where: { id: dbAsset.id },
+          data: { fileType: actualFileType, fileSize: BigInt(fileSize), uploadCompletedAt: new Date() },
+        })
+        return recordDurableTask(tx, 'PROCESS_ASSET', `process-asset:${dbAsset.id}`, {
+          assetId: dbAsset.id,
+          storagePath: dbAsset.storagePath,
+          ...(dbAsset.category ? { expectedCategory: dbAsset.category } : {}),
+        })
       })
-
-      const assetQueue = getAssetQueue()
-      await assetQueue.add('process-asset', {
-        assetId: dbAsset.id,
-        storagePath: dbAsset.storagePath,
-        expectedCategory: dbAsset.category ?? undefined,
-      })
+      await dispatchDurableTask(task.id)
 
       logMessage(`[S3 COMPLETE] Asset ${dbAsset.id} queued for processing`)
     } else if (dbPhoto) {
       const actualFileType = sanitizeContentType(contentType)
 
-      await prisma.photo.update({
-        where: { id: dbPhoto.id },
-        data: {
-          fileType: actualFileType,
-          fileSize: BigInt(fileSize),
-          uploadCompletedAt: new Date(),
-        },
+      const task = await prisma.$transaction(async (tx) => {
+        await tx.photo.update({
+          where: { id: dbPhoto.id },
+          data: { fileType: actualFileType, fileSize: BigInt(fileSize), uploadCompletedAt: new Date() },
+        })
+        return recordDurableTask(tx, 'PROCESS_PHOTO', `process-photo:${dbPhoto.id}`, {
+          photoId: dbPhoto.id,
+          storagePath: dbPhoto.storagePath,
+        })
       })
-
-      const photoQueue = getPhotoQueue()
-      await photoQueue.add('process-photo', {
-        photoId: dbPhoto.id,
-        storagePath: dbPhoto.storagePath,
-      })
+      await dispatchDurableTask(task.id)
 
       logMessage(`[S3 COMPLETE] Photo ${dbPhoto.id} queued for processing`)
     } else if (dbProjectUpload) {
       const actualFileType = sanitizeContentType(contentType)
 
-      await prisma.projectUpload.update({
-        where: { id: dbProjectUpload.id },
-        data: {
-          fileType: actualFileType,
-          fileSize: BigInt(fileSize),
-          uploadCompletedAt: new Date(),
-        },
+      const task = await prisma.$transaction(async (tx) => {
+        await tx.projectUpload.update({
+          where: { id: dbProjectUpload.id },
+          data: { fileType: actualFileType, fileSize: BigInt(fileSize), uploadCompletedAt: new Date() },
+        })
+        return recordDurableTask(tx, 'PROCESS_PROJECT_UPLOAD', `process-project-upload:${dbProjectUpload.id}`, {
+          uploadId: dbProjectUpload.id,
+          storagePath: dbProjectUpload.storagePath,
+          projectId: dbProjectUpload.projectId,
+        })
       })
-
-      const projectUploadQueue = getProjectUploadQueue()
-      await projectUploadQueue.add('process-upload', {
-        uploadId: dbProjectUpload.id,
-        storagePath: dbProjectUpload.storagePath,
-        projectId: dbProjectUpload.projectId,
-      })
+      await dispatchDurableTask(task.id)
 
       logMessage(`[S3 COMPLETE] ProjectUpload ${dbProjectUpload.id} complete`)
 

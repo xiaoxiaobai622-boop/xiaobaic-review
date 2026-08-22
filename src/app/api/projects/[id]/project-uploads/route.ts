@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { deleteFile } from '@/lib/storage'
 import { logError } from '@/lib/logging'
@@ -24,6 +25,9 @@ export async function GET(
 
   try {
     const { id: projectId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -48,6 +52,10 @@ export async function GET(
       hasThumbnail: !!u.thumbnailPath,
       uploadedByName: u.uploadedByName,
       uploadedByEmail: u.uploadedByEmail,
+      transcodeStatus: u.transcodeStatus,
+      transcodeProgress: u.transcodeProgress,
+      transcodeError: u.transcodeError,
+      sourceVideoId: u.sourceVideoId,
       createdAt: u.createdAt,
     }))
 
@@ -75,6 +83,9 @@ export async function DELETE(
 
   try {
     const { id: projectId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const { searchParams } = new URL(request.url)
     const uploadId = searchParams.get('uploadId') ?? ''
 
@@ -85,6 +96,16 @@ export async function DELETE(
 
     if (!upload) {
       return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
+    }
+
+    const referencedVideoCount = await prisma.video.count({
+      where: { originalStoragePath: upload.storagePath },
+    })
+    if (referencedVideoCount > 0) {
+      return NextResponse.json(
+        { error: 'This collected file is still used as a video original. Delete the video version first.' },
+        { status: 409 }
+      )
     }
 
     await deleteFile(upload.storagePath)

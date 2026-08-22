@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
@@ -63,6 +64,9 @@ export async function POST(
 
     if (!sourceVideo) {
       return NextResponse.json({ error: videoMessages.sourceVideoNotFound || 'Source video not found' }, { status: 404 })
+    }
+    if (!(await canAccessProject(prisma, authResult, sourceVideo.projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
     // Verify target video exists and is in same project

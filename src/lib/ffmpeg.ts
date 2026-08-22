@@ -325,8 +325,8 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
   }
 
   const bitrateProfile = quality === '1080p'
-    ? { maxRate: '5000k', bufferSize: '10000k' }
-    : { maxRate: '2500k', bufferSize: '5000k' }
+    ? { videoBitrate: '5000k', minRate: '3000k', maxRate: '5000k', bufferSize: '10000k' }
+    : { videoBitrate: '2000k', minRate: '1500k', maxRate: '2500k', bufferSize: '5000k' }
   const gopSize = Math.max(24, Math.round((metadata.fps || 25) * 2))
 
   const args = [
@@ -335,7 +335,8 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     '-vf', filterComplex,
     '-c:v', 'libx264',
     '-preset', preset,
-    '-crf', '22',
+    '-b:v', bitrateProfile.videoBitrate,
+    '-minrate', bitrateProfile.minRate,
     '-maxrate', bitrateProfile.maxRate,
     '-bufsize', bitrateProfile.bufferSize,
     '-g', gopSize.toString(),

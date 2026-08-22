@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { getRequestedTeamId, resolveActiveTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeText } from '@/lib/security/html-sanitization'
 import { safeParseBody } from '@/lib/validation'
@@ -19,6 +20,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (authResult instanceof Response) {
     return authResult
   }
+  const teamId = await resolveActiveTeamId(authResult, getRequestedTeamId(request))
+  if (!teamId) return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
 
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
@@ -43,7 +46,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const existingContact = await prisma.clientContact.findFirst({
       where: {
         id: contactId,
-        companyId: id
+        companyId: id,
+        company: { teamId },
       }
     })
 
@@ -99,6 +103,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   if (authResult instanceof Response) {
     return authResult
   }
+  const teamId = await resolveActiveTeamId(authResult, getRequestedTeamId(request))
+  if (!teamId) return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
 
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
@@ -120,7 +126,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const existingContact = await prisma.clientContact.findFirst({
       where: {
         id: contactId,
-        companyId: id
+        companyId: id,
+        company: { teamId },
       }
     })
 

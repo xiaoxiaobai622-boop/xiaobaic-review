@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis } from '@/lib/redis'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const securityMessages = messages?.security || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -117,7 +117,7 @@ export async function DELETE(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const securityMessages = messages?.security || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }

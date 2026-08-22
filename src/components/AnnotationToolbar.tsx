@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Pencil, Undo2, Check, X, Minus, Plus, ChevronUp, ChevronDown, ArrowUpRight, Square } from 'lucide-react'
+import { Pencil, Undo2, X, Minus, Plus, ChevronUp, ChevronDown, ArrowUpRight, Square } from 'lucide-react'
 import { AnnotationColor, ANNOTATION_COLORS, DrawingTool } from '@/types/annotations'
 
 interface AnnotationToolbarProps {
@@ -11,13 +11,11 @@ interface AnnotationToolbarProps {
   strokeWidth: number
   opacity: number
   canUndo: boolean
-  hasShapes: boolean
   onColorChange: (color: AnnotationColor) => void
   onToolChange: (tool: DrawingTool) => void
   onStrokeWidthChange: (width: number) => void
   onOpacityChange: (opacity: number) => void
   onUndo: () => void
-  onDone: () => void
   onCancel: () => void
 }
 
@@ -53,13 +51,11 @@ export default function AnnotationToolbar({
   strokeWidth,
   opacity,
   canUndo,
-  hasShapes,
   onColorChange,
   onToolChange,
   onStrokeWidthChange,
   onOpacityChange,
   onUndo,
-  onDone,
   onCancel,
 }: AnnotationToolbarProps) {
   const t = useTranslations('controls')
@@ -143,6 +139,8 @@ export default function AnnotationToolbar({
             } ${activeColor === color ? 'scale-125 ring-offset-1 ring-offset-black/80' : 'hover:scale-110'}`}
             style={{ backgroundColor: color }}
             title={color}
+            aria-label={`选择颜色 ${color}`}
+            aria-pressed={activeColor === color}
           />
         ))}
 
@@ -155,6 +153,7 @@ export default function AnnotationToolbar({
             type="button"
             onClick={decreaseWidth}
             disabled={currentStepIndex === 0}
+            aria-label="减小笔刷粗细"
             className={`p-1 sm:p-1.5 rounded-lg transition-colors ${
               currentStepIndex > 0
                 ? 'text-white/60 hover:text-white hover:bg-white/10'
@@ -176,6 +175,7 @@ export default function AnnotationToolbar({
             type="button"
             onClick={increaseWidth}
             disabled={currentStepIndex === STROKE_STEPS.length - 1}
+            aria-label="增大笔刷粗细"
             className={`p-1 sm:p-1.5 rounded-lg transition-colors ${
               currentStepIndex < STROKE_STEPS.length - 1
                 ? 'text-white/60 hover:text-white hover:bg-white/10'
@@ -195,6 +195,7 @@ export default function AnnotationToolbar({
             type="button"
             onClick={decreaseOpacity}
             disabled={currentOpacityIndex === 0}
+            aria-label="降低透明度"
             className={`p-1 sm:p-1.5 rounded-lg transition-colors ${
               currentOpacityIndex > 0
                 ? 'text-white/60 hover:text-white hover:bg-white/10'
@@ -210,6 +211,7 @@ export default function AnnotationToolbar({
             type="button"
             onClick={increaseOpacity}
             disabled={currentOpacityIndex === OPACITY_STEPS.length - 1}
+            aria-label="提高透明度"
             className={`p-1 sm:p-1.5 rounded-lg transition-colors ${
               currentOpacityIndex < OPACITY_STEPS.length - 1
                 ? 'text-white/60 hover:text-white hover:bg-white/10'
@@ -229,6 +231,7 @@ export default function AnnotationToolbar({
           onClick={() => setMinimized(true)}
           className="p-1 sm:p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
           title={t('hideToolbar')}
+          aria-label={t('hideToolbar')}
         >
           <ChevronUp className="w-3.5 h-3.5" />
         </button>
@@ -266,24 +269,6 @@ export default function AnnotationToolbar({
           <span className="text-xs">{tCommon('cancel')}</span>
         </button>
 
-        {/* Separator */}
-        <div className="w-px h-5 sm:h-6 bg-white/20 mx-0.5 sm:mx-1" />
-
-        {/* Done */}
-        <button
-          type="button"
-          onClick={onDone}
-          disabled={!hasShapes}
-          className={`p-1.5 sm:p-2 rounded-lg transition-colors flex items-center gap-1 ${
-            hasShapes
-              ? 'text-green-400 hover:text-green-300 hover:bg-green-500/20'
-              : 'text-white/20 cursor-not-allowed'
-          }`}
-          title={t('saveAnnotation')}
-        >
-          <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          <span className="text-xs">{tCommon('done')}</span>
-        </button>
       </div>
     </div>
   )

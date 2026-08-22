@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, KeyRound, LogOut, Save, UserRound } from 'lucide-react'
+import { ArrowLeft, Camera, Check, KeyRound, LogOut, Save, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
+import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
 import ThemeToggle from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,28 +12,41 @@ import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/ui/password-input'
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { clearTokens } from '@/lib/token-store'
-import { getDisplayEmail } from '@/lib/user-contact'
 
 function safeReviewReturnUrl(): string | null {
   const requested = new URLSearchParams(window.location.search).get('returnUrl')
   if (!requested?.startsWith('/') || requested.startsWith('//')) return null
-  return requested.startsWith('/share/') || /^\/admin\/projects\/[^/]+\/share(?:[/?#]|$)/.test(requested)
+  return requested.startsWith('/share/') || /^\/studio\/projects\/[^/]+\/share(?:[/?#]|$)/.test(requested)
     ? requested
     : null
+}
+
+function safeStudioReturnUrl(): string | null {
+  const requested = new URLSearchParams(window.location.search).get('returnUrl')
+  if (!requested?.startsWith('/studio')) return null
+  return requested
 }
 
 function ProfileContent() {
   const { user, logout } = useAuth()
   const [returnUrl, setReturnUrl] = useState<string | null>(null)
+  const [phoneReturnUrl, setPhoneReturnUrl] = useState<string | null>(null)
+  const [requirePhone, setRequirePhone] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ name: '', email: '', phone: '' })
+  const [form, setForm] = useState({ name: '', phone: '' })
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' })
 
-  useEffect(() => setReturnUrl(safeReviewReturnUrl()), [])
+  useEffect(() => {
+    setReturnUrl(safeReviewReturnUrl())
+    setPhoneReturnUrl(safeStudioReturnUrl())
+    setRequirePhone(new URLSearchParams(window.location.search).get('requirePhone') === '1')
+  }, [])
 
   useEffect(() => {
     if (!user?.id) return
@@ -44,9 +58,9 @@ function ProfileContent() {
         if (active) {
           setForm({
             name: data.user.name || '',
-            email: getDisplayEmail(data.user.email),
             phone: data.user.phone || '',
           })
+          setAvatarUrl(data.user.avatarUrl || null)
         }
       })
       .catch(fetchError => active && setError(fetchError instanceof Error ? fetchError.message : '无法读取个人资料'))
@@ -54,18 +68,14 @@ function ProfileContent() {
     return () => { active = false }
   }, [user?.id])
 
-  const displayName = useMemo(() => form.name || form.phone || form.email || '团队成员', [form])
-  const visibleReturnUrl = returnUrl?.startsWith('/admin/') && user?.role !== 'ADMIN'
+  const displayName = useMemo(() => form.name || form.phone || '团队成员', [form])
+  const visibleReturnUrl = returnUrl?.startsWith('/studio/') && user?.role !== 'ADMIN'
     ? null
     : returnUrl
 
   async function saveProfile(event: React.FormEvent) {
     event.preventDefault()
     if (!user?.id) return
-    if (!form.email.trim() && !form.phone.trim()) {
-      setError('邮箱和手机号至少填写一项')
-      return
-    }
     if (form.phone && !/^1\d{10}$/.test(form.phone)) {
       setError('请输入有效的 11 位手机号')
       return
@@ -77,14 +87,46 @@ function ProfileContent() {
     try {
       await apiPatch(`/api/users/${user.id}`, {
         name: form.name.trim() || null,
-        email: form.email.trim(),
         phone: form.phone,
       })
+      if (requirePhone && form.phone && phoneReturnUrl) {
+        window.location.href = phoneReturnUrl
+        return
+      }
       setMessage('个人资料已保存')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存失败，请稍后重试')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleAvatarChange(file: File | null) {
+    if (!user?.id || !file) return
+    if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'].includes(file.type)) {
+      setError('仅支持 PNG、JPG、WebP 或 GIF 图片')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError('头像不能超过 2MB')
+      return
+    }
+
+    setError('')
+    setAvatarUploading(true)
+    try {
+      const response = await apiFetch(`/api/users/${user.id}/avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || '头像上传失败')
+      setAvatarUrl(data.avatarUrl || null)
+    } catch (avatarError) {
+      setError(avatarError instanceof Error ? avatarError.message : '头像上传失败')
+    } finally {
+      setAvatarUploading(false)
     }
   }
 
@@ -109,7 +151,7 @@ function ProfileContent() {
         password: passwordForm.next,
       })
       clearTokens()
-      const destination = visibleReturnUrl || (user.role === 'ADMIN' ? '/admin/projects' : '/profile')
+      const destination = visibleReturnUrl || (user.role === 'ADMIN' ? '/studio/projects' : '/profile')
       window.location.href = `/login?returnUrl=${encodeURIComponent(destination)}`
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '密码修改失败')
@@ -141,7 +183,19 @@ function ProfileContent() {
 
       <main className="mx-auto grid w-full max-w-5xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:py-12">
         <aside className="flex items-center gap-4 self-start lg:flex-col lg:items-start">
-          <InitialsAvatar name={displayName} size="lg" isInternal={user?.role === 'ADMIN'} />
+          <div className="relative">
+            <InitialsAvatar name={displayName} src={avatarUrl} size="lg" isInternal={user?.role === 'ADMIN'} />
+            <label className="absolute bottom-0 right-0 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">
+              <Camera className="h-3 w-3" />
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="sr-only"
+                disabled={avatarUploading}
+                onChange={(event) => void handleAvatarChange(event.target.files?.[0] || null)}
+              />
+            </label>
+          </div>
           <div className="min-w-0">
             <h1 className="truncate text-xl font-semibold">{displayName}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{user?.role === 'ADMIN' ? '管理员' : '团队成员'}</p>
@@ -154,6 +208,11 @@ function ProfileContent() {
               <UserRound className="h-5 w-5 text-primary" />
               <h2 id="profile-title" className="text-lg font-semibold">个人资料</h2>
             </div>
+            {requirePhone && (
+              <div className="mb-4 rounded-md border border-warning-visible bg-warning-visible px-3 py-2 text-sm text-warning">
+                进入团队后台前需要先绑定手机号。
+              </div>
+            )}
             <form onSubmit={saveProfile} className="max-w-xl space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="profile-name">显示名称</Label>
@@ -161,16 +220,17 @@ function ProfileContent() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="profile-email">邮箱</Label>
-                  <Input id="profile-email" type="email" value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} placeholder="与手机号二选一" />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="profile-phone">手机号</Label>
-                  <Input id="profile-phone" type="tel" inputMode="numeric" maxLength={11} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value.replace(/\D/g, '') }))} placeholder="与邮箱二选一" />
+                  <Input id="profile-phone" type="tel" inputMode="numeric" maxLength={11} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value.replace(/\D/g, '') }))} placeholder="用于加入或创建团队" />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">邮箱和手机号至少保留一项，用于登录账户。</p>
-              <Button type="submit" disabled={saving} className="gap-2"><Save className="h-4 w-4" />{saving ? '正在保存...' : '保存资料'}</Button>
+              <p className="text-xs text-muted-foreground">看片、上传、批注和修改头像无需手机号；加入或创建团队前需要绑定手机号。</p>
+              <div className="flex items-center gap-3">
+                <Button type="submit" disabled={saving} className="gap-2"><Save className="h-4 w-4" />{saving ? '正在保存...' : '保存资料'}</Button>
+                <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>
+                  绑定微信
+                </WechatMiniQrLogin>
+              </div>
             </form>
           </section>
 

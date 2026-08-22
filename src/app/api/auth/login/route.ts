@@ -7,7 +7,7 @@ import { getClientIpAddress } from '@/lib/utils'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
 import { getAppUrl } from '@/lib/url'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { getAdminDeviceFingerprint } from '@/lib/admin-device'
+import { getAdminDeviceFingerprint } from '@/lib/studio-device'
 export const runtime = 'nodejs'
 
 
@@ -192,8 +192,11 @@ export async function POST(request: NextRequest) {
         email: user.email,
         phone: user.phone,
         name: user.name,
+        avatarUrl: user.avatarUrl,
+        onboardingCompleted: user.onboardingCompleted,
         role: user.role,
       },
+      needsOnboarding: user.onboardingCompleted === false,
       tokens: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,

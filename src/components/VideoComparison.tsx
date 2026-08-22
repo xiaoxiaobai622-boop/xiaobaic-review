@@ -313,7 +313,7 @@ export default function VideoComparison({
               onClick={() => { setShowSelectorA(!showSelectorA); setShowSelectorB(false) }}
               className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-blue-500/15 text-blue-500 rounded-md border border-blue-500/30 hover:bg-blue-500/25 transition-colors"
             >
-              A: {versionA?.versionLabel}
+              版本 A · {versionA?.versionLabel}
               <ChevronDown className="w-3 h-3" />
             </button>
             {showSelectorA && (
@@ -340,7 +340,7 @@ export default function VideoComparison({
               onClick={() => { setShowSelectorB(!showSelectorB); setShowSelectorA(false) }}
               className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-500/15 text-green-500 rounded-md border border-green-500/30 hover:bg-green-500/25 transition-colors"
             >
-              B: {versionB?.versionLabel}
+              版本 B · {versionB?.versionLabel}
               <ChevronDown className="w-3 h-3" />
             </button>
             {showSelectorB && (
@@ -380,7 +380,7 @@ export default function VideoComparison({
               {/* Video A */}
               <div className="flex-1 min-h-0 flex flex-col">
                 <div className="text-xs font-medium text-blue-500 mb-1 px-1">
-                  A: {versionA?.versionLabel}
+                  版本 A · {versionA?.versionLabel}
                 </div>
                 <div className="flex-1 min-h-0 relative rounded-xl overflow-hidden bg-muted/50 backdrop-blur-sm"
                   style={{ aspectRatio: '16 / 9' }}
@@ -403,7 +403,7 @@ export default function VideoComparison({
               {/* Video B */}
               <div className="flex-1 min-h-0 flex flex-col">
                 <div className="text-xs font-medium text-green-500 mb-1 px-1">
-                  B: {versionB?.versionLabel}
+                  版本 B · {versionB?.versionLabel}
                 </div>
                 <div className="flex-1 min-h-0 relative rounded-xl overflow-hidden bg-muted/50 backdrop-blur-sm"
                   style={{ aspectRatio: '16 / 9' }}
@@ -432,8 +432,8 @@ export default function VideoComparison({
                   videoRefB={videoRefB}
                   videoUrlA={videoUrlA}
                   videoUrlB={videoUrlB}
-                  labelA={`A: ${versionA?.versionLabel}`}
-                  labelB={`B: ${versionB?.versionLabel}`}
+                  labelA={`版本 A · ${versionA?.versionLabel}`}
+                  labelB={`版本 B · ${versionB?.versionLabel}`}
                   posterA={(versionA as any)?.thumbnailUrl}
                   posterB={(versionB as any)?.thumbnailUrl}
                   onLoadedMetadata={handleLoadedMetadata}

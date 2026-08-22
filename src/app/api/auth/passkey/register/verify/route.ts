@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { verifyPasskeyRegistration } from '@/lib/passkey'
 import { getClientIpAddress } from '@/lib/utils'
 import type { RegistrationResponseJSON } from '@simplewebauthn/browser'
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const authMessages = messages?.auth || {}
 
   try {
-    const user = await requireApiAdmin(request)
+    const user = await requirePlatformAdmin(request)
     if (user instanceof Response) return user
 
     const body = await request.json()

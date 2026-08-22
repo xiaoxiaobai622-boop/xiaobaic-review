@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { generateUniqueSlug } from '@/lib/utils'
+import { generateUniqueSlug, generateUniqueTeamShareSlug } from '@/lib/utils'
+import { getProjectDefaults } from '@/lib/settings'
+import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
 import { nextProjectCode, projectAccessWhere } from '@/lib/project-access'
 import { encrypt } from '@/lib/encryption'
@@ -8,6 +10,12 @@ import { rateLimit } from '@/lib/rate-limit'
 import { createProjectSchema, validateRequest } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { getRequestedTeamId } from '@/lib/team-access'
+import {
+  checkWechatText,
+  CONTENT_SECURITY_ERROR,
+  CONTENT_VIOLATION_MESSAGE,
+} from '@/lib/wechat-content-security'
 
 export const runtime = 'nodejs'
 
@@ -41,7 +49,7 @@ export async function GET(request: NextRequest) {
   try {
     // Optimized query: only fetch essential fields + minimal video data for list view
     const projects = await prisma.project.findMany({
-      where: projectAccessWhere(authResult),
+      where: projectAccessWhere(authResult, getRequestedTeamId(request)),
       select: {
         id: true,
         projectCode: true,
@@ -124,6 +132,29 @@ export async function POST(request: NextRequest) {
   }
   const admin = authResult
 
+  const requestedTeamId = getRequestedTeamId(request)
+  const activeMembership = requestedTeamId
+    ? await prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: requestedTeamId, userId: admin.id } },
+        select: { teamId: true, status: true },
+      })
+    : await prisma.teamMember.findFirst({
+        where: { userId: admin.id, status: 'ACTIVE' },
+        orderBy: { createdAt: 'asc' },
+        select: { teamId: true, status: true },
+      })
+  if (!activeMembership || activeMembership.status !== 'ACTIVE') {
+    return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
+  }
+
+  const [quota, usage] = await Promise.all([
+    getTeamQuota(activeMembership.teamId),
+    getTeamUsage(activeMembership.teamId),
+  ])
+  if (usage.projects >= quota.maxProjects) {
+    return NextResponse.json({ error: '当前团队的项目数量已达到配额上限' }, { status: 403 })
+  }
+
   // Rate limiting: Max 20 projects per hour
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 60 * 1000, // 1 hour
@@ -161,6 +192,22 @@ export async function POST(request: NextRequest) {
       isShareOnly
     } = validation.data
 
+    const securityFields = [
+      { value: title, scene: 1 },
+      { value: description, scene: 3 },
+      { value: companyName, scene: 3 },
+      { value: recipientName, scene: 1 },
+    ]
+    for (const field of securityFields) {
+      const securityCheck = await checkWechatText(field.value, { userId: admin.id, scene: field.scene as 1 | 2 | 3 | 4 })
+      if (!securityCheck.passed) {
+        return NextResponse.json(
+          { error: securityCheck.error },
+          { status: securityCheck.error === CONTENT_VIOLATION_MESSAGE ? 400 : 503 },
+        )
+      }
+    }
+
     // Normalize auth/password inputs
     const trimmedPassword = sharePassword?.trim()
     const resolvedAuthMode = authMode || 'PASSWORD'
@@ -181,42 +228,24 @@ export async function POST(request: NextRequest) {
       ? null
       : (trimmedPassword || null)
 
-    // Fetch default settings for watermark and preview resolution
-    const settings = await prisma.settings.findUnique({
-      where: { id: 'default' },
-      select: {
-        defaultPreviewResolution: true,
-        defaultSkipTranscoding: true,
-        defaultWatermarkEnabled: true,
-        defaultWatermarkText: true,
-        defaultWatermarkPositions: true,
-        defaultWatermarkOpacity: true,
-        defaultWatermarkFontSize: true,
-        defaultTimestampDisplay: true,
-        defaultUsePreviewForApprovedPlayback: true,
-        defaultAllowClientAssetUpload: true,
-        defaultApplyPreviewLut: true,
-        defaultAllowReverseShare: true,
-        defaultShowClientTutorial: true,
-        defaultAllowAssetDownload: true,
-        defaultClientCanApprove: true,
-      },
-    })
+    const settings = await getProjectDefaults(activeMembership.teamId)
 
     // Generate unique slug from title
     const slug = await generateUniqueSlug(title, prisma)
+    const shareSlug = await generateUniqueTeamShareSlug(title, activeMembership.teamId, prisma)
 
     // Encrypt share password if provided (so we can decrypt it later for email notifications)
     const encryptedSharePassword = passwordForStorage ? encrypt(passwordForStorage) : null
 
     // Use transaction to ensure atomicity: if recipient creation fails, project creation is rolled back
     const project = await prisma.$transaction(async (tx) => {
-      const projectCode = await nextProjectCode(tx)
+      const projectCode = await nextProjectCode(tx, activeMembership.teamId)
       const newProject = await tx.project.create({
         data: {
           projectCode,
           title,
           slug,
+          shareSlug,
           description,
           companyName: companyName || null,
           clientCompanyId: clientCompanyId || null,
@@ -246,6 +275,7 @@ export async function POST(request: NextRequest) {
           dueDate: dueDate ? new Date(dueDate) : null,
           dueReminder: dueReminder || null,
           createdById: admin.id,
+          teamId: activeMembership.teamId,
         },
       })
 

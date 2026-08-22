@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { generatePasskeyRegistrationOptions } from '@/lib/passkey'
 import { isPasskeyConfigured } from '@/lib/settings'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Require admin authentication
-    const user = await requireApiAdmin(request)
+    const user = await requirePlatformAdmin(request)
     if (user instanceof Response) return user
 
     // Check if PassKey is configured

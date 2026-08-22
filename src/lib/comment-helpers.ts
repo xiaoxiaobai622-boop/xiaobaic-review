@@ -225,7 +225,7 @@ export async function handleCommentNotifications(params: {
         if (comment?.id) params.set('comment', String(comment.id))
 
         const qs = params.toString()
-        const returnUrl = `/admin/projects/${project.id}/share${qs ? `?${qs}` : ''}`
+        const returnUrl = `/studio/projects/${project.id}/share${qs ? `?${qs}` : ''}`
         return `${baseUrl}/login?returnUrl=${encodeURIComponent(returnUrl)}`
       })()
       const authorName = (comment?.authorName || comment?.name || '').toString().trim() || 'Client'

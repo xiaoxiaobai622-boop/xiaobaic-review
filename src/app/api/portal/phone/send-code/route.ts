@@ -12,7 +12,10 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
   const phone = typeof body.phone === 'string' ? body.phone.trim() : ''
   if (!PHONE_REGEX.test(phone)) return NextResponse.json({ error: '请输入正确的手机号' }, { status: 400 })
-  if (!process.env.SMS_WEBHOOK_URL) {
+  const smsConfigured = process.env.SMS_PROVIDER === 'aliyun'
+    ? Boolean(process.env.ALIYUN_SMS_ACCESS_KEY_ID && process.env.ALIYUN_SMS_SIGN_NAME && process.env.ALIYUN_SMS_TEMPLATE_CODE)
+    : Boolean(process.env.SMS_WEBHOOK_URL)
+  if (!smsConfigured) {
     return NextResponse.json({ error: '短信服务尚未配置，请联系管理员' }, { status: 503 })
   }
 
@@ -23,7 +26,10 @@ export async function POST(request: NextRequest) {
     const recipient = await prisma.projectRecipient.findFirst({ where: { phone }, select: { id: true } })
     if (recipient) {
       const code = String(crypto.randomInt(100000, 1000000))
-      await sendPhoneCode(phone, code)
+      await sendPhoneCode(phone, code, {
+        templateCode: process.env.ALIYUN_SMS_LOGIN_TEMPLATE_CODE || process.env.ALIYUN_SMS_TEMPLATE_CODE,
+        min: 5,
+      })
       await getRedis().setex(phoneCodeKey(phone), PHONE_CODE_TTL_SECONDS, JSON.stringify({ hash: hashPhoneCode(phone, code), attempts: 0 }))
     }
     return NextResponse.json({ success: true, message: '如果该手机号已有访问权限，验证码将发送到你的手机' })

@@ -36,7 +36,7 @@ export async function handleReverseShareUploadNotification(params: {
     // ── External notifications (Apprise + Web Push) ──────────────────────
     const appDomain = await getAppDomain()
     const adminUrl = appDomain
-      ? `${appDomain.replace(/\/$/, '')}/login?returnUrl=${encodeURIComponent(`/admin/projects/${project.id}`)}`
+      ? `${appDomain.replace(/\/$/, '')}/login?returnUrl=${encodeURIComponent(`/studio/projects/${project.id}`)}`
       : ''
 
     void enqueueExternalNotification({

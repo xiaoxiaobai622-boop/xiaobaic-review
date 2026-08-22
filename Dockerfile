@@ -7,13 +7,15 @@ ARG TARGETPLATFORM
 ARG TARGETARCH
 ARG BUILDPLATFORM
 
-# Install system dependencies + patch known CVEs
-RUN apk update && apk upgrade --no-cache && \
+# Use Tencent mirrors for faster builds inside Tencent Cloud
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.cloud.tencent.com#g' /etc/apk/repositories && \
+    apk update && apk upgrade --no-cache && \
     apk add --no-cache \
         openssl openssl-dev \
         ffmpeg ffmpeg-libs fontconfig ttf-dejavu font-noto-cjk \
         bash curl ca-certificates shadow su-exec \
     && apk add --no-cache --upgrade cjson libsndfile giflib orc zlib expat \
+    && npm config set registry https://registry.npmmirror.com \
     && npm install -g npm@latest \
     && npm cache clean --force \
     && ffmpeg -version
@@ -26,12 +28,19 @@ COPY --link package.json package-lock.json* ./
 COPY --link prisma ./prisma
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --legacy-peer-deps
+    npm config set registry https://registry.npmmirror.com \
+    && npm ci --legacy-peer-deps
 
 RUN cp -R node_modules /tmp/prod_node_modules
 
-RUN npm audit --audit-level=high || \
-    (echo "SECURITY: High/critical vulnerabilities found!" && exit 1)
+ARG SKIP_NPM_AUDIT=false
+
+RUN if [ "$SKIP_NPM_AUDIT" = "true" ]; then \
+      echo "Skipping in-image npm audit; external audit remains required."; \
+    else \
+      npm audit --audit-level=high --registry=https://registry.npmjs.org || \
+      (echo "SECURITY: High/critical vulnerabilities found!" && exit 1); \
+    fi
 
 # === Builder ===
 FROM base AS builder
@@ -65,6 +74,7 @@ ENV NODE_ENV=production
 # Python for Apprise notifications
 RUN apk add --no-cache python3 py3-pip \
     && python3 -m venv /opt/apprise-venv \
+    && /opt/apprise-venv/bin/pip config set global.index-url https://mirrors.cloud.tencent.com/pypi/simple \
     && /opt/apprise-venv/bin/pip install --no-cache-dir --timeout=120 --upgrade pip \
     && /opt/apprise-venv/bin/pip install --no-cache-dir --timeout=120 apprise==1.11.0 \
     && apk del --no-cache py3-pip

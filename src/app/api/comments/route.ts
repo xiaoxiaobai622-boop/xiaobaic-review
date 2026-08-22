@@ -8,6 +8,11 @@ import { verifyProjectAccess } from '@/lib/project-access'
 import { sanitizeComment } from '@/lib/comment-sanitization'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import {
+  checkWechatText,
+  CONTENT_SECURITY_ERROR,
+  CONTENT_VIOLATION_MESSAGE,
+} from '@/lib/wechat-content-security'
+import {
 
   validateCommentPermissions,
   sanitizeAndValidateContent,
@@ -71,11 +76,8 @@ export async function GET(request: NextRequest) {
       return accessCheck.errorResponse!
     }
 
-    const { isAdmin, isAuthenticated, isGuest } = accessCheck
-
-    if (isGuest) {
-      return NextResponse.json([])
-    }
+    const { isAdmin, isAuthenticated } = accessCheck
+    const viewerUserId = (await getAuthContext(request)).user?.id
 
     const primaryRecipient = await getPrimaryRecipient(projectId)
     // Priority: companyName → primary recipient → 'Client'
@@ -133,6 +135,7 @@ export async function GET(request: NextRequest) {
         isAdmin,
         isAuthenticated,
         fallbackName,
+        viewerUserId,
       )
     )
 
@@ -165,7 +168,17 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) return parsed.response
     const body = parsed.data
 
-    const validation = validateRequest(createCommentSchema, body)
+    // Older/stale share-page bundles may omit projectId for guest sessions.
+    // Recover it only from the verified signed share token; normal validation
+    // and the video/project ownership check below still enforce consistency.
+    const bodyWithProjectId = body && typeof body === 'object' && !Array.isArray(body)
+      ? {
+          ...body,
+          projectId: authContext.shareContext?.projectId || body.projectId,
+        }
+      : body
+
+    const validation = validateRequest(createCommentSchema, bodyWithProjectId)
     if (!validation.success) {
       return NextResponse.json(
         { error: validation.error, details: validation.details },
@@ -183,6 +196,7 @@ export async function POST(request: NextRequest) {
       parentId,
       assetIds,
       annotations,
+      category,
     } = validation.data
 
     if (!authContext.user) {
@@ -278,6 +292,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const securityCheck = await checkWechatText(contentValidation.sanitizedContent, {
+      userId: authContext.user.id,
+      scene: 2,
+    })
+    if (!securityCheck.passed) {
+      return NextResponse.json(
+        { error: securityCheck.error },
+        { status: securityCheck.error === CONTENT_VIOLATION_MESSAGE ? 400 : 503 },
+      )
+    }
+
     const video = await prisma.video.findUnique({
       where: { id: videoId },
       select: { id: true, projectId: true, version: true }
@@ -304,6 +329,7 @@ export async function POST(request: NextRequest) {
         content: contentValidation.sanitizedContent!,
         authorName: contentValidation.sanitizedAuthorName,
         authorEmail: finalAuthorEmail,
+        category: category || null,
         isInternal: true,
         parentId: parentId || null,
         userId: authContext.user?.id || null,
@@ -380,7 +406,7 @@ export async function POST(request: NextRequest) {
     const allComments = await fetchProjectComments(projectId)
 
     const sanitizedComments = allComments.map((comment: any) =>
-      sanitizeComment(comment, isAdmin, isAuthenticated, fallbackName)
+      sanitizeComment(comment, isAdmin, isAuthenticated, fallbackName, authContext.user?.id)
     )
 
     return NextResponse.json(sanitizedComments)

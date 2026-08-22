@@ -95,7 +95,8 @@ export async function POST(
       )
     }
 
-    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${Date.now()}` : `guest:${Date.now()}`)
+    // Stable admin session id so repeated downloads reuse the cached token
+    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${project.id}` : `guest:${Date.now()}`)
 
     const urls = await Promise.all(
       approvedVideos.map(async (video) => {

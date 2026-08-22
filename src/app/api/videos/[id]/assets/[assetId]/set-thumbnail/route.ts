@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -51,6 +52,9 @@ export async function POST(
 
     if (!video) {
   return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
+    }
+    if (!(await canAccessProject(prisma, authResult, video.projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
     // If action is 'remove', revert to system-generated thumbnail

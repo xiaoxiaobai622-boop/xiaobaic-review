@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getFilePath, sanitizeFilenameForHeader, isS3Mode, createWebReadableStream, downloadFile } from '@/lib/storage'
 import { Readable } from 'stream'
@@ -74,6 +75,9 @@ export async function GET(
     // Bearer admin path
     const authResult = await requireApiAdmin(request)
     if (authResult instanceof Response) return authResult
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     const rl = await rateLimit(request, {
       windowMs: 60 * 1000,

@@ -145,6 +145,34 @@ export async function generateUniqueSlug(
   return slug
 }
 
+export async function generateUniqueTeamShareSlug(
+  title: string,
+  teamId: string,
+  prisma: any,
+  excludeId?: string,
+): Promise<string> {
+  const baseSlug = generateSlug(title) || `project-${Date.now().toString(36)}`
+  let slug = baseSlug
+  let counter = 1
+
+  while (true) {
+    const existing = await prisma.project.findFirst({
+      where: {
+        teamId,
+        shareSlug: slug,
+        ...(excludeId ? { NOT: { id: excludeId } } : {}),
+      },
+      select: { id: true },
+    })
+
+    if (!existing) break
+    slug = `${baseSlug}-${counter}`
+    counter += 1
+  }
+
+  return slug
+}
+
 export function getClientIpAddress(request: NextRequest): string {
   // Header-derived and client-settable — only trustworthy when the origin is reachable
   // solely via the proxy/CDN (a directly-exposed origin lets clients spoof IPs).

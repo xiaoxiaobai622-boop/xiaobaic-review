@@ -40,7 +40,7 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
   const locale = useLocale()
   const { user } = useAuth()
   const projectHref = (project: ProjectListItem) => user?.role === 'ADMIN'
-    ? `/admin/projects/${project.id}`
+    ? `/studio/projects/${project.id}`
     : `/share/${project.slug}`
 
   if (projects.length === 0) {

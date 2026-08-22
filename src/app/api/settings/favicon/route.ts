@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { initStorage, uploadFile, deleteFile } from '@/lib/storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const settingsMessages = messages?.settings || {}
 
-  const auth = await requireApiAdmin(request)
+  const auth = await requirePlatformAdmin(request)
   if (auth instanceof Response) return auth
 
   const rateLimitResult = await rateLimit(request, {
@@ -171,7 +171,7 @@ export async function DELETE(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const settingsMessages = messages?.settings || {}
 
-  const auth = await requireApiAdmin(request)
+  const auth = await requirePlatformAdmin(request)
   if (auth instanceof Response) return auth
 
   const rateLimitResult = await rateLimit(request, {

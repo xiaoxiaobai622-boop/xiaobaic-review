@@ -117,7 +117,7 @@ export default function ThemeToggle() {
   if (!mounted) {
     return (
       <button
-        className="p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
         aria-label={t('toggleTheme')}
       >
         <div className="h-5 w-5" />
@@ -128,7 +128,7 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+      className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
       aria-label={t('toggleTheme')}
       title={theme === 'light' ? t('switchToDark') : t('switchToLight')}
     >

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest, requireApiAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
-import { verifyProjectAccess } from '@/lib/project-access'
+import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
 import { validateAssetFile } from '@/lib/file-validation'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -173,6 +173,10 @@ export async function POST(
 
     if (!video) {
   return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
+    }
+
+    if (!(await canAdministerProject(prisma, authResult, video.projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
     // Get current user for tracking

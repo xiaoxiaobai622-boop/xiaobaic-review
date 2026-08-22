@@ -6,13 +6,20 @@ import { apiFetch, attemptRefresh } from '@/lib/api-client'
 import { clearTokens, getAccessToken, getRefreshToken } from '@/lib/token-store'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
 import { useTranslations } from 'next-intl'
+import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
 
 interface User {
   id: string
   email: string
+  phone?: string | null
   name: string | null
+  avatarUrl?: string | null
+  onboardingCompleted?: boolean
   role: string
   projectAccessScope?: string
+  teamRole?: 'OWNER' | 'ADMIN' | 'MEMBER'
+  isPlatformAdmin?: boolean
+  teams?: Array<{ role: 'OWNER' | 'ADMIN' | 'MEMBER'; team: { id: string; name: string; slug: string; avatarUrl: string | null } }>
 }
 
 interface AuthContextType {
@@ -53,7 +60,20 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
       if (response.ok) {
         const data = await response.json()
         if (data.authenticated && data.user) {
-          setUser(data.user)
+          const teams = Array.isArray(data.user.teams) ? data.user.teams : []
+          const activeTeamId = getActiveTeamId()
+          const activeTeam = teams.find((item: any) => item.team.id === activeTeamId) || teams[0]
+          if (activeTeam?.team?.id) setActiveTeamId(activeTeam.team.id)
+          const teamRole = activeTeam?.role || (teams.length > 0 ? 'MEMBER' : undefined)
+          setUser({
+            ...data.user,
+            teams,
+            teamRole,
+            isPlatformAdmin: Boolean(data.user.isPlatformAdmin),
+            avatarUrl: data.user.avatarUrl,
+            onboardingCompleted: data.user.onboardingCompleted !== false,
+            role: teamRole === 'OWNER' ? 'ADMIN' : teamRole || 'MEMBER',
+          })
           return
         }
       }
@@ -84,6 +104,17 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
   useEffect(() => {
     if (requireAuth && !loading && !user) {
       router.push(`/login?returnUrl=${encodeURIComponent(pathname || '/')}`)
+    }
+  }, [requireAuth, loading, user, pathname, router])
+
+  useEffect(() => {
+    if (!requireAuth || loading || !user || pathname === '/onboarding') return
+    if (user.onboardingCompleted === false) {
+      router.replace(`/onboarding?returnUrl=${encodeURIComponent(pathname || '/studio/projects')}`)
+      return
+    }
+    if (pathname && pathname.startsWith('/studio') && !user.phone) {
+      router.replace(`/profile?requirePhone=1&returnUrl=${encodeURIComponent(pathname || '/studio/projects')}`)
     }
   }, [requireAuth, loading, user, pathname, router])
 

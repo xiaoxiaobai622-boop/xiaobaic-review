@@ -437,6 +437,23 @@ export async function finalizeVideo(
     data: updateData,
   })
 
+  // Keep the original collection upload in place. Mark it ready so the inbox
+  // can show completion without moving or deleting the source file.
+  const sourceUpload = await prisma.projectUpload.findUnique({
+    where: { sourceVideoId: videoId },
+    select: { id: true },
+  })
+  if (sourceUpload) {
+    await prisma.projectUpload.update({
+      where: { id: sourceUpload.id },
+      data: {
+        transcodeStatus: 'READY',
+        transcodeProgress: 100,
+        transcodeError: null,
+      },
+    })
+  }
+
   debugLog('Database updated to READY status')
 }
 
@@ -506,6 +523,15 @@ export async function handleProcessingError(
     data: {
       status: 'ERROR',
       processingError: errorMessage,
+    },
+  })
+
+  await prisma.projectUpload.updateMany({
+    where: { sourceVideoId: videoId },
+    data: {
+      transcodeStatus: 'ERROR',
+      transcodeError: errorMessage,
+      transcodeProgress: 0,
     },
   })
 }

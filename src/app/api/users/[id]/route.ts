@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin, requireApiUser, getCurrentUserFromRequest } from '@/lib/auth'
+import { requirePlatformAdmin, getCurrentUserFromRequest } from '@/lib/auth'
 import { hashPassword, validateSixDigitPassword, verifyPassword } from '@/lib/encryption'
 import { revokeAllUserTokens } from '@/lib/token-revocation'
 import { invalidateAdminSessions } from '@/lib/session-invalidation'
@@ -8,6 +8,11 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '@/lib/user-contact'
+import {
+  checkWechatText,
+  CONTENT_SECURITY_ERROR,
+  CONTENT_VIOLATION_MESSAGE,
+} from '@/lib/wechat-content-security'
 
 export const runtime = 'nodejs'
 
@@ -24,13 +29,11 @@ export async function GET(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const usersMessages = messages?.users || {}
 
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  if (authResult.role !== 'ADMIN' && authResult.id !== id) {
+  if (!authResult.isPlatformAdmin && authResult.id !== id) {
     return NextResponse.json({ error: 'You can only view your own profile' }, { status: 403 })
   }
 
@@ -53,7 +56,10 @@ export async function GET(
         phone: true,
         username: true,
         name: true,
+        avatarUrl: true,
+        onboardingCompleted: true,
         role: true,
+        isPlatformAdmin: true,
         projectAccessScope: true,
         projectMemberships: {
           select: { project: { select: { id: true, title: true, projectCode: true } } },
@@ -90,27 +96,31 @@ export async function PATCH(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const usersMessages = messages?.users || {}
 
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
     const { id } = await params
-    if (authResult.role !== 'ADMIN' && authResult.id !== id) {
+    if (!authResult.isPlatformAdmin && authResult.id !== id) {
       return NextResponse.json({ error: 'You can only update your own profile' }, { status: 403 })
     }
     const body = await request.json()
-    const { email, phone, username, name, password, oldPassword, role, projectAccessScope, projectIds } = body
+    const { email, phone, username, name, avatarUrl, password, oldPassword, role, isPlatformAdmin, projectAccessScope, projectIds } = body
     const currentAccess = await prisma.user.findUnique({
       where: { id },
-      select: { role: true, projectAccessScope: true, email: true, phone: true },
+      select: { role: true, isPlatformAdmin: true, projectAccessScope: true, email: true, phone: true, onboardingCompleted: true },
     })
     if (!currentAccess) {
       return NextResponse.json({ error: usersMessages.userNotFound || 'User not found' }, { status: 404 })
     }
-    if (authResult.role !== 'ADMIN' && (role !== undefined || projectAccessScope !== undefined || projectIds !== undefined || username !== undefined)) {
+    if (!authResult.isPlatformAdmin && (role !== undefined || isPlatformAdmin !== undefined || projectAccessScope !== undefined || projectIds !== undefined || username !== undefined)) {
       return NextResponse.json({ error: 'Administrator permission required' }, { status: 403 })
+    }
+    if (isPlatformAdmin !== undefined && typeof isPlatformAdmin !== 'boolean') {
+      return NextResponse.json({ error: '平台管理员标记无效' }, { status: 400 })
+    }
+    if (authResult.id === id && isPlatformAdmin === false) {
+      return NextResponse.json({ error: '不能移除当前登录账号的平台管理员权限' }, { status: 400 })
     }
     if (role !== undefined && role !== 'ADMIN' && role !== 'MEMBER') {
       return NextResponse.json({ error: '角色必须是管理员或团队成员' }, { status: 400 })
@@ -122,6 +132,7 @@ export async function PATCH(
     const updateData: any = {}
 
     let roleChanged = false
+    if (isPlatformAdmin !== undefined) updateData.isPlatformAdmin = isPlatformAdmin
 
     if (email !== undefined && email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
       return NextResponse.json({ error: '请输入有效的邮箱地址' }, { status: 400 })
@@ -164,7 +175,25 @@ export async function PATCH(
     }
 
     if (name !== undefined) {
+      const securityCheck = await checkWechatText(name, { userId: id, scene: 1 })
+      if (!securityCheck.passed) {
+        return NextResponse.json(
+          { error: securityCheck.error },
+          { status: securityCheck.error === CONTENT_VIOLATION_MESSAGE ? 400 : 503 },
+        )
+      }
       updateData.name = name
+    }
+
+    if (avatarUrl !== undefined) {
+      const normalizedAvatar = typeof avatarUrl === 'string' ? avatarUrl.trim() : ''
+      if (normalizedAvatar && normalizedAvatar.length > 1000) {
+        return NextResponse.json({ error: '头像地址过长' }, { status: 400 })
+      }
+      if (normalizedAvatar && !normalizedAvatar.startsWith('/api/users/')) {
+        return NextResponse.json({ error: '头像地址不合法，请通过头像上传接口更新' }, { status: 400 })
+      }
+      updateData.avatarUrl = normalizedAvatar || null
     }
 
     if (role !== undefined) {
@@ -243,7 +272,7 @@ export async function PATCH(
     if (password !== undefined && passwordValidation.isValid) {
       const userWithPassword = await prisma.user.findUnique({
         where: { id },
-        select: { password: true },
+        select: { password: true, onboardingCompleted: true },
       })
 
       if (!userWithPassword) {
@@ -253,9 +282,11 @@ export async function PATCH(
         )
       }
 
-      // SECURITY: Verify old password before allowing password change
+      // SECURITY: New SMS users must set their first password during onboarding.
+      // Existing users must prove the current password before changing it.
+      const isCompletingOnboarding = currentAccess.onboardingCompleted === false && authResult.id === id
       const isOldPasswordValid = await verifyPassword(oldPasswordStr, userWithPassword.password)
-      if (!isOldPasswordValid) {
+      if (!isCompletingOnboarding && !isOldPasswordValid) {
         return NextResponse.json(
           { error: usersMessages.currentPasswordIncorrect || 'Current password is incorrect' },
           { status: 401 }
@@ -263,6 +294,7 @@ export async function PATCH(
       }
 
       updateData.password = await hashPassword(newPassword)
+      if (isCompletingOnboarding) updateData.onboardingCompleted = true
       passwordChanged = true
     }
 
@@ -285,7 +317,10 @@ export async function PATCH(
           phone: true,
           username: true,
           name: true,
+          avatarUrl: true,
+          onboardingCompleted: true,
           role: true,
+          isPlatformAdmin: true,
           projectAccessScope: true,
           projectMemberships: {
             select: { project: { select: { id: true, title: true, projectCode: true } } },
@@ -310,7 +345,7 @@ export async function PATCH(
       securityMessage = usersMessages.allSessionsInvalidatedUserMustLoginAgain || 'All sessions have been invalidated - user will need to log in again.'
     }
 
-    if (roleChanged) {
+    if (roleChanged || (isPlatformAdmin !== undefined && isPlatformAdmin !== currentAccess.isPlatformAdmin)) {
       if (currentUser && currentUser.id === id) {
         await revokeAllUserTokens(user.id)
         securityMessage = securityMessage
@@ -347,7 +382,7 @@ export async function DELETE(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const usersMessages = messages?.users || {}
 
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }

@@ -45,6 +45,7 @@ export function useCommentManagement({
 
   const [optimisticComments, setOptimisticComments] = useState<CommentWithReplies[]>([])
   const [newComment, setNewComment] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<'PICTURE' | 'AUDIO' | 'SUBTITLE' | 'EDITING' | 'OTHER' | null>(null)
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null) // Internal: still use seconds for video player integration
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -58,6 +59,7 @@ export function useCommentManagement({
   const [isSelectingTimecodeEnd, setIsSelectingTimecodeEnd] = useState(false)
   const attachmentUploadCountRef = useRef(0)
   const previousVideoIdRef = useRef<string | null>(null)
+  const rangeWasAdjustedRef = useRef(false)
 
   const authorName = adminUser?.name || adminUser?.phone || adminUser?.email || authenticatedName || ''
 
@@ -222,51 +224,33 @@ export function useCommentManagement({
     setHasAutoFilledTimestamp(true)
   }, [])
 
-  // Listen for annotationComplete event from drawing mode
+  // Keep the drawing draft attached to the comment as each shape is finished.
   useEffect(() => {
-    const handleAnnotationComplete = (e: CustomEvent) => {
+    const handleAnnotationDraftChanged = (e: CustomEvent) => {
       const { annotations, timecodeStart, timecodeEnd, videoId } = e.detail
-      if (annotations) {
-        setPendingAnnotation(annotations)
-      }
-      if (timecodeEnd) {
+      setPendingAnnotation(annotations || null)
+
+      if (timecodeEnd && !selectedTimecodeEnd) {
         setSelectedTimecodeEnd(timecodeEnd)
       }
-      if (timecodeStart && videoId) {
+      if (selectedTimestamp === null && timecodeStart && videoId) {
         const video = videos.find(v => v.id === videoId)
         const fps = video?.fps || 24
         captureTimestamp(timecodeToSeconds(timecodeStart, fps), videoId)
       }
     }
+    const handleAnnotationCleared = () => setPendingAnnotation(null)
 
-    window.addEventListener('annotationComplete', handleAnnotationComplete as EventListener)
+    window.addEventListener('annotationDraftChanged', handleAnnotationDraftChanged as EventListener)
+    window.addEventListener('annotationCleared', handleAnnotationCleared)
     return () => {
-      window.removeEventListener('annotationComplete', handleAnnotationComplete as EventListener)
+      window.removeEventListener('annotationDraftChanged', handleAnnotationDraftChanged as EventListener)
+      window.removeEventListener('annotationCleared', handleAnnotationCleared)
     }
-  }, [videos, captureTimestamp])
+  }, [videos, captureTimestamp, selectedTimestamp, selectedTimecodeEnd])
 
-  // Keep selectedTimestamp in sync when the user frame-steps while commenting
-  useEffect(() => {
-    const handleVideoTimeUpdated = (e: CustomEvent) => {
-      const time = e.detail?.time
-      const videoId = e.detail?.videoId
-
-      if (typeof time !== 'number') return
-      if (!videoId || videoId !== selectedVideoId) return
-      if (isSelectingTimecodeEnd) return
-      if (!hasAutoFilledTimestamp || selectedTimestamp === null) return
-
-      setSelectedTimestamp(time)
-    }
-
-    window.addEventListener('videoTimeUpdated', handleVideoTimeUpdated as EventListener)
-    return () => {
-      window.removeEventListener('videoTimeUpdated', handleVideoTimeUpdated as EventListener)
-    }
-  }, [hasAutoFilledTimestamp, isSelectingTimecodeEnd, selectedTimestamp, selectedVideoId])
-
-  // Expose the pending range to the video timeline. The end point is changed
-  // only by dragging the timeline handle, matching the review workflow.
+  // Expose the pending range to the video timeline while a comment is being
+  // drafted. The range is only persisted when the user adjusts a handle.
   useEffect(() => {
     const video = videos.find(v => v.id === selectedVideoId)
     const fps = video?.fps || 24
@@ -290,6 +274,7 @@ export function useCommentManagement({
       const time = e.detail?.time
       const videoId = e.detail?.videoId
       if (!isSelectingTimecodeEnd || typeof time !== 'number' || videoId !== selectedVideoId) return
+      rangeWasAdjustedRef.current = true
       setSelectedTimestamp(Math.max(0, time))
     }
 
@@ -301,11 +286,15 @@ export function useCommentManagement({
       const video = videos.find(v => v.id === selectedVideoId)
       const fps = video?.fps || 24
       const start = selectedTimestamp ?? time
+      rangeWasAdjustedRef.current = true
       setSelectedTimecodeEnd(secondsToTimecode(Math.max(start, time), fps))
     }
 
     const cancelRange = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      rangeWasAdjustedRef.current = false
+      setSelectedTimestamp(null)
+      setHasAutoFilledTimestamp(false)
       setSelectedTimecodeEnd(null)
       setIsSelectingTimecodeEnd(false)
     }
@@ -330,22 +319,72 @@ export function useCommentManagement({
 
       window.dispatchEvent(
         new CustomEvent('getCurrentTime', {
-          detail: { callback: captureTimestamp },
+          detail: {
+            callback: (time: number, videoId: string) => {
+              const video = videos.find(v => v.id === videoId)
+              const fps = video?.fps || 24
+              const duration = typeof video?.duration === 'number' && video.duration > 0
+                ? video.duration
+                : null
+              const handleGap = Math.max(1 / fps, Math.min(1, duration ? duration / 96 : 0.5))
+              let start = Math.max(0, time)
+              let end = start + handleGap
+
+              // Keep the two handles separated even when typing near the end.
+              if (duration) {
+                end = Math.min(duration, end)
+                if (end <= start) {
+                  end = duration
+                  start = Math.max(0, duration - handleGap)
+                }
+              }
+
+              rangeWasAdjustedRef.current = false
+              setSelectedTimestamp(start)
+              setSelectedVideoId(videoId)
+              setHasAutoFilledTimestamp(true)
+              setSelectedTimecodeEnd(secondsToTimecode(end, fps))
+              setIsSelectingTimecodeEnd(true)
+            },
+          },
         })
       )
     }
   }
 
+  const handleCategoryChange = (category: 'PICTURE' | 'AUDIO' | 'SUBTITLE' | 'EDITING' | 'OTHER' | null) => {
+    setSelectedCategory(category)
+  }
+
   const handleSubmitComment = async () => {
-    const attachmentsForVideo = pendingAttachments.filter(a => a.videoId === selectedVideoId)
+    let annotationForComment = pendingAnnotation
+    let annotationVideoId: string | null = null
+
+    // React state may not have committed the final pointer-up yet. Read the
+    // canvas synchronously so Send always includes the newest completed shape.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('getAnnotationDraft', {
+          detail: {
+            callback: (draft: { annotations?: AnnotationData | null; videoId?: string | null } | null) => {
+              if (draft?.annotations) annotationForComment = draft.annotations
+              if (draft?.videoId) annotationVideoId = draft.videoId
+            },
+          },
+        }),
+      )
+    }
+
+    const targetVideoId = selectedVideoId || annotationVideoId
+    const attachmentsForVideo = pendingAttachments.filter(a => a.videoId === targetVideoId)
     const hasAttachments = attachmentsForVideo.length > 0
-    const hasAnnotations = !!pendingAnnotation
+    const hasAnnotations = !!annotationForComment
 
     if (!newComment.trim() && !hasAttachments && !hasAnnotations) return
 
     if (loading) return
 
-    if (!selectedVideoId) {
+    if (!targetVideoId) {
       alert('Please select a video before commenting.')
       return
     }
@@ -355,7 +394,7 @@ export function useCommentManagement({
       return
     }
 
-    const validatedVideoId: string = selectedVideoId
+    const validatedVideoId: string = targetVideoId
     setAttachmentError(null)
     setAttachmentNotice(null)
 
@@ -378,25 +417,49 @@ export function useCommentManagement({
       commentContent = 'Drawing annotation'
     }
 
+    // Read the player synchronously at send time. The timestamp captured when
+    // typing starts is only used to position the draft handles.
+    let playerTime: number | null = null
+    let playerVideoId: string | null = null
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('getCurrentTime', {
+          detail: {
+            callback: (time: number, videoId: string) => {
+              if (typeof time === 'number') playerTime = time
+              if (videoId) playerVideoId = videoId
+            },
+          },
+        }),
+      )
+    }
+
+    const commentVideoId = playerVideoId === validatedVideoId ? playerVideoId : validatedVideoId
+    const commentTimestamp = !rangeWasAdjustedRef.current && playerTime !== null
+      ? playerTime
+      : selectedTimestamp
+    const commentTimecodeEnd = rangeWasAdjustedRef.current ? selectedTimecodeEnd : null
+
     // OPTIMISTIC UPDATE
     const isInternalComment = useAdminAuth || !!adminUser
-    const selectedVideo = videos.find(v => v.id === validatedVideoId)
+    const selectedVideo = videos.find(v => v.id === commentVideoId)
     const fps = selectedVideo?.fps || 24 // Default to 24fps if not available
-    const timecode = selectedTimestamp !== null ? secondsToTimecode(selectedTimestamp, fps) : '00:00:00:00'
+    const timecode = commentTimestamp !== null ? secondsToTimecode(commentTimestamp, fps) : '00:00:00:00'
 
     const optimisticComment: CommentWithReplies = {
       id: `temp-${Date.now()}`,
       projectId,
-      videoId: validatedVideoId,
-      videoVersion: videos.find(v => v.id === validatedVideoId)?.version || null,
+      videoId: commentVideoId,
+      videoVersion: videos.find(v => v.id === commentVideoId)?.version || null,
       timecode,
-      timecodeEnd: selectedTimecodeEnd || null,
-      annotations: (pendingAnnotation as Prisma.JsonValue) || null,
+      timecodeEnd: commentTimecodeEnd || null,
+      annotations: (annotationForComment as Prisma.JsonValue) || null,
       content: commentContent,
       authorName: isInternalComment
         ? (adminUser!.name || adminUser!.phone || adminUser!.email)
         : (authenticatedName || authorName),
       authorEmail: isInternalComment ? adminUser?.email || null : null,
+      category: selectedCategory,
       isInternal: true,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -408,17 +471,20 @@ export function useCommentManagement({
 
     setOptimisticComments(prev => [...prev, optimisticComment])
 
-    const commentTimestamp = selectedTimestamp
-    const commentVideoId = validatedVideoId
     const commentParentId = replyingToCommentId
     setNewComment('')
+    setSelectedCategory(null)
     setSelectedTimestamp(null)
     // Keep selectedVideoId so user can post multiple comments
     setHasAutoFilledTimestamp(false)
     setReplyingToCommentId(null)
     setPendingAnnotation(null)
+    if (annotationForComment) {
+      window.dispatchEvent(new CustomEvent('annotationSubmitted'))
+    }
     setSelectedTimecodeEnd(null)
     setIsSelectingTimecodeEnd(false)
+    rangeWasAdjustedRef.current = false
     const attachmentsForComment = pendingAttachments.filter(a => a.videoId === validatedVideoId)
     const commentAssetIds = attachmentsForComment.map(a => a.assetId)
     setPendingAttachments(prev => prev.filter(a => !commentAssetIds.includes(a.assetId)))
@@ -434,14 +500,15 @@ export function useCommentManagement({
         videoId: commentVideoId,
         timecode: commentTimecode,
         content: commentContent,
+        category: selectedCategory,
         isInternal: true,
       }
 
-      if (pendingAnnotation) {
-        requestBody.annotations = pendingAnnotation
+      if (annotationForComment) {
+        requestBody.annotations = annotationForComment
       }
-      if (selectedTimecodeEnd) {
-        requestBody.timecodeEnd = selectedTimecodeEnd
+      if (commentTimecodeEnd) {
+        requestBody.timecodeEnd = commentTimecodeEnd
       }
 
       if (isInternalComment) {
@@ -479,6 +546,7 @@ export function useCommentManagement({
           setNewComment(commentContent)
           setSelectedTimestamp(commentTimestamp)
           setSelectedVideoId(commentVideoId)
+          setPendingAnnotation(annotationForComment)
           setAttachmentError(error instanceof Error ? error.message : 'Failed to submit comment')
           setPendingAttachments(prev => {
             const existingIds = new Set(prev.map(a => a.assetId))
@@ -492,6 +560,7 @@ export function useCommentManagement({
       setNewComment(commentContent)
       setSelectedTimestamp(commentTimestamp)
       setSelectedVideoId(commentVideoId)
+      setPendingAnnotation(annotationForComment)
       setAttachmentError(error instanceof Error ? error.message : 'Failed to submit comment')
       setPendingAttachments(prev => {
         const existingIds = new Set(prev.map(a => a.assetId))
@@ -513,6 +582,7 @@ export function useCommentManagement({
   }
 
   const handleClearTimestamp = () => {
+    rangeWasAdjustedRef.current = false
     setSelectedTimestamp(null)
     setSelectedVideoId(null)
     setHasAutoFilledTimestamp(false)
@@ -521,36 +591,24 @@ export function useCommentManagement({
   }
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!(useAdminAuth || adminUser)) {
-      alert('Only admins can delete comments')
-      return
-    }
-
-    if (!confirm('Are you sure you want to delete this comment? This action cannot be undone.')) {
+    if (!confirm('确定要删除这条批注吗？删除后无法恢复。')) {
       return
     }
 
     try {
       if (shareToken) {
-        const response = await fetch(`/api/comments/${commentId}`, {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${shareToken}`,
-          },
+        await apiDelete(`/api/comments/${commentId}`, {
+          headers: { 'X-Share-Token': `Bearer ${shareToken}` },
         })
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}))
-          throw new Error(err.error || 'Failed to delete comment')
-        }
       } else if (useAdminAuth) {
         await apiDelete(`/api/comments/${commentId}`)
       } else {
-        throw new Error('Authentication required to delete comment')
+        throw new Error('删除批注需要先登录')
       }
 
       window.dispatchEvent(new CustomEvent('commentDeleted'))
     } catch (error) {
-      alert(`Failed to delete comment: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      alert(`批注删除失败：${error instanceof Error ? error.message : '未知错误'}`)
     }
   }
 
@@ -607,6 +665,9 @@ export function useCommentManagement({
             const video = videos.find(v => v.id === (videoId || selectedVideoId))
             const fps = video?.fps || 24
             const rangeStart = selectedTimestamp ?? time
+            rangeWasAdjustedRef.current = true
+            setSelectedTimestamp(rangeStart)
+            setHasAutoFilledTimestamp(true)
             const timecode = secondsToTimecode(Math.max(rangeStart, time), fps)
             setSelectedTimecodeEnd(timecode)
             setIsSelectingTimecodeEnd(true)
@@ -617,6 +678,7 @@ export function useCommentManagement({
   }
 
   const handleClearTimecodeEnd = () => {
+    rangeWasAdjustedRef.current = false
     setSelectedTimecodeEnd(null)
     setIsSelectingTimecodeEnd(false)
   }
@@ -628,6 +690,7 @@ export function useCommentManagement({
   return {
     comments,
     newComment,
+    selectedCategory,
     selectedTimestamp,
     selectedTimecodeEnd,
     isSelectingTimecodeEnd,
@@ -640,6 +703,7 @@ export function useCommentManagement({
     attachmentNotice,
     pendingAnnotation: !!pendingAnnotation,
     handleCommentChange,
+    handleCategoryChange,
     handleSubmitComment,
     handleReply,
     handleCancelReply,

@@ -4,16 +4,20 @@ import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
-import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight } from 'lucide-react'
+import { Check, Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight } from 'lucide-react'
 import { formatCommentTimestamp, secondsToTimecode } from '@/lib/timecode'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachmentButton from './CommentAttachmentButton'
+import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
 
 interface CommentInputProps {
   newComment: string
   onCommentChange: (value: string) => void
   onSubmit: () => void
   loading: boolean
+
+  selectedCategory?: CommentCategory | null
+  onCategoryChange?: (category: CommentCategory | null) => void
 
   // Timestamp
   selectedTimestamp: number | null
@@ -64,6 +68,8 @@ export default function CommentInput({
   onCommentChange,
   onSubmit,
   loading,
+  selectedCategory = null,
+  onCategoryChange,
   selectedTimestamp,
   onClearTimestamp,
   selectedVideoFps,
@@ -256,7 +262,59 @@ export default function CommentInput({
             />
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                {timestampLabel && !currentVideoRestricted && (
+                {onStartDrawing && (
+                  <Button
+                    type="button"
+                    onClick={onStartDrawing}
+                    variant={pendingAnnotation ? 'default' : 'outline'}
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    title={t('drawOnVideo')}
+                    disabled={loading}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                )}
+                {onCategoryChange && !replyingToComment && (
+                  <div className="flex items-center gap-1">
+                    {COMMENT_CATEGORIES.map((category) => {
+                      const selected = selectedCategory === category.value
+                      return (
+                        <button
+                          key={category.value}
+                          type="button"
+                          onClick={() => onCategoryChange(selected ? null : category.value)}
+                          aria-pressed={selected}
+                          className={`relative inline-flex h-7 min-w-[44px] items-center justify-center whitespace-nowrap rounded-full border px-2 text-xs font-medium transition-all duration-150 active:scale-95 ${
+                            selected
+                              ? `${category.chipClass} font-semibold shadow-md ring-2 ring-offset-1 ring-offset-background`
+                              : 'border-border/70 bg-background/70 text-muted-foreground hover:border-primary/40 hover:bg-accent hover:text-foreground'
+                          }`}
+                        >
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2">
+                            {selected ? (
+                              <Check className="h-3 w-3 text-white" strokeWidth={2.5} />
+                            ) : (
+                              <span className={`block h-1.5 w-1.5 rounded-full ${category.dotClass}`} />
+                            )}
+                          </span>
+                          {category.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded && (
+                  <CommentAttachmentButton
+                    videoId={selectedVideoIdProp}
+                    shareToken={shareToken}
+                    onAttachmentAdded={onAttachmentAdded}
+                    onUploadError={onAttachmentErrorChange}
+                    disabled={loading}
+                    maxFiles={maxCommentAttachments}
+                  />
+                )}
+                {timestampLabel && !currentVideoRestricted && newComment.trim().length > 0 && (
                   <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-foreground">
                     <button
                       type="button"
@@ -275,52 +333,7 @@ export default function CommentInput({
                         </>
                       )}
                     </button>
-                    {timecodeEndLabel && onClearTimecodeEnd && (
-                      <button
-                        type="button"
-                        onClick={onClearTimecodeEnd}
-                        className="text-muted-foreground transition-colors hover:text-foreground"
-                        title={t('clearEndTimecode')}
-                        aria-label={t('clearEndTimecode')}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                    {!timecodeEndLabel && (
-                      <button
-                        type="button"
-                        onClick={onClearTimestamp}
-                        className="text-muted-foreground transition-colors hover:text-foreground"
-                        title={t('clearTimestamp')}
-                        aria-label={t('clearTimestamp')}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
                   </div>
-                )}
-                {onStartDrawing && (
-                  <Button
-                    type="button"
-                    onClick={onStartDrawing}
-                    variant={pendingAnnotation ? 'default' : 'outline'}
-                    size="icon"
-                    className="h-8 w-8 flex-shrink-0"
-                    title={t('drawOnVideo')}
-                    disabled={loading}
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </Button>
-                )}
-                {allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded && (
-                  <CommentAttachmentButton
-                    videoId={selectedVideoIdProp}
-                    shareToken={shareToken}
-                    onAttachmentAdded={onAttachmentAdded}
-                    onUploadError={onAttachmentErrorChange}
-                    disabled={loading}
-                    maxFiles={maxCommentAttachments}
-                  />
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">

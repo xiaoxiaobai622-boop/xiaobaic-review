@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
-import { validateUploadedFile } from '@/lib/file-validation'
-import { deleteFile, getVideoContentType } from '@/lib/storage'
+import { sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
+import { deleteFile, getVideoContentType, moveStorageFile } from '@/lib/storage'
 import { getVideoQueue } from '@/lib/queue'
 import { logError } from '@/lib/logging'
-import { directPlaybackReadyData, probeStoredDirectPlayableMp4 } from '@/lib/direct-video-playback'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,8 +25,14 @@ export async function POST(
   }, 'promote-project-upload', authResult.id)
   if (rateLimitResult) return rateLimitResult
 
+  let moved = false
+  let movedStoragePath = ''
+  let sourceStoragePath = ''
   try {
     const { id: projectId, uploadId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const body = await request.json().catch(() => ({}))
     const videoName = typeof body.videoName === 'string' ? body.videoName.trim() : ''
 
@@ -35,7 +41,12 @@ export async function POST(
     }
 
     const upload = await prisma.projectUpload.findFirst({
-      where: { id: uploadId, projectId, uploadCompletedAt: { not: null } },
+      where: {
+        id: uploadId,
+        projectId,
+        uploadCompletedAt: { not: null },
+        transcodeStatus: { not: 'PROCESSING' },
+      },
     })
     if (!upload) {
       return NextResponse.json({ error: 'Collected file not found.' }, { status: 404 })
@@ -49,7 +60,27 @@ export async function POST(
       return NextResponse.json({ error: validation.error || 'Only video files can become a video version.' }, { status: 400 })
     }
 
+    const originalFileName = upload.originalFileName || upload.fileName
+    const originalStoragePath = `projects/${projectId}/videos/original-${Date.now()}-${sanitizeFilename(originalFileName)}`
+    sourceStoragePath = upload.storagePath
+    movedStoragePath = originalStoragePath
+
+    try {
+      await moveStorageFile(upload.storagePath, originalStoragePath)
+      moved = true
+    } catch (error) {
+      logError('Failed to move collected file into video storage:', error)
+      return NextResponse.json(
+        { error: 'Failed to move collected file into the video library. Please try again.' },
+        { status: 500 }
+      )
+    }
+
     const result = await prisma.$transaction(async (tx) => {
+      // Serialize version allocation for the same project/video name. Without
+      // this lock, concurrent promotions can both calculate the same version.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${projectId}:${videoName}`}))`
+
       const project = await tx.project.findUnique({
         where: { id: projectId },
         include: { videos: { where: { name: videoName }, orderBy: { version: 'desc' } } },
@@ -68,9 +99,9 @@ export async function POST(
           name: videoName,
           version: nextVersion,
           versionLabel: `v${nextVersion}`,
-          originalFileName: upload.originalFileName || upload.fileName,
+          originalFileName,
           originalFileSize: upload.fileSize,
-          originalStoragePath: upload.storagePath,
+          originalStoragePath,
           fileType: normalizedMimeType,
           uploadedBy: upload.uploadedBySessionId ? 'client' : authResult.id,
           uploadedByName: upload.uploadedByName || upload.uploadedByEmail || authResult.name || authResult.email,
@@ -82,40 +113,27 @@ export async function POST(
         },
       })
 
-      // Ownership moves from the collection inbox to the video. The original
-      // file stays in server storage, so no browser download or re-upload occurs.
       await tx.projectUpload.delete({ where: { id: upload.id } })
       return video
     })
 
+    moved = false
     if (upload.thumbnailPath) {
       await deleteFile(upload.thumbnailPath).catch(() => {})
     }
 
-    const directPlayback = await probeStoredDirectPlayableMp4(
-      result.originalStoragePath,
-      result.originalFileName
-    )
-
-    if (directPlayback.compatible && directPlayback.metadata) {
+    try {
+      await getVideoQueue().add('process-video', {
+        videoId: result.id,
+        originalStoragePath: result.originalStoragePath,
+        projectId,
+      })
+    } catch (error) {
       await prisma.video.update({
         where: { id: result.id },
-        data: directPlaybackReadyData(directPlayback.metadata),
-      })
-    } else {
-      try {
-        await getVideoQueue().add('process-video', {
-          videoId: result.id,
-          originalStoragePath: result.originalStoragePath,
-          projectId,
-        })
-      } catch (error) {
-        await prisma.video.update({
-          where: { id: result.id },
-          data: { status: 'ERROR', processingError: 'Failed to queue video processing.' },
-        }).catch(() => {})
-        throw error
-      }
+        data: { status: 'ERROR', processingError: 'Failed to queue video processing.' },
+      }).catch(() => {})
+      throw error
     }
 
     return NextResponse.json({
@@ -123,8 +141,13 @@ export async function POST(
       videoName: result.name,
       version: result.version,
       versionLabel: result.versionLabel,
+      uploadId: upload.id,
+      transcodeStatus: 'PROCESSING',
     })
   } catch (error) {
+    if (moved && movedStoragePath && sourceStoragePath) {
+      await moveStorageFile(movedStoragePath, sourceStoragePath).catch(() => {})
+    }
     if (error instanceof Error) {
       if (error.message === 'PROJECT_NOT_FOUND') {
         return NextResponse.json({ error: 'Project not found.' }, { status: 404 })

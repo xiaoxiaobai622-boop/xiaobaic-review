@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -51,8 +52,25 @@ export async function GET(request: NextRequest) {
         email: user.email,
         phone: user.phone,
         name: user.name,
+        avatarUrl: user.avatarUrl,
+        onboardingCompleted: user.onboardingCompleted,
         role: user.role,
+        isPlatformAdmin: user.isPlatformAdmin === true,
         projectAccessScope: user.projectAccessScope,
+        teams: await prisma.teamMember.findMany({
+          where: {
+            userId: user.id,
+            status: 'ACTIVE',
+            team: { status: 'ACTIVE' },
+          },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            role: true,
+            team: {
+              select: { id: true, name: true, slug: true, avatarUrl: true },
+            },
+          },
+        }),
       },
     })
     

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { getRequestedTeamId, resolveActiveTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeText } from '@/lib/security/html-sanitization'
 import { safeParseBody } from '@/lib/validation'
@@ -25,6 +26,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   if (authResult instanceof Response) {
     return authResult
   }
+  const teamId = await resolveActiveTeamId(authResult, getRequestedTeamId(request))
+  if (!teamId) return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
 
   // 2. RATE LIMITING
   const rateLimitResult = await rateLimit(request, {
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params
 
     const contacts = await prisma.clientContact.findMany({
-      where: { companyId: id },
+      where: { companyId: id, company: { teamId } },
       orderBy: { name: 'asc' }
     })
 
@@ -62,6 +65,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (authResult instanceof Response) {
     return authResult
   }
+  const teamId = await resolveActiveTeamId(authResult, getRequestedTeamId(request))
+  if (!teamId) return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
 
   // 2. RATE LIMITING
   const rateLimitResult = await rateLimit(request, {
@@ -90,8 +95,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Verify company exists
-    const company = await prisma.clientCompany.findUnique({
-      where: { id }
+    const company = await prisma.clientCompany.findFirst({
+      where: { id, teamId }
     })
 
     if (!company) {

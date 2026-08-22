@@ -41,7 +41,17 @@ export async function GET(request: NextRequest) {
     const domain = settings?.appDomain || 'https://localhost'
 
     const projects = await prisma.project.findMany({
-      where: { dueDate: { not: null } },
+      where: {
+        dueDate: { not: null },
+        team: {
+          members: {
+            some: {
+              userId: calendarToken.userId,
+              status: 'ACTIVE',
+            },
+          },
+        },
+      },
       select: {
         id: true,
         title: true,

@@ -133,7 +133,7 @@ jobs:
               echo "Health check $attempt: app=$app_status worker=$worker_status"
               if [ "$app_status" = healthy ] && [ "$worker_status" = healthy ]; then
                 trap - ERR
-                curl --fail --silent --show-error https://xiaobaic.cn/api/health
+                curl --fail --silent --show-error https://mle6.cn/api/health
                 docker logout ghcr.io
                 echo "Deployment completed successfully"
                 exit 0

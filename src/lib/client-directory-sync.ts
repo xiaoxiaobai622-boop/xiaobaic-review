@@ -24,6 +24,7 @@ export async function syncRecipientToDirectory(
         id: true,
         companyName: true,
         clientCompanyId: true,
+        teamId: true,
         recipients: {
           where: { isPrimary: true },
           take: 1,
@@ -42,13 +43,13 @@ export async function syncRecipientToDirectory(
     if (!companyName) return
 
     // Find or create the company
-    let company = await prisma.clientCompany.findUnique({
-      where: { name: companyName }
+    let company = await prisma.clientCompany.findFirst({
+      where: { teamId: project.teamId, name: companyName }
     })
 
     if (!company) {
       company = await prisma.clientCompany.create({
-        data: { name: companyName }
+        data: { teamId: project.teamId, name: companyName }
       })
     }
 
@@ -94,22 +95,27 @@ export async function syncRecipientToDirectory(
  * Called when project companyName is updated
  */
 export async function syncCompanyToDirectory(
-  _projectId: string,
+  projectId: string,
   companyName: string | null
 ): Promise<string | null> {
   if (!companyName?.trim()) return null
 
   try {
     const trimmedName = companyName.trim()
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { teamId: true },
+    })
+    if (!project) return null
 
     // Find or create the company
-    let company = await prisma.clientCompany.findUnique({
-      where: { name: trimmedName }
+    let company = await prisma.clientCompany.findFirst({
+      where: { teamId: project.teamId, name: trimmedName }
     })
 
     if (!company) {
       company = await prisma.clientCompany.create({
-        data: { name: trimmedName }
+        data: { teamId: project.teamId, name: trimmedName }
       })
     }
 

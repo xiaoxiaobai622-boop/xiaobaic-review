@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest, requireApiAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
-import { verifyProjectAccess } from '@/lib/project-access'
+import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
 import { validatePhotoFile } from '@/lib/file-validation'
 import { generateAlbumAccessToken } from '@/lib/photo-access'
 import { z } from 'zod'
@@ -111,6 +111,10 @@ export async function POST(
   if (rateLimitResult) return rateLimitResult
 
   try {
+    if (!(await canAdministerProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
     const album = await prisma.photoAlbum.findUnique({
       where: { id: albumId },
       select: { id: true, projectId: true },

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
-import { requireApiAdmin } from '@/lib/auth'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { cancelCommentNotification } from '@/lib/comment-helpers'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -58,7 +58,7 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/comments/[id] - Delete a comment (admin only)
+// DELETE /api/comments/[id] - Delete a comment by its author or a team admin.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -67,12 +67,6 @@ export async function DELETE(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const commentsMessages = messages?.comments || {}
   const shareMessages = messages?.share || {}
-
-  // Authentication - admin only
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
 
   // Rate limiting to prevent abuse
   const rateLimitResult = await rateLimit(request, {
@@ -93,9 +87,11 @@ export async function DELETE(
       where: { id },
       select: {
         projectId: true,
+        userId: true,
         project: {
           select: {
             id: true,
+            teamId: true,
             recipients: {
               where: { isPrimary: true },
               take: 1,
@@ -113,6 +109,32 @@ export async function DELETE(
         { error: commentsMessages.commentNotFound || 'Comment not found' },
         { status: 404 }
       )
+    }
+
+    const viewer = await getCurrentUserFromRequest(request)
+    const access = await verifyProjectAccess(
+      request,
+      existingComment.projectId,
+      null,
+      'NONE',
+      { allowGuest: false, requiredPermission: 'comment' },
+    )
+    if (!access.authorized) return access.errorResponse!
+
+    const membership = viewer
+      ? await prisma.teamMember.findUnique({
+          where: { teamId_userId: { teamId: existingComment.project.teamId, userId: viewer.id } },
+          select: { role: true, status: true, team: { select: { status: true } } },
+        })
+      : null
+    const isTeamAdmin = Boolean(
+      membership?.status === 'ACTIVE' &&
+      membership.team.status === 'ACTIVE' &&
+      ['OWNER', 'ADMIN'].includes(membership.role),
+    )
+    const isAuthor = Boolean(viewer && existingComment.userId === viewer.id)
+    if (!isTeamAdmin && !isAuthor) {
+      return NextResponse.json({ error: '只能删除自己发出的批注' }, { status: 403 })
     }
 
     // Cancel any pending notifications for this comment

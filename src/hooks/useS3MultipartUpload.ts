@@ -2,7 +2,6 @@
 
 import { useRef, useCallback } from 'react'
 import { apiPost } from '@/lib/api-client'
-import { getAccessToken } from '@/lib/token-store'
 
 // Upload N parts in parallel via a shared worker pool. Each finished part
 // frees its slot for the next queued part — no straggler-blocks-batch waste.
@@ -29,6 +28,8 @@ export interface S3UploadTarget {
   photoId?: string
   /** Explicit bearer token — set for share-token-authenticated uploads */
   bearerToken?: string
+  /** Share access is separate from the signed-in account session. */
+  shareToken?: string
 }
 
 export interface S3UploadCallbacks {
@@ -41,7 +42,6 @@ interface ActiveUpload {
   abortController: AbortController
   uploadId: string | null // null until presign completes
   target: S3UploadTarget
-  bearerToken: string | null
 }
 
 interface PauseGate {
@@ -61,10 +61,15 @@ export function useS3MultipartUpload() {
   const pauseGatesRef = useRef<Map<string, PauseGate>>(new Map())
 
   // Best-effort abort on S3 to free incomplete multipart storage
-  const abortOnServer = useCallback(async (uploadId: string, target: S3UploadTarget, bearerToken: string | null): Promise<void> => {
+  const getAuthInit = useCallback((target: S3UploadTarget): RequestInit => {
+    const headers: Record<string, string> = {}
+    if (target.bearerToken) headers.Authorization = `Bearer ${target.bearerToken}`
+    if (target.shareToken) headers['X-Share-Token'] = `Bearer ${target.shareToken}`
+    return Object.keys(headers).length > 0 ? { headers } : {}
+  }, [])
+
+  const abortOnServer = useCallback(async (uploadId: string, target: S3UploadTarget): Promise<void> => {
     try {
-      const token = bearerToken ?? getAccessToken()
-      const authHeader = token ? { headers: { Authorization: `Bearer ${token}` } } : {}
       await apiPost(
         '/api/uploads/s3/abort',
         {
@@ -74,12 +79,12 @@ export function useS3MultipartUpload() {
           projectUploadId: target.projectUploadId,
           photoId: target.photoId,
         },
-        authHeader
+        getAuthInit(target)
       )
     } catch (err) {
       console.warn('[S3 MULTIPART] Failed to abort multipart upload:', err)
     }
-  }, [])
+  }, [getAuthInit])
 
   const abortUpload = useCallback(async (uploadKey: string): Promise<void> => {
     const active = activeUploadsRef.current.get(uploadKey)
@@ -98,7 +103,7 @@ export function useS3MultipartUpload() {
     // Presign still in flight — startUpload aborts server-side once the uploadId is known
     if (!active.uploadId) return
 
-    await abortOnServer(active.uploadId, active.target, active.bearerToken)
+    await abortOnServer(active.uploadId, active.target)
   }, [abortOnServer])
 
   const startUpload = useCallback(
@@ -114,18 +119,15 @@ export function useS3MultipartUpload() {
 
       try {
         // ── 1. Request presigned part URLs ─────────────────────────────────────
-        // Prefer explicit bearer token (share pages), fallback to admin token from store
-        const bearerToken = target.bearerToken ?? getAccessToken()
-        const authInit: RequestInit = bearerToken
-          ? { headers: { Authorization: `Bearer ${bearerToken}` } }
-          : {}
+        // apiPost injects and refreshes the account token. Share access, when
+        // needed, travels in its own header so both identities reach the API.
+        const authInit = getAuthInit(target)
 
         // Register before presign so a cancel during the round-trip aborts the signal
         const active: ActiveUpload = {
           abortController,
           uploadId: null,
           target,
-          bearerToken: bearerToken ?? null,
         }
         activeUploadsRef.current.set(uploadKey, active)
 
@@ -147,7 +149,7 @@ export function useS3MultipartUpload() {
 
         // Cancelled during presign: the multipart upload now exists server-side, free it
         if (signal.aborted) {
-          await abortOnServer(presignRes.uploadId, target, bearerToken ?? null)
+          await abortOnServer(presignRes.uploadId, target)
           return
         }
 
@@ -332,7 +334,7 @@ export function useS3MultipartUpload() {
         onError?.(err instanceof Error ? err : new Error(String(err)))
       }
     },
-    [abortUpload, abortOnServer]
+    [abortUpload, abortOnServer, getAuthInit]
   )
 
   /** Pause an in-progress upload. Takes effect between part batches. */

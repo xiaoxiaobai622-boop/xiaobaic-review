@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3 } from 'lucide-react'
@@ -58,7 +58,7 @@ export default function AdminVideoManager({
   companyName: _companyName = 'Studio',
   onRefresh,
   sortMode = 'alphabetical',
-  viewMode = 'list',
+  viewMode = 'grid',
   maxRevisions,
   enableRevisions,
   comments = [],
@@ -106,6 +106,11 @@ export default function AdminVideoManager({
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   const [sessionId] = useState<string>(() => `admin:${Date.now()}`)
 
+  const videoTokenUrl = useCallback((videoId: string, quality: string) => {
+    const params = new URLSearchParams({ videoId, projectId, quality, sessionId })
+    return `/api/studio/video-token?${params.toString()}`
+  }, [projectId, sessionId])
+
   useEffect(() => {
     if (uploadRequestKey > 0 && projectStatus !== 'APPROVED') setIsUploadModalOpen(true)
   }, [uploadRequestKey, projectStatus])
@@ -129,7 +134,7 @@ export default function AdminVideoManager({
 
           try {
             const res = await apiFetch(
-              `/api/admin/video-token?videoId=${videoWithThumb.id}&projectId=${projectId}&quality=thumbnail&sessionId=${sessionId}`,
+              videoTokenUrl(videoWithThumb.id, 'thumbnail'),
               { cache: 'no-store' }
             )
             if (!res.ok) return null
@@ -148,7 +153,7 @@ export default function AdminVideoManager({
 
     fetchThumbnails()
     return () => { cancelled = true }
-  }, [videos, projectId, sessionId])
+  }, [videos, videoTokenUrl])
 
   // Handle upload completion from modal - refresh to show processing inline
   const handleUploadComplete = () => {
@@ -165,7 +170,7 @@ export default function AdminVideoManager({
 
     try {
       const res = await apiFetch(
-        `/api/admin/video-token?videoId=${latest.id}&projectId=${projectId}&quality=720p&sessionId=${sessionId}`,
+        videoTokenUrl(latest.id, '720p'),
         { cache: 'no-store' }
       )
       if (!res.ok) return
@@ -186,7 +191,7 @@ export default function AdminVideoManager({
     try {
       const versionsWithStreams = await Promise.all(readyVersions.map(async video => {
         const response = await apiFetch(
-          `/api/admin/video-token?videoId=${video.id}&projectId=${projectId}&quality=720p&sessionId=${sessionId}`,
+          videoTokenUrl(video.id, '720p'),
           { cache: 'no-store' }
         )
         if (!response.ok) throw new Error(t('failedToLoadData'))
@@ -202,18 +207,18 @@ export default function AdminVideoManager({
   const handleOpenReview = (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
     setActionMenuGroup(null)
-    const url = `/admin/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`
+    const url = `/studio/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   const handleEnterReview = (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    router.push(`/admin/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`)
+    router.push(`/studio/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`)
   }
 
   const handleCopyReviewLink = async (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const baseUrl = shareUrl || `${window.location.origin}/admin/projects/${projectId}/share`
+    const baseUrl = shareUrl || `${window.location.origin}/studio/projects/${projectId}/share`
     const separator = baseUrl.includes('?') ? '&' : '?'
     const copied = await copyTextToClipboard(`${baseUrl}${separator}video=${encodeURIComponent(groupName)}`)
     if (!copied) {

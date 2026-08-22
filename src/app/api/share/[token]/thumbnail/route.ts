@@ -1,0 +1,55 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { generateVideoAccessToken } from '@/lib/video-access'
+import { rateLimit } from '@/lib/rate-limit'
+import { logError } from '@/lib/logging'
+import { getAppDomain } from '@/lib/url'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> },
+) {
+  const limited = await rateLimit(request, {
+    windowMs: 60 * 1000,
+    maxRequests: 120,
+    message: '请求过于频繁，请稍后再试',
+  }, 'share-thumbnail')
+  if (limited) return limited
+
+  try {
+    const { token } = await params
+    const videoId = request.nextUrl.searchParams.get('videoId')
+    if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
+
+    const project = await prisma.project.findUnique({
+      where: { slug: token },
+      select: { id: true },
+    })
+    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
+    const video = await prisma.video.findFirst({
+      where: { id: videoId, projectId: project.id, status: 'READY' },
+      select: { id: true, thumbnailPath: true },
+    })
+    if (!video || !video.thumbnailPath) {
+      return NextResponse.json({ error: 'Thumbnail not found' }, { status: 404 })
+    }
+
+    const contentToken = await generateVideoAccessToken(
+      video.id,
+      project.id,
+      'thumbnail',
+      request,
+      `share-thumb:${project.id}`,
+    )
+
+    const appDomain = await getAppDomain()
+    return NextResponse.redirect(new URL(`/api/content/${contentToken}`, appDomain), 302)
+  } catch (error) {
+    logError('[SHARE] Thumbnail generation failed:', error)
+    return NextResponse.json({ error: 'Thumbnail generation failed' }, { status: 500 })
+  }
+}

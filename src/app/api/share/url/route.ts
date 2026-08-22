@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateShareUrl } from '@/lib/url'
-import { requireApiAdmin } from '@/lib/auth'
+import { requireApiUser } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   const shareMessages = messages?.share || {}
 
   // Check authentication
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requireApiUser(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -40,7 +41,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: shareMessages.slugRequired || 'Slug is required' }, { status: 400 })
     }
 
-    const shareUrl = await generateShareUrl(slug, request)
+    const project = await prisma.project.findUnique({
+      where: { slug },
+      select: {
+        slug: true,
+        shareSlug: true,
+        team: { select: { shareKey: true, slug: true } },
+      },
+    })
+    if (!project) {
+      return NextResponse.json({ error: shareMessages.slugRequired || 'Project not found' }, { status: 404 })
+    }
+
+    const shareUrl = await generateShareUrl(project, request)
 
     return NextResponse.json({ shareUrl })
   } catch (error) {

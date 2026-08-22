@@ -214,7 +214,7 @@ export async function generateAdminSummaryEmail(data: AdminSummaryData): Promise
     `
   }).join('')
 
-  const adminUrl = data.projects[0]?.shareUrl ? escapeHtml(data.projects[0].shareUrl.replace(/\/share\/[^/]+/, '/admin/projects')) : '#'
+  const adminUrl = data.projects[0]?.shareUrl ? escapeHtml(data.projects[0].shareUrl.replace(/\/share\/[^/]+/, '/studio/projects')) : '#'
 
   const template = await getEmailTemplate('ADMIN_ACTIVITY_SUMMARY')
   const placeholderValues: Record<string, string> = {

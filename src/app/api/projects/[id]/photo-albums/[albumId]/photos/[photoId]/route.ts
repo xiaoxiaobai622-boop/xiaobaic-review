@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
-import { deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
 export const runtime = 'nodejs'
 
@@ -22,6 +23,9 @@ export async function DELETE(
   const authResult = await requireApiAdmin(request)
   if (authResult instanceof Response) {
     return authResult
+  }
+  if (!(await canAccessProject(prisma, authResult, projectId))) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
   const rateLimitResult = await rateLimit(request, {
@@ -41,20 +45,15 @@ export async function DELETE(
       return NextResponse.json({ error: photoMessages.photoNotFound || 'Photo not found' }, { status: 404 })
     }
 
-    await prisma.photo.delete({ where: { id: photoId } })
-
-    // Remove original + renditions from storage
-    try {
-      await deleteFile(photo.storagePath)
-      if (photo.thumbnailPath) {
-        await deleteFile(photo.thumbnailPath)
-      }
-      if (photo.previewPath) {
-        await deleteFile(photo.previewPath)
-      }
-    } catch (storageError) {
-      logError('Error deleting photo files from storage:', storageError)
-    }
+    const task = await prisma.$transaction(async (tx) => {
+      const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-photo-storage:${photoId}`, {
+        paths: [photo.storagePath, photo.thumbnailPath, photo.previewPath].filter((path): path is string => Boolean(path)),
+        directories: [],
+      })
+      await tx.photo.delete({ where: { id: photoId } })
+      return durableTask
+    })
+    await dispatchDurableTask(task.id)
 
     return NextResponse.json({ ok: true })
   } catch (error) {

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendNewVersionEmail, sendProjectGeneralNotificationEmail, sendPasswordEmail, getRecipientLocale } from '@/lib/email'
-import { generateShareUrl } from '@/lib/url'
+import { generateProjectShareUrlById } from '@/lib/url'
 import { requireApiAdmin } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { decrypt } from '@/lib/encryption'
 import { getProjectRecipients } from '@/lib/recipients'
 import { rateLimit } from '@/lib/rate-limit'
@@ -47,6 +48,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const { id: projectId } = await params
+    if (!(await canAccessProject(prisma, authResult, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
     const body = await request.json()
     const { videoId, notifyEntireProject, sendPasswordSeparately } = body
 
@@ -83,7 +87,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Generate share URL
-    const shareUrl = await generateShareUrl(project.slug)
+    const shareUrl = await generateProjectShareUrlById(projectId)
     const isPasswordProtected = !!project.sharePassword
 
     // Prepare video data if specific video notification

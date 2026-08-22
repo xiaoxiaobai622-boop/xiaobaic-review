@@ -33,7 +33,8 @@ export function sanitizeComment(
   comment: any,
   isAdmin: boolean,
   isAuthenticated: boolean,
-  clientName?: string
+  clientName?: string,
+  viewerUserId?: string | null,
 ) {
   const normalizedTimecode = normalizeTimecode(comment)
   const accountAuthorName = comment.user?.name || comment.user?.email || null
@@ -46,12 +47,15 @@ export function sanitizeComment(
     timecode: normalizedTimecode,
     timecodeEnd: comment.timecodeEnd || null,
     resolved: comment.resolved === true,
+    category: comment.category || null,
     annotations: comment.annotations || null,
     content: comment.content,
     isInternal: comment.isInternal,
     createdAt: comment.createdAt,
     updatedAt: comment.updatedAt,
     parentId: comment.parentId,
+    // This is intentionally a boolean rather than exposing another user's ID.
+    canDelete: Boolean(viewerUserId && comment.userId === viewerUserId),
   }
 
   // NEVER expose real names or emails to non-admins
@@ -61,6 +65,7 @@ export function sanitizeComment(
     sanitized.authorName = accountAuthorName || comment.authorName
     sanitized.authorEmail = comment.authorEmail
     sanitized.userId = comment.userId
+    sanitized.canDelete = true
     if (comment.user) {
       sanitized.user = {
         id: comment.user.id,
@@ -92,7 +97,7 @@ export function sanitizeComment(
 
   if (comment.replies && Array.isArray(comment.replies)) {
     sanitized.replies = comment.replies.map((reply: any) =>
-      sanitizeComment(reply, isAdmin, isAuthenticated, clientName)
+      sanitizeComment(reply, isAdmin, isAuthenticated, clientName, viewerUserId)
     )
   }
 

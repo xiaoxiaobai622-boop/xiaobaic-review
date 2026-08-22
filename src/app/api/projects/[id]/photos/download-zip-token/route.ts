@@ -120,7 +120,8 @@ export async function POST(
     const token = crypto.randomBytes(32).toString('base64url')
 
     const redis = getRedis()
-    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${Date.now()}` : `guest:${Date.now()}`)
+    // Stable admin session id so repeated downloads reuse the cached token
+    const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${projectId}` : `guest:${Date.now()}`)
     const ipAddress = getClientIpAddress(request)
     const userAgentHash = crypto
       .createHash('sha256')

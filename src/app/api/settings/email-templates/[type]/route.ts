@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import {
   getEmailTemplate,
@@ -31,7 +31,7 @@ interface RouteParams {
  * GET /api/settings/email-templates/[type]
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
  * PUT /api/settings/email-templates/[type]
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -189,7 +189,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  * DELETE /api/settings/email-templates/[type]
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
@@ -257,7 +257,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
  * PATCH /api/settings/email-templates/[type]
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
-  const authResult = await requireApiAdmin(request)
+  const authResult = await requirePlatformAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }

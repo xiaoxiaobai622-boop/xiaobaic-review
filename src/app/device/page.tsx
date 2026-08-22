@@ -82,6 +82,11 @@ function DeviceAuthForm() {
         })
       }
 
+      if (data.needsOnboarding) {
+        window.location.href = `/onboarding?returnUrl=${encodeURIComponent('/device')}`
+        return
+      }
+
       setStep('authorize')
     } catch (err: any) {
       if (err.name === 'NotAllowedError') {
@@ -219,13 +224,14 @@ function DeviceAuthForm() {
 
                   <form onSubmit={handlePasswordLogin} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email">{ta('usernameOrEmail')}</Label>
+                      <Label htmlFor="email">手机号</Label>
                       <Input
                         id="email"
-                        type="text"
-                        placeholder={ta('usernameOrEmailPlaceholder')}
+                        placeholder="请输入手机号"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => setEmail(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                        type="tel"
+                        inputMode="numeric"
                         required
                         autoComplete="username"
                         disabled={loading}

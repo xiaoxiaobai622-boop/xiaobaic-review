@@ -5,6 +5,8 @@ import { logError, logMessage } from './logging'
 import { getClientIpAddress } from './utils'
 import { getClientSessionTimeoutSeconds } from './settings'
 import { getRedis } from './redis'
+import { isShareSessionRevoked } from './session-invalidation'
+import { isAdminSessionRevoked } from './studio-session-registry'
 
 type CachedValue<T> = { value: T; expiresAt: number; version?: string }
 type SecuritySettingsResult = {
@@ -36,6 +38,22 @@ type CachedTokenEntry = CachedValue<VideoAccessToken>
 const tokenVerificationCache = new Map<string, CachedTokenEntry>()
 const TOKEN_REV_VERSION_KEY = 'video_token_rev_version'
 
+export async function getCachedVideoAccessToken(
+  videoId: string,
+  projectId: string,
+  quality: string,
+  sessionId: string
+): Promise<string | null> {
+  const redis = getRedis()
+  const cacheKey = `video_token_cache:${sessionId}:${videoId}:${quality}`
+  const cachedToken = await redis.get(cacheKey)
+
+  if (!cachedToken) return null
+
+  const tokenData = await redis.get(`video_access:${cachedToken}`)
+  return tokenData ? cachedToken : null
+}
+
 interface VideoAccessToken {
   videoId: string
   projectId: string
@@ -59,14 +77,9 @@ export async function generateVideoAccessToken(
 ): Promise<string> {
   const redis = getRedis()
 
-  const cacheKey = `video_token_cache:${sessionId}:${videoId}:${quality}`
-  const cachedToken = await redis.get(cacheKey)
-
+  const cachedToken = await getCachedVideoAccessToken(videoId, projectId, quality, sessionId)
   if (cachedToken) {
-    const tokenData = await redis.get(`video_access:${cachedToken}`)
-    if (tokenData) {
-      return cachedToken
-    }
+    return cachedToken
   }
 
   const token = crypto.randomBytes(16).toString('base64url')
@@ -90,7 +103,7 @@ export async function generateVideoAccessToken(
     JSON.stringify(tokenData)
   )
 
-  await redis.setex(cacheKey, ttlSeconds, token)
+  await redis.setex(`video_token_cache:${sessionId}:${videoId}:${quality}`, ttlSeconds, token)
 
   return token
 }
@@ -139,8 +152,7 @@ export async function verifyVideoAccessToken(
 
   const isAdminSession = tokenData.isAdmin === true
 
-  if (!isAdminSession) {
-    if (tokenData.sessionId !== sessionId) {
+  if (tokenData.sessionId !== sessionId) {
       await logSecurityEvent({
         type: 'TOKEN_SESSION_MISMATCH',
         severity: 'WARNING',
@@ -151,8 +163,20 @@ export async function verifyVideoAccessToken(
         details: { expectedSession: tokenData.sessionId }
       })
 
-      return null
-    }
+    return null
+  }
+
+  if (isAdminSession) {
+    const adminSessionId = tokenData.sessionId.startsWith('admin:')
+      ? tokenData.sessionId.slice('admin:'.length)
+      : ''
+    if (!adminSessionId || await isAdminSessionRevoked(adminSessionId)) return null
+  } else if (
+    !tokenData.sessionId.startsWith('none:') &&
+    !tokenData.sessionId.startsWith('guest:') &&
+    await isShareSessionRevoked(tokenData.sessionId)
+  ) {
+    return null
   }
 
   tokenVerificationCache.set(cacheKey, {

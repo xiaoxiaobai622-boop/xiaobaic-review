@@ -7,6 +7,7 @@ import { formatFileSize } from '@/lib/utils'
 import { Button } from './ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
+import { useAuth } from '@/components/AuthProvider'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
 import { Input } from './ui/input'
 import { FILE_LIMITS } from '@/lib/file-validation'
@@ -20,6 +21,10 @@ interface ProjectUpload {
   hasThumbnail: boolean
   uploadedByName: string | null
   uploadedByEmail: string | null
+  transcodeStatus: string
+  transcodeProgress: number
+  transcodeError: string | null
+  sourceVideoId: string | null
   createdAt: string
 }
 
@@ -91,6 +96,8 @@ function fileNameWithoutExtension(fileName: string): string {
 export default function ProjectUploadsBlock({ projectId, onCountChange, videoNames = [], onPromoted }: ProjectUploadsBlockProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
+  const { user } = useAuth()
+  const canManage = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN' || user?.role === 'ADMIN'
 
   const [uploads, setUploads] = useState<ProjectUpload[]>([])
   const [loading, setLoading] = useState(true)
@@ -99,6 +106,8 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDownloading, setBulkDownloading] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkTranscoding, setBulkTranscoding] = useState(false)
+  const [transcodingIds, setTranscodingIds] = useState<Set<string>>(new Set())
   const [promoteUpload, setPromoteUpload] = useState<ProjectUpload | null>(null)
   const [promotingId, setPromotingId] = useState<string | null>(null)
   const [targetVideoName, setTargetVideoName] = useState('__new__')
@@ -123,6 +132,14 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
   useEffect(() => {
     fetchUploads()
   }, [fetchUploads])
+
+  useEffect(() => {
+    if (!uploads.some((upload) => upload.transcodeStatus === 'PROCESSING')) return
+    const timer = window.setInterval(() => {
+      fetchUploads()
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [uploads, fetchUploads])
 
   useEffect(() => {
     if (!loading) {
@@ -239,7 +256,10 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
         throw new Error(data.error || t('promoteUploadFailed'))
       }
 
-      setUploads(prev => prev.filter(upload => upload.id !== promoteUpload.id))
+      setUploads(prev => prev.map(upload => upload.id === promoteUpload.id
+        ? { ...upload, transcodeStatus: 'PROCESSING', transcodeProgress: 0, transcodeError: null }
+        : upload
+      ))
       setSelectedIds(prev => {
         const next = new Set(prev)
         next.delete(promoteUpload.id)
@@ -247,6 +267,7 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
       })
       setPromoteUpload(null)
       onPromoted?.()
+      void fetchUploads()
     } catch (error) {
       alert(error instanceof Error ? error.message : t('promoteUploadFailed'))
       logError('Error promoting project upload:', error)
@@ -270,6 +291,57 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
     } else {
       setSelectedIds(new Set(uploads.map(u => u.id)))
     }
+  }
+
+  const transcodeUpload = async (upload: ProjectUpload) => {
+    const videoName = fileNameWithoutExtension(upload.fileName)
+    if (!videoName) return
+
+    setTranscodingIds(prev => new Set(prev).add(upload.id))
+    try {
+      const res = await apiFetch(
+        `/api/projects/${projectId}/project-uploads/${upload.id}/promote`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoName }),
+        }
+      )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || t('promoteUploadFailed'))
+      }
+
+      setUploads(prev => prev.map(item => item.id === upload.id
+        ? { ...item, transcodeStatus: 'PROCESSING', transcodeProgress: 0, transcodeError: null }
+        : item
+      ))
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        next.delete(upload.id)
+        return next
+      })
+      onPromoted?.()
+      void fetchUploads()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : t('promoteUploadFailed'))
+      logError('Error transcoding project upload:', error)
+    } finally {
+      setTranscodingIds(prev => {
+        const next = new Set(prev)
+        next.delete(upload.id)
+        return next
+      })
+    }
+  }
+
+  const handleBulkTranscode = async () => {
+    setBulkTranscoding(true)
+    const targets = uploads.filter(upload => selectedIds.has(upload.id) && isVideoUpload(upload) && upload.transcodeStatus === 'ERROR')
+    for (const upload of targets) {
+      await transcodeUpload(upload)
+    }
+    setBulkTranscoding(false)
   }
 
   const handleBulkDownload = async () => {
@@ -350,6 +422,10 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
                 {bulkDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Download className="h-3.5 w-3.5 mr-1" />}
                 {tc('download')}
               </Button>
+              <Button type="button" variant="outline" size="sm" onClick={handleBulkTranscode} disabled={bulkTranscoding || bulkDownloading || bulkDeleting}>
+                {bulkTranscoding ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+                重新转码
+              </Button>
               <Button type="button" variant="outline" size="sm" onClick={handleBulkDelete} disabled={bulkDeleting || bulkDownloading} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60">
                 {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
                 {tc('delete')}
@@ -394,19 +470,34 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {formatDate(upload.createdAt)}
                   </p>
+                  {upload.transcodeStatus === 'NONE' && isVideoUpload(upload) && (
+                    <p className="mt-1 text-xs text-muted-foreground">等待自动转码</p>
+                  )}
+                  {upload.transcodeStatus === 'READY' && (
+                    <p className="mt-1 text-xs font-medium text-success">转码完成，待覆盖</p>
+                  )}
+                  {upload.transcodeStatus === 'PROCESSING' && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-primary">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      正在转码中...
+                    </p>
+                  )}
+                  {upload.transcodeStatus === 'ERROR' && (
+                    <p className="mt-1 text-xs text-destructive">{upload.transcodeError || '转码失败，请重试'}</p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  {isVideoUpload(upload) && (
+                  {isVideoUpload(upload) && canManage && (
                     <button
                       type="button"
-                      onClick={() => openPromoteDialog(upload)}
-                      disabled={promotingId === upload.id}
+                      onClick={() => upload.transcodeStatus === 'READY' ? openPromoteDialog(upload) : transcodeUpload(upload)}
+                      disabled={transcodingIds.has(upload.id) || upload.transcodeStatus === 'PROCESSING'}
                       className="p-1.5 rounded hover:bg-primary-visible text-primary transition-colors disabled:opacity-50"
-                      title={t('promoteUpload')}
-                      aria-label={t('promoteUpload')}
+                      title={upload.transcodeStatus === 'READY' ? '覆盖到视频' : upload.transcodeStatus === 'ERROR' ? '重新转码' : '正在转码中'}
+                      aria-label={upload.transcodeStatus === 'READY' ? '覆盖到视频' : upload.transcodeStatus === 'ERROR' ? '重新转码' : '正在转码中'}
                     >
-                      {promotingId === upload.id
+                      {transcodingIds.has(upload.id) || upload.transcodeStatus === 'PROCESSING'
                         ? <Loader2 className="w-4 h-4 animate-spin" />
                         : <RefreshCw className="w-4 h-4" />}
                     </button>

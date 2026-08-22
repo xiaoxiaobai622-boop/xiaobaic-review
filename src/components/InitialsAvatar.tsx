@@ -2,7 +2,7 @@
 
 import { cn, getUserColor } from '@/lib/utils'
 
-type AvatarSize = 'sm' | 'md' | 'lg'
+type AvatarSize = 'xs' | 'sm' | 'md' | 'lg'
 
 const COLOR_MAP: Record<string, { bg: string; ring: string; text: string }> = {
   'border-gray-500': {
@@ -218,24 +218,17 @@ const COLOR_MAP: Record<string, { bg: string; ring: string; text: string }> = {
   },
 }
 
-function initialsFromName(name: string | null | undefined): string {
+export function initialsFromName(name: string | null | undefined): string {
   const value = (name || '').trim()
   if (!value) return '?'
 
-  const parts = value.split(/\s+/).filter(Boolean)
-  if (parts.length === 1) {
-    const word = parts[0]
-    return word.slice(0, Math.min(2, word.length)).toUpperCase()
-  }
-
-  const first = parts[0][0] || ''
-  const last = parts[parts.length - 1][0] || ''
-  const initials = `${first}${last}`.trim()
-  return initials ? initials.toUpperCase() : '?'
+  return Array.from(value)[0].toUpperCase()
 }
 
 function sizeClasses(size: AvatarSize) {
   switch (size) {
+    case 'xs':
+      return 'h-5 w-5 text-[8px] sm:text-[9px]'
     case 'sm':
       return 'h-7 w-7 text-[11px]'
     case 'lg':
@@ -248,12 +241,13 @@ function sizeClasses(size: AvatarSize) {
 
 export function InitialsAvatar(props: {
   name?: string | null
+  src?: string | null
   size?: AvatarSize
   className?: string
   title?: string
-  isInternal?: boolean // True if this is an internal/admin user (sender), false for client (receiver)
+  isInternal?: boolean // True if this is an internal/studio user (sender), false for client (receiver)
 }) {
-  const { name, size = 'md', className, title, isInternal = false } = props
+  const { name, src, size = 'md', className, title, isInternal = false } = props
 
   const color = getUserColor(name, isInternal)
   const classes = COLOR_MAP[color.border] || COLOR_MAP['border-gray-500']
@@ -263,6 +257,7 @@ export function InitialsAvatar(props: {
       title={title || (name || undefined)}
       className={cn(
         'flex items-center justify-center rounded-full font-semibold ring-1 ring-inset select-none',
+        'overflow-hidden',
         sizeClasses(size),
         classes.bg,
         classes.ring,
@@ -270,7 +265,16 @@ export function InitialsAvatar(props: {
         className
       )}
     >
-      {initialsFromName(name)}
+      {src ? (
+        <img
+          src={src}
+          alt={name || '头像'}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        initialsFromName(name)
+      )}
     </div>
   )
 }

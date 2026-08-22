@@ -73,10 +73,44 @@ export async function getAppDomain(): Promise<string> {
 /**
  * Generate a share URL for a project
  */
+type ShareUrlProject = {
+  slug: string
+  shareSlug?: string | null
+  team?: { shareKey?: string | null; slug?: string | null } | null
+}
+
 export async function generateShareUrl(
-  projectSlug: string,
+  projectOrSlug: string | ShareUrlProject,
   request?: NextRequest
 ): Promise<string> {
   const baseUrl = await getAppUrl(request)
-  return `${baseUrl}/share/${projectSlug}`
+  if (typeof projectOrSlug === 'string') {
+    return `${baseUrl}/share/${projectOrSlug}`
+  }
+
+  const teamKey = projectOrSlug.team?.shareKey || projectOrSlug.team?.slug
+  const shareSlug = projectOrSlug.shareSlug || projectOrSlug.slug
+
+  if (!teamKey || !shareSlug) {
+    return `${baseUrl}/share/${projectOrSlug.slug}`
+  }
+
+  return `${baseUrl}/share/${teamKey}/${shareSlug}`
+}
+
+export async function generateProjectShareUrlById(
+  projectId: string,
+  request?: NextRequest,
+): Promise<string> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: {
+      slug: true,
+      shareSlug: true,
+      team: { select: { shareKey: true, slug: true } },
+    },
+  })
+
+  if (!project) throw new Error('Project not found')
+  return generateShareUrl(project, request)
 }
