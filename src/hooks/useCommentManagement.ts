@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { apiPost, apiDelete } from '@/lib/api-client'
 import { secondsToTimecode, timecodeToSeconds } from '@/lib/timecode'
 import { AnnotationData } from '@/types/annotations'
+import type { DrawingTool } from '@/types/annotations'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -635,10 +636,10 @@ export function useCommentManagement({
     }
   }
 
-  const handleStartDrawing = () => {
+  const handleStartDrawing = (tool: DrawingTool) => {
     window.dispatchEvent(
       new CustomEvent('enterDrawingMode', {
-        detail: { timecodeEnd: selectedTimecodeEnd },
+        detail: { tool, timecodeEnd: selectedTimecodeEnd },
       })
     )
   }

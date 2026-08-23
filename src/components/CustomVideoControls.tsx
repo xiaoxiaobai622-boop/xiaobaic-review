@@ -41,6 +41,7 @@ interface CustomVideoControlsProps {
   isSelectingRange?: boolean
   onRangeStartChange?: (time: number) => void
   onRangeEndChange?: (time: number) => void
+  surfaceClassName?: string
 }
 
 // Color map for marker backgrounds - IDENTICAL to InitialsAvatar component
@@ -254,10 +255,10 @@ const COLOR_MAP: Record<string, { bg: string; ring: string; text: string }> = {
 }
 
 function formatTime(seconds: number): string {
-  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '0:00'
+  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '00:00'
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
 function formatTimeWithMode(
@@ -266,7 +267,8 @@ function formatTimeWithMode(
   videoDurationSeconds: number,
   mode: 'TIMECODE' | 'AUTO'
 ): string {
-  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return mode === 'TIMECODE' ? '00:00:00:00' : '0:00'
+  if (mode === 'AUTO') return formatTime(seconds)
+  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '00:00:00:00'
   
   const timecode = secondsToTimecode(seconds, fps)
   return formatCommentTimestamp({
@@ -322,6 +324,7 @@ export default function CustomVideoControls({
   isSelectingRange = false,
   onRangeStartChange,
   onRangeEndChange,
+  surfaceClassName = 'bg-background',
 }: CustomVideoControlsProps) {
   const t = useTranslations('controls')
   const tComments = useTranslations('comments')
@@ -652,7 +655,7 @@ export default function CustomVideoControls({
   }
 
   return (
-    <div className="absolute left-0 right-0 top-full z-30 min-h-0 bg-background text-foreground" style={{ borderRadius: '0 0 6px 6px' }}>
+    <div className={`absolute left-0 right-0 top-full z-30 min-h-0 text-foreground ${surfaceClassName}`} style={{ borderRadius: '0 0 6px 6px' }}>
       {/* 6px progress rail + 32px annotation lane, matching the reference behavior. */}
       <div className="mb-0">
         <div
@@ -700,7 +703,7 @@ export default function CustomVideoControls({
           />
 
           {/* The annotation lane is intentionally independent from the rail. */}
-          <div data-testid="annotation-lane" className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-background" />
+          <div data-testid="annotation-lane" className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 ${surfaceClassName}`} />
 
           {/* Range Bars for comments with timecodeEnd */}
           {rangeBars.map((bar) => {

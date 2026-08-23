@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video, ProjectStatus, Comment } from '@prisma/client'
 import { Button } from './ui/button'
-import { CheckCircle2, GitCompareArrows, Play, Pause, SkipBack, SkipForward } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, GitCompareArrows, Play, Pause, SkipBack, SkipForward } from 'lucide-react'
 import CustomVideoControls from './CustomVideoControls'
 import VideoComparison from './VideoComparison'
 import ProjectInfo from './ProjectInfo'
@@ -12,7 +12,7 @@ import AnnotationOverlay from './AnnotationOverlay'
 import AnnotationCanvas from './AnnotationCanvas'
 import AnnotationToolbar from './AnnotationToolbar'
 import { useAnnotationDrawing } from '@/hooks/useAnnotationDrawing'
-import { AnnotationData } from '@/types/annotations'
+import { AnnotationData, type DrawingTool } from '@/types/annotations'
 import { secondsToTimecode } from '@/lib/timecode'
 import { logError } from '@/lib/logging'
 import { filterCommentsForVideo } from '@/lib/video-comment-filter'
@@ -57,8 +57,16 @@ interface VideoPlayerProps {
   }) => void // Callback to expose video state for mobile layout
   usePreviewForApprovedPlayback?: boolean // Use preview for approved playback instead of original
   fillContainer?: boolean // Fill parent container height (for full-viewport layouts)
+  playerSurfaceClassName?: string // Optional letterbox/workspace surface override
+  playerSurfaceColor?: string // Optional exact CSS color for the rendered video letterbox
+  playerFrameClassName?: string // Optional non-sizing frame treatment for the player surface
+  controlsSurfaceClassName?: string // Optional playback controls surface override
   hideApprovalAction?: boolean
   allowComparison?: boolean
+  onPreviousVideo?: () => void
+  onNextVideo?: () => void
+  hasPreviousVideo?: boolean
+  hasNextVideo?: boolean
 }
 
 export default function VideoPlayer({
@@ -89,13 +97,22 @@ export default function VideoPlayer({
   onVideoStateChange, // Callback to expose video state for mobile layout
   usePreviewForApprovedPlayback = false, // Default to false (use original)
   fillContainer = false, // Default to false (standard aspect ratio)
+  playerSurfaceClassName = 'bg-muted/50',
+  playerSurfaceColor,
+  playerFrameClassName = '',
+  controlsSurfaceClassName = 'bg-background',
   authenticatedEmail = null,
   authenticatedName = null,
   hideApprovalAction = false,
   allowComparison = true,
+  onPreviousVideo,
+  onNextVideo,
+  hasPreviousVideo = false,
+  hasNextVideo = false,
 }: VideoPlayerProps) {
   const t = useTranslations('videos')
   const tControls = useTranslations('controls')
+  const tShare = useTranslations('share')
   // null means automatic selection. This lets a default viewer follow a newly
   // published latest version while preserving a version chosen by the user.
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
@@ -195,11 +212,20 @@ export default function VideoPlayer({
   }, [selectedVideo?.id, resetAnnotationDrawing])
 
   useEffect(() => {
-    const handleEnterDrawing = (e: CustomEvent) => {
+    const handleEnterDrawing = (event: Event) => {
+      const detail = (event as CustomEvent<{ tool?: DrawingTool; timecodeEnd?: string | null }>).detail
+      const requestedTool = detail?.tool
+
+      if (requestedTool) {
+        annotationDrawing.setActiveTool(requestedTool)
+      }
+
+      if (isDrawingMode) return
+
       const fps = selectedVideo?.fps || 24
       const timecodeStart = secondsToTimecode(currentTimeRef.current, fps)
       setDrawingTimecodeStart(timecodeStart)
-      setDrawingTimecodeEnd(e.detail?.timecodeEnd || null)
+      setDrawingTimecodeEnd(detail?.timecodeEnd || null)
       setIsDrawingMode(true)
       setPendingAnnotation(null)
 
@@ -210,11 +236,11 @@ export default function VideoPlayer({
       }
     }
 
-    window.addEventListener('enterDrawingMode' as any, handleEnterDrawing as EventListener)
+    window.addEventListener('enterDrawingMode', handleEnterDrawing)
     return () => {
-      window.removeEventListener('enterDrawingMode' as any, handleEnterDrawing as EventListener)
+      window.removeEventListener('enterDrawingMode', handleEnterDrawing)
     }
-  }, [selectedVideo?.fps, annotationDrawing])
+  }, [selectedVideo?.fps, isDrawingMode, annotationDrawing])
 
   const handleDrawingCancel = useCallback(() => {
     setIsDrawingMode(false)
@@ -886,7 +912,7 @@ export default function VideoPlayer({
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVideo?.id, selectedVideoIndex, isVideoApproved])
+  }, [selectedVideo?.id, selectedVideo?.reviewStatus, selectedVideoIndex, isVideoApproved])
 
   if (!selectedVideo || displayVideos.length === 0) {
     return (
@@ -967,16 +993,18 @@ export default function VideoPlayer({
             */}
             <div
               ref={videoWrapperRef}
-              className={`group relative mb-[96px] w-full max-h-[56vh] overflow-visible rounded-md bg-muted/50 aspect-video lg:aspect-auto ${
+              className={`group relative mb-[96px] w-full max-h-[56vh] overflow-visible rounded-md aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
                 fillContainer ? 'lg:max-h-none lg:min-h-0 lg:flex-1' : ''
               }`}
+              style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}
             >
               <video
                 key={selectedVideo?.id}
                 ref={videoRef}
                 src={videoUrl}
                 poster={(selectedVideo as any).thumbnailUrl || undefined}
-                className={`w-full h-full object-contain ${isDrawingMode ? 'pointer-events-none' : 'cursor-pointer'}`}
+                className={`h-full w-full object-contain ${playerSurfaceClassName} ${isDrawingMode ? 'pointer-events-none' : 'cursor-pointer'}`}
+                style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onContextMenu={!isAdmin ? (e) => e.preventDefault() : undefined}
@@ -1000,6 +1028,37 @@ export default function VideoPlayer({
               {videoLoadFailed && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-4 text-center text-sm text-muted-foreground">
                   视频加载失败，请刷新页面或检查网络后重试。
+                </div>
+              )}
+
+              {!isDrawingMode && (onPreviousVideo || onNextVideo) && (
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 items-center justify-between px-3 opacity-100 transition-opacity duration-150 sm:px-4 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onPreviousVideo?.()
+                    }}
+                    disabled={!hasPreviousVideo}
+                    aria-label={tShare('previousVideo')}
+                    title={tShare('previousVideo')}
+                    className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-lg transition-[background-color,transform] duration-150 hover:scale-105 hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black/60 disabled:pointer-events-none disabled:opacity-25"
+                  >
+                    <ChevronLeft className="h-6 w-6" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onNextVideo?.()
+                    }}
+                    disabled={!hasNextVideo}
+                    aria-label={tShare('nextVideo')}
+                    title={tShare('nextVideo')}
+                    className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-lg transition-[background-color,transform] duration-150 hover:scale-105 hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black/60 disabled:pointer-events-none disabled:opacity-25"
+                  >
+                    <ChevronRight className="h-6 w-6" aria-hidden="true" />
+                  </button>
                 </div>
               )}
 
@@ -1027,6 +1086,7 @@ export default function VideoPlayer({
                       onFinishShape={annotationDrawing.finishShape}
                     />
                     <AnnotationToolbar
+                      placement="composer"
                       activeTool={annotationDrawing.activeTool}
                       activeColor={annotationDrawing.activeColor}
                       strokeWidth={annotationDrawing.strokeWidth}
@@ -1122,6 +1182,7 @@ export default function VideoPlayer({
                         detail: { time, videoId: selectedVideo?.id },
                       }))
                     }}
+                    surfaceClassName={controlsSurfaceClassName}
                   />
                 </div>
 

@@ -44,16 +44,16 @@ export function formatErrorForLog(error: unknown): string {
   }
 }
 
-const isServer = typeof process !== 'undefined' && typeof process.stdout?.write === 'function'
+const isServer = typeof window === 'undefined'
 
 function writeStdout(line: string): void {
   if (!isServer) return
-  process.stdout.write(sanitizeLogValue(line) + '\n')
+  globalThis.console.info(sanitizeLogValue(line))
 }
 
 function writeStderr(line: string): void {
   if (!isServer) return
-  process.stderr.write(sanitizeLogValue(line) + '\n')
+  globalThis.console.error(sanitizeLogValue(line))
 }
 
 export function logMessage(message: string, ...extra: unknown[]): void {

@@ -75,10 +75,17 @@ export async function POST(
     if (unapproveVideos) {
       // Unapprove ALL videos in the project
       await prisma.video.updateMany({
-        where: { projectId },
+        where: {
+          projectId,
+          OR: [
+            { approved: true },
+            { reviewStatus: 'APPROVED' },
+          ],
+        },
         data: {
           approved: false,
-          approvedAt: null
+          approvedAt: null,
+          reviewStatus: null,
         }
       })
 

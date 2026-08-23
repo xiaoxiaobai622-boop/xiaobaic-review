@@ -224,7 +224,7 @@ function formatClockTime(secondsTotal: number, _includeHours: boolean): string {
   const safeSeconds = Number.isFinite(secondsTotal) && secondsTotal > 0 ? Math.floor(secondsTotal) : 0
   const minutes = Math.floor(safeSeconds / 60)
   const seconds = safeSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 export function formatCommentTimestamp(params: {

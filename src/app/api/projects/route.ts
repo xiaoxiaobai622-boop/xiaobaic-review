@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
         maxRevisions: true,
         enableRevisions: true,
         videos: {
+          where: { status: { not: 'ROLLED_BACK' } },
           select: {
             id: true,
             status: true,
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
         },
         _count: {
           select: {
-            videos: true,
+            videos: { where: { status: { not: 'ROLLED_BACK' } } },
             comments: true,
           },
         },

@@ -158,6 +158,9 @@ export function useAnnotationDrawing() {
   }, [])
 
   const reset = useCallback(() => {
+    setActiveColor(ANNOTATION_COLORS[2])
+    setStrokeWidth(DEFAULT_STROKE_WIDTH)
+    setOpacity(DEFAULT_OPACITY)
     setShapes([])
     setUndoStack([])
     setActiveShape(null)

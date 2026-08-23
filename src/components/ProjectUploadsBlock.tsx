@@ -474,7 +474,9 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
                     <p className="mt-1 text-xs text-muted-foreground">等待自动转码</p>
                   )}
                   {upload.transcodeStatus === 'READY' && (
-                    <p className="mt-1 text-xs font-medium text-success">转码完成，待覆盖</p>
+                    <p className="mt-1 text-xs font-medium text-success">
+                      {upload.sourceVideoId ? '已保留转码，可直接覆盖' : '转码完成，待覆盖'}
+                    </p>
                   )}
                   {upload.transcodeStatus === 'PROCESSING' && (
                     <p className="mt-1 flex items-center gap-1 text-xs font-medium text-primary">

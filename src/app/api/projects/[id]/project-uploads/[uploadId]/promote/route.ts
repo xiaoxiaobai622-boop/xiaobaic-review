@@ -60,6 +60,75 @@ export async function POST(
       return NextResponse.json({ error: validation.error || 'Only video files can become a video version.' }, { status: 400 })
     }
 
+    // A rolled-back version keeps its original and preview files. Restoring
+    // that record is instantaneous and avoids running the same transcode again.
+    if (upload.sourceVideoId) {
+      const restored = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${projectId}:${videoName}`}))`
+
+        const project = await tx.project.findUnique({
+          where: { id: projectId },
+          select: { status: true, enableRevisions: true, maxRevisions: true },
+        })
+        if (!project) throw new Error('PROJECT_NOT_FOUND')
+        if (project.status === 'APPROVED') throw new Error('PROJECT_APPROVED')
+
+        const sourceVideo = await tx.video.findFirst({
+          where: { id: upload.sourceVideoId!, projectId },
+        })
+        if (!sourceVideo || sourceVideo.status !== 'ROLLED_BACK') {
+          throw new Error('ROLLED_BACK_VERSION_NOT_FOUND')
+        }
+
+        const [activeVersionCount, latestAllocatedVersion] = await Promise.all([
+          tx.video.count({
+            where: { projectId, name: videoName, status: { not: 'ROLLED_BACK' } },
+          }),
+          tx.video.findFirst({
+            where: { projectId, name: videoName },
+            orderBy: { version: 'desc' },
+            select: { version: true },
+          }),
+        ])
+        if (project.enableRevisions && project.maxRevisions > 0 && activeVersionCount >= project.maxRevisions) {
+          throw new Error('MAX_REVISIONS')
+        }
+
+        const canKeepVersionNumber = sourceVideo.name === videoName
+          && sourceVideo.version === (latestAllocatedVersion?.version ?? sourceVideo.version)
+        const restoredVersion = canKeepVersionNumber
+          ? sourceVideo.version
+          : (latestAllocatedVersion?.version ?? 0) + 1
+
+        const video = await tx.video.update({
+          where: { id: sourceVideo.id },
+          data: {
+            name: videoName,
+            version: restoredVersion,
+            versionLabel: `v${restoredVersion}`,
+            status: 'READY',
+            approved: false,
+            approvedAt: null,
+            reviewStatus: null,
+            processingProgress: 100,
+            processingError: null,
+          },
+        })
+        await tx.projectUpload.delete({ where: { id: upload.id } })
+        return video
+      })
+
+      return NextResponse.json({
+        videoId: restored.id,
+        videoName: restored.name,
+        version: restored.version,
+        versionLabel: restored.versionLabel,
+        uploadId: upload.id,
+        transcodeStatus: 'READY',
+        reusedTranscode: true,
+      })
+    }
+
     const originalFileName = upload.originalFileName || upload.fileName
     const originalStoragePath = `projects/${projectId}/videos/original-${Date.now()}-${sanitizeFilename(originalFileName)}`
     sourceStoragePath = upload.storagePath
@@ -87,7 +156,8 @@ export async function POST(
       })
       if (!project) throw new Error('PROJECT_NOT_FOUND')
       if (project.status === 'APPROVED') throw new Error('PROJECT_APPROVED')
-      if (project.enableRevisions && project.maxRevisions > 0 && project.videos.length >= project.maxRevisions) {
+      const activeVersionCount = project.videos.filter((video) => video.status !== 'ROLLED_BACK').length
+      if (project.enableRevisions && project.maxRevisions > 0 && activeVersionCount >= project.maxRevisions) {
         throw new Error('MAX_REVISIONS')
       }
 
@@ -157,6 +227,9 @@ export async function POST(
       }
       if (error.message === 'MAX_REVISIONS') {
         return NextResponse.json({ error: 'The maximum number of revisions has been reached.' }, { status: 400 })
+      }
+      if (error.message === 'ROLLED_BACK_VERSION_NOT_FOUND') {
+        return NextResponse.json({ error: 'The retained video version is no longer available.' }, { status: 409 })
       }
     }
     logError('Failed to promote collected file to video:', error)

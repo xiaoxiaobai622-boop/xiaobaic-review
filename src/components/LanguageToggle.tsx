@@ -2,6 +2,7 @@
 
 import { Languages } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
+import { cn } from '@/lib/utils'
 
 interface LocaleOption {
   code: string
@@ -10,9 +11,10 @@ interface LocaleOption {
 
 interface LanguageToggleProps {
   onChange?: (locale: string) => void
+  className?: string
 }
 
-export default function LanguageToggle({ onChange }: LanguageToggleProps) {
+export default function LanguageToggle({ onChange, className }: LanguageToggleProps) {
   const [locale, setLocale] = useState<string>('en')
   const [availableLocales, setAvailableLocales] = useState<LocaleOption[]>([])
   const [mounted, setMounted] = useState(false)
@@ -77,7 +79,10 @@ export default function LanguageToggle({ onChange }: LanguageToggleProps) {
   }
 
   return (
-    <label className="flex h-9 items-center gap-2 rounded-md border border-border bg-background px-2 shadow-sm transition-colors hover:bg-accent">
+    <label className={cn(
+      'flex h-9 items-center gap-2 rounded-md border border-border bg-background px-2 shadow-sm transition-colors hover:bg-accent',
+      className
+    )}>
       <Languages className="h-4 w-4 shrink-0 text-foreground" aria-hidden="true" />
       <span className="sr-only">{availableLocales.find(option => option.code === locale)?.name}</span>
       <select

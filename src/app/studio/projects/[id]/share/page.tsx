@@ -9,7 +9,7 @@ import ThumbnailGrid from '@/components/ThumbnailGrid'
 import ThumbnailReel from '@/components/ThumbnailReel'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, CheckCircle2, RotateCcw } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
@@ -17,6 +17,7 @@ import ReviewLoginActions from '@/components/ReviewLoginActions'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import { useTranslations } from 'next-intl'
+import VideoReviewStatusSelect from '@/components/VideoReviewStatusSelect'
 
 const MAX_TOKEN_FETCH_ATTEMPTS = 2
 const TOKEN_FETCH_RETRY_BASE_MS = 120
@@ -37,7 +38,6 @@ type TokenFetchTelemetryEvent = 'first-attempt-failure' | 'retry-success' | 'ret
 export default function AdminSharePage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
-  const tv = useTranslations('videos')
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -217,6 +217,7 @@ export default function AdminSharePage() {
     const response = await apiFetch(`/api/projects/${id}`, { cache: 'no-store' })
     if (!response.ok) return
     const projectData = transformProjectData(await response.json())
+    tokenCacheRef.current.clear()
     setProject(projectData)
     if (activeVideoName && projectData.videosByName[activeVideoName]) {
       setActiveVideosRaw(projectData.videosByName[activeVideoName])
@@ -516,8 +517,7 @@ export default function AdminSharePage() {
     setViewState('grid')
   }, [project?.videosByName, urlVideoName])
 
-  // Handle video selection
-  const handleVideoSelect = useCallback((videoName: string) => {
+  const navigateToVideo = useCallback((videoName: string, historyMode: 'push' | 'replace') => {
     setActiveVideoName(videoName)
     setActiveVideosRaw(project.videosByName[videoName])
     setActiveVideoState(null)
@@ -525,20 +525,29 @@ export default function AdminSharePage() {
 
     const params = new URLSearchParams(searchParams?.toString() || '')
     params.set('video', videoName)
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    router[historyMode](`${pathname}?${params.toString()}`, { scroll: false })
   }, [project?.videosByName, searchParams, pathname, router])
 
-  // Handle back to grid
-  const handleBackToGrid = useCallback(() => {
-    setViewState('grid')
+  // Reel switches stay in the current history entry; opening from the grid
+  // keeps the grid as the single return destination.
+  const handleVideoSelect = useCallback((videoName: string) => {
+    navigateToVideo(videoName, 'replace')
+  }, [navigateToVideo])
 
-    const params = new URLSearchParams(searchParams?.toString() || '')
-    params.delete('video')
-    const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname
-    router.replace(newUrl || '', { scroll: false })
-  }, [searchParams, pathname, router])
+  const handleGridVideoSelect = useCallback((videoName: string) => {
+    navigateToVideo(videoName, 'push')
+  }, [navigateToVideo])
 
   const projectUrl = `/studio/projects/${id}`
+
+  const handleReturnToSource = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back()
+      return
+    }
+
+    router.push(projectUrl)
+  }, [projectUrl, router])
 
   // Show loading state
   if (loading) {
@@ -583,6 +592,16 @@ export default function AdminSharePage() {
 
   const showCommentPanel = !project.hideFeedback
   const canManageApproval = canUserManageApproval(adminUser, project)
+  const orderedVideoNames = Object.keys(project.videosByName).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true })
+  )
+  const activeVideoPosition = orderedVideoNames.indexOf(activeVideoName)
+  const previousVideoName = activeVideoPosition > 0
+    ? orderedVideoNames[activeVideoPosition - 1]
+    : null
+  const nextVideoName = activeVideoPosition >= 0 && activeVideoPosition < orderedVideoNames.length - 1
+    ? orderedVideoNames[activeVideoPosition + 1]
+    : null
 
   // Show thumbnail grid when in grid view (same as public share layout)
   if (viewState === 'grid') {
@@ -593,13 +612,14 @@ export default function AdminSharePage() {
           {/* Left: back to project */}
           {canManageApproval && (
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(projectUrl)}
-              title={t('backToProject')}
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              onClick={handleReturnToSource}
+              title={tc('back')}
+              aria-label={tc('back')}
             >
-              <ArrowLeft className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">{t('backToProject')}</span>
+              <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
 
@@ -618,7 +638,7 @@ export default function AdminSharePage() {
               videosByName={project.videosByName}
               thumbnailsByName={thumbnailsByName}
               thumbnailsLoading={thumbnailsLoading}
-              onVideoSelect={handleVideoSelect}
+              onVideoSelect={handleGridVideoSelect}
               projectTitle={project.title}
               projectDescription={project.description}
               clientName={clientDisplayName}
@@ -645,38 +665,21 @@ export default function AdminSharePage() {
         thumbnailsByName={thumbnailsByName}
         activeVideoName={activeVideoName}
         onVideoSelect={handleVideoSelect}
-        onBackToGrid={handleBackToGrid}
+        onBackToGrid={handleReturnToSource}
         showBackButton={true}
-        leadingAction={canManageApproval ? (
-          <Button variant="ghost" size="sm" onClick={() => router.push(projectUrl)} className="h-8 shrink-0 gap-1.5 px-2 sm:px-3" title={t('backToProject')}>
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden md:inline">{t('backToProject')}</span>
-          </Button>
-        ) : undefined}
+        backButtonLabel={tc('back')}
         showLanguageToggle={true}
         showComparisonAction={canManageApproval}
         showCommentToggle={!project.hideFeedback}
         isCommentPanelVisible={!hideComments}
         onToggleCommentPanel={() => setHideComments(!hideComments)}
         beforeToolbarAction={canManageApproval ? (
-          <Button
-            type="button"
-            variant={activeVideoState?.isVideoApproved ? 'outline' : 'success'}
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 rounded-md px-2.5"
-            onClick={() => window.dispatchEvent(new CustomEvent('openVideoApproval'))}
-            disabled={!activeVideoState}
-            title={activeVideoState?.isVideoApproved ? tv('unapproveVideo') : tv('approve')}
-          >
-            {activeVideoState?.isVideoApproved ? (
-              <RotateCcw className="h-4 w-4" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4" />
-            )}
-            <span className="hidden sm:inline">
-              {activeVideoState?.isVideoApproved ? tv('unapprove') : tv('approve')}
-            </span>
-          </Button>
+          <VideoReviewStatusSelect
+            projectId={project.id}
+            video={activeVideoState?.selectedVideo || null}
+            onUpdated={refreshProject}
+            className="h-8"
+          />
         ) : undefined}
         trailingAction={<ReviewLoginActions compact />}
       />
@@ -695,7 +698,7 @@ export default function AdminSharePage() {
         ) : (
           <>
             {/* Video Player - natural height on mobile, fills space on desktop */}
-            <div className={`min-w-0 flex flex-col lg:h-full lg:min-h-0 lg:flex-1 ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div className={`flex min-w-0 flex-col rounded-[6px] bg-muted/80 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={readyVideos}
                 projectId={project.id}
@@ -719,17 +722,26 @@ export default function AdminSharePage() {
                 hideDownloadButton={true}
                 hideApprovalAction={true}
                 allowComparison={canManageApproval}
+                onPreviousVideo={previousVideoName ? () => handleVideoSelect(previousVideoName) : undefined}
+                onNextVideo={nextVideoName ? () => handleVideoSelect(nextVideoName) : undefined}
+                hasPreviousVideo={Boolean(previousVideoName)}
+                hasNextVideo={Boolean(nextVideoName)}
                 comments={!project.hideFeedback ? filteredComments : []}
                 timestampDisplayMode="AUTO"
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 fillContainer={true}
+                playerSurfaceClassName="bg-card"
+                playerSurfaceColor="hsl(var(--card))"
+                playerFrameClassName="ring-1 ring-inset ring-border/70"
+                controlsSurfaceClassName="bg-card"
               />
               <div id="review-comment-composer" className="lg:mt-auto" />
             </div>
 
             {/* Comments Section - max one screen height on mobile, side panel on desktop */}
             {showCommentPanel && (
-              <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden bg-card lg:max-h-full lg:w-[360px] lg:flex-none lg:border-l lg:border-border/70">
+              <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden bg-card lg:max-h-full lg:w-[360px] lg:flex-none">
+                <div aria-hidden="true" className="hidden h-3 shrink-0 bg-muted/80 lg:block" />
                 <CommentSection
                   projectId={project.id}
                   projectSlug={project.slug}

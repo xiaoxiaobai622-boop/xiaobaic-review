@@ -3,8 +3,13 @@
 import { Moon, Sun } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
+import { cn } from '@/lib/utils'
 
-export default function ThemeToggle() {
+interface ThemeToggleProps {
+  className?: string
+}
+
+export default function ThemeToggle({ className }: ThemeToggleProps) {
   const t = useTranslations('controls')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [mounted, setMounted] = useState(false)
@@ -117,10 +122,10 @@ export default function ThemeToggle() {
   if (!mounted) {
     return (
       <button
-        className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+        className={cn('inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background transition-colors hover:bg-accent', className)}
         aria-label={t('toggleTheme')}
       >
-        <div className="h-5 w-5" />
+        <div className="h-[18px] w-[18px]" />
       </button>
     )
   }
@@ -128,14 +133,14 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+      className={cn('inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background transition-colors hover:bg-accent', className)}
       aria-label={t('toggleTheme')}
       title={theme === 'light' ? t('switchToDark') : t('switchToLight')}
     >
       {theme === 'light' ? (
-        <Moon className="h-5 w-5 text-foreground" />
+        <Moon className="h-[18px] w-[18px] text-foreground" />
       ) : (
-        <Sun className="h-5 w-5 text-foreground" />
+        <Sun className="h-[18px] w-[18px] text-foreground" />
       )}
     </button>
   )

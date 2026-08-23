@@ -9,6 +9,7 @@ import { Card, CardContent } from './ui/card'
 import type { ShareViewMode } from './ShareViewToggle'
 import { cn } from '@/lib/utils'
 import { countCommentsByLatestVideoName, getLatestVideo } from '@/lib/video-comment-counts'
+import VideoReviewStatusBadge from './VideoReviewStatusBadge'
 
 interface ThumbnailGridProps {
   videosByName: Record<string, any[]>
@@ -193,7 +194,6 @@ export default function ThumbnailGrid({
           <div className="space-y-2">
             {videoNames.map((name) => {
               const videos = videosByName[name]
-              const hasApprovedVideo = videos.some((v: any) => v.approved === true)
               const hasAssets = allowAssetDownload && videos.some((v: any) => v.hasAssets === true)
               const latestVideo = getLatestVideo(videos)
               const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
@@ -230,6 +230,7 @@ export default function ThumbnailGrid({
                       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
                         {latestVersionLabel}
                       </span>
+                      <VideoReviewStatusBadge video={latestVideo} className="shrink-0" />
                     </div>
                     <div className="flex min-w-0 items-center justify-between gap-1 text-[9px] text-muted-foreground sm:text-[10px]">
                       <span className="shrink-0 whitespace-nowrap" title={uploadTime}>{uploadTime}</span>
@@ -241,11 +242,6 @@ export default function ThumbnailGrid({
                       <Files className="w-4 h-4 text-muted-foreground" />
                     </span>
                   )}
-                  {hasApprovedVideo && (
-                    <span title={tv('approved')} aria-label={tv('approved')} className="flex-shrink-0">
-                      <CheckCircle2 className="w-4 h-4 text-success" />
-                    </span>
-                  )}
                   <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                 </button>
               )
@@ -255,7 +251,6 @@ export default function ThumbnailGrid({
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(168px,190px))]">
           {videoNames.map((name) => {
             const videos = videosByName[name]
-            const hasApprovedVideo = videos.some((v: any) => v.approved === true)
             const hasAssets = allowAssetDownload && videos.some((v: any) => v.hasAssets === true)
             const latestVideo = getLatestVideo(videos)
             const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
@@ -316,16 +311,7 @@ export default function ThumbnailGrid({
                     </div>
                   )}
 
-                  {/* Approved badge */}
-                  {hasApprovedVideo && (
-                    <div
-                      className="absolute top-2 right-2 bg-success text-success-foreground rounded-full p-1"
-                      title={tv('approved')}
-                      aria-label={tv('approved')}
-                    >
-                      <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                    </div>
-                  )}
+                  <VideoReviewStatusBadge video={latestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
 
                   {/* Duration and annotation badges */}
                   <div className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm">

@@ -125,7 +125,6 @@ export default function CommentSection({
     handleRemoveAttachment,
     handleAttachmentErrorChange,
     handleStartDrawing,
-    handleClearAnnotation,
     handleSetTimecodeEnd,
     handleClearTimecodeEnd,
   } = useCommentManagement({
@@ -532,7 +531,6 @@ export default function CommentSection({
               shareToken={shareToken}
               pendingAnnotation={pendingAnnotation}
               onStartDrawing={handleStartDrawing}
-              onClearAnnotation={handleClearAnnotation}
               showShortcutsButton={showShortcutsButton}
               onShowShortcuts={handleOpenShortcuts}
             />
@@ -633,7 +631,7 @@ export default function CommentSection({
         </div>
 
         {/* Input Area - Desktop and non-collapsible mobile */}
-        {composerTarget && createPortal(<div className="flex-shrink-0">
+        {composerTarget && createPortal(<div className="flex-shrink-0 overflow-hidden rounded-[6px]">
           <CommentInput
           newComment={newComment}
           onCommentChange={handleCommentChange}
@@ -667,7 +665,6 @@ export default function CommentSection({
           shareToken={shareToken}
           pendingAnnotation={pendingAnnotation}
           onStartDrawing={handleStartDrawing}
-          onClearAnnotation={handleClearAnnotation}
           showShortcutsButton={showShortcutsButton}
           onShowShortcuts={handleOpenShortcuts}
         /></div>, composerTarget)}

@@ -4,17 +4,19 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Link from 'next/link'
 import AdminVideoManager from '@/components/AdminVideoManager'
 import ProjectActions from '@/components/ProjectActions'
 import ProjectUploadsBlock from '@/components/ProjectUploadsBlock'
 import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X } from 'lucide-react'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
 import { cn } from '@/lib/utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { useAuth } from '@/components/AuthProvider'
 
 // Force dynamic rendering (no static pre-rendering)
 export const dynamic = 'force-dynamic'
@@ -75,12 +77,23 @@ function isImageFile(fileType: string | null | undefined, fileName: string | nul
   return /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|avif)$/i.test(fileName || '')
 }
 
+function countVideoComments(comments: any[], videoId: string): number {
+  const countTree = (comment: any): number => 1 + (comment.replies || []).reduce(
+    (total: number, reply: any) => total + countTree(reply),
+    0
+  )
+  return comments
+    .filter((comment: any) => comment.videoId === videoId)
+    .reduce((total: number, comment: any) => total + countTree(comment), 0)
+}
+
 export default function ProjectPage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { user } = useAuth()
   const id = params?.id as string
 
   const [project, setProject] = useState<any>(null)
@@ -95,6 +108,9 @@ export default function ProjectPage() {
   const [collectionLinkCopied, setCollectionLinkCopied] = useState(false)
   const [uploadRequestKey, setUploadRequestKey] = useState(0)
   const [selectedVideoGroupName, setSelectedVideoGroupName] = useState<string | null>(null)
+  const [rollbackTarget, setRollbackTarget] = useState<any | null>(null)
+  const [rollingBackVideoId, setRollingBackVideoId] = useState<string | null>(null)
+  const [rollbackError, setRollbackError] = useState('')
 
   const handlePhotoCounts = useCallback((albumCount: number, photoCount: number) => {
     setPhotoCounts({ albums: albumCount, photos: photoCount })
@@ -248,6 +264,7 @@ export default function ProjectPage() {
   const iconBadgeClassName = 'rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10'
   const iconBadgeIconClassName = 'w-4 h-4 text-primary'
   const countBadgeClassName = 'text-sm font-normal text-muted-foreground'
+  const projectToolbarButtonClassName = 'h-9 px-3 sm:min-w-[132px]'
 
   const workspaceVideos = project.videos.filter((video: any) =>
     !(video.status === 'PROCESSING' && video.sourceUpload?.id)
@@ -261,6 +278,12 @@ export default function ProjectPage() {
           .sort((a: any, b: any) => b.version - a.version),
       }
     : null
+  const canRollbackVersion = Boolean(user && (
+    user.role === 'ADMIN'
+    || user.teamRole === 'OWNER'
+    || user.teamRole === 'ADMIN'
+    || project.createdById === user.id
+  ))
   const collectionUrl = shareUrl ? `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}mode=collect` : ''
 
   const copyCollectionLink = async () => {
@@ -273,10 +296,42 @@ export default function ProjectPage() {
     }
   }
 
+  const openRollbackDialog = (video: any) => {
+    setRollbackError('')
+    setRollbackTarget(video)
+  }
+
+  const rollbackLatestVersion = async () => {
+    if (!rollbackTarget || rollingBackVideoId) return
+    setRollbackError('')
+    setRollingBackVideoId(rollbackTarget.id)
+    try {
+      const response = await apiFetch(
+        `/api/videos/${rollbackTarget.id}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'rollback-to-collection' }),
+        }
+      )
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || t('rollbackVersionFailed'))
+
+      setRollbackTarget(null)
+      setSelectedVideoGroupName(null)
+      await fetchProject()
+      changeWorkspace('uploads')
+    } catch (error) {
+      setRollbackError(error instanceof Error ? error.message : t('rollbackVersionFailed'))
+    } finally {
+      setRollingBackVideoId(null)
+    }
+  }
+
   return (
     <div className="flex-1 min-h-0 bg-background">
       <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <Link href="/studio/projects">
             <Button variant="outline" size="default" className="justify-start px-3">
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -284,9 +339,56 @@ export default function ProjectPage() {
               <span className="sm:hidden">{tc('back')}</span>
             </Button>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {t('materialSummary', { materials: videoGroupNames.length, versions: workspaceVideos.length })}
+            </span>
+            {project.allowReverseShare && collectionUrl && (
+              <a href={collectionUrl} target="_blank" rel="noopener noreferrer">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  title={t('openCollectionLink')}
+                  aria-label={t('openCollectionLink')}
+                >
+                  <ExternalLink className="h-4 w-4 -scale-x-100" />
+                </Button>
+              </a>
+            )}
+            <Button
+              size="default"
+              className={projectToolbarButtonClassName}
+              disabled={project.status === 'APPROVED'}
+              onClick={() => {
+                changeWorkspace('videos')
+                setUploadRequestKey(current => current + 1)
+              }}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {t('uploadVideos')}
+            </Button>
+            {project.allowReverseShare ? (
+              <Button
+                variant="outline"
+                size="default"
+                className={projectToolbarButtonClassName}
+                onClick={copyCollectionLink}
+                disabled={!collectionUrl}
+              >
+                {collectionLinkCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                {collectionLinkCopied ? tc('copied') : t('copyCollectionLink')}
+              </Button>
+            ) : (
+              <Link href={`/studio/projects/${id}/settings`}>
+                <Button variant="outline" size="default" className={projectToolbarButtonClassName}>
+                  <FolderUp className="mr-2 h-4 w-4" />
+                  {t('enableCollection')}
+                </Button>
+              </Link>
+            )}
             <Link href={`/studio/projects/${id}/settings`}>
-              <Button variant="outline" size="default">
+              <Button variant="outline" size="default" className={projectToolbarButtonClassName}>
                 <Settings className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">{t('projectSettings')}</span>
               </Button>
@@ -294,51 +396,7 @@ export default function ProjectPage() {
           </div>
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center gap-2 border-y border-border py-2.5">
-          <Button size="sm" onClick={() => changeWorkspace('videos')}>
-            <Video className="mr-2 h-4 w-4" />
-            {t('reviewWorkspace')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={project.status === 'APPROVED'}
-            onClick={() => {
-              changeWorkspace('videos')
-              setUploadRequestKey(current => current + 1)
-            }}
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            {t('uploadVideos')}
-          </Button>
-          {project.allowReverseShare ? (
-            <>
-              <Button variant="outline" size="sm" onClick={copyCollectionLink} disabled={!collectionUrl}>
-                {collectionLinkCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                {collectionLinkCopied ? tc('copied') : t('copyCollectionLink')}
-              </Button>
-              {collectionUrl && (
-                <a href={collectionUrl} target="_blank" rel="noopener noreferrer">
-                  <Button variant="ghost" size="icon" title={t('openCollectionLink')}>
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </a>
-              )}
-            </>
-          ) : (
-            <Link href={`/studio/projects/${id}/settings`}>
-              <Button variant="outline" size="sm">
-                <FolderUp className="mr-2 h-4 w-4" />
-                {t('enableCollection')}
-              </Button>
-            </Link>
-          )}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {t('materialSummary', { materials: videoGroupNames.length, versions: workspaceVideos.length })}
-          </span>
-        </div>
-
-        <div className="min-h-[calc(100dvh-var(--admin-header-height)-8rem)] border-y border-border lg:grid lg:grid-cols-[168px_minmax(0,1fr)_288px]">
+        <div className="min-h-[calc(100dvh-var(--admin-header-height)-5rem)] border-y border-border lg:grid lg:grid-cols-[168px_minmax(0,1fr)_288px]">
           <nav className="flex gap-1 overflow-x-auto border-b border-border p-2 lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r lg:py-4">
             {([
               { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
@@ -370,13 +428,14 @@ export default function ProjectPage() {
 
           <main id="review-workspace" className="min-w-0 p-3 sm:p-4">
             <section className={activeWorkspace === 'videos' ? undefined : 'hidden'}>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <h2 className="flex shrink-0 items-center gap-2 text-lg font-semibold">
                   <span className={iconBadgeClassName}><Video className={iconBadgeIconClassName} /></span>
                   {t('videos')}
                   <span className={countBadgeClassName}>{videoGroupNames.length}</span>
                 </h2>
-                <div className="flex items-center gap-1">
+                <div id="video-selection-toolbar" className="flex min-w-0 flex-1 items-center justify-end empty:hidden" />
+                <div className="flex shrink-0 items-center gap-1">
                   <div className="flex items-center rounded-md border border-border bg-muted/30 p-0.5">
                     <Button variant={videoViewMode === 'list' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeVideoViewMode('list')} className="h-7 w-7" title={t('listView')} aria-label={t('listView')}>
                       <List className="h-4 w-4" />
@@ -390,7 +449,7 @@ export default function ProjectPage() {
                   </Button>
                 </div>
               </div>
-              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} onShowVideoInfo={(group) => setSelectedVideoGroupName(group.name)} />
+              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={(group) => setSelectedVideoGroupName(group.name)} />
             </section>
 
             <section className={activeWorkspace === 'photos' ? undefined : 'hidden'}>
@@ -444,7 +503,7 @@ export default function ProjectPage() {
                   </div>
                 </div>
                 <CardContent className="space-y-2 p-3">
-                  {selectedVideoGroup.videos.map((video: any) => {
+                  {selectedVideoGroup.videos.map((video: any, videoIndex: number) => {
                     const statusLabel = video.approved
                       ? t('videoStatusApproved')
                       : ({
@@ -472,6 +531,7 @@ export default function ProjectPage() {
                       formatAspectRatio(video.width, video.height),
                     ].filter((value) => value && value !== '-').join(' · ')
                     const uploader = video.uploadedByName || t('legacyAdminUploader')
+                    const isLatestVersion = videoIndex === 0
 
                     return (
                       <div key={video.id} className="rounded-md border border-border bg-muted/20 px-3 py-3">
@@ -493,6 +553,18 @@ export default function ProjectPage() {
                           <dt className="flex items-center gap-1 text-muted-foreground"><Clock3 className="h-3 w-3 shrink-0" />{t('versionInfoUploadedAt')}</dt>
                           <dd className="tabular-nums text-foreground">{uploadedAt}</dd>
                         </dl>
+                        {isLatestVersion && selectedVideoGroup.videos.length > 1 && canRollbackVersion && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-3 h-8 w-full border-destructive/35 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => openRollbackDialog(video)}
+                          >
+                            <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                            {t('rollbackVersion')}
+                          </Button>
+                        )}
                       </div>
                     )
                   })}
@@ -504,6 +576,68 @@ export default function ProjectPage() {
           </aside>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(rollbackTarget)}
+        onOpenChange={(open) => {
+          if (!open && !rollingBackVideoId) {
+            setRollbackTarget(null)
+            setRollbackError('')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" hideClose={Boolean(rollingBackVideoId)}>
+          <DialogHeader>
+            <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+              <TriangleAlert className="h-5 w-5" />
+            </div>
+            <DialogTitle>{t('rollbackVersionTitle', { version: rollbackTarget?.versionLabel || '' })}</DialogTitle>
+            <DialogDescription className="leading-6">
+              {t('rollbackVersionDescription', {
+                version: rollbackTarget?.versionLabel || '',
+                previousVersion: selectedVideoGroup?.videos[1]?.versionLabel || '',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm leading-6 text-foreground">
+            {t('rollbackVersionCommentWarning', {
+              count: rollbackTarget ? countVideoComments(project.comments || [], rollbackTarget.id) : 0,
+            })}
+          </div>
+
+          {rollbackError && (
+            <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {rollbackError}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(rollingBackVideoId)}
+              onClick={() => {
+                setRollbackTarget(null)
+                setRollbackError('')
+              }}
+            >
+              {tc('cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={Boolean(rollingBackVideoId)}
+              onClick={rollbackLatestVersion}
+            >
+              {rollingBackVideoId
+                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                : <RotateCcw className="mr-2 h-4 w-4" />}
+              {rollingBackVideoId ? t('rollingBackVersion') : t('confirmRollbackVersion')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

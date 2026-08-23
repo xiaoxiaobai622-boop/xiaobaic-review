@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3 } from 'lucide-react'
+import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff } from 'lucide-react'
 import VideoUpload from './VideoUpload'
 import VideoList from './VideoList'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -15,12 +16,34 @@ import { apiPatch, apiFetch, apiDelete } from '@/lib/api-client'
 import { FILE_LIMITS } from '@/lib/file-validation'
 import { entryToFiles } from '@/lib/drop-entries'
 import { useTranslations } from 'next-intl'
-import VideoComparison from './VideoComparison'
+import VideoComparison, { type VideoComparisonComment } from './VideoComparison'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { getLatestVideo } from '@/lib/video-comment-counts'
+import VideoReviewStatusBadge from './VideoReviewStatusBadge'
+import { VideoReviewStatusControl } from './VideoReviewStatusSelect'
+import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
 
 function isVideoFile(file: File): boolean {
   const name = file.name.toLowerCase()
   return FILE_LIMITS.ALLOWED_EXTENSIONS.includes(name.slice(name.lastIndexOf('.')))
+}
+
+function formatVideoUploadTime(createdAt?: string): string {
+  if (!createdAt) return '--'
+  const date = new Date(createdAt)
+  if (Number.isNaN(date.getTime())) return '--'
+
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value || ''
+  return `${value('year')}-${value('month')}-${value('day')} ${value('hour')}:${value('minute')}`
 }
 
 interface AdminVideoManagerProps {
@@ -29,15 +52,17 @@ interface AdminVideoManagerProps {
   projectStatus: string
   restrictToLatestVersion?: boolean
   companyName?: string
-  onRefresh?: () => void
+  onRefresh?: () => void | Promise<void>
   sortMode?: 'status' | 'alphabetical'
   viewMode?: 'list' | 'grid'
   maxRevisions?: number
   enableRevisions?: boolean
-  comments?: Array<{ videoId?: string | null }>
+  comments?: VideoComparisonComment[]
   shareUrl?: string
   uploadRequestKey?: number
+  timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onShowVideoInfo?: (videoGroup: { name: string; videos: any[] }) => void
+  selectionToolbarTargetId?: string
 }
 
 interface CollectedUpload {
@@ -59,12 +84,12 @@ export default function AdminVideoManager({
   onRefresh,
   sortMode = 'alphabetical',
   viewMode = 'grid',
-  maxRevisions,
-  enableRevisions,
   comments = [],
   shareUrl = '',
   uploadRequestKey = 0,
-  onShowVideoInfo
+  timestampDisplayMode = 'TIMECODE',
+  onShowVideoInfo,
+  selectionToolbarTargetId,
 }: AdminVideoManagerProps) {
   const t = useTranslations('videos')
   const tc = useTranslations('common')
@@ -98,6 +123,7 @@ export default function AdminVideoManager({
   const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
   const [versionSourceMenuGroup, setVersionSourceMenuGroup] = useState<string | null>(null)
+  const [reviewStatusMenuGroup, setReviewStatusMenuGroup] = useState<string | null>(null)
   const [collectionTargetGroup, setCollectionTargetGroup] = useState<string | null>(null)
   const [collectionUploads, setCollectionUploads] = useState<CollectedUpload[]>([])
   const [collectionLoading, setCollectionLoading] = useState(false)
@@ -105,6 +131,13 @@ export default function AdminVideoManager({
   const [promotingCollectionUploadId, setPromotingCollectionUploadId] = useState<string | null>(null)
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   const [sessionId] = useState<string>(() => `admin:${Date.now()}`)
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(() => new Set())
+  const [bulkStatusLoading, setBulkStatusLoading] = useState(false)
+  const [reviewStatusUpdatingVideoId, setReviewStatusUpdatingVideoId] = useState<string | null>(null)
+  const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, VideoReviewStatus | null>>({})
+  const [selectionLinkCopied, setSelectionLinkCopied] = useState(false)
+  const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
+  const cardClickTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   const videoTokenUrl = useCallback((videoId: string, quality: string) => {
     const params = new URLSearchParams({ videoId, projectId, quality, sessionId })
@@ -114,6 +147,22 @@ export default function AdminVideoManager({
   useEffect(() => {
     if (uploadRequestKey > 0 && projectStatus !== 'APPROVED') setIsUploadModalOpen(true)
   }, [uploadRequestKey, projectStatus])
+
+  useEffect(() => {
+    const currentNames = new Set(videos.map(video => video.name))
+    setSelectedGroups(current => new Set([...current].filter(name => currentNames.has(name))))
+    setReviewStatusOverrides({})
+  }, [videos])
+
+  useEffect(() => () => {
+    Object.values(cardClickTimersRef.current).forEach(timer => clearTimeout(timer))
+  }, [])
+
+  useEffect(() => {
+    setSelectionToolbarTarget(
+      selectionToolbarTargetId ? document.getElementById(selectionToolbarTargetId) : null
+    )
+  }, [selectionToolbarTargetId])
 
   // Fetch a thumbnail per video group (latest version that has one)
   useEffect(() => {
@@ -207,13 +256,151 @@ export default function AdminVideoManager({
   const handleOpenReview = (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
     setActionMenuGroup(null)
+    setVersionSourceMenuGroup(null)
+    setReviewStatusMenuGroup(null)
     const url = `/studio/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-  const handleEnterReview = (groupName: string, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const toggleGroupSelection = (groupName: string) => {
+    setSelectedGroups(current => {
+      const next = new Set(current)
+      if (next.has(groupName)) next.delete(groupName)
+      else next.add(groupName)
+      return next
+    })
+  }
+
+  const handleCardClick = (groupName: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (event.detail !== 1) return
+
+    const existingTimer = cardClickTimersRef.current[groupName]
+    if (existingTimer) clearTimeout(existingTimer)
+    cardClickTimersRef.current[groupName] = setTimeout(() => {
+      toggleGroupSelection(groupName)
+      delete cardClickTimersRef.current[groupName]
+    }, 220)
+  }
+
+  const handleCardDoubleClick = (groupName: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    if ((event.target as HTMLElement).closest('button, a, input, textarea, select, [role="menuitem"]')) return
+    const existingTimer = cardClickTimersRef.current[groupName]
+    if (existingTimer) {
+      clearTimeout(existingTimer)
+      delete cardClickTimersRef.current[groupName]
+    }
     router.push(`/studio/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`)
+  }
+
+  const getDisplayVideo = (video: any) => {
+    if (!Object.prototype.hasOwnProperty.call(reviewStatusOverrides, video.id)) return video
+    const reviewStatus = reviewStatusOverrides[video.id]
+    return { ...video, approved: reviewStatus === 'APPROVED', reviewStatus }
+  }
+
+  const handleBulkReviewStatus = async (reviewStatus: VideoReviewStatus | null) => {
+    if (bulkStatusLoading || selectedGroups.size === 0) return
+    const selectedVideos = [...selectedGroups]
+      .map(name => getLatestVideo(videoGroups[name] || []))
+      .filter((video): video is any => Boolean(video))
+      .filter(video => getEffectiveVideoReviewStatus(getDisplayVideo(video)) !== reviewStatus)
+
+    if (selectedVideos.length === 0) return
+
+    setReviewStatusOverrides(current => ({
+      ...current,
+      ...Object.fromEntries(selectedVideos.map(video => [video.id, reviewStatus])),
+    }))
+    setBulkStatusLoading(true)
+
+    try {
+      for (const video of selectedVideos) {
+        const isApproving = reviewStatus === 'APPROVED'
+        const response = await apiFetch(
+          isApproving
+            ? `/api/projects/${projectId}/approve`
+            : `/api/projects/${projectId}/review-status`,
+          {
+            method: isApproving ? 'POST' : 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              selectedVideoId: video.id,
+              ...(!isApproving && { reviewStatus }),
+            }),
+          }
+        )
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          throw new Error(errorData?.error || t('failedToUpdateReviewStatus'))
+        }
+      }
+      await onRefresh?.()
+    } catch (error) {
+      await onRefresh?.()
+      alert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
+    } finally {
+      setBulkStatusLoading(false)
+    }
+  }
+
+  const handleVideoReviewStatus = async (video: any, reviewStatus: VideoReviewStatus | null) => {
+    if (
+      reviewStatusUpdatingVideoId ||
+      getEffectiveVideoReviewStatus(getDisplayVideo(video)) === reviewStatus
+    ) return
+
+    setReviewStatusOverrides(current => ({ ...current, [video.id]: reviewStatus }))
+    setReviewStatusUpdatingVideoId(video.id)
+    setActionMenuGroup(null)
+    setReviewStatusMenuGroup(null)
+    setVersionSourceMenuGroup(null)
+
+    try {
+      const isApproving = reviewStatus === 'APPROVED'
+      const response = await apiFetch(
+        isApproving
+          ? `/api/projects/${projectId}/approve`
+          : `/api/projects/${projectId}/review-status`,
+        {
+          method: isApproving ? 'POST' : 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            selectedVideoId: video.id,
+            ...(!isApproving && { reviewStatus }),
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.error || t('failedToUpdateReviewStatus'))
+      }
+      await onRefresh?.()
+    } catch (error) {
+      await onRefresh?.()
+      alert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
+    } finally {
+      setReviewStatusUpdatingVideoId(null)
+    }
+  }
+
+  const handleShareSelection = async () => {
+    if (selectedGroups.size === 0) return
+    const baseUrl = shareUrl || `${window.location.origin}/studio/projects/${projectId}/share`
+    const selectedNames = [...selectedGroups]
+    const targetUrl = selectedNames.length === 1
+      ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}video=${encodeURIComponent(selectedNames[0])}`
+      : baseUrl
+    const copied = await copyTextToClipboard(targetUrl)
+    if (!copied) {
+      alert(tc('errorTryAgain'))
+      return
+    }
+    setSelectionLinkCopied(true)
+    window.setTimeout(() => setSelectionLinkCopied(false), 1600)
   }
 
   const handleCopyReviewLink = async (groupName: string, e: React.MouseEvent) => {
@@ -229,6 +416,8 @@ export default function AdminVideoManager({
     window.setTimeout(() => {
       setCopiedReviewGroup(null)
       setActionMenuGroup(null)
+      setVersionSourceMenuGroup(null)
+      setReviewStatusMenuGroup(null)
     }, 1200)
   }
 
@@ -236,6 +425,7 @@ export default function AdminVideoManager({
     e.stopPropagation()
     setActionMenuGroup(null)
     setVersionSourceMenuGroup(null)
+    setReviewStatusMenuGroup(null)
     setLocalVersionTargetGroup(groupName)
     setLocalVersionFile(null)
     localVersionInputRef.current?.click()
@@ -278,6 +468,7 @@ export default function AdminVideoManager({
     e.stopPropagation()
     setActionMenuGroup(null)
     setVersionSourceMenuGroup(null)
+    setReviewStatusMenuGroup(null)
     setCollectionTargetGroup(groupName)
     setCollectionUploads([])
     setSelectedCollectionUploadId(null)
@@ -444,6 +635,60 @@ export default function AdminVideoManager({
     }
   })
 
+  const selectedLatestVideos = [...selectedGroups]
+    .map(name => getLatestVideo(videoGroups[name] || []))
+    .filter((video): video is any => Boolean(video))
+    .map(getDisplayVideo)
+  const selectedStatuses = selectedLatestVideos.map(getEffectiveVideoReviewStatus)
+  const selectedStatusesAreUniform = selectedStatuses.length > 0 && selectedStatuses.every(status => status === selectedStatuses[0])
+  const bulkStatusValue = selectedStatusesAreUniform
+    ? selectedStatuses[0]
+    : null
+  const selectionMode = selectedGroups.size > 0
+  const selectionToolbar = selectedGroups.size > 0 ? (
+    <div className="flex w-full flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8"
+        onClick={() => setSelectedGroups(new Set(sortedGroupNames))}
+        disabled={selectedGroups.size === sortedGroupNames.length}
+      >
+        {tc('selectAll')}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8"
+        onClick={() => setSelectedGroups(new Set())}
+      >
+        {tc('cancel')}
+      </Button>
+      <span className="text-xs tabular-nums text-muted-foreground">
+        {t('selectionCount', { count: selectedGroups.size })}
+      </span>
+      <div className="min-w-2 flex-1" />
+      <VideoReviewStatusControl
+        value={bulkStatusValue}
+        indeterminate={!selectedStatusesAreUniform}
+        loading={bulkStatusLoading}
+        onValueChange={handleBulkReviewStatus}
+        className="bg-background"
+      />
+      <Button
+        type="button"
+        size="sm"
+        className="h-8"
+        onClick={handleShareSelection}
+      >
+        {selectionLinkCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+        {selectionLinkCopied ? tc('copied') : t('shareSelection')}
+      </Button>
+    </div>
+  ) : null
+
   return (
     <div
       className={`space-y-4 rounded-lg transition-shadow ${isDragOver ? 'ring-2 ring-primary/60' : ''}`}
@@ -488,6 +733,12 @@ export default function AdminVideoManager({
         />
       )}
 
+      {selectionToolbar && (
+        selectionToolbarTargetId
+          ? selectionToolbarTarget && createPortal(selectionToolbar, selectionToolbarTarget)
+          : <div className="border-y border-border py-2.5">{selectionToolbar}</div>
+      )}
+
       {sortedGroupNames.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center space-y-3">
@@ -510,39 +761,60 @@ export default function AdminVideoManager({
       {sortedGroupNames.map((groupName) => {
         const groupVideos = videoGroups[groupName]
         const isExpanded = expandedGroup === groupName
-        const latestVideo = groupVideos.sort((a, b) => b.version - a.version)[0]
-        const approvedCount = groupVideos.filter(v => v.approved).length
-        const hasApprovedVideos = approvedCount > 0
+        const latestVideo = getLatestVideo(groupVideos)!
+        const displayLatestVideo = getDisplayVideo(latestVideo)
+        const isSelected = selectedGroups.has(groupName)
         const processingCount = groupVideos.filter(v => v.status === 'PROCESSING').length
         const hasProcessingVideos = processingCount > 0
         const errorCount = groupVideos.filter(v => v.status === 'ERROR').length
         const hasErrorVideos = errorCount > 0
-        const groupVideoIds = new Set(groupVideos.map(video => video.id))
-        const feedbackCount = comments.filter(comment => comment.videoId && groupVideoIds.has(comment.videoId)).length
+        const feedbackCount = comments.filter(comment => comment.videoId === latestVideo.id).length
         const isGridCard = viewMode === 'grid' && !isExpanded
 
         return (
           <Card
             key={groupName}
-            className={cn('relative', isGridCard && 'h-full', viewMode === 'grid' && isExpanded && 'col-span-full')}
+            className={cn(
+              'group relative',
+              isGridCard && 'h-full',
+              viewMode === 'grid' && isExpanded && 'col-span-full',
+              isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg'
+            )}
           >
             <CardHeader
               className={cn(
-                'cursor-pointer hover:bg-accent/50 transition-colors',
+                'relative cursor-pointer hover:bg-accent/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
                 isGridCard
                   ? 'block space-y-0 p-2.5'
                   : 'flex flex-row items-center justify-between space-y-0 py-3 px-3 sm:px-6'
               )}
-              onClick={(e) => handleEnterReview(groupName, e)}
+              data-selected={isSelected || undefined}
+              onClick={(event) => handleCardClick(groupName, event)}
+              onDoubleClick={(event) => handleCardDoubleClick(groupName, event)}
             >
+              <button
+                type="button"
+                className={cn(
+                  'absolute left-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border-2 bg-background/90 text-primary shadow-elevation-sm transition-[opacity,background-color,border-color,color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                  isSelected
+                    ? 'scale-100 border-primary bg-primary text-primary-foreground opacity-100'
+                    : selectionMode
+                      ? 'scale-100 border-muted-foreground/55 text-transparent opacity-100'
+                      : 'scale-95 border-white/90 text-transparent opacity-0 group-hover:scale-100 group-hover:opacity-100 group-focus-within:opacity-100'
+                )}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  toggleGroupSelection(groupName)
+                }}
+                aria-label={isSelected ? t('deselectVideo') : t('selectVideo')}
+                aria-pressed={isSelected}
+              >
+                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+              </button>
               <div className={cn('relative flex gap-3 flex-1 min-w-0', isGridCard ? 'flex-col items-stretch' : 'items-center')}>
                 {thumbnails[groupName] ? (
-                  <button
-                    type="button"
-                    onClick={(e) => handleEnterReview(groupName, e)}
+                  <div
                     className={cn('relative flex-shrink-0 cursor-pointer overflow-hidden rounded-md border border-border bg-black', isGridCard && 'w-full aspect-video')}
-                    title={t('openReviewPage')}
-                    aria-label={t('openReviewPage')}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -551,27 +823,15 @@ export default function AdminVideoManager({
                       loading="lazy"
                       className={cn('object-contain bg-black', isGridCard ? 'h-full w-full' : 'w-20 h-12 rounded-md')}
                     />
-                    {hasApprovedVideos && (
-                      <span
-                        className="absolute right-2 top-2 rounded-full bg-success p-0.5 text-success-foreground shadow-elevation-sm"
-                        title={`${approvedCount} ${t('approved')}`}
-                        aria-label={`${approvedCount} ${t('approved')}`}
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      </span>
+                    {isGridCard && (
+                      <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
                     )}
-                  </button>
+                  </div>
                 ) : (
                   <div className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? 'w-full aspect-video' : 'w-20 h-12')}>
                     <Video className="w-5 h-5 text-muted-foreground" />
-                    {hasApprovedVideos && (
-                      <span
-                        className="absolute right-2 top-2 rounded-full bg-success p-0.5 text-success-foreground shadow-elevation-sm"
-                        title={`${approvedCount} ${t('approved')}`}
-                        aria-label={`${approvedCount} ${t('approved')}`}
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      </span>
+                    {isGridCard && (
+                      <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
                     )}
                   </div>
                 )}
@@ -582,6 +842,7 @@ export default function AdminVideoManager({
                     ) : (
                       <>
                         <CardTitle className={cn('min-w-0', isGridCard ? 'truncate text-sm leading-5' : 'text-lg')}>{groupName}</CardTitle>
+                        {!isGridCard && <VideoReviewStatusBadge video={displayLatestVideo} />}
                         {isExpanded && projectStatus !== 'APPROVED' && (
                           <>
                             <Button
@@ -633,12 +894,13 @@ export default function AdminVideoManager({
                     )}
                   </div>
                   {editingGroupName !== groupName && (
-                    <p className={cn('text-muted-foreground mt-1 flex items-center gap-x-3 gap-y-1', isGridCard ? 'overflow-hidden whitespace-nowrap text-xs' : 'flex-wrap text-sm')}>
-                      <span>{groupVideos.length} {groupVideos.length === 1 ? t('versionSingular') : t('versions')} • {t('latestLabel')} {latestVideo.versionLabel || `v${latestVideo.version}`}</span>
-                      <span className="inline-flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />{t('feedbackCount', { count: feedbackCount })}</span>
-                      {enableRevisions && maxRevisions && (
-                        <span>{t('revisionsLabel')} {groupVideos.length}/{maxRevisions}</span>
-                      )}
+                    <p className={cn('mt-1 flex w-full max-w-sm items-center gap-4 whitespace-nowrap text-muted-foreground', isGridCard ? '-translate-y-0.5 overflow-hidden pr-8 text-xs' : 'text-sm')}>
+                      <span className="tabular-nums">{formatVideoUploadTime(latestVideo.createdAt)}</span>
+                      <span className="font-medium">{latestVideo.versionLabel || `v${latestVideo.version}`}</span>
+                      <span className="inline-flex items-center gap-1 tabular-nums" title={t('feedbackCount', { count: feedbackCount })}>
+                        <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>{feedbackCount}</span>
+                      </span>
                     </p>
                   )}
                 </div>
@@ -657,13 +919,20 @@ export default function AdminVideoManager({
                       <ChevronUp className="h-5 w-5" />
                     </button>
                   ) : (
-                    <div className={cn('relative z-50 flex-shrink-0', isGridCard && 'absolute bottom-0 right-0')}>
+                    <div
+                      className={cn(
+                        'relative flex-shrink-0',
+                        actionMenuGroup === groupName ? 'z-[70]' : 'z-10',
+                        isGridCard && 'absolute bottom-0 right-0'
+                      )}
+                    >
                       <button
                         type="button"
                         className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                         onClick={(e) => {
                           e.stopPropagation()
                           setVersionSourceMenuGroup(null)
+                          setReviewStatusMenuGroup(null)
                           setActionMenuGroup(current => current === groupName ? null : groupName)
                         }}
                         aria-label={t('videoActions')}
@@ -677,10 +946,15 @@ export default function AdminVideoManager({
                             type="button"
                             className="fixed inset-0 z-40 cursor-default"
                             aria-label={tc('close')}
-                            onClick={(e) => { e.stopPropagation(); setActionMenuGroup(null); setVersionSourceMenuGroup(null) }}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActionMenuGroup(null)
+                              setVersionSourceMenuGroup(null)
+                              setReviewStatusMenuGroup(null)
+                            }}
                           />
                           <div className="absolute right-0 top-8 z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-                            <button type="button" onClick={(e) => { setActionMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                            <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                               <Play className="h-4 w-4" />{t('previewVideo')}
                             </button>
                             <button type="button" onClick={(e) => handleOpenReview(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
@@ -696,6 +970,7 @@ export default function AdminVideoManager({
                                 e.stopPropagation()
                                 setActionMenuGroup(null)
                                 setVersionSourceMenuGroup(null)
+                                setReviewStatusMenuGroup(null)
                                 onShowVideoInfo?.({
                                   name: groupName,
                                   videos: [...groupVideos].sort((a, b) => b.version - a.version),
@@ -705,23 +980,95 @@ export default function AdminVideoManager({
                             >
                               <Layers3 className="h-4 w-4" />{t('versionInfo')}
                             </button>
+                            <div
+                              className="relative"
+                              onMouseEnter={() => {
+                                setVersionSourceMenuGroup(null)
+                                setReviewStatusMenuGroup(groupName)
+                              }}
+                              onMouseLeave={() => setReviewStatusMenuGroup(null)}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setVersionSourceMenuGroup(null)
+                                  setReviewStatusMenuGroup(groupName)
+                                }}
+                                className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+                                aria-haspopup="menu"
+                                aria-expanded={reviewStatusMenuGroup === groupName}
+                              >
+                                <ListChecks className="h-4 w-4" />
+                                <span className="flex-1">{t('setReviewStatus')}</span>
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                              {reviewStatusMenuGroup === groupName && (
+                                <div className="absolute left-full top-0 z-[60] -ml-px w-44 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" role="menu">
+                                  {VIDEO_REVIEW_STATUS_OPTIONS.map(option => {
+                                    const isCurrent = getEffectiveVideoReviewStatus(displayLatestVideo) === option.value
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        role="menuitem"
+                                        disabled={reviewStatusUpdatingVideoId === latestVideo.id || isCurrent}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          void handleVideoReviewStatus(latestVideo, option.value)
+                                        }}
+                                        className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-wait disabled:opacity-60"
+                                      >
+                                        <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: option.dotColor }} />
+                                        <span className="flex-1">{t(option.labelKey)}</span>
+                                        {isCurrent && <Check className="h-4 w-4 text-primary" aria-hidden="true" />}
+                                      </button>
+                                    )
+                                  })}
+                                  <div className="my-1 border-t border-border" />
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={reviewStatusUpdatingVideoId === latestVideo.id || getEffectiveVideoReviewStatus(displayLatestVideo) === null}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void handleVideoReviewStatus(latestVideo, null)
+                                    }}
+                                    className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    <CircleOff className="h-4 w-4 text-muted-foreground" />
+                                    {t('removeReviewStatus')}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             <div className="my-1 border-t border-border" />
                             {projectStatus !== 'APPROVED' && (
-                              <div className="relative">
+                              <div
+                                className="relative"
+                                onMouseEnter={() => {
+                                  setReviewStatusMenuGroup(null)
+                                  setVersionSourceMenuGroup(groupName)
+                                }}
+                                onMouseLeave={() => setVersionSourceMenuGroup(null)}
+                              >
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    setVersionSourceMenuGroup(current => current === groupName ? null : groupName)
+                                    setReviewStatusMenuGroup(null)
+                                    setVersionSourceMenuGroup(groupName)
                                   }}
                                   className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+                                  aria-haspopup="menu"
+                                  aria-expanded={versionSourceMenuGroup === groupName}
                                 >
                                   <Upload className="h-4 w-4" />
                                   <span className="flex-1">{t('uploadNewVersion')}</span>
                                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 </button>
                                 {versionSourceMenuGroup === groupName && (
-                                  <div className="absolute left-full top-0 z-[60] w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                                  <div className="absolute left-full top-0 z-[60] -ml-px w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" role="menu">
                                     <button type="button" onClick={(e) => openLocalVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                                       <Upload className="h-4 w-4" />{t('localUpload')}
                                     </button>
@@ -735,18 +1082,18 @@ export default function AdminVideoManager({
                             <button
                               type="button"
                               disabled={groupVideos.filter(v => v.status === 'READY').length < 2}
-                              onClick={(e) => { setActionMenuGroup(null); handleCompare(groupName, e) }}
+                              onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleCompare(groupName, e) }}
                               className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <GitCompareArrows className="h-4 w-4" />{t('compareVersions')}
                             </button>
                             {projectStatus !== 'APPROVED' && (
                               <>
-                                <button type="button" onClick={(e) => { setActionMenuGroup(null); handleStartEditGroupName(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                                <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleStartEditGroupName(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                                   <Pencil className="h-4 w-4" />{t('editVideoName')}
                                 </button>
                                 <div className="my-1 border-t border-border" />
-                                <button type="button" onClick={(e) => { setActionMenuGroup(null); handleDeleteGroup(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
+                                <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleDeleteGroup(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
                                   <Trash2 className="h-4 w-4" />{t('deleteVideo')}
                                 </button>
                               </>
@@ -938,7 +1285,9 @@ export default function AdminVideoManager({
       {comparisonVideos && (
         <VideoComparison
           videoVersions={comparisonVideos}
+          comments={comments}
           defaultQuality="720p"
+          timestampDisplayMode={timestampDisplayMode}
           onClose={() => setComparisonVideos(null)}
         />
       )}

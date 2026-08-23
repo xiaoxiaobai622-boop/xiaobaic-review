@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import { Pencil, Undo2, X, Minus, Plus, ChevronUp, ChevronDown, ArrowUpRight, Square } from 'lucide-react'
 import { AnnotationColor, ANNOTATION_COLORS, DrawingTool } from '@/types/annotations'
+import { cn } from '@/lib/utils'
 
 interface AnnotationToolbarProps {
   activeTool: DrawingTool
@@ -17,6 +19,7 @@ interface AnnotationToolbarProps {
   onOpacityChange: (opacity: number) => void
   onUndo: () => void
   onCancel: () => void
+  placement?: 'overlay' | 'composer'
 }
 
 // Tailwind ring classes for color swatches
@@ -57,6 +60,7 @@ export default function AnnotationToolbar({
   onOpacityChange,
   onUndo,
   onCancel,
+  placement = 'overlay',
 }: AnnotationToolbarProps) {
   const t = useTranslations('controls')
   const tCommon = useTranslations('common')
@@ -88,13 +92,123 @@ export default function AnnotationToolbar({
     onOpacityChange(OPACITY_STEPS[newIndex])
   }
 
+  if (placement === 'composer') {
+    const propertiesTarget = typeof document !== 'undefined'
+      ? document.getElementById('review-annotation-properties')
+      : null
+
+    return propertiesTarget ? createPortal(
+        <div className="flex h-8 w-max max-w-full items-center gap-0.5 overflow-x-auto rounded-md border border-border/70 bg-popover px-0.5 text-popover-foreground shadow-sm">
+          <div className="flex shrink-0 items-center gap-1 px-0.5" aria-label="批注颜色">
+            {ANNOTATION_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => onColorChange(color)}
+                className={cn(
+                  'h-4 w-4 rounded-full border border-border shadow-sm transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  activeColor === color && 'scale-110 ring-2 ring-primary ring-offset-1 ring-offset-popover'
+                )}
+                style={{ backgroundColor: color }}
+                title={color}
+                aria-label={`选择颜色 ${color}`}
+                aria-pressed={activeColor === color}
+              />
+            ))}
+          </div>
+
+          <div className="h-4 w-px shrink-0 bg-border" />
+
+          <div className="flex shrink-0 items-center gap-0.5" title={t('strokeThickness')}>
+            <button
+              type="button"
+              onClick={decreaseWidth}
+              disabled={currentStepIndex === 0}
+              aria-label="减小笔刷粗细"
+              className="inline-flex h-6 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-muted" aria-label={`笔刷粗细 ${currentStepIndex + 1}`}>
+              <span
+                className="rounded-full bg-foreground"
+                style={{
+                  width: Math.max(4, 4 + currentStepIndex * 2),
+                  height: Math.max(4, 4 + currentStepIndex * 2),
+                }}
+              />
+            </span>
+            <button
+              type="button"
+              onClick={increaseWidth}
+              disabled={currentStepIndex === STROKE_STEPS.length - 1}
+              aria-label="增大笔刷粗细"
+              className="inline-flex h-6 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <div className="h-4 w-px shrink-0 bg-border" />
+
+          <div className="flex shrink-0 items-center gap-0.5" title={t('opacity')}>
+            <button
+              type="button"
+              onClick={decreaseOpacity}
+              disabled={currentOpacityIndex === 0}
+              aria-label="降低透明度"
+              className="inline-flex h-6 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <span className="w-8 text-center text-[10px] font-medium tabular-nums text-foreground">
+              {Math.round(opacity * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={increaseOpacity}
+              disabled={currentOpacityIndex === OPACITY_STEPS.length - 1}
+              aria-label="提高透明度"
+              className="inline-flex h-6 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <div className="h-4 w-px shrink-0 bg-border" />
+
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+            title={t('undo')}
+            aria-label={t('undo')}
+          >
+            <Undo2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            title={tCommon('cancel')}
+            aria-label={tCommon('cancel')}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>, propertiesTarget) : null
+  }
+
   // Minimized: small floating pill button
   if (minimized) {
     return (
       <button
         type="button"
         onClick={() => setMinimized(false)}
-        className="absolute top-3 left-3 z-30 flex items-center gap-1.5 bg-black/85 backdrop-blur-sm rounded-lg px-2.5 py-1.5 shadow-2xl border border-white/10 text-white/80 hover:text-white transition-colors"
+        className={cn(
+          'z-30 flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-black/85 px-2.5 py-1.5 text-white/80 shadow-2xl backdrop-blur-sm transition-colors hover:text-white',
+          placement === 'overlay' && 'absolute left-3 top-3'
+        )}
         title={t('showDrawingTools')}
       >
         <Pencil className="w-3.5 h-3.5" />
@@ -104,9 +218,16 @@ export default function AnnotationToolbar({
   }
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 bg-black/85 backdrop-blur-sm rounded-xl px-2.5 sm:px-3 py-2 shadow-2xl border border-white/10 max-w-[calc(100%-1.5rem)]">
+    <div
+      className={cn(
+        'z-30 flex w-max items-center gap-1.5 rounded-xl border border-white/10 bg-black/85 px-2.5 py-2 shadow-2xl backdrop-blur-sm sm:px-3',
+        placement === 'overlay'
+          ? 'absolute left-1/2 top-3 max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-col'
+          : 'relative flex-row'
+      )}
+    >
       {/* Row 1: Drawing tools */}
-      <div className="flex items-center gap-1 sm:gap-1.5">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
         {([
           ['freehand', Pencil, '画笔'],
           ['arrow', ArrowUpRight, '箭头'],
@@ -238,7 +359,7 @@ export default function AnnotationToolbar({
       </div>
 
       {/* Row 2: Actions */}
-      <div className="flex items-center gap-1 sm:gap-1.5">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
         {/* Undo */}
         <button
           type="button"

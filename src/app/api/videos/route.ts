@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       if (!project) return { kind: 'missing' as const }
 
       const [existingVersionCount, latest] = await Promise.all([
-        tx.video.count({ where: { projectId, name: videoName } }),
+        tx.video.count({ where: { projectId, name: videoName, status: { not: 'ROLLED_BACK' } } }),
         tx.video.findFirst({
           where: { projectId, name: videoName },
           orderBy: { version: 'desc' },

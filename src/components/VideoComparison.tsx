@@ -8,12 +8,28 @@ import { Button } from './ui/button'
 import VideoComparisonControls from './VideoComparisonControls'
 import VideoComparisonSlider from './VideoComparisonSlider'
 
+export interface VideoComparisonComment {
+  id: string
+  videoId?: string | null
+  timecode: string
+  content: string
+  authorName?: string | null
+  isInternal?: boolean
+  resolved?: boolean
+}
+
+interface VideoComparisonTimelineComment extends VideoComparisonComment {
+  comparisonSide: 'A' | 'B'
+  versionLabel: string
+}
+
 interface VideoComparisonProps {
   videoVersions: Video[]
   defaultQuality?: '720p' | '1080p' | '2160p'
   defaultVersionA?: number
   defaultVersionB?: number
   timestampDisplayMode?: 'TIMECODE' | 'AUTO'
+  comments?: VideoComparisonComment[]
   onClose: () => void
 }
 
@@ -33,6 +49,7 @@ export default function VideoComparison({
   defaultVersionA,
   defaultVersionB,
   timestampDisplayMode = 'TIMECODE',
+  comments = [],
   onClose,
 }: VideoComparisonProps) {
   const t = useTranslations('videos')
@@ -87,6 +104,15 @@ export default function VideoComparison({
   const videoUrlA = getVideoUrl(versionA, defaultQuality)
   const videoUrlB = getVideoUrl(versionB, defaultQuality)
   const videoFps = versionA?.fps || versionB?.fps || 24
+  const timelineComments = comments.reduce<VideoComparisonTimelineComment[]>((result, comment) => {
+    if (comment.videoId === versionA?.id) {
+      result.push({ ...comment, comparisonSide: 'A', versionLabel: versionA.versionLabel || `v${versionA.version}` })
+    }
+    if (comment.videoId === versionB?.id && versionB?.id !== versionA?.id) {
+      result.push({ ...comment, comparisonSide: 'B', versionLabel: versionB.versionLabel || `v${versionB.version}` })
+    }
+    return result
+  }, [])
 
   useEffect(() => {
     videoFpsRef.current = videoFps
@@ -458,6 +484,7 @@ export default function VideoComparison({
             onSpeedChange={handleSpeedChange}
             videoFps={videoFps}
             timestampDisplayMode={timestampDisplayMode}
+            comments={timelineComments}
           />
         </div>
       </div>

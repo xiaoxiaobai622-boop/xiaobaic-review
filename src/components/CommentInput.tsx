@@ -1,14 +1,17 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
-import { Check, Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight } from 'lucide-react'
+import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square } from 'lucide-react'
 import { formatCommentTimestamp, secondsToTimecode } from '@/lib/timecode'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachmentButton from './CommentAttachmentButton'
 import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
+import { cn } from '@/lib/utils'
+import type { DrawingTool } from '@/types/annotations'
 
 interface CommentInputProps {
   newComment: string
@@ -55,8 +58,7 @@ interface CommentInputProps {
 
   // Annotation drawing
   pendingAnnotation?: boolean
-  onStartDrawing?: () => void
-  onClearAnnotation?: () => void
+  onStartDrawing?: (tool: DrawingTool) => void
 
   // Optional shortcuts UI (share pages)
   showShortcutsButton?: boolean
@@ -95,12 +97,22 @@ export default function CommentInput({
   maxCommentAttachments,
   pendingAnnotation = false,
   onStartDrawing,
-  onClearAnnotation,
   showShortcutsButton = false,
   onShowShortcuts,
 }: CommentInputProps) {
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
+  const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null)
+
+  useEffect(() => {
+    const clearActiveTool = () => setActiveDrawingTool(null)
+    window.addEventListener('annotationCleared', clearActiveTool)
+    window.addEventListener('annotationSubmitted', clearActiveTool)
+    return () => {
+      window.removeEventListener('annotationCleared', clearActiveTool)
+      window.removeEventListener('annotationSubmitted', clearActiveTool)
+    }
+  }, [])
 
   if (commentsDisabled) {
     return (
@@ -207,26 +219,6 @@ export default function CommentInput({
       {/* Message Input */}
       {!currentVideoRestricted && (
         <>
-          {/* Pending annotation indicator */}
-          {pendingAnnotation && (
-            <div className="mb-2">
-              <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-blue-500/10 border border-blue-500/20 rounded-md text-xs text-blue-600 dark:text-blue-400">
-                <Pencil className="w-3 h-3" />
-                {t('drawingAttached')}
-                {onClearAnnotation && (
-                  <button
-                    type="button"
-                    onClick={onClearAnnotation}
-                    className="ml-0.5 hover:opacity-70 transition-opacity"
-                    title={t('removeDrawing')}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </span>
-            </div>
-          )}
-
           {/* Pending attachment chips */}
           {pendingAttachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -252,29 +244,50 @@ export default function CommentInput({
           )}
 
           <div className="flex flex-col gap-2">
-            <Textarea
-              placeholder={t('typeMessage')}
-              value={newComment}
-              onChange={(e) => onCommentChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="min-h-[72px] resize-none rounded-md text-sm"
-              rows={2}
-            />
-            <div className="flex min-w-0 items-center justify-between gap-2">
+            <div className="relative">
+              <Textarea
+                placeholder={t('typeMessage')}
+                value={newComment}
+                onChange={(e) => onCommentChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="min-h-[72px] resize-none rounded-md pb-9 text-sm"
+                rows={2}
+              />
+              {onStartDrawing && (
+                <div
+                  className="absolute bottom-1.5 left-2 flex h-8 items-center gap-0.5 bg-transparent"
+                  role="toolbar"
+                  aria-label="画面批注工具"
+                >
+                  {([
+                    ['freehand', Pencil, '画笔'],
+                    ['arrow', ArrowUpRight, '箭头'],
+                    ['rectangle', Square, '矩形'],
+                  ] as const).map(([tool, Icon, label]) => (
+                    <button
+                      key={tool}
+                      type="button"
+                      onClick={() => {
+                        setActiveDrawingTool(tool)
+                        onStartDrawing(tool)
+                      }}
+                      disabled={loading}
+                      className={cn(
+                        'inline-flex h-7 w-7 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+                        activeDrawingTool === tool && 'bg-muted text-foreground hover:bg-muted'
+                      )}
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={activeDrawingTool === tool}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex h-8 min-w-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                {onStartDrawing && (
-                  <Button
-                    type="button"
-                    onClick={onStartDrawing}
-                    variant={pendingAnnotation ? 'default' : 'outline'}
-                    size="icon"
-                    className="h-8 w-8 flex-shrink-0"
-                    title={t('drawOnVideo')}
-                    disabled={loading}
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </Button>
-                )}
                 {onCategoryChange && !replyingToComment && (
                   <div className="flex items-center gap-1">
                     {COMMENT_CATEGORIES.map((category) => {
@@ -285,19 +298,12 @@ export default function CommentInput({
                           type="button"
                           onClick={() => onCategoryChange(selected ? null : category.value)}
                           aria-pressed={selected}
-                          className={`relative inline-flex h-7 min-w-[44px] items-center justify-center whitespace-nowrap rounded-full border px-2 text-xs font-medium transition-all duration-150 active:scale-95 ${
+                          className={`inline-flex h-7 min-w-[54px] items-center justify-center whitespace-nowrap rounded-full border px-2 text-center text-xs font-medium transition-[border-color,background-color,color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ${
                             selected
-                              ? `${category.chipClass} font-semibold shadow-md ring-2 ring-offset-1 ring-offset-background`
+                              ? `${category.selectedControlClass} font-semibold`
                               : 'border-border/70 bg-background/70 text-muted-foreground hover:border-primary/40 hover:bg-accent hover:text-foreground'
                           }`}
                         >
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2">
-                            {selected ? (
-                              <Check className="h-3 w-3 text-white" strokeWidth={2.5} />
-                            ) : (
-                              <span className={`block h-1.5 w-1.5 rounded-full ${category.dotClass}`} />
-                            )}
-                          </span>
                           {category.label}
                         </button>
                       )
@@ -336,6 +342,10 @@ export default function CommentInput({
                   </div>
                 )}
               </div>
+              <div
+                id="review-annotation-properties"
+                className="flex h-8 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1"
+              />
               <div className="flex shrink-0 items-center gap-1.5">
                 <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
                 {showShortcutsButton && onShowShortcuts && (

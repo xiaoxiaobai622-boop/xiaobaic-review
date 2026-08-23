@@ -382,9 +382,9 @@ export async function refreshPlatformTokens(params: {
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true },
+    select: { id: true, email: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, isPlatformAdmin: true },
   })
-  if (!user || user.role !== 'ADMIN') {
+  if (!user?.isPlatformAdmin) {
     await revokePlatformSession(payload.sessionId)
     return null
   }
@@ -409,13 +409,13 @@ export async function getPlatformUserFromRequest(request: NextRequest): Promise<
   const bearer = parseBearerToken(request)
   if (!bearer) return null
   const payload = await verifyPlatformAccessToken(bearer)
-  if (!payload || payload.role !== 'ADMIN') return null
+  if (!payload) return null
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, projectAccessScope: true },
+    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, isPlatformAdmin: true, projectAccessScope: true },
   })
-  return user && user.role === 'ADMIN' ? { ...user, sessionId: payload.sessionId } : null
+  return user?.isPlatformAdmin ? { ...user, sessionId: payload.sessionId } : null
 }
 
 export async function requirePlatformAuth(request: NextRequest): Promise<AuthUser | Response> {
@@ -464,6 +464,7 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
         avatarUrl: true,
         onboardingCompleted: true,
         role: true,
+        isPlatformAdmin: true,
         projectAccessScope: true,
         password: true,
       },
@@ -487,6 +488,7 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
       avatarUrl: user.avatarUrl,
       onboardingCompleted: user.onboardingCompleted,
       role: user.role,
+      isPlatformAdmin: user.isPlatformAdmin,
       projectAccessScope: user.projectAccessScope,
     }
   } catch (error) {

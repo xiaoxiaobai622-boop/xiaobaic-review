@@ -66,6 +66,7 @@ export async function POST(
       where: {
         id: selectedVideoId,
         projectId,
+        status: { not: 'ROLLED_BACK' },
       },
       select: { id: true, approved: true },
     })
@@ -91,6 +92,7 @@ export async function POST(
         data: {
           approved: false,
           approvedAt: null,
+          reviewStatus: null,
         },
       }),
       prisma.project.updateMany({

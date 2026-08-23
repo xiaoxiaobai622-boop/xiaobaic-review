@@ -56,7 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       include: {
-        videos: true,
+        videos: { where: { status: { not: 'ROLLED_BACK' } } },
       },
     })
 
@@ -75,14 +75,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }, { status: 403 })
     }
 
-    if (project.status === 'APPROVED') {
-      return NextResponse.json({ error: projectMessages.projectAlreadyApproved || 'Project already approved' }, { status: 400 })
-    }
-
     const selectedVideo = project.videos.find(v => v.id === selectedVideoId)
 
     if (!selectedVideo) {
       return NextResponse.json({ error: projectMessages.selectedVideoNotFound || 'Selected video not found' }, { status: 404 })
+    }
+
+    if (selectedVideo.approved) {
+      return NextResponse.json({ error: projectMessages.projectAlreadyApproved || 'This video version is already approved' }, { status: 409 })
     }
 
     // Atomic swap: unapprove other versions of the same video, approve the selected one.
@@ -97,6 +97,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         data: {
           approved: false,
           approvedAt: null,
+          reviewStatus: null,
         },
       }),
       prisma.video.update({
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         data: {
           approved: true,
           approvedAt: new Date(),
+          reviewStatus: 'APPROVED',
         },
       }),
     ])
@@ -127,7 +129,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Check if all UNIQUE videos have at least one approved version
     const allVideos = await prisma.video.findMany({
-      where: { projectId },
+      where: { projectId, status: { not: 'ROLLED_BACK' } },
       select: { id: true, approved: true, name: true },
     })
 

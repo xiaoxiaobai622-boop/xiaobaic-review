@@ -157,6 +157,7 @@ export async function GET(
       status: video.status,
       approved: video.approved,
       approvedAt: video.approvedAt,
+      reviewStatus: video.reviewStatus,
       thumbnailPath: video.thumbnailPath,
       createdAt: video.createdAt,
       hasAssets: (video._count?.assets ?? 0) > 0,

@@ -17,6 +17,7 @@ interface ThumbnailReelProps {
   onVideoSelect: (videoName: string) => void
   onBackToGrid?: () => void
   showBackButton?: boolean
+  backButtonLabel?: string
   // Comment panel controls
   showCommentToggle?: boolean
   isCommentPanelVisible?: boolean
@@ -26,7 +27,7 @@ interface ThumbnailReelProps {
   showComparisonAction?: boolean
   // Optional slot rendered after ThemeToggle (e.g. tutorial help button)
   trailingAction?: React.ReactNode
-  // Optional action rendered beside the current video's version navigation
+  // Optional action rendered between version comparison and language controls
   beforeToolbarAction?: React.ReactNode
   // Optional action before the overview button (e.g. return to source page)
   leadingAction?: React.ReactNode
@@ -40,6 +41,7 @@ export default function ThumbnailReel({
   onVideoSelect,
   onBackToGrid,
   showBackButton = true,
+  backButtonLabel,
   showCommentToggle = false,
   isCommentPanelVisible = true,
   onToggleCommentPanel,
@@ -149,7 +151,8 @@ export default function ThumbnailReel({
                 size="icon"
                 onClick={onBackToGrid}
                 className="h-9 w-9 shrink-0"
-                title={tShare('backToOverview')}
+                title={backButtonLabel || tShare('backToOverview')}
+                aria-label={backButtonLabel || tShare('backToOverview')}
               >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
@@ -170,7 +173,7 @@ export default function ThumbnailReel({
                   setSelectedVersionId(event.target.value)
                   window.dispatchEvent(new CustomEvent('selectReviewVersion', { detail: { videoId: event.target.value } }))
                 }}
-                className="h-8 min-w-[72px] shrink-0 rounded border border-border bg-background px-2 text-sm font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-7 min-w-[46px] max-w-[72px] shrink-0 rounded-[4px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {currentVideos.map((video: any) => (
                   <option key={video.id} value={video.id}>{video.versionLabel || `v${video.version}`}</option>
@@ -182,7 +185,6 @@ export default function ThumbnailReel({
               <span className="min-w-9 text-center text-xs text-muted-foreground tabular-nums">{activeIndex + 1}/{totalVideos}</span>
               <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-7 w-7" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
             </div>
-            {beforeToolbarAction}
           </div>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
@@ -198,8 +200,10 @@ export default function ThumbnailReel({
               </Button>
             )}
 
+            {beforeToolbarAction}
+
             {/* Language and theme toggles */}
-            {showLanguageToggle && <LanguageToggle />}
+            {showLanguageToggle && <LanguageToggle className="h-8 shadow-none" />}
             <ThemeToggle />
             {trailingAction}
           </div>

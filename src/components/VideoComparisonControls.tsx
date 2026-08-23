@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { Play, Pause, SkipBack, SkipForward, Columns2, SplitSquareHorizontal } from 'lucide-react'
-import { secondsToTimecode, formatCommentTimestamp } from '@/lib/timecode'
+import { Play, Pause, SkipBack, SkipForward, Columns2, SplitSquareHorizontal, MessageSquare, X } from 'lucide-react'
+import { secondsToTimecode, formatCommentTimestamp, timecodeToSeconds } from '@/lib/timecode'
 
 function formatTimeWithMode(
   seconds: number,
@@ -29,6 +29,16 @@ interface VideoComparisonControlsProps {
   onSpeedChange: (speed: number) => void
   videoFps: number
   timestampDisplayMode: 'TIMECODE' | 'AUTO'
+  comments?: Array<{
+    id: string
+    timecode: string
+    content: string
+    authorName?: string | null
+    isInternal?: boolean
+    resolved?: boolean
+    comparisonSide: 'A' | 'B'
+    versionLabel: string
+  }>
 }
 
 export default function VideoComparisonControls({
@@ -44,19 +54,53 @@ export default function VideoComparisonControls({
   onSpeedChange,
   videoFps,
   timestampDisplayMode,
+  comments = [],
 }: VideoComparisonControlsProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [hoveredTime, setHoveredTime] = useState<number | null>(null)
+  const [activeCommentGroupKey, setActiveCommentGroupKey] = useState<string | null>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const t = useTranslations('videos')
 
   const progress = videoDuration > 0 ? (currentTime / videoDuration) * 100 : 0
+  const commentGroups = useMemo(() => {
+    const groups = new Map<string, {
+      key: string
+      time: number
+      comments: typeof comments
+    }>()
+
+    for (const comment of comments) {
+      let seconds = 0
+      try {
+        seconds = timecodeToSeconds(comment.timecode, videoFps)
+      } catch {
+        continue
+      }
+      if (!Number.isFinite(seconds) || seconds < 0) continue
+      const markerTime = videoDuration > 0 ? Math.min(seconds, videoDuration) : seconds
+      const key = markerTime.toFixed(2)
+      const existing = groups.get(key)
+      if (existing) existing.comments.push(comment)
+      else groups.set(key, { key, time: markerTime, comments: [comment] })
+    }
+
+    return [...groups.values()].sort((a, b) => a.time - b.time)
+  }, [comments, videoDuration, videoFps])
+  const activeCommentGroup = commentGroups.find(group => group.key === activeCommentGroupKey) || null
+
+  useEffect(() => {
+    if (activeCommentGroupKey && !commentGroups.some(group => group.key === activeCommentGroupKey)) {
+      setActiveCommentGroupKey(null)
+    }
+  }, [activeCommentGroupKey, commentGroups])
 
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!timelineRef.current || !videoDuration) return
     const rect = timelineRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const percentage = Math.max(0, Math.min(1, x / rect.width))
+    setActiveCommentGroupKey(null)
     onSeek(percentage * videoDuration)
   }, [videoDuration, onSeek])
 
@@ -125,56 +169,148 @@ export default function VideoComparisonControls({
   }, [isDragging])
 
   return (
-    <div className="bg-gradient-to-t from-black/95 via-black/60 to-transparent p-2 sm:p-3 rounded-b-xl">
+    <div className="relative bg-gradient-to-t from-black/95 via-black/60 to-transparent p-2 sm:p-3 rounded-b-xl">
       {/* Timeline */}
       <div className="mb-2 sm:mb-3 px-1">
-        <div
-          ref={timelineRef}
-          className="relative h-8 sm:h-10 group cursor-pointer touch-none"
-          onMouseDown={handleTimelineMouseDown}
-          onClick={handleTimelineClick}
-          onMouseMove={handleTimelineMouseMove}
-          onMouseLeave={handleTimelineMouseLeave}
-          onTouchStart={handleTimelineTouchStart}
-          onTouchMove={handleTimelineTouchMove}
-          onTouchEnd={handleTimelineTouchEnd}
-          role="slider"
-          tabIndex={0}
-          aria-label="对比视频时间轴"
-          aria-valuemin={0}
-          aria-valuemax={videoDuration}
-          aria-valuenow={Math.min(videoDuration, Math.max(0, currentTime))}
-          onKeyDown={handleTimelineKeyDown}
-        >
-          {/* Background Track */}
-          <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 sm:h-2 bg-white/20 rounded-full overflow-hidden">
-            <div className="absolute inset-0 bg-white/30" />
-            <div
-              className="absolute inset-y-0 left-0 bg-primary transition-all duration-100"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-
-          {/* Playhead */}
+        {activeCommentGroup && (
           <div
-            className="absolute top-1/2 -translate-y-1/2 pointer-events-none z-20"
-            style={{ left: `${progress}%` }}
+            className="absolute bottom-[7.25rem] left-1/2 z-40 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-xl"
+            role="dialog"
+            aria-label={t('timelineComments')}
+            onClick={(event) => event.stopPropagation()}
           >
-            <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white rounded-full shadow-lg border-2 border-primary -translate-x-1/2 group-hover:scale-110 transition-transform" />
+            <div className="mb-2 flex items-center justify-between gap-3 border-b border-border pb-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <MessageSquare className="h-4 w-4 shrink-0 text-primary" />
+                <span className="truncate text-sm font-semibold">{t('timelineComments')}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{activeCommentGroup.comments.length}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                  {formatTimeWithMode(activeCommentGroup.time, videoFps, videoDuration, timestampDisplayMode)}
+                </span>
+                <button
+                  type="button"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setActiveCommentGroupKey(null)}
+                  aria-label={t('closeTimelineComments')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+              {activeCommentGroup.comments.map((comment) => (
+                <div key={comment.id} className="rounded-md bg-muted/60 px-3 py-2.5">
+                  <div className="mb-1.5 flex min-w-0 items-center gap-2 text-xs">
+                    <span className={`rounded px-1.5 py-0.5 font-medium ${
+                      comment.comparisonSide === 'A'
+                        ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300'
+                        : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                    }`}>
+                      {comment.comparisonSide} · {comment.versionLabel}
+                    </span>
+                    <span className="truncate font-medium">{comment.authorName || t('anonymousReviewer')}</span>
+                    {comment.resolved && <span className="ml-auto shrink-0 text-muted-foreground">{t('resolvedComment')}</span>}
+                  </div>
+                  <div
+                    className="line-clamp-4 break-words text-sm leading-5 [&_p]:m-0"
+                    dangerouslySetInnerHTML={{ __html: comment.content }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="group relative h-12 touch-none sm:h-14">
+          <div
+            ref={timelineRef}
+            className="absolute inset-0 cursor-pointer"
+            onMouseDown={handleTimelineMouseDown}
+            onClick={handleTimelineClick}
+            onMouseMove={handleTimelineMouseMove}
+            onMouseLeave={handleTimelineMouseLeave}
+            onTouchStart={handleTimelineTouchStart}
+            onTouchMove={handleTimelineTouchMove}
+            onTouchEnd={handleTimelineTouchEnd}
+            role="slider"
+            tabIndex={0}
+            aria-label={t('comparisonTimeline')}
+            aria-valuemin={0}
+            aria-valuemax={videoDuration}
+            aria-valuenow={Math.min(videoDuration, Math.max(0, currentTime))}
+            onKeyDown={handleTimelineKeyDown}
+          >
+            {/* Background Track */}
+            <div className="absolute bottom-1 left-0 right-0 h-1.5 overflow-hidden rounded-full bg-white/20 sm:h-2">
+              <div className="absolute inset-0 bg-white/30" />
+              <div
+                className="absolute inset-y-0 left-0 bg-primary transition-all duration-100"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+
+            {/* Playhead */}
+            <div
+              className="pointer-events-none absolute bottom-0 z-20"
+              style={{ left: `${progress}%` }}
+            >
+              <div className="w-4 h-4 sm:w-5 sm:h-5 bg-white rounded-full shadow-lg border-2 border-primary -translate-x-1/2 group-hover:scale-110 transition-transform" />
+            </div>
+
+            {/* Hover Time Indicator */}
+            {hoveredTime !== null && !isDragging && (
+              <div
+                className="pointer-events-none absolute bottom-full mb-2 whitespace-nowrap rounded border border-white/20 bg-black/90 px-2 py-1 font-sans text-xs tabular-nums text-white shadow-lg"
+                style={{
+                  left: `${(hoveredTime / videoDuration) * 100}%`,
+                  transform: 'translateX(-50%)',
+                }}
+              >
+                {formatTimeWithMode(hoveredTime, videoFps, videoDuration, timestampDisplayMode)}
+              </div>
+            )}
           </div>
 
-          {/* Hover Time Indicator */}
-          {hoveredTime !== null && !isDragging && (
-            <div
-              className="absolute bottom-full mb-2 px-2 py-1 bg-black/90 text-white text-xs font-sans tabular-nums rounded border border-white/20 shadow-lg whitespace-nowrap pointer-events-none"
-              style={{
-                left: `${(hoveredTime / videoDuration) * 100}%`,
-                transform: 'translateX(-50%)',
-              }}
-            >
-              {formatTimeWithMode(hoveredTime, videoFps, videoDuration, timestampDisplayMode)}
-            </div>
-          )}
+          {/* Comment markers */}
+          {videoDuration > 0 && commentGroups.map((group) => {
+            const markerPosition = Math.max(0, Math.min(100, (group.time / videoDuration) * 100))
+            const firstComment = group.comments[0]
+            const authorName = firstComment.authorName || t('anonymousReviewer')
+            const mixedVersions = group.comments.some(comment => comment.comparisonSide !== firstComment.comparisonSide)
+            return (
+              <button
+                key={group.key}
+                type="button"
+                className={`absolute bottom-4 z-30 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border-2 bg-background text-[10px] font-semibold text-foreground shadow-md transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${
+                  mixedVersions
+                    ? 'border-primary'
+                    : firstComment.comparisonSide === 'A'
+                      ? 'border-blue-500'
+                      : 'border-emerald-500'
+                }`}
+                style={{ left: `${markerPosition}%` }}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onSeek(group.time)
+                  setActiveCommentGroupKey(current => current === group.key ? null : group.key)
+                }}
+                aria-label={t('openTimelineComment', {
+                  author: authorName,
+                  time: formatTimeWithMode(group.time, videoFps, videoDuration, timestampDisplayMode),
+                })}
+                aria-expanded={activeCommentGroupKey === group.key}
+              >
+                <span aria-hidden="true">{authorName.trim().slice(0, 1).toUpperCase()}</span>
+                {group.comments.length > 1 && (
+                  <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[9px] leading-4 text-primary-foreground">
+                    {group.comments.length}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 

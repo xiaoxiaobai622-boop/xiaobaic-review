@@ -5,6 +5,7 @@ import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { deleteFile } from '@/lib/storage'
 import { logError } from '@/lib/logging'
+import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
 export const runtime = 'nodejs'
 
@@ -91,11 +92,70 @@ export async function DELETE(
 
     const upload = await prisma.projectUpload.findFirst({
       where: { id: uploadId, projectId },
-      select: { id: true, storagePath: true, thumbnailPath: true },
+      select: {
+        id: true,
+        storagePath: true,
+        thumbnailPath: true,
+        sourceVideo: {
+          include: { assets: true },
+        },
+      },
     })
 
     if (!upload) {
       return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
+    }
+
+    // Deleting a rolled-back collection item is the explicit hard-delete
+    // action. Until this point, both the original and previews are retained so
+    // the version can be restored without transcoding.
+    if (upload.sourceVideo) {
+      if (upload.sourceVideo.status !== 'ROLLED_BACK') {
+        return NextResponse.json({ error: 'This retained video version is still active.' }, { status: 409 })
+      }
+
+      const video = upload.sourceVideo
+      const cleanupPaths = [
+        video.originalStoragePath,
+        video.preview2160Path,
+        video.preview1080Path,
+        video.preview720Path,
+        video.cleanPreview2160Path,
+        video.cleanPreview1080Path,
+        video.cleanPreview720Path,
+      ].filter((value): value is string => Boolean(value))
+
+      for (const asset of video.assets) {
+        const sharedCount = await prisma.videoAsset.count({
+          where: { storagePath: asset.storagePath, id: { not: asset.id } },
+        })
+        if (sharedCount === 0) cleanupPaths.push(asset.storagePath)
+      }
+
+      if (video.thumbnailPath) {
+        const [sharedAssetCount, sharedVideoCount, sharedUploadCount] = await Promise.all([
+          prisma.videoAsset.count({ where: { storagePath: video.thumbnailPath, videoId: { not: video.id } } }),
+          prisma.video.count({ where: { thumbnailPath: video.thumbnailPath, id: { not: video.id } } }),
+          prisma.projectUpload.count({ where: { thumbnailPath: video.thumbnailPath, id: { not: upload.id } } }),
+        ])
+        if (sharedAssetCount === 0 && sharedVideoCount === 0 && sharedUploadCount === 0) {
+          cleanupPaths.push(video.thumbnailPath)
+        }
+      }
+
+      const cleanupTask = await prisma.$transaction(async (tx) => {
+        const task = await recordDurableTask(
+          tx,
+          'DELETE_STORAGE',
+          `delete-rolled-back-video-storage:${video.id}`,
+          { paths: [...new Set(cleanupPaths)], directories: [] },
+        )
+        await tx.projectUpload.delete({ where: { id: upload.id } })
+        await tx.video.delete({ where: { id: video.id } })
+        return task
+      })
+      await dispatchDurableTask(cleanupTask.id)
+      return NextResponse.json({ success: true, deletedRetainedVersion: true })
     }
 
     const referencedVideoCount = await prisma.video.count({

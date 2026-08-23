@@ -64,7 +64,7 @@ export default function AdminHeader() {
         : '未加入团队'
 
   return (
-    <div className="bg-card border-b border-border/50 shadow-elevation-sm backdrop-blur-sm">
+    <div className="relative z-40 bg-card border-b border-border/50 shadow-elevation-sm backdrop-blur-sm">
       <div className="w-full px-3 sm:px-4 lg:px-6 py-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-6 flex-1 min-w-0">
@@ -94,11 +94,11 @@ export default function AdminHeader() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <ThemeToggle />
+            <ThemeToggle className="h-11 w-11 shrink-0 rounded-lg shadow-sm" />
             <Dialog>
               <DialogTrigger asChild>
                 <button
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
                   aria-label={t('aboutViTransfer')}
                   title={t('about')}
                 >
@@ -168,7 +168,7 @@ export default function AdminHeader() {
             <div ref={userMenuRef} className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
                 aria-label={user.name || user.email}
                 title={user.name || user.email}
               >

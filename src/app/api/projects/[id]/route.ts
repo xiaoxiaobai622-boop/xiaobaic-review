@@ -57,6 +57,7 @@ export async function GET(
       where: { id },
       include: {
         videos: {
+          where: { status: { not: 'ROLLED_BACK' } },
           orderBy: { version: 'desc' },
           include: {
             sourceUpload: {

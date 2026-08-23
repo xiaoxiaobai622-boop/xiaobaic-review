@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
 import { getDisplayEmail } from '@/lib/user-contact'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
+import { cn } from '@/lib/utils'
 
 interface WechatSession {
   configured: boolean
@@ -277,10 +278,20 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
     <>
       {authenticated ? (
         <div className="relative flex items-center gap-1.5">
-          <button type="button" onClick={() => setProfileOpen(value => !value)} className="flex min-h-8 items-center gap-1.5 rounded-md px-1.5 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-expanded={profileOpen} aria-haspopup="menu">
+          <button
+            type="button"
+            onClick={() => setProfileOpen(value => !value)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+              compact ? 'h-9 w-9 justify-center border border-border bg-background p-0' : 'min-h-8 px-1.5'
+            )}
+            aria-label={displayName}
+            aria-expanded={profileOpen}
+            aria-haspopup="menu"
+          >
             <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" title={displayName} isInternal={isAdmin} />
             {!compact && <span className="max-w-28 truncate">{displayName}</span>}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+            {!compact && <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
           </button>
           {profileOpen && (
             <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-lg border border-border bg-card p-1.5 shadow-lg" role="menu">
@@ -301,7 +312,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
           )}
         </div>
       ) : (
-        <Button variant="default" size="sm" onClick={() => updateOpen(true)} className={compact ? 'h-8 px-3' : undefined}>
+        <Button variant="default" size="sm" onClick={() => updateOpen(true)} className={compact ? 'h-9 px-3' : undefined}>
           <LogIn className="mr-1.5 h-4 w-4" />
           {t('login')}
         </Button>

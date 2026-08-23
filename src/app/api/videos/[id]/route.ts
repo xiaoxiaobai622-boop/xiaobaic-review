@@ -7,9 +7,24 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
 import { canAccessProject, canManageProjectApproval } from '@/lib/project-access'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import { rollbackLatestVideoVersion } from '@/lib/video-version-rollback'
 
 export const runtime = 'nodejs'
 
+
+// POST /api/videos/[id] - Perform an explicit version action.
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const body = await request.json().catch(() => null)
+  if (body?.action !== 'rollback-to-collection') {
+    return NextResponse.json({ error: 'Unsupported video action.' }, { status: 400 })
+  }
+
+  const { id } = await params
+  return rollbackLatestVideoVersion(request, id)
+}
 
 
 
@@ -197,10 +212,15 @@ export async function PATCH(
           projectId: video.projectId,
           name: video.name,
           id: { not: id },
+          OR: [
+            { approved: true },
+            { reviewStatus: 'APPROVED' },
+          ],
         },
         data: {
           approved: false,
           approvedAt: null,
+          reviewStatus: null,
         },
       })
     }
@@ -210,6 +230,7 @@ export async function PATCH(
     if (approved !== undefined) {
       updateData.approved = approved
       updateData.approvedAt = approved ? new Date() : null
+      updateData.reviewStatus = approved ? 'APPROVED' : null
     }
 
     if (name !== undefined) {
