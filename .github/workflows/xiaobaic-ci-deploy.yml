@@ -20,6 +20,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  TCR_REGISTRY: ccr.ccs.tencentyun.com
+  IMAGE_NAME: ccr.ccs.tencentyun.com/xiaobaic/xiaobaic-review
+
 jobs:
   verify:
     name: Verify application
@@ -47,44 +51,74 @@ jobs:
           NEXT_PHASE: phase-production-build
         run: npm run build
 
-  deploy:
-    name: Deploy to production
+  image:
+    name: Build and push production image
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm_production
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 45
+    outputs:
+      image: ${{ steps.image-ref.outputs.image }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Tencent Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+
+      - name: Normalize image name
+        id: image-ref
+        shell: bash
+        run: echo "image=${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image-ref.outputs.image }}:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+            SKIP_NPM_AUDIT=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to production
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm_production
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
     concurrency:
       group: production-deploy
       cancel-in-progress: false
     environment:
       name: production
       url: https://mle6.cn
+    env:
+      DEPLOY_SHA: ${{ github.sha }}
+      DEPLOY_IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+      TCR_REGISTRY: ccr.ccs.tencentyun.com
+      TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+      TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
     steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-
-      - name: Package source
-        run: git archive --format=tar.gz --output=vitransfer-release.tar.gz HEAD
-
-      - name: Upload source to production
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          source: vitransfer-release.tar.gz
-          target: /tmp/vitransfer-${{ github.sha }}
-
-      - name: Build and deploy with health check and rollback
+      - name: Pull and deploy with health check and rollback
         uses: appleboy/ssh-action@v1.2.2
-        env:
-          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: DEPLOY_SHA
-          command_timeout: 45m
+          envs: DEPLOY_SHA,DEPLOY_IMAGE,TCR_REGISTRY,TCR_USERNAME,TCR_PASSWORD
+          command_timeout: 35m
           script: |
             set -eu
 
@@ -96,35 +130,30 @@ jobs:
               exit 1
             fi
 
-            app_dir=/opt/vitransfer/vitransfer-test
-            build_root=/opt/vitransfer/builds
-            build_dir="$build_root/$DEPLOY_SHA"
-            archive_dir="/tmp/vitransfer-$DEPLOY_SHA"
-
-            mkdir -p "$build_root"
-            if [ -d "$build_dir" ]; then
-              rm -rf -- "$build_dir"
+            expected_image="$TCR_REGISTRY/xiaobaic/xiaobaic-review:$DEPLOY_SHA"
+            if [ "$DEPLOY_IMAGE" != "$expected_image" ]; then
+              echo "Unexpected deployment image: $DEPLOY_IMAGE"
+              exit 1
             fi
-            mkdir -p "$build_dir"
-            tar -xzf "$archive_dir/vitransfer-release.tar.gz" -C "$build_dir"
 
-            cd "$build_dir"
-            DOCKER_BUILDKIT=1 docker build \
-              --build-arg APP_VERSION="$DEPLOY_SHA" \
-              --build-arg SKIP_NPM_AUDIT=true \
-              -t "vitransfer-local:build-$DEPLOY_SHA" \
-              .
+            app_dir=/opt/vitransfer/vitransfer-test
+            live_tag=vitransfer-mps:fast
+            rollback_tag="vitransfer-mps:rollback-$DEPLOY_SHA"
 
             cd "$app_dir"
+            docker image inspect "$live_tag" >/dev/null
+            printf '%s' "$TCR_PASSWORD" | docker login "$TCR_REGISTRY" -u "$TCR_USERNAME" --password-stdin
+            trap 'docker logout "$TCR_REGISTRY" >/dev/null 2>&1 || true' EXIT
+            timeout 20m docker pull "$DEPLOY_IMAGE"
 
-            rollback_tag="vitransfer-local:rollback-$DEPLOY_SHA"
-            docker tag vitransfer-local:zh "$rollback_tag"
-            docker tag "vitransfer-local:build-$DEPLOY_SHA" vitransfer-local:zh
+            docker tag "$live_tag" "$rollback_tag"
+            docker tag "$DEPLOY_IMAGE" "$live_tag"
+            deployed_image_id=$(docker image inspect -f '{{.Id}}' "$live_tag")
 
             rollback() {
               trap - ERR
               echo "Deployment health check failed; restoring $rollback_tag"
-              docker tag "$rollback_tag" vitransfer-local:zh
+              docker tag "$rollback_tag" "$live_tag"
               docker compose up -d --no-deps --force-recreate app worker
             }
             trap rollback ERR
@@ -134,12 +163,16 @@ jobs:
             for attempt in $(seq 1 36); do
               app_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' vitransfer-app 2>/dev/null || true)
               worker_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' vitransfer-worker 2>/dev/null || true)
+              app_image_id=$(docker inspect -f '{{.Image}}' vitransfer-app 2>/dev/null || true)
+              worker_image_id=$(docker inspect -f '{{.Image}}' vitransfer-worker 2>/dev/null || true)
               echo "Health check $attempt: app=$app_status worker=$worker_status"
-              if [ "$app_status" = healthy ] && [ "$worker_status" = healthy ]; then
+              if [ "$app_status" = healthy ] && \
+                 [ "$worker_status" = healthy ] && \
+                 [ "$app_image_id" = "$deployed_image_id" ] && \
+                 [ "$worker_image_id" = "$deployed_image_id" ]; then
                 trap - ERR
                 curl --fail --silent --show-error https://mle6.cn/api/health
-                rm -rf -- "$build_dir" "$archive_dir"
-                echo "Deployment completed successfully"
+                echo "Deployment completed successfully: $DEPLOY_IMAGE"
                 exit 0
               fi
               sleep 5
