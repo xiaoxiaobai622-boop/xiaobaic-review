@@ -141,7 +141,7 @@ export default function ThumbnailReel({
   return (
     <div className="relative z-20 shrink-0">
       {/* Compact Control Bar - Always visible */}
-      <div className="h-14 border-b border-border/70 bg-card px-3 sm:px-4">
+      <div className="h-12 border-b border-border/70 bg-card px-3 sm:px-4">
         <div className="flex h-full items-center gap-1.5 sm:gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {leadingAction}
@@ -150,7 +150,7 @@ export default function ThumbnailReel({
                 variant="ghost"
                 size="icon"
                 onClick={onBackToGrid}
-                className="h-9 w-9 shrink-0"
+                className="h-8 w-8 shrink-0"
                 title={backButtonLabel || tShare('backToOverview')}
                 aria-label={backButtonLabel || tShare('backToOverview')}
               >

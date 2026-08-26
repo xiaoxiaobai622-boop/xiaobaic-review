@@ -1021,6 +1021,7 @@
     "deleteComment": "删除评论",
     "deleteReply": "删除回复",
     "hasAnnotation": "包含画面标注",
+    "drawingAnnotation": "画面批注",
     "attachFiles": "添加附件",
     "attachFilesTitle": "添加评论附件",
     "attachFilesDesc": "选择要随评论一起发送的文件。",

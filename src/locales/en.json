@@ -1060,6 +1060,7 @@
     "deleteComment": "Delete Comment",
     "deleteReply": "Delete Reply",
     "hasAnnotation": "Has Drawing Annotation",
+    "drawingAnnotation": "Drawing annotation",
 
     "attachFiles": "Attach Files",
     "attachFilesTitle": "Attach Files",

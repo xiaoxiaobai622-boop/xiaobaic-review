@@ -645,7 +645,11 @@ export default function CustomVideoControls({
     }, 500)
   }, [])
 
-  const progress = videoDuration > 0 ? (currentTime / videoDuration) * 100 : 0
+  const safeDuration = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : 0
+  const safeCurrentTime = safeDuration > 0
+    ? Math.min(safeDuration, Math.max(0, Number.isFinite(currentTime) ? currentTime : 0))
+    : 0
+  const progress = safeDuration > 0 ? (safeCurrentTime / safeDuration) * 100 : 0
   const isTimelineActive = isDragging || hoveredTime !== null
 
   const getTooltipAlignment = (position: number): string => {
@@ -661,7 +665,7 @@ export default function CustomVideoControls({
         <div
           ref={timelineRef}
           data-testid="video-timeline"
-          className={`group relative h-[38px] cursor-pointer touch-none select-none ${isDragging ? 'cursor-ew-resize' : ''}`}
+          className={`group relative h-8 cursor-pointer touch-none select-none ${isDragging ? 'cursor-ew-resize' : ''}`}
           onPointerDown={handleTimelinePointerDown}
           onClick={handleTimelineClick}
           onPointerMove={handleTimelinePointerMove}
@@ -673,8 +677,8 @@ export default function CustomVideoControls({
           tabIndex={0}
           aria-label="视频时间轴"
           aria-valuemin={0}
-          aria-valuemax={videoDuration}
-          aria-valuenow={Math.min(videoDuration, Math.max(0, currentTime))}
+          aria-valuemax={safeDuration}
+          aria-valuenow={safeCurrentTime}
           onKeyDown={handleTimelineKeyDown}
         >
           {/* The rail grows upward on hover/drag, so the controls below never move. */}
@@ -703,7 +707,7 @@ export default function CustomVideoControls({
           />
 
           {/* The annotation lane is intentionally independent from the rail. */}
-          <div data-testid="annotation-lane" className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 ${surfaceClassName}`} />
+          <div data-testid="annotation-lane" className={`pointer-events-none absolute inset-x-0 bottom-0 h-[26px] ${surfaceClassName}`} />
 
           {/* Range Bars for comments with timecodeEnd */}
           {rangeBars.map((bar) => {
@@ -712,7 +716,7 @@ export default function CustomVideoControls({
               <div
                 data-testid="comment-range-line"
                 key={`range-${bar.id}`}
-                className="pointer-events-none absolute top-[22px] h-[3px] -translate-y-1/2 bg-sky-400/85"
+                className="pointer-events-none absolute top-[19px] h-[3px] -translate-y-1/2 bg-sky-400/85"
                 style={{
                   left: `${bar.startPosition}%`,
                   width: `${Math.max(width, 0.5)}%`,
@@ -724,7 +728,7 @@ export default function CustomVideoControls({
           {isSelectingRange && pendingRangeStart !== null && pendingRangeStart !== undefined && videoDuration > 0 && (
             <>
               <div
-                className="pointer-events-none absolute top-[22px] h-1 bg-primary/40"
+                className="pointer-events-none absolute top-[19px] h-1 bg-primary/40"
                 style={{
                   left: `${Math.min(100, Math.max(0, (pendingRangeStart / videoDuration) * 100))}%`,
                   width: `${Math.max(0, Math.min(100, (((pendingRangeEnd ?? pendingRangeStart) - pendingRangeStart) / videoDuration) * 100))}%`,
@@ -734,7 +738,7 @@ export default function CustomVideoControls({
                 type="button"
                 data-testid="range-start-handle"
                 aria-label="批注开始时间"
-                className="group/range absolute top-[22px] z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize items-center justify-center bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+                className="group/range absolute top-[19px] z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize items-center justify-center bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                 style={{ left: `${Math.min(100, Math.max(0, (pendingRangeStart / videoDuration) * 100))}%` }}
                 onPointerDown={handleRangeStartPointerDown}
                 onPointerMove={handleRangeStartPointerMove}
@@ -750,7 +754,7 @@ export default function CustomVideoControls({
                 type="button"
                 data-testid="range-end-handle"
                 aria-label="批注结束时间"
-                className="group/range absolute top-[22px] z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize items-center justify-center bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+                className="group/range absolute top-[19px] z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize items-center justify-center bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                 style={{ left: `${Math.min(100, Math.max(0, ((pendingRangeEnd ?? pendingRangeStart) / videoDuration) * 100))}%` }}
                 onPointerDown={handleRangePointerDown}
                 onPointerMove={handleRangePointerMove}
@@ -777,7 +781,7 @@ export default function CustomVideoControls({
                 className={`absolute z-30 -translate-y-1/2 ${isDragging ? 'pointer-events-none' : 'pointer-events-auto'}`}
                 style={{
                   left: `${primaryMarker.position}%`,
-                  top: '22px',
+                  top: '19px',
                   transform: 'translateX(-50%) translateY(-50%)',
                 }}
               >
@@ -878,7 +882,7 @@ export default function CustomVideoControls({
       </div>
 
       {/* Control Buttons */}
-      <div className="relative flex items-center justify-between px-1" style={{ height: 40 }}>
+      <div className="relative flex h-9 items-center justify-between px-1">
         {/* Left Controls */}
         <div className="relative z-[2] flex items-center">
           {/* Frame Back / Play / Frame Forward — desktop only; mobile shows these as a center overlay (see VideoPlayer.tsx) */}
@@ -894,7 +898,7 @@ export default function CustomVideoControls({
 
             <button
               onClick={onPlayPause}
-              className="mx-1 flex h-[38px] w-[38px] items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
+              className="mx-1 flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
               aria-label={isPlaying ? t('pauseVideo') : t('playVideo')}
               title={isPlaying ? `${t('pauseVideo')} (Ctrl+Space)` : `${t('playVideo')} (Ctrl+Space)`}
             >
@@ -917,8 +921,8 @@ export default function CustomVideoControls({
 
           {/* Time Display */}
           <div className="mx-1 flex items-center rounded px-1.5 py-0.5 text-[13px] tabular-nums transition-colors hover:bg-muted">
-            <span className="text-foreground">{formatTimeWithMode(currentTime, videoFps, videoDuration, timestampDisplayMode)}</span>
-            <span className="text-muted-foreground">&nbsp;/&nbsp;{formatTimeWithMode(videoDuration, videoFps, videoDuration, timestampDisplayMode)}</span>
+            <span className="text-foreground">{formatTimeWithMode(safeCurrentTime, videoFps, safeDuration, timestampDisplayMode)}</span>
+            <span className="text-muted-foreground">&nbsp;/&nbsp;{formatTimeWithMode(safeDuration, videoFps, safeDuration, timestampDisplayMode)}</span>
           </div>
         </div>
 

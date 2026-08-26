@@ -1267,7 +1267,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         ) : (
           <>
             {/* Video Player */}
-            <div data-tutorial="video-player" className={`flex min-w-0 flex-col bg-muted/30 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div data-tutorial="video-player" className={`flex min-w-0 flex-col bg-muted/30 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 lg:pb-[11.5px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={readyVideos}
                 projectId={project.id}

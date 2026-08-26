@@ -986,6 +986,7 @@
     "deleteComment": "Kommentar löschen",
     "deleteReply": "Antwort löschen",
     "hasAnnotation": "Hat Zeichnungsanmerkung",
+    "drawingAnnotation": "Zeichnungsanmerkung",
 
     "attachFiles": "Dateien anhängen",
     "attachFilesTitle": "Dateien anhängen",

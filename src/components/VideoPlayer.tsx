@@ -354,6 +354,25 @@ export default function VideoPlayer({
   }, [selectedVideo?.id])
 
   useEffect(() => {
+    const video = videoRef.current
+    video?.pause()
+    if (video) video.currentTime = 0
+
+    currentTimeRef.current = 0
+    lastTimeUpdateRef.current = 0
+    setCurrentTimeState(0)
+    setVideoDuration(0)
+    setIsPlaying(false)
+    setPendingRangeStart(null)
+    setPendingRangeEnd(null)
+    setIsSelectingRange(false)
+
+    window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+      detail: { time: 0, videoId: selectedVideo?.id ?? null },
+    }))
+  }, [activeVideoName, selectedVideo?.id])
+
+  useEffect(() => {
     if (!activeVideoName) return
     if (previousVideoNameRef.current && previousVideoNameRef.current !== activeVideoName) {
       setSelectedVideoId(null)
@@ -993,7 +1012,7 @@ export default function VideoPlayer({
             */}
             <div
               ref={videoWrapperRef}
-              className={`group relative mb-[96px] w-full max-h-[56vh] overflow-visible rounded-md aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
+              className={`group relative mb-[76px] w-full max-h-[56vh] overflow-visible rounded-md aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
                 fillContainer ? 'lg:max-h-none lg:min-h-0 lg:flex-1' : ''
               }`}
               style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}

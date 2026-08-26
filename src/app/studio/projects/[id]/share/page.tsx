@@ -698,7 +698,7 @@ export default function AdminSharePage() {
         ) : (
           <>
             {/* Video Player - natural height on mobile, fills space on desktop */}
-            <div className={`flex min-w-0 flex-col rounded-[6px] bg-muted/80 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div className={`flex min-w-0 flex-col rounded-[6px] bg-muted/80 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 lg:pb-[11.5px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={readyVideos}
                 projectId={project.id}

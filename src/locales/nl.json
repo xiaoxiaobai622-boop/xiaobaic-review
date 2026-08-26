@@ -947,6 +947,7 @@
     "deleteComment": "Opmerking Verwijderen",
     "deleteReply": "Antwoord Verwijderen",
     "hasAnnotation": "Bevat een Tekening",
+    "drawingAnnotation": "Tekening",
     "attachFiles": "Bestanden Toevoegen",
     "attachFilesTitle": "Bestanden Toevoegen",
     "attachFilesDesc": "Selecteer bestanden om toe te voegen aan je reactie.",

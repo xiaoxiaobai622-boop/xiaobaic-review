@@ -116,12 +116,12 @@ export default function CommentInput({
 
   if (commentsDisabled) {
     return (
-      <div className="flex-shrink-0 border-t border-border/70 bg-card p-3">
+      <div className="flex-shrink-0 border-t border-border/70 bg-card p-2">
         <textarea
           disabled
           aria-label="批注输入框"
           placeholder="该版本已通过，暂不能新增批注"
-          className="flex min-h-[72px] w-full resize-none rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground opacity-80"
+          className="flex min-h-16 w-full resize-none rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground opacity-80"
         />
         <div className="mt-2 flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">该版本已通过，批注功能已锁定</p>
@@ -180,7 +180,7 @@ export default function CommentInput({
   }
 
   return (
-    <div className="flex-shrink-0 border-t border-border/70 bg-card p-3">
+    <div className="flex-shrink-0 border-t border-border/70 bg-card px-2 pb-1 pt-[6.5px]">
       {/* Restriction Warning */}
       {currentVideoRestricted && restrictionMessage && (
         <div className="mb-3 p-3 bg-warning-visible border-2 border-warning-visible rounded-lg">
@@ -243,19 +243,19 @@ export default function CommentInput({
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <div className="relative">
               <Textarea
                 placeholder={t('typeMessage')}
                 value={newComment}
                 onChange={(e) => onCommentChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="min-h-[72px] resize-none rounded-md pb-9 text-sm"
+                className="h-[75px] min-h-[75px] resize-none rounded-md pb-7 text-sm"
                 rows={2}
               />
               {onStartDrawing && (
                 <div
-                  className="absolute bottom-1.5 left-2 flex h-8 items-center gap-0.5 bg-transparent"
+                  className="absolute bottom-1 left-2 flex h-7 items-center gap-0.5 bg-transparent"
                   role="toolbar"
                   aria-label="画面批注工具"
                 >
@@ -273,14 +273,14 @@ export default function CommentInput({
                       }}
                       disabled={loading}
                       className={cn(
-                        'inline-flex h-7 w-7 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+                        'inline-flex h-6 w-6 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
                         activeDrawingTool === tool && 'bg-muted text-foreground hover:bg-muted'
                       )}
                       title={label}
                       aria-label={label}
                       aria-pressed={activeDrawingTool === tool}
                     >
-                      <Icon className="h-4 w-4" />
+                      <Icon className="h-3.5 w-3.5" />
                     </button>
                   ))}
                 </div>
@@ -344,7 +344,7 @@ export default function CommentInput({
               </div>
               <div
                 id="review-annotation-properties"
-                className="flex h-8 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1"
+                className="flex h-7 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1"
               />
               <div className="flex shrink-0 items-center gap-1.5">
                 <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>

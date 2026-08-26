@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Comment, Video, Prisma } from '@prisma/client'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { apiPost, apiDelete } from '@/lib/api-client'
 import { secondsToTimecode, timecodeToSeconds } from '@/lib/timecode'
 import { AnnotationData } from '@/types/annotations'
@@ -43,6 +44,7 @@ export function useCommentManagement({
   authenticatedName = null,
 }: UseCommentManagementProps) {
   const router = useRouter()
+  const tComments = useTranslations('comments')
 
   const [optimisticComments, setOptimisticComments] = useState<CommentWithReplies[]>([])
   const [newComment, setNewComment] = useState('')
@@ -415,7 +417,7 @@ export function useCommentManagement({
       attachmentUploadCountRef.current += 1
       commentContent = `Attachments uploaded #${attachmentUploadCountRef.current}`
     } else if (!commentContent.trim() && hasAnnotations) {
-      commentContent = 'Drawing annotation'
+      commentContent = tComments('drawingAnnotation')
     }
 
     // Read the player synchronously at send time. The timestamp captured when
