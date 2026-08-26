@@ -1,4 +1,4 @@
-name: Xiaobaic CI
+name: Xiaobaic CI and Manual Deploy
 
 on:
   push:
@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: Confirm deployment to the production website
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: application-ci-${{ github.ref }}
@@ -40,3 +46,103 @@ jobs:
           SKIP_ENV_VALIDATION: "1"
           NEXT_PHASE: phase-production-build
         run: npm run build
+
+  deploy:
+    name: Deploy to production
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm_production
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://mle6.cn
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Package source
+        run: git archive --format=tar.gz --output=vitransfer-release.tar.gz HEAD
+
+      - name: Upload source to production
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: vitransfer-release.tar.gz
+          target: /tmp/vitransfer-${{ github.sha }}
+
+      - name: Build and deploy with health check and rollback
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: DEPLOY_SHA
+          command_timeout: 45m
+          script: |
+            set -eu
+
+            case "$DEPLOY_SHA" in
+              ''|*[!0-9a-f]*) echo "Invalid deployment SHA"; exit 1 ;;
+            esac
+            if [ "${#DEPLOY_SHA}" -ne 40 ]; then
+              echo "Invalid deployment SHA length"
+              exit 1
+            fi
+
+            app_dir=/opt/vitransfer/vitransfer-test
+            build_root=/opt/vitransfer/builds
+            build_dir="$build_root/$DEPLOY_SHA"
+            archive_dir="/tmp/vitransfer-$DEPLOY_SHA"
+
+            mkdir -p "$build_root"
+            if [ -d "$build_dir" ]; then
+              rm -rf -- "$build_dir"
+            fi
+            mkdir -p "$build_dir"
+            tar -xzf "$archive_dir/vitransfer-release.tar.gz" -C "$build_dir"
+
+            cd "$build_dir"
+            DOCKER_BUILDKIT=1 docker build \
+              --build-arg APP_VERSION="$DEPLOY_SHA" \
+              --build-arg SKIP_NPM_AUDIT=true \
+              -t "vitransfer-local:build-$DEPLOY_SHA" \
+              .
+
+            cd "$app_dir"
+
+            rollback_tag="vitransfer-local:rollback-$DEPLOY_SHA"
+            docker tag vitransfer-local:zh "$rollback_tag"
+            docker tag "vitransfer-local:build-$DEPLOY_SHA" vitransfer-local:zh
+
+            rollback() {
+              trap - ERR
+              echo "Deployment health check failed; restoring $rollback_tag"
+              docker tag "$rollback_tag" vitransfer-local:zh
+              docker compose up -d --no-deps --force-recreate app worker
+            }
+            trap rollback ERR
+
+            docker compose up -d --no-deps --force-recreate app worker
+
+            for attempt in $(seq 1 36); do
+              app_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' vitransfer-app 2>/dev/null || true)
+              worker_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' vitransfer-worker 2>/dev/null || true)
+              echo "Health check $attempt: app=$app_status worker=$worker_status"
+              if [ "$app_status" = healthy ] && [ "$worker_status" = healthy ]; then
+                trap - ERR
+                curl --fail --silent --show-error https://mle6.cn/api/health
+                rm -rf -- "$build_dir" "$archive_dir"
+                echo "Deployment completed successfully"
+                exit 0
+              fi
+              sleep 5
+            done
+
+            false
