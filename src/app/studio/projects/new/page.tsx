@@ -9,10 +9,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Eye, EyeOff, RefreshCw, Copy, Check, Plus, X, Mail, AlertCircle, Calendar } from 'lucide-react'
-import { apiPost, apiFetch } from '@/lib/api-client'
+import { Eye, EyeOff, RefreshCw, Copy, Check, Plus, X, Calendar } from 'lucide-react'
+import { apiPost } from '@/lib/api-client'
 import { SharePasswordRequirements } from '@/components/SharePasswordRequirements'
-import { logError } from '@/lib/logging'
 import { ClientSelector } from '@/components/ClientSelector'
 import { generateSecurePassword } from '@/lib/password-utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
@@ -29,8 +28,7 @@ export default function NewProjectPage() {
   const [copied, setCopied] = useState(false)
 
   // Authentication mode
-  const [authMode, setAuthMode] = useState<'PASSWORD' | 'OTP' | 'BOTH'>('PASSWORD')
-  const [smtpConfigured, setSmtpConfigured] = useState(false)
+  const authMode = 'PASSWORD' as const
   
   // Due date
   const [dueDate, setDueDate] = useState('')
@@ -40,34 +38,11 @@ export default function NewProjectPage() {
   const [companyName, setCompanyName] = useState('')
   const [clientCompanyId, setClientCompanyId] = useState<string | null>(null)
   const [recipientName, setRecipientName] = useState('')
-  const [recipientEmail, setRecipientEmail] = useState('')
 
   // Generate password on mount
   useEffect(() => {
     setSharePassword(generateSecurePassword())
-    checkSmtpConfiguration()
   }, [])
-
-  // Check if SMTP is configured (reuse centralized logic from settings API)
-  async function checkSmtpConfiguration() {
-    try {
-      const res = await apiFetch('/api/settings')
-      if (res.ok) {
-        const data = await res.json()
-        // Settings API now includes smtpConfigured field using isSmtpConfigured() helper
-        setSmtpConfigured(data.smtpConfigured !== false)
-      }
-    } catch (err) {
-      logError('Failed to check SMTP configuration:', err)
-    }
-  }
-
-  // Smart recommendation: if email provided, recommend OTP
-  useEffect(() => {
-    if (recipientEmail && smtpConfigured && authMode === 'PASSWORD') {
-      // Don't auto-switch, just show recommendation
-    }
-  }, [recipientEmail, smtpConfigured, authMode])
 
   function handleGeneratePassword() {
     setSharePassword(generateSecurePassword())
@@ -93,8 +68,8 @@ export default function NewProjectPage() {
       companyName: companyName || null,
       clientCompanyId: clientCompanyId,
       recipientName: recipientName || null,
-      recipientEmail: recipientEmail || null,
-      sharePassword: (authMode === 'PASSWORD' || authMode === 'BOTH') && passwordProtected ? sharePassword : '',
+      recipientEmail: null,
+      sharePassword: passwordProtected ? sharePassword : '',
       authMode: passwordProtected ? authMode : 'NONE',
       isShareOnly: isShareOnlyValue,
       dueDate: dueDate ? `${dueDate}T12:00:00.000Z` : null,
@@ -111,9 +86,7 @@ export default function NewProjectPage() {
     }
   }
 
-  const canUseOTP = smtpConfigured && recipientEmail
-  const showOTPRecommendation = recipientEmail && smtpConfigured && authMode === 'PASSWORD'
-  const needsPassword = authMode === 'PASSWORD' || authMode === 'BOTH'
+  const needsPassword = passwordProtected
 
   return (
     <div className="flex-1 min-h-0 bg-background">
@@ -155,8 +128,9 @@ export default function NewProjectPage() {
                 }}
                 recipientName={recipientName}
                 onRecipientNameChange={setRecipientName}
-                recipientEmail={recipientEmail}
-                onRecipientEmailChange={setRecipientEmail}
+                recipientEmail=""
+                onRecipientEmailChange={() => {}}
+                hideEmail
                 disabled={loading}
               />
 
@@ -219,76 +193,14 @@ export default function NewProjectPage() {
                     {/* Authentication Method Selection */}
                     <div className="space-y-2">
                       <Label>{t('authMethod')}</Label>
-                      <Select value={authMode} onValueChange={(v) => setAuthMode(v as 'PASSWORD' | 'OTP' | 'BOTH')}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="PASSWORD">{t('passwordOnly')}</SelectItem>
-                          <SelectItem value="OTP" disabled={!canUseOTP}>
-                            {t('otpOnly')} {!canUseOTP ? `(${t('requiresSMTPClient')})` : ''}
-                          </SelectItem>
-                          <SelectItem value="BOTH" disabled={!canUseOTP}>
-                            {t('bothAuth')} {!canUseOTP ? `(${t('requiresSMTPClient')})` : ''}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+                        {t('passwordOnly')}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {authMode === 'PASSWORD' && t('passwordDescriptionLong')}
-                        {authMode === 'OTP' && t('otpDescriptionLong')}
-                        {authMode === 'BOTH' && t('bothDescriptionLong')}
+
                       </p>
 
-                      {/* Smart Recommendation */}
-                      {showOTPRecommendation && (
-                        <div className="flex items-start gap-2 p-3 bg-muted border border-border rounded-md">
-                          <Mail className="w-4 h-4 text-primary mt-0.5" />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{t('considerOtp')}</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {t('considerOtpLong')}
-                            </p>
-                            <div className="flex gap-2 mt-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                onClick={() => setAuthMode('OTP')}
-                              >
-                                {t('otpOnlyShort')}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                onClick={() => setAuthMode('BOTH')}
-                              >
-                                {t('bothPasswordOtp')}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {!smtpConfigured && (
-                        <div className="flex items-start gap-2 p-3 bg-warning-visible border border-warning-visible rounded-md">
-                          <AlertCircle className="w-4 h-4 text-warning mt-0.5" />
-                          <p className="text-xs text-warning">
-                            {t('configureSMTPLong')}
-                          </p>
-                        </div>
-                      )}
-
-                      {smtpConfigured && !recipientEmail && authMode !== 'PASSWORD' && (
-                        <div className="flex items-start gap-2 p-3 bg-warning-visible border border-warning-visible rounded-md">
-                          <AlertCircle className="w-4 h-4 text-warning mt-0.5" />
-                          <p className="text-xs text-warning">
-                            {t('enterClientEmail')}
-                          </p>
-                        </div>
-                      )}
                     </div>
 
                     {/* Password Field (conditional) */}

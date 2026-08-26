@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   Building2,
+  ArrowLeft,
   Check,
   Clock3,
   Copy,
@@ -129,7 +130,6 @@ export default function TeamPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [requests, setRequests] = useState<JoinRequest[]>([])
   const [invites, setInvites] = useState<InviteRecord[]>([])
-  const [inviteEmail, setInviteEmail] = useState('')
   const [invitePhone, setInvitePhone] = useState('')
   const [inviteRole, setInviteRole] = useState<'MEMBER' | 'ADMIN'>('MEMBER')
   const [lastInviteUrl, setLastInviteUrl] = useState('')
@@ -222,15 +222,14 @@ export default function TeamPage() {
   }
 
   const invite = async () => {
-    if (!activeTeamId || (!inviteEmail.trim() && !invitePhone.trim())) return
+    if (!activeTeamId || !invitePhone.trim()) return
     try {
       setError('')
       const data = await apiPost<{ invite: { token: string } }>(`/api/teams/${activeTeamId}/invitations`, {
-        email: inviteEmail.trim() || null,
+        email: null,
         phone: invitePhone.trim() || null,
         role: inviteRole,
       })
-      setInviteEmail('')
       setInvitePhone('')
       setLastInviteUrl(`${window.location.origin}/studio/team/invite/${data.invite.token}`)
       await refreshAll()
@@ -393,6 +392,9 @@ export default function TeamPage() {
     <div className="mx-auto w-full max-w-6xl space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
+          <Button type="button" variant="ghost" size="sm" className="mb-2 -ml-2 gap-2" asChild>
+            <Link href="/studio/projects"><ArrowLeft className="h-4 w-4" />返回工作台</Link>
+          </Button>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Building2 className="h-4 w-4" />
             团队中心
@@ -668,7 +670,6 @@ export default function TeamPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid gap-3 sm:grid-cols-4">
-                    <Input placeholder="邮箱" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} />
                     <Input placeholder="手机号" value={invitePhone} onChange={(event) => setInvitePhone(event.target.value)} />
                     <select
                       value={inviteRole}
@@ -678,7 +679,7 @@ export default function TeamPage() {
                       <option value="MEMBER">普通成员</option>
                       <option value="ADMIN">管理员</option>
                     </select>
-                    <Button type="button" onClick={invite} disabled={!inviteEmail.trim() && !invitePhone.trim()}>
+                    <Button type="button" onClick={invite} disabled={!invitePhone.trim()}>
                       <Send className="mr-2 h-4 w-4" />
                       发送邀请
                     </Button>
@@ -743,7 +744,7 @@ export default function TeamPage() {
                       className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm">{invite.email || invite.phone}</p>
+                        <p className="truncate text-sm">{invite.phone || '手机号邀请'}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {ROLE_LABELS[invite.role]} · {STATUS_LABELS[invite.status] || invite.status}
                         </p>

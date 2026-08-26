@@ -340,6 +340,7 @@ model Project {
   clientCompany   ClientCompany? @relation(fields: [clientCompanyId], references: [id], onDelete: SetNull)
 
   videos            Video[]
+  folders           ProjectFolder[]
   comments          Comment[]
   securityEvents    SecurityEvent[]
   analytics         VideoAnalytics[]
@@ -348,6 +349,7 @@ model Project {
   sharePageAccesses SharePageAccess[] // Share page authentication tracking
   projectUploads    ProjectUpload[] // Client-submitted files via reverse share
   photoAlbums       PhotoAlbum[] // Photo gallery albums
+  recycleBinItems   RecycleBinItem[]
   members           ProjectMember[]
 
   @@unique([teamId, projectCode])
@@ -394,6 +396,7 @@ model ProjectMember {
 model Video {
   id           String @id @default(cuid())
   projectId    String
+  folderId     String?
   name         String // Name to distinguish different videos in a project (required)
   version      Int // 1, 2, 3 (for revisions)
   versionLabel String // "v1", "v2", "v3" or custom
@@ -448,6 +451,7 @@ model Video {
   updatedAt DateTime @updatedAt
 
   project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder       ProjectFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
   sourceUpload ProjectUpload?   @relation("ProjectUploadVideo")
   analytics    VideoAnalytics[]
   assets       VideoAsset[]
@@ -456,6 +460,21 @@ model Video {
   @@unique([projectId, name, version])
   @@index([projectId, version])
   @@index([projectId, name])
+  @@index([folderId])
+}
+
+model ProjectFolder {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  videos  Video[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
 }
 
 model VideoAsset {
@@ -571,6 +590,22 @@ model Photo {
 
   @@index([albumId])
   @@index([albumId, uploadCompletedAt])
+}
+
+model RecycleBinItem {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  itemType    String
+  itemName    String
+  metadata    Json?
+  paths       Json
+  directories Json
+  deletedAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@index([projectId, deletedAt])
+  @@index([expiresAt])
 }
 
 enum VideoReviewStatus {

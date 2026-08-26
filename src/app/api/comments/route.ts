@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
             name: true,
             username: true,
             email: true,
+            avatarUrl: true,
           }
         },
         assets: assetSelect,
@@ -118,6 +119,7 @@ export async function GET(request: NextRequest) {
                 name: true,
                 username: true,
                 email: true,
+                avatarUrl: true,
               }
             },
             assets: assetSelect,

@@ -167,11 +167,9 @@ function ProfileContent() {
     <div className="min-h-dvh bg-background">
       <header className="flex h-14 items-center justify-between border-b border-border/70 px-4 sm:px-6">
         <div>
-          {visibleReturnUrl && (
-            <Button asChild variant="ghost" size="sm" className="gap-2">
-              <a href={visibleReturnUrl}><ArrowLeft className="h-4 w-4" />返回审片</a>
-            </Button>
-          )}
+          <Button asChild variant="ghost" size="sm" className="gap-2">
+            <a href={visibleReturnUrl || (user?.role === 'ADMIN' ? '/studio/projects' : '/')}><ArrowLeft className="h-4 w-4" />返回</a>
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />

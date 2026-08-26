@@ -6,7 +6,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
 import { canAccessProject, canManageProjectApproval } from '@/lib/project-access'
-import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import { createRecycleBinItem } from '@/lib/recycle-bin'
 import { rollbackLatestVideoVersion } from '@/lib/video-version-rollback'
 
 export const runtime = 'nodejs'
@@ -156,7 +156,7 @@ export async function PATCH(
   try {
     const { id } = await params
     const body = await request.json()
-    const { approved, name, versionLabel } = body
+    const { approved, name, versionLabel, folderId, moveGroup } = body
 
     if (versionLabel !== undefined) {
       return NextResponse.json(
@@ -179,7 +179,15 @@ export async function PATCH(
       )
     }
 
-    if (approved === undefined && name === undefined) {
+    if (folderId !== undefined && folderId !== null && (typeof folderId !== 'string' || folderId.trim().length === 0)) {
+      return NextResponse.json({ error: 'Invalid folderId' }, { status: 400 })
+    }
+
+    if (moveGroup !== undefined && typeof moveGroup !== 'boolean') {
+      return NextResponse.json({ error: 'Invalid moveGroup' }, { status: 400 })
+    }
+
+    if (approved === undefined && name === undefined && folderId === undefined) {
       return NextResponse.json(
         { error: videoMessages.invalidUpdateRequest || 'Invalid request: at least one field must be provided' },
         { status: 400 }
@@ -197,6 +205,11 @@ export async function PATCH(
 
     if (!(await canAccessProject(prisma, authResult, video.projectId))) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    if (folderId !== undefined && folderId !== null) {
+      const folder = await prisma.projectFolder.findFirst({ where: { id: folderId, projectId: video.projectId } })
+      if (!folder) return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
     }
 
     if (approved !== undefined && !(await canManageProjectApproval(prisma, authResult, video.projectId))) {
@@ -236,11 +249,21 @@ export async function PATCH(
     if (name !== undefined) {
       updateData.name = name.trim()
     }
+    if (folderId !== undefined) {
+      updateData.folderId = folderId || null
+    }
 
-    await prisma.video.update({
-      where: { id },
-      data: updateData
-    })
+    if (moveGroup && folderId !== undefined) {
+      await prisma.video.updateMany({
+        where: { projectId: video.projectId, name: video.name },
+        data: { folderId: folderId || null },
+      })
+    } else {
+      await prisma.video.update({
+        where: { id },
+        data: updateData
+      })
+    }
 
     if (approved !== undefined) {
       logMessage(`[VIDEO-APPROVAL] Admin toggled approval for video ${id} to ${approved}`)
@@ -299,7 +322,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    const paths = [
+    const candidatePaths = [
       video.originalStoragePath,
       video.preview2160Path,
       video.preview1080Path,
@@ -309,6 +332,24 @@ export async function DELETE(
       video.cleanPreview1080Path,
       video.cleanPreview720Path,
     ].filter((path): path is string => Boolean(path))
+    const paths: string[] = []
+    for (const path of candidatePaths) {
+      const [sharedVideos, sharedAssets] = await Promise.all([
+        prisma.video.count({ where: { id: { not: id }, OR: [
+          { originalStoragePath: path },
+          { preview2160Path: path },
+          { preview1080Path: path },
+          { preview720Path: path },
+          { hlsPath: path },
+          { cleanPreview2160Path: path },
+          { cleanPreview1080Path: path },
+          { cleanPreview720Path: path },
+          { thumbnailPath: path },
+        ] } }),
+        prisma.videoAsset.count({ where: { storagePath: path, videoId: { not: id } } }),
+      ])
+      if (sharedVideos === 0 && sharedAssets === 0) paths.push(path)
+    }
 
     for (const asset of video.assets) {
       const sharedCount = await prisma.videoAsset.count({
@@ -325,19 +366,33 @@ export async function DELETE(
       if (thumbnailSharedAssets === 0 && thumbnailSharedVideos === 0) paths.push(video.thumbnailPath)
     }
 
-    const task = await prisma.$transaction(async (tx) => {
-      const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-video-storage:${id}`, {
+    await prisma.$transaction(async (tx) => {
+      await createRecycleBinItem(tx, video.project.id, {
+        itemType: 'VIDEO',
+        itemName: `${video.name} ${video.versionLabel}`,
+        metadata: { videoId: video.id, originalFileName: video.originalFileName, version: video.version },
         paths: [...new Set(paths)],
-        directories: [],
       })
       await tx.video.delete({ where: { id } })
-      return durableTask
+
+      // Keep version numbers contiguous after removing a version (e.g. v1, v2, v3 -> v1, v2).
+      const laterVersions = await tx.video.findMany({
+        where: { projectId: video.project.id, name: video.name, version: { gt: video.version } },
+        orderBy: { version: 'asc' },
+        select: { id: true, version: true },
+      })
+      for (const remaining of laterVersions) {
+        const nextVersion = remaining.version - 1
+        await tx.video.update({
+          where: { id: remaining.id },
+          data: { version: nextVersion, versionLabel: `v${nextVersion}` },
+        })
+      }
     })
-    await dispatchDurableTask(task.id)
 
     return NextResponse.json({
       success: true,
-      message: videoMessages.videoDeletedSuccessfully || 'Video and all related files deleted successfully',
+      message: videoMessages.videoDeletedSuccessfully || 'Video moved to recycle bin',
     })
   } catch (error) {
     return NextResponse.json(

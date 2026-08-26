@@ -17,6 +17,7 @@ interface MpsConfig {
   outputDir: string
   pollIntervalMs: number
   maxWaitMs: number
+  videoBitrateKbps: number
 }
 
 function required(name: string): string {
@@ -30,6 +31,10 @@ function config(): MpsConfig {
   if (!Number.isInteger(templateId) || templateId <= 0) {
     throw new Error('TENCENT_MPS_TEMPLATE_ID must be a positive integer')
   }
+  const videoBitrateKbps = Number(process.env.TENCENT_MPS_VIDEO_BITRATE_KBPS || '1800')
+  if (!Number.isInteger(videoBitrateKbps) || videoBitrateKbps < 1500 || videoBitrateKbps > 2000) {
+    throw new Error('TENCENT_MPS_VIDEO_BITRATE_KBPS must be an integer between 1500 and 2000')
+  }
   return {
     // Existing COS credentials are Tencent CAM credentials.
     secretId: required('S3_ACCESS_KEY_ID'),
@@ -39,11 +44,22 @@ function config(): MpsConfig {
     outputDir: (process.env.TENCENT_MPS_OUTPUT_DIR?.trim() || 'projects/mps-output').replace(/^\/+|\/+$/g, ''),
     pollIntervalMs: Math.max(1000, Number(process.env.TENCENT_MPS_POLL_INTERVAL_MS || '5000')),
     maxWaitMs: Math.max(60_000, Number(process.env.TENCENT_MPS_MAX_WAIT_MS || '1800000')),
+    videoBitrateKbps,
   }
 }
 
 export function isMpsEnabled(): boolean {
   return process.env.TENCENT_MPS_ENABLED === 'true'
+}
+
+export async function configureMpsTranscodeTemplate(): Promise<number | null> {
+  if (!isMpsEnabled()) return null
+  const cfg = config()
+  await callApi('ModifyTranscodeTemplate', {
+    Definition: cfg.templateId,
+    VideoTemplate: { Bitrate: cfg.videoBitrateKbps },
+  })
+  return cfg.videoBitrateKbps
 }
 
 function sha256(value: string): string {

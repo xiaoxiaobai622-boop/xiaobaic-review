@@ -106,25 +106,26 @@ export default function VideoComparison({
   const videoUrlA = getVideoUrl(versionA, defaultQuality)
   const videoUrlB = getVideoUrl(versionB, defaultQuality)
   const videoFps = versionA?.fps || versionB?.fps || 24
-  const timelineComments = comments.reduce<VideoComparisonTimelineComment[]>((result, comment) => {
+  const timelineComments = comments.flatMap<VideoComparisonTimelineComment>((comment) => {
+    const avatarUrl = comment.avatarUrl ?? comment.user?.avatarUrl ?? null
     if (comment.videoId === versionA?.id) {
-      result.push({
+      return [{
         ...comment,
-        avatarUrl: comment.avatarUrl ?? comment.user?.avatarUrl ?? null,
-        comparisonSide: 'A',
+        avatarUrl,
+        comparisonSide: 'A' as const,
         versionLabel: versionA.versionLabel || `v${versionA.version}`,
-      })
+      }]
     }
     if (comment.videoId === versionB?.id && versionB?.id !== versionA?.id) {
-      result.push({
+      return [{
         ...comment,
-        avatarUrl: comment.avatarUrl ?? comment.user?.avatarUrl ?? null,
-        comparisonSide: 'B',
+        avatarUrl,
+        comparisonSide: 'B' as const,
         versionLabel: versionB.versionLabel || `v${versionB.version}`,
-      })
+      }]
     }
-    return result
-  }, [])
+    return []
+  })
 
   useEffect(() => {
     videoFpsRef.current = videoFps
@@ -463,8 +464,8 @@ export default function VideoComparison({
             </div>
           ) : (
             /* Slider Mode */
-            <div className="h-full flex items-center justify-center">
-              <div className="w-full max-h-full" style={{ aspectRatio: '16 / 9' }}>
+            <div className="h-full min-h-0 min-w-0 flex items-center justify-center overflow-hidden">
+              <div className="h-full w-full min-h-0 min-w-0">
                 <VideoComparisonSlider
                   videoRefA={videoRefA}
                   videoRefB={videoRefB}

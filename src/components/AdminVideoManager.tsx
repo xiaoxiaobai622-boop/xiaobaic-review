@@ -14,7 +14,6 @@ import { cn, formatFileSize } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { apiPatch, apiFetch, apiDelete } from '@/lib/api-client'
 import { FILE_LIMITS } from '@/lib/file-validation'
-import { entryToFiles } from '@/lib/drop-entries'
 import { useTranslations } from 'next-intl'
 import VideoComparison, { type VideoComparisonComment } from './VideoComparison'
 import { copyTextToClipboard } from '@/lib/clipboard'
@@ -60,6 +59,8 @@ interface AdminVideoManagerProps {
   comments?: VideoComparisonComment[]
   shareUrl?: string
   uploadRequestKey?: number
+  uploadRequestFiles?: File[]
+  uploadRequestFolderId?: string | null
   timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onShowVideoInfo?: (videoGroup: { name: string; videos: any[] }) => void
   selectionToolbarTargetId?: string
@@ -87,6 +88,8 @@ export default function AdminVideoManager({
   comments = [],
   shareUrl = '',
   uploadRequestKey = 0,
+  uploadRequestFiles,
+  uploadRequestFolderId = null,
   timestampDisplayMode = 'TIMECODE',
   onShowVideoInfo,
   selectionToolbarTargetId,
@@ -112,15 +115,16 @@ export default function AdminVideoManager({
   const localVersionInputRef = useRef<HTMLInputElement>(null)
   const [localVersionTargetGroup, setLocalVersionTargetGroup] = useState<string | null>(null)
   const [localVersionFile, setLocalVersionFile] = useState<File | null>(null)
-  const [isDragOver, setIsDragOver] = useState(false)
   const [copiedReviewGroup, setCopiedReviewGroup] = useState<string | null>(null)
-  const dragCounterRef = useRef(0)
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
   const [editGroupValue, setEditGroupValue] = useState('')
   const [savingGroupName, setSavingGroupName] = useState<string | null>(null)
   const [deletingGroup, setDeletingGroup] = useState<string | null>(null)
+  const [duplicatingVideoId, setDuplicatingVideoId] = useState<string | null>(null)
+  const [dropTargetGroup, setDropTargetGroup] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ name: string; label: string; token: string } | null>(null)
   const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
+  const [comparisonComments, setComparisonComments] = useState<VideoComparisonComment[]>([])
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
   const [versionSourceMenuGroup, setVersionSourceMenuGroup] = useState<string | null>(null)
   const [reviewStatusMenuGroup, setReviewStatusMenuGroup] = useState<string | null>(null)
@@ -145,8 +149,11 @@ export default function AdminVideoManager({
   }, [projectId, sessionId])
 
   useEffect(() => {
-    if (uploadRequestKey > 0 && projectStatus !== 'APPROVED') setIsUploadModalOpen(true)
-  }, [uploadRequestKey, projectStatus])
+    if (uploadRequestKey > 0 && projectStatus !== 'APPROVED') {
+      setDroppedFiles(uploadRequestFiles || [])
+      setIsUploadModalOpen(true)
+    }
+  }, [uploadRequestKey, uploadRequestFiles, projectStatus])
 
   useEffect(() => {
     const currentNames = new Set(videos.map(video => video.name))
@@ -205,8 +212,15 @@ export default function AdminVideoManager({
   }, [videos, videoTokenUrl])
 
   // Handle upload completion from modal - refresh to show processing inline
-  const handleUploadComplete = () => {
-    onRefresh?.()
+  const handleUploadComplete = async (_videoName?: string, videoId?: string) => {
+    if (videoId && uploadRequestFolderId) {
+      await apiFetch(`/api/videos/${videoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId: uploadRequestFolderId }),
+      })
+    }
+    await onRefresh?.()
   }
 
   // Preview the latest READY version's transcoded preview (never the original file)
@@ -238,15 +252,25 @@ export default function AdminVideoManager({
     if (readyVersions.length < 2) return
 
     try {
-      const versionsWithStreams = await Promise.all(readyVersions.map(async video => {
-        const response = await apiFetch(
-          videoTokenUrl(video.id, '720p'),
-          { cache: 'no-store' }
-        )
-        if (!response.ok) throw new Error(t('failedToLoadData'))
-        const data = await response.json()
-        return { ...video, streamUrl720p: `/api/content/${data.token}` }
-      }))
+      const [versionsWithStreams, commentsResponse] = await Promise.all([
+        Promise.all(readyVersions.map(async video => {
+          const response = await apiFetch(
+            videoTokenUrl(video.id, '720p'),
+            { cache: 'no-store' }
+          )
+          if (!response.ok) throw new Error(t('failedToLoadData'))
+          const data = await response.json()
+          return { ...video, streamUrl720p: `/api/content/${data.token}` }
+        })),
+        apiFetch(`/api/comments?projectId=${projectId}`, { cache: 'no-store' }),
+      ])
+
+      const fetchedComments = commentsResponse.ok
+        ? await commentsResponse.json() as VideoComparisonComment[]
+        : []
+      const mergedComments = [...comments, ...fetchedComments]
+        .filter((comment, index, all) => all.findIndex(candidate => candidate.id === comment.id) === index)
+      setComparisonComments(mergedComments)
       setComparisonVideos(versionsWithStreams)
     } catch {
       alert(t('failedToLoadData'))
@@ -292,6 +316,41 @@ export default function AdminVideoManager({
       delete cardClickTimersRef.current[groupName]
     }
     router.push(`/studio/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`)
+  }
+
+  const handleVersionDragStart = (event: React.DragEvent, video: any) => {
+    event.stopPropagation()
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-vitransfer-video-id', video.id)
+    event.dataTransfer.setData('text/plain', video.id)
+  }
+
+  const handleVersionDrop = async (event: React.DragEvent, targetGroup: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDropTargetGroup(null)
+    const sourceId = event.dataTransfer.getData('application/x-vitransfer-video-id')
+    if (!sourceId || projectStatus === 'APPROVED') return
+    const source = videos.find((video) => video.id === sourceId)
+    if (!source || source.name === targetGroup || source.status !== 'READY') return
+    if (!window.confirm(t('dragVersionConfirm', { source: source.name, target: targetGroup }))) return
+    setDuplicatingVideoId(sourceId)
+    try {
+      const response = await apiFetch(`/api/videos/${sourceId}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetName: targetGroup }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || t('dragVersionFailed'))
+      }
+      await onRefresh?.()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : t('dragVersionFailed'))
+    } finally {
+      setDuplicatingVideoId(null)
+    }
   }
 
   const getDisplayVideo = (video: any) => {
@@ -536,48 +595,6 @@ export default function AdminVideoManager({
     }
   }
 
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounterRef.current += 1
-    setIsDragOver(true)
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounterRef.current -= 1
-    if (dragCounterRef.current <= 0) {
-      dragCounterRef.current = 0
-      setIsDragOver(false)
-    }
-  }
-
-  // Drop video files or folders (flattened) onto the section: open the upload modal pre-filled
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounterRef.current = 0
-    setIsDragOver(false)
-    if (projectStatus === 'APPROVED') return
-
-    // webkitGetAsEntry must be read synchronously before any await
-    const entries = Array.from(e.dataTransfer.items || [])
-      .map(item => (item as any).webkitGetAsEntry?.())
-      .filter(Boolean)
-
-    const files = entries.length > 0
-      ? (await Promise.all(entries.map(entryToFiles))).flat()
-      : Array.from(e.dataTransfer.files || [])
-
-    const videoFiles = files.filter(isVideoFile)
-    if (videoFiles.length === 0) return
-
-    setDroppedFiles(videoFiles)
-    setIsUploadModalOpen(true)
-  }
-
   const handleStartEditGroupName = (oldName: string, e: React.MouseEvent) => {
     e.stopPropagation()
     setEditingGroupName(oldName)
@@ -690,18 +707,7 @@ export default function AdminVideoManager({
   ) : null
 
   return (
-    <div
-      className={`space-y-4 rounded-lg transition-shadow ${isDragOver ? 'ring-2 ring-primary/60' : ''}`}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {isDragOver && projectStatus !== 'APPROVED' && (
-        <div className="px-3 py-2 rounded-lg border border-dashed border-primary/60 bg-primary/5 text-sm text-primary">
-          {t('dropVideosHint')}
-        </div>
-      )}
+    <div className="space-y-4 rounded-lg">
       {/* Upload Modal - handles full upload with TUS, processing shows inline after */}
       <VideoUploadModal
         isOpen={isUploadModalOpen}
@@ -774,11 +780,23 @@ export default function AdminVideoManager({
         return (
           <Card
             key={groupName}
+            data-video-card
+            draggable={latestVideo.status === 'READY'}
+            onDragStart={(event) => handleVersionDragStart(event, latestVideo)}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes('application/x-vitransfer-video-id')) {
+                event.preventDefault()
+                setDropTargetGroup(groupName)
+              }
+            }}
+            onDragLeave={() => setDropTargetGroup(null)}
+            onDrop={(event) => void handleVersionDrop(event, groupName)}
             className={cn(
               'group relative',
               isGridCard && 'h-full',
               viewMode === 'grid' && isExpanded && 'col-span-full',
-              isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg'
+              isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg',
+              dropTargetGroup === groupName && 'border-primary ring-2 ring-primary/50'
             )}
           >
             <CardHeader
@@ -818,6 +836,8 @@ export default function AdminVideoManager({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
+                      draggable={displayLatestVideo.status === 'READY'}
+                      onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)}
                       src={thumbnails[groupName]}
                       alt={groupName}
                       loading="lazy"
@@ -828,7 +848,7 @@ export default function AdminVideoManager({
                     )}
                   </div>
                 ) : (
-                  <div className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? 'w-full aspect-video' : 'w-20 h-12')}>
+                  <div draggable={displayLatestVideo.status === 'READY'} onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)} className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? 'w-full aspect-video' : 'w-20 h-12')}>
                     <Video className="w-5 h-5 text-muted-foreground" />
                     {isGridCard && (
                       <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
@@ -1285,10 +1305,13 @@ export default function AdminVideoManager({
       {comparisonVideos && (
         <VideoComparison
           videoVersions={comparisonVideos}
-          comments={comments}
+          comments={comparisonComments}
           defaultQuality="720p"
           timestampDisplayMode={timestampDisplayMode}
-          onClose={() => setComparisonVideos(null)}
+          onClose={() => {
+            setComparisonVideos(null)
+            setComparisonComments([])
+          }}
         />
       )}
 

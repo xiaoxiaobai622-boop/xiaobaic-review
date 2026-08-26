@@ -100,6 +100,10 @@ export async function GET(
             { createdAt: 'asc' },
           ],
         },
+        folders: {
+          orderBy: { name: 'asc' },
+          include: { _count: { select: { videos: true } } },
+        },
       },
     })
 

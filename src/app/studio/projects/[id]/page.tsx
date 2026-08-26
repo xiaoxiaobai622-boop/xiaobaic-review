@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,8 @@ import AdminVideoManager from '@/components/AdminVideoManager'
 import ProjectActions from '@/components/ProjectActions'
 import ProjectUploadsBlock from '@/components/ProjectUploadsBlock'
 import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert } from 'lucide-react'
+import RecycleBinBlock from '@/components/RecycleBinBlock'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -33,6 +34,21 @@ function formatFileSize(value: string | number | null | undefined): string {
   const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   const size = bytes / Math.pow(1024, unitIndex)
   return `${size >= 100 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(2)} ${units[unitIndex]}`
+}
+
+function formatFolderCreatedAt(createdAt?: string): string {
+  if (!createdAt) return '--'
+  const date = new Date(createdAt)
+  if (Number.isNaN(date.getTime())) return '--'
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date).replace(/\//g, '-')
 }
 
 function greatestCommonDivisor(a: number, b: number): number {
@@ -102,15 +118,26 @@ export default function ProjectPage() {
   const [sortMode, setSortMode] = useState<'status' | 'alphabetical'>('alphabetical')
   const [videoViewMode, setVideoViewMode] = useState<'list' | 'grid'>('grid')
   const [albumSortMode, setAlbumSortMode] = useState<'date' | 'alphabetical'>('date')
-  const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'photos' | 'uploads'>('videos')
+  const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'photos' | 'uploads' | 'trash'>('videos')
   const [photoCounts, setPhotoCounts] = useState<{ albums: number; photos: number } | null>(null)
   const [uploadsCount, setUploadsCount] = useState<number | null>(null)
+  const [recycleBinCount, setRecycleBinCount] = useState<number | null>(null)
+  const [recycleBinRefreshKey, setRecycleBinRefreshKey] = useState(0)
   const [collectionLinkCopied, setCollectionLinkCopied] = useState(false)
   const [uploadRequestKey, setUploadRequestKey] = useState(0)
+  const [uploadRequestFiles, setUploadRequestFiles] = useState<File[] | undefined>(undefined)
+  const [uploadRequestFolderId, setUploadRequestFolderId] = useState<string | null>(null)
+  const folderUploadInputRef = useRef<HTMLInputElement>(null)
   const [selectedVideoGroupName, setSelectedVideoGroupName] = useState<string | null>(null)
   const [rollbackTarget, setRollbackTarget] = useState<any | null>(null)
   const [rollingBackVideoId, setRollingBackVideoId] = useState<string | null>(null)
   const [rollbackError, setRollbackError] = useState('')
+  const [deletingVersionId, setDeletingVersionId] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [projectFolders, setProjectFolders] = useState<Array<{ id: string; name: string; createdAt?: string; _count?: { videos: number } }>>([])
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
+  const [folderMenuId, setFolderMenuId] = useState<string | null>(null)
+  const [folderDropTargetId, setFolderDropTargetId] = useState<string | null | undefined>(undefined)
 
   const handlePhotoCounts = useCallback((albumCount: number, photoCount: number) => {
     setPhotoCounts({ albums: albumCount, photos: photoCount })
@@ -122,8 +149,14 @@ export default function ProjectPage() {
 
   // Restore workspace preferences across projects.
   useEffect(() => {
+    const closeMenu = () => { setContextMenu(null); setFolderMenuId(null) }
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [id])
+
+  useEffect(() => {
     const requestedWorkspace = searchParams?.get('workspace')
-    if (requestedWorkspace === 'videos' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads') {
+    if (requestedWorkspace === 'videos' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads' || requestedWorkspace === 'trash') {
       setActiveWorkspace(requestedWorkspace)
       return
     }
@@ -131,7 +164,7 @@ export default function ProjectPage() {
       const savedVideoView = localStorage.getItem(VIDEO_VIEW_MODE_KEY)
       if (savedVideoView === 'list' || savedVideoView === 'grid') setVideoViewMode(savedVideoView)
       const savedWorkspace = localStorage.getItem(WORKSPACE_VIEW_KEY)
-      if (savedWorkspace === 'videos' || savedWorkspace === 'photos' || savedWorkspace === 'uploads') {
+      if (savedWorkspace === 'videos' || savedWorkspace === 'photos' || savedWorkspace === 'uploads' || savedWorkspace === 'trash') {
         setActiveWorkspace(savedWorkspace)
       }
     } catch {}
@@ -142,8 +175,9 @@ export default function ProjectPage() {
     try { localStorage.setItem(VIDEO_VIEW_MODE_KEY, mode) } catch {}
   }
 
-  const changeWorkspace = (workspace: 'videos' | 'photos' | 'uploads') => {
+  const changeWorkspace = (workspace: 'videos' | 'photos' | 'uploads' | 'trash') => {
     setActiveWorkspace(workspace)
+    if (workspace === 'trash') setRecycleBinRefreshKey((value) => value + 1)
     if (workspace !== 'videos') setSelectedVideoGroupName(null)
     try { localStorage.setItem(WORKSPACE_VIEW_KEY, workspace) } catch {}
     const nextParams = new URLSearchParams(searchParams?.toString() || '')
@@ -164,6 +198,7 @@ export default function ProjectPage() {
       }
       const data = await response.json()
       setProject(data)
+      setProjectFolders(data.folders || [])
     } catch (error) {
       logError('Error fetching project:', error)
     } finally {
@@ -268,6 +303,7 @@ export default function ProjectPage() {
 
   const workspaceVideos = project.videos.filter((video: any) =>
     !(video.status === 'PROCESSING' && video.sourceUpload?.id)
+    && (activeFolderId ? video.folderId === activeFolderId : !video.folderId)
   )
   const videoGroupNames: string[] = Array.from(new Set(workspaceVideos.map((v: any) => v.name)))
   const selectedVideoGroup = selectedVideoGroupName
@@ -325,6 +361,83 @@ export default function ProjectPage() {
       setRollbackError(error instanceof Error ? error.message : t('rollbackVersionFailed'))
     } finally {
       setRollingBackVideoId(null)
+    }
+  }
+
+  const createProjectFolder = async () => {
+    const name = window.prompt('请输入文件夹名称')?.trim()
+    if (!name) return
+    const response = await apiFetch(`/api/projects/${id}/folders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      window.alert(data.error || '新建文件夹失败')
+      return
+    }
+    const data = await response.json()
+    setProjectFolders((folders) => [...folders, data.folder].sort((a, b) => a.name.localeCompare(b.name)))
+  }
+
+  const moveVideoToFolder = async (event: React.DragEvent, folderId: string | null) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setFolderDropTargetId(undefined)
+    const droppedFiles = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv|wmv|flv)$/i.test(file.name))
+    if (droppedFiles.length > 0) {
+      if (project.status === 'APPROVED') return
+      setUploadRequestFolderId(folderId)
+      setUploadRequestFiles(droppedFiles)
+      setUploadRequestKey((key) => key + 1)
+      return
+    }
+    const videoId = event.dataTransfer.getData('application/x-vitransfer-video-id') || event.dataTransfer.getData('text/plain')
+    if (!videoId) return
+    const response = await apiFetch(`/api/videos/${videoId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folderId, moveGroup: true }) })
+    if (!response.ok) {
+      window.alert('移动视频失败')
+      return
+    }
+    await fetchProject()
+  }
+
+  const openFolderUpload = () => folderUploadInputRef.current?.click()
+
+  const handleFolderUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith('video/'))
+    event.target.value = ''
+    if (!files.length) return
+    setUploadRequestFolderId(null)
+    setUploadRequestFiles(files)
+    setUploadRequestKey((key) => key + 1)
+  }
+
+  const deleteProjectFolder = async (folderId: string) => {
+    setFolderMenuId(null)
+    const response = await apiFetch(`/api/projects/${id}/folders?folderId=${encodeURIComponent(folderId)}`, { method: 'DELETE' })
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      window.alert(data.error || '删除文件夹失败')
+      return
+    }
+    if (activeFolderId === folderId) setActiveFolderId(null)
+    setProjectFolders((folders) => folders.filter((folder) => folder.id !== folderId))
+  }
+
+  const deleteVideoVersion = async (video: any) => {
+    if (deletingVersionId) return
+    if (!window.confirm(t('deleteVersionConfirm', { version: video.versionLabel || `v${video.version}` }))) return
+    setDeletingVersionId(video.id)
+    try {
+      const response = await apiFetch(`/api/videos/${video.id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || t('deleteVersionFailed'))
+      }
+      if (rollbackTarget?.id === video.id) setRollbackTarget(null)
+      await fetchProject()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : t('deleteVersionFailed'))
+    } finally {
+      setDeletingVersionId(null)
     }
   }
 
@@ -402,6 +515,7 @@ export default function ProjectPage() {
               { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
               { id: 'photos' as const, label: t('photoAlbums'), count: photoCounts?.albums || 0, icon: Images },
               { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
+              { id: 'trash' as const, label: t('recycleBin'), count: recycleBinCount || 0, icon: Trash2 },
             ]).map((item) => {
               const Icon = item.icon
               const active = activeWorkspace === item.id
@@ -426,7 +540,19 @@ export default function ProjectPage() {
             })}
           </nav>
 
-          <main id="review-workspace" className="min-w-0 p-3 sm:p-4">
+          <main id="review-workspace" className="relative min-w-0 p-3 sm:p-4" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) }}>
+            {contextMenu && (
+              <div className="fixed z-[100] w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260) }} onClick={(event) => event.stopPropagation()}>
+                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
+                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); changeWorkspace('videos'); openFolderUpload() }}><FolderUp className="h-4 w-4" />上传文件夹</button>
+                <div className="my-1 border-t border-border" />
+                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>
+                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); void fetchProject() }}><RotateCcw className="h-4 w-4" />刷新</button>
+                <div className="my-1 border-t border-border" />
+                <Link href={`/studio/projects/${id}/settings`} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><Settings className="h-4 w-4" />项目设置</Link>
+                <Link href="/studio/team" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><Users className="h-4 w-4" />邀请成员</Link>
+              </div>
+            )}
             <section className={activeWorkspace === 'videos' ? undefined : 'hidden'}>
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h2 className="flex shrink-0 items-center gap-2 text-lg font-semibold">
@@ -449,7 +575,64 @@ export default function ProjectPage() {
                   </Button>
                 </div>
               </div>
-              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={(group) => setSelectedVideoGroupName(group.name)} />
+              {activeFolderId && (
+                <button
+                  type="button"
+                  className={cn('mb-3 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent', folderDropTargetId === null ? 'border-primary bg-primary/5 ring-2 ring-primary/30' : 'border-border')}
+                  onClick={() => setActiveFolderId(null)}
+                  onDragEnter={(event) => { event.preventDefault(); setFolderDropTargetId(null) }}
+                  onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setFolderDropTargetId(null) }}
+                  onDragLeave={() => setFolderDropTargetId(undefined)}
+                  onDrop={(event) => void moveVideoToFolder(event, null)}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />项目根目录
+                </button>
+              )}
+              {!activeFolderId && projectFolders.length > 0 && (
+                <div className="mb-4 grid content-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 280px))' }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => void moveVideoToFolder(event, null)}>
+                  {projectFolders.map((folder) => {
+                    const count = new Set(project.videos.filter((video: any) => video.folderId === folder.id).map((video: any) => video.name)).size
+                    return (
+                      <div
+                        key={folder.id}
+                        className={cn('group relative overflow-hidden rounded-md border bg-card transition-all', folderDropTargetId === folder.id ? 'border-primary ring-2 ring-primary/40 bg-primary/5' : folderMenuId === folder.id ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/50 hover:shadow-sm')}
+                        onDoubleClick={() => setActiveFolderId(folder.id)}
+                        onDragEnter={(event) => { event.preventDefault(); setFolderDropTargetId(folder.id) }}
+                        onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setFolderDropTargetId(folder.id) }}
+                        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFolderDropTargetId(undefined) }}
+                        onDrop={(event) => void moveVideoToFolder(event, folder.id)}
+                      >
+                        <button type="button" className="block w-full text-left" onClick={() => setActiveFolderId(folder.id)}>
+                          <div className="flex aspect-video items-center justify-center bg-muted/40">
+                            <FolderOpen className="h-8 w-8 text-primary/70 transition-transform group-hover:scale-105" strokeWidth={1.5} />
+                          </div>
+                          <div className="flex items-start gap-1.5 border-t border-border px-2.5 py-2.5 pr-11">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium leading-5 text-foreground">{folder.name}</p>
+                              <p className="mt-1 flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
+                                <span className="tabular-nums">{formatFolderCreatedAt(folder.createdAt)}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>{count} 个视频</span>
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                        <button type="button" className="absolute bottom-2.5 right-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="文件夹操作" title="文件夹操作" onClick={(event) => { event.stopPropagation(); setFolderMenuId((current) => current === folder.id ? null : folder.id) }}>
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                        {folderMenuId === folder.id && (
+                          <div className="absolute right-2 bottom-10 z-20 w-32 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg" onClick={(event) => event.stopPropagation()}>
+                            <button type="button" className="flex w-full rounded-sm px-2.5 py-1.5 text-left text-xs hover:bg-accent" onClick={() => { setFolderMenuId(null); setActiveFolderId(folder.id) }}>打开</button>
+                            <button type="button" className="flex w-full rounded-sm px-2.5 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={() => void deleteProjectFolder(folder.id)}>删除</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <input ref={folderUploadInputRef} type="file" multiple accept="video/*" className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
+              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} uploadRequestFiles={uploadRequestFiles} uploadRequestFolderId={uploadRequestFolderId} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={(group) => setSelectedVideoGroupName(group.name)} />
             </section>
 
             <section className={activeWorkspace === 'photos' ? undefined : 'hidden'}>
@@ -482,6 +665,15 @@ export default function ProjectPage() {
                   <Link href={`/studio/projects/${id}/settings`}><Button variant="outline" size="sm" className="mt-4">{t('enableCollection')}</Button></Link>
                 </div>
               )}
+            </section>
+
+            <section className={activeWorkspace === 'trash' ? undefined : 'hidden'}>
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+                <span className={iconBadgeClassName}><Trash2 className={iconBadgeIconClassName} /></span>
+                {t('recycleBin')}
+                {recycleBinCount !== null && <span className={countBadgeClassName}>{recycleBinCount}</span>}
+              </h2>
+              <RecycleBinBlock key={recycleBinRefreshKey} projectId={project.id} onCountChange={setRecycleBinCount} />
             </section>
           </main>
 
@@ -565,6 +757,17 @@ export default function ProjectPage() {
                             {t('rollbackVersion')}
                           </Button>
                         )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2 h-8 w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          disabled={deletingVersionId === video.id}
+                          onClick={() => void deleteVideoVersion(video)}
+                        >
+                          {deletingVersionId === video.id ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
+                          {t('deleteVideoVersion')}
+                        </Button>
                       </div>
                     )
                   })}

@@ -99,13 +99,13 @@ export async function checkWechatText(
   const content = typeof text === 'string' ? text.trim() : ''
   if (!content) return { passed: true, skipped: true }
 
-  if (!isWechatMiniConfigured()) {
-    logWarn('Wechat content security is not configured')
-    return { passed: false, error: CONTENT_SECURITY_ERROR }
-  }
-
   const openid = await findWechatMiniOpenid(options.userId)
   if (!openid) return { passed: true, skipped: true }
+
+  if (!isWechatMiniConfigured()) {
+    logWarn('Wechat content security is not configured for a mini-program user')
+    return { passed: false, error: CONTENT_SECURITY_ERROR }
+  }
 
   try {
     const accessToken = await getWechatMiniAccessToken()

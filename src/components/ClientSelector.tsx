@@ -29,6 +29,7 @@ interface ClientSelectorProps {
   onRecipientNameChange: (name: string) => void
   recipientEmail: string
   onRecipientEmailChange: (email: string) => void
+  hideEmail?: boolean
   disabled?: boolean
 }
 
@@ -39,6 +40,7 @@ export function ClientSelector({
   onRecipientNameChange,
   recipientEmail,
   onRecipientEmailChange,
+  hideEmail = false,
   disabled = false
 }: ClientSelectorProps) {
   const t = useTranslations('clients')
@@ -276,7 +278,7 @@ export function ClientSelector({
       </div>
 
       {/* Client Contact */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className={hideEmail ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 sm:grid-cols-2 gap-3'}>
         <div className="space-y-2" ref={contactRef}>
           <Label htmlFor="recipientName">{t('contactName')} ({tc('optional')})</Label>
           <div className="relative">
@@ -327,7 +329,7 @@ export function ClientSelector({
           </div>
         </div>
 
-        <div className="space-y-2">
+        {!hideEmail && <div className="space-y-2">
           <Label htmlFor="recipientEmail">{t('emailOptional')}</Label>
           <Input
             id="recipientEmail"
@@ -345,7 +347,7 @@ export function ClientSelector({
             data-lpignore="true"
             data-1p-ignore
           />
-        </div>
+        </div>}
       </div>
       <p className="text-xs text-muted-foreground">
         {t('directoryDescription')}

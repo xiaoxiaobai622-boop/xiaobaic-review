@@ -7,9 +7,8 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { FolderKanban, Plus, Eye, EyeOff, RefreshCw, Copy, Check, Mail, AlertCircle } from 'lucide-react'
+import { FolderKanban, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
@@ -92,14 +91,12 @@ export default function AdminPage() {
   const [sharePassword, setSharePassword] = useState('')
   const [showPassword, setShowPassword] = useState(true)
   const [copied, setCopied] = useState(false)
-  const [authMode, setAuthMode] = useState<'PASSWORD' | 'OTP' | 'BOTH'>('PASSWORD')
-  const [smtpConfigured, setSmtpConfigured] = useState(false)
+  const authMode = 'PASSWORD' as const
   const [projectTitle, setProjectTitle] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [clientCompanyId, setClientCompanyId] = useState<string | null>(null)
   const [recipientName, setRecipientName] = useState('')
-  const [recipientEmail, setRecipientEmail] = useState('')
   const [formError, setFormError] = useState('')
   // Load saved views from API
   useEffect(() => {
@@ -129,18 +126,6 @@ export default function AdminPage() {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode)
   }, [viewMode])
 
-  async function checkSmtpConfiguration() {
-    try {
-      const res = await apiFetch('/api/settings')
-      if (res.ok) {
-        const data = await res.json()
-        setSmtpConfigured(data.smtpConfigured !== false)
-      }
-    } catch (err) {
-      logError('Failed to check SMTP configuration:', err)
-    }
-  }
-
   const loadProjects = async () => {
     try {
       const projectsRes = await apiFetch('/api/projects')
@@ -160,7 +145,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     loadProjects()
-    checkSmtpConfiguration()
   }, [])
 
   // Derive options + filtered list
@@ -243,13 +227,11 @@ export default function AdminPage() {
     setCompanyName('')
     setClientCompanyId(null)
     setRecipientName('')
-    setRecipientEmail('')
     setIsShareOnly(false)
     setPasswordProtected(true)
     setSharePassword(generateSecurePassword())
     setShowPassword(true)
     setCopied(false)
-    setAuthMode('PASSWORD')
     setFormError('')
     setShowNewProjectModal(true)
   }
@@ -260,7 +242,7 @@ export default function AdminPage() {
       return
     }
 
-    const needsPasswordForMode = passwordProtected && (authMode === 'PASSWORD' || authMode === 'BOTH')
+    const needsPasswordForMode = passwordProtected
     if (needsPasswordForMode && !sharePassword.trim()) {
       setFormError(t('passwordRequired'))
       return
@@ -280,9 +262,9 @@ export default function AdminPage() {
       if (companyName) data.companyName = companyName
       if (clientCompanyId) data.clientCompanyId = clientCompanyId
       if (recipientName) data.recipientName = recipientName
-      if (recipientEmail) data.recipientEmail = recipientEmail
+      data.recipientEmail = null
 
-      if ((authMode === 'PASSWORD' || authMode === 'BOTH') && passwordProtected && sharePassword) {
+      if (passwordProtected && sharePassword) {
         data.sharePassword = sharePassword
       }
 
@@ -300,9 +282,7 @@ export default function AdminPage() {
     }
   }
 
-  const canUseOTP = smtpConfigured && recipientEmail
-  const showOTPRecommendation = recipientEmail && smtpConfigured && authMode === 'PASSWORD'
-  const needsPassword = authMode === 'PASSWORD' || authMode === 'BOTH'
+  const needsPassword = passwordProtected
 
   function renderNewProjectModal() {
     return (
@@ -358,8 +338,9 @@ export default function AdminPage() {
               }}
               recipientName={recipientName}
               onRecipientNameChange={setRecipientName}
-              recipientEmail={recipientEmail}
-              onRecipientEmailChange={setRecipientEmail}
+              recipientEmail=""
+              onRecipientEmailChange={() => {}}
+              hideEmail
               disabled={creating}
             />
 
@@ -386,66 +367,14 @@ export default function AdminPage() {
                 <div className="space-y-3 pt-2 border-t">
                   <div className="space-y-2">
                     <Label>{t('authMethod')}</Label>
-                    <Select value={authMode} onValueChange={(v) => setAuthMode(v as 'PASSWORD' | 'OTP' | 'BOTH')}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="PASSWORD">{t('passwordOnly')}</SelectItem>
-                        <SelectItem value="OTP" disabled={!canUseOTP}>
-                          {t('otpOnly')} {!canUseOTP ? t('requiresSMTP') : ''}
-                        </SelectItem>
-                        <SelectItem value="BOTH" disabled={!canUseOTP}>
-                          {t('bothAuth')} {!canUseOTP ? t('requiresSMTP') : ''}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+                      {t('passwordOnly')}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {authMode === 'PASSWORD' && t('passwordDescription')}
-                      {authMode === 'OTP' && t('otpDescription')}
-                      {authMode === 'BOTH' && t('bothDescription')}
+
                     </p>
 
-                    {showOTPRecommendation && (
-                      <div className="flex items-start gap-2 p-2 bg-muted border border-border rounded-md">
-                        <Mail className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium">{t('considerOtp')}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {t('considerOtpDescription')}
-                          </p>
-                          <div className="flex flex-wrap gap-2 mt-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-xs px-2"
-                              onClick={() => setAuthMode('OTP')}
-                            >
-                              {t('otpOnlyShort')}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-xs px-2"
-                              onClick={() => setAuthMode('BOTH')}
-                            >
-                              {t('bothShort')}
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {!smtpConfigured && (
-                      <div className="flex items-start gap-2 p-2 bg-warning-visible border border-warning-visible rounded-md">
-                        <AlertCircle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-warning">
-                          {t('configureSMTP')}
-                        </p>
-                      </div>
-                    )}
                   </div>
 
                   {needsPassword && (

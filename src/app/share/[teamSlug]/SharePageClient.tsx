@@ -1209,16 +1209,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               />
             )}
           </div>
-          <div className="pb-4 text-center">
-            <a
-              href="https://mle6.cn"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            >
-              {tc('poweredBy')}
-            </a>
-          </div>
         </div>
       </div>
 

@@ -17,6 +17,8 @@ import { cleanupOldTempFiles, ensureTempDir } from './cleanup'
 import { runPreviewThumbnailBackfill } from './backfill'
 import { logError, logMessage } from '../lib/logging'
 import { dispatchPendingDurableTasks } from '../lib/durable-tasks'
+import { purgeExpiredRecycleBinItems } from '../lib/recycle-bin'
+import { configureMpsTranscodeTemplate } from '../lib/tencent-mps'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -45,6 +47,10 @@ async function main() {
   }
 
   await initStorage()
+  const mpsBitrateKbps = await configureMpsTranscodeTemplate()
+  if (mpsBitrateKbps !== null) {
+    logMessage(`[WORKER] Tencent MPS 720p template configured at ${mpsBitrateKbps} Kbps`)
+  }
   await dispatchPendingDurableTasks().catch((err) => {
     logError('Initial durable task dispatch failed', err)
   })
@@ -260,6 +266,7 @@ async function main() {
   // Cleanup old temp files on startup
   logMessage('Running initial temp file cleanup...')
   await cleanupOldTempFiles()
+  await purgeExpiredRecycleBinItems().catch((err) => logError('Initial recycle bin cleanup failed', err))
 
   // One-time backfill: preview thumbnails for pre-1.2.1 client uploads/photos
   await runPreviewThumbnailBackfill().catch((err) => {
@@ -286,12 +293,17 @@ async function main() {
     })
   }, 60_000)
 
+  const recycleBinInterval = setInterval(async () => {
+    await purgeExpiredRecycleBinItems().catch((err) => logError('Scheduled recycle bin cleanup failed', err))
+  }, ONE_HOUR_MS)
+
   // Handle shutdown gracefully
   process.on('SIGTERM', async () => {
     logMessage('SIGTERM received, closing workers...')
     clearInterval(tusCleanupInterval)
     clearInterval(tempCleanupInterval)
     clearInterval(durableTaskInterval)
+    clearInterval(recycleBinInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),
@@ -311,6 +323,7 @@ async function main() {
     clearInterval(tusCleanupInterval)
     clearInterval(tempCleanupInterval)
     clearInterval(durableTaskInterval)
+    clearInterval(recycleBinInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),

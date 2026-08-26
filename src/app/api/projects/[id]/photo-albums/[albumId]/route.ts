@@ -6,7 +6,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import { createRecycleBinItem } from '@/lib/recycle-bin'
 
 export const runtime = 'nodejs'
 
@@ -46,7 +46,7 @@ export async function PATCH(
   try {
     const album = await prisma.photoAlbum.findUnique({
       where: { id: albumId },
-      select: { id: true, projectId: true },
+      select: { id: true, projectId: true, name: true },
     })
 
     if (!album || album.projectId !== projectId) {
@@ -116,22 +116,22 @@ export async function DELETE(
   try {
     const album = await prisma.photoAlbum.findUnique({
       where: { id: albumId },
-      select: { id: true, projectId: true },
+      select: { id: true, projectId: true, name: true },
     })
 
     if (!album || album.projectId !== projectId) {
       return NextResponse.json({ error: photoMessages.albumNotFound || 'Album not found' }, { status: 404 })
     }
 
-    const task = await prisma.$transaction(async (tx) => {
-      const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-photo-album-storage:${albumId}`, {
-        paths: [],
+    await prisma.$transaction(async (tx) => {
+      await createRecycleBinItem(tx, projectId, {
+        itemType: 'PHOTO_ALBUM',
+        itemName: album.name,
+        metadata: { albumId: album.id },
         directories: [`projects/${projectId}/photos/${albumId}`],
       })
       await tx.photoAlbum.delete({ where: { id: albumId } })
-      return durableTask
     })
-    await dispatchDurableTask(task.id)
 
     return NextResponse.json({ ok: true })
   } catch (error) {

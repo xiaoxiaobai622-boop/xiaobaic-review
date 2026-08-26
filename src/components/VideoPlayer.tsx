@@ -1232,6 +1232,7 @@ export default function VideoPlayer({
       {allowComparison && showComparison && displayVideos.length >= 2 && (
         <VideoComparison
           videoVersions={displayVideos}
+          comments={comments}
           defaultQuality={defaultQuality}
           timestampDisplayMode={timestampDisplayMode}
           onClose={() => setShowComparison(false)}

@@ -3,9 +3,8 @@ import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
-import { deleteFile } from '@/lib/storage'
 import { logError } from '@/lib/logging'
-import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import { createRecycleBinItem } from '@/lib/recycle-bin'
 
 export const runtime = 'nodejs'
 
@@ -94,6 +93,8 @@ export async function DELETE(
       where: { id: uploadId, projectId },
       select: {
         id: true,
+        fileName: true,
+        originalFileName: true,
         storagePath: true,
         thumbnailPath: true,
         sourceVideo: {
@@ -120,6 +121,7 @@ export async function DELETE(
         video.preview2160Path,
         video.preview1080Path,
         video.preview720Path,
+        video.hlsPath,
         video.cleanPreview2160Path,
         video.cleanPreview1080Path,
         video.cleanPreview720Path,
@@ -143,18 +145,16 @@ export async function DELETE(
         }
       }
 
-      const cleanupTask = await prisma.$transaction(async (tx) => {
-        const task = await recordDurableTask(
-          tx,
-          'DELETE_STORAGE',
-          `delete-rolled-back-video-storage:${video.id}`,
-          { paths: [...new Set(cleanupPaths)], directories: [] },
-        )
+      await prisma.$transaction(async (tx) => {
+        await createRecycleBinItem(tx, projectId, {
+          itemType: 'PROJECT_UPLOAD',
+          itemName: video.originalFileName || upload.id,
+          metadata: { uploadId: upload.id, videoId: video.id },
+          paths: [...new Set(cleanupPaths)],
+        })
         await tx.projectUpload.delete({ where: { id: upload.id } })
         await tx.video.delete({ where: { id: video.id } })
-        return task
       })
-      await dispatchDurableTask(cleanupTask.id)
       return NextResponse.json({ success: true, deletedRetainedVersion: true })
     }
 
@@ -168,11 +168,15 @@ export async function DELETE(
       )
     }
 
-    await deleteFile(upload.storagePath)
-    if (upload.thumbnailPath) {
-      await deleteFile(upload.thumbnailPath).catch(() => {})
-    }
-    await prisma.projectUpload.delete({ where: { id: upload.id } })
+    await prisma.$transaction(async (tx) => {
+      await createRecycleBinItem(tx, projectId, {
+        itemType: 'PROJECT_UPLOAD',
+        itemName: upload.originalFileName || upload.fileName,
+        metadata: { uploadId: upload.id },
+        paths: [upload.storagePath, upload.thumbnailPath].filter((value): value is string => Boolean(value)),
+      })
+      await tx.projectUpload.delete({ where: { id: upload.id } })
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

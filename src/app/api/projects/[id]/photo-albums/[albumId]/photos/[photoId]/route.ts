@@ -5,7 +5,7 @@ import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import { createRecycleBinItem } from '@/lib/recycle-bin'
 
 export const runtime = 'nodejs'
 
@@ -45,15 +45,15 @@ export async function DELETE(
       return NextResponse.json({ error: photoMessages.photoNotFound || 'Photo not found' }, { status: 404 })
     }
 
-    const task = await prisma.$transaction(async (tx) => {
-      const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-photo-storage:${photoId}`, {
+    await prisma.$transaction(async (tx) => {
+      await createRecycleBinItem(tx, projectId, {
+        itemType: 'PHOTO',
+        itemName: photo.fileName,
+        metadata: { photoId: photo.id, albumId },
         paths: [photo.storagePath, photo.thumbnailPath, photo.previewPath].filter((path): path is string => Boolean(path)),
-        directories: [],
       })
       await tx.photo.delete({ where: { id: photoId } })
-      return durableTask
     })
-    await dispatchDurableTask(task.id)
 
     return NextResponse.json({ ok: true })
   } catch (error) {
