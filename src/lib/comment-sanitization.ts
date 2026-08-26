@@ -70,7 +70,8 @@ export function sanitizeComment(
       sanitized.user = {
         id: comment.user.id,
         name: comment.user.name,
-        email: comment.user.email
+        email: comment.user.email,
+        avatarUrl: comment.user.avatarUrl || null,
       }
     }
   } else if (isAuthenticated) {

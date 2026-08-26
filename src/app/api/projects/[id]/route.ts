@@ -74,6 +74,7 @@ export async function GET(
                 name: true,
                 username: true,
                 email: true,
+                avatarUrl: true,
               }
             },
             replies: {
@@ -84,6 +85,7 @@ export async function GET(
                     name: true,
                     username: true,
                     email: true,
+                    avatarUrl: true,
                   }
                 }
               },

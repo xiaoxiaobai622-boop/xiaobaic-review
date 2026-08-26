@@ -14,6 +14,8 @@ export interface VideoComparisonComment {
   timecode: string
   content: string
   authorName?: string | null
+  avatarUrl?: string | null
+  user?: { avatarUrl?: string | null } | null
   isInternal?: boolean
   resolved?: boolean
 }
@@ -106,10 +108,20 @@ export default function VideoComparison({
   const videoFps = versionA?.fps || versionB?.fps || 24
   const timelineComments = comments.reduce<VideoComparisonTimelineComment[]>((result, comment) => {
     if (comment.videoId === versionA?.id) {
-      result.push({ ...comment, comparisonSide: 'A', versionLabel: versionA.versionLabel || `v${versionA.version}` })
+      result.push({
+        ...comment,
+        avatarUrl: comment.avatarUrl ?? comment.user?.avatarUrl ?? null,
+        comparisonSide: 'A',
+        versionLabel: versionA.versionLabel || `v${versionA.version}`,
+      })
     }
     if (comment.videoId === versionB?.id && versionB?.id !== versionA?.id) {
-      result.push({ ...comment, comparisonSide: 'B', versionLabel: versionB.versionLabel || `v${versionB.version}` })
+      result.push({
+        ...comment,
+        avatarUrl: comment.avatarUrl ?? comment.user?.avatarUrl ?? null,
+        comparisonSide: 'B',
+        versionLabel: versionB.versionLabel || `v${versionB.version}`,
+      })
     }
     return result
   }, [])

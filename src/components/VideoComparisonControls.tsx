@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Play, Pause, SkipBack, SkipForward, Columns2, SplitSquareHorizontal, MessageSquare, X } from 'lucide-react'
 import { secondsToTimecode, formatCommentTimestamp, timecodeToSeconds } from '@/lib/timecode'
+import { InitialsAvatar } from './InitialsAvatar'
 
 function formatTimeWithMode(
   seconds: number,
@@ -34,6 +35,7 @@ interface VideoComparisonControlsProps {
     timecode: string
     content: string
     authorName?: string | null
+    avatarUrl?: string | null
     isInternal?: boolean
     resolved?: boolean
     comparisonSide: 'A' | 'B'
@@ -169,7 +171,7 @@ export default function VideoComparisonControls({
   }, [isDragging])
 
   return (
-    <div className="relative bg-gradient-to-t from-black/95 via-black/60 to-transparent p-2 sm:p-3 rounded-b-xl">
+    <div className="relative rounded-lg border border-border/70 bg-muted/90 p-2 shadow-sm sm:p-3">
       {/* Timeline */}
       <div className="mb-2 sm:mb-3 px-1">
         {activeCommentGroup && (
@@ -203,6 +205,13 @@ export default function VideoComparisonControls({
               {activeCommentGroup.comments.map((comment) => (
                 <div key={comment.id} className="rounded-md bg-muted/60 px-3 py-2.5">
                   <div className="mb-1.5 flex min-w-0 items-center gap-2 text-xs">
+                    <InitialsAvatar
+                      name={comment.authorName || t('anonymousReviewer')}
+                      src={comment.avatarUrl}
+                      size="xs"
+                      className="shrink-0"
+                      isInternal={comment.isInternal}
+                    />
                     <span className={`rounded px-1.5 py-0.5 font-medium ${
                       comment.comparisonSide === 'A'
                         ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300'
@@ -242,8 +251,8 @@ export default function VideoComparisonControls({
             onKeyDown={handleTimelineKeyDown}
           >
             {/* Background Track */}
-            <div className="absolute bottom-1 left-0 right-0 h-1.5 overflow-hidden rounded-full bg-white/20 sm:h-2">
-              <div className="absolute inset-0 bg-white/30" />
+            <div className="absolute bottom-1 left-0 right-0 h-1.5 overflow-hidden rounded-full bg-foreground/10 sm:h-2">
+              <div className="absolute inset-0 bg-foreground/10" />
               <div
                 className="absolute inset-y-0 left-0 bg-primary transition-all duration-100"
                 style={{ width: `${progress}%` }}
@@ -261,7 +270,7 @@ export default function VideoComparisonControls({
             {/* Hover Time Indicator */}
             {hoveredTime !== null && !isDragging && (
               <div
-                className="pointer-events-none absolute bottom-full mb-2 whitespace-nowrap rounded border border-white/20 bg-black/90 px-2 py-1 font-sans text-xs tabular-nums text-white shadow-lg"
+                className="pointer-events-none absolute bottom-full mb-2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 font-sans text-xs tabular-nums text-popover-foreground shadow-md"
                 style={{
                   left: `${(hoveredTime / videoDuration) * 100}%`,
                   transform: 'translateX(-50%)',
@@ -278,11 +287,15 @@ export default function VideoComparisonControls({
             const firstComment = group.comments[0]
             const authorName = firstComment.authorName || t('anonymousReviewer')
             const mixedVersions = group.comments.some(comment => comment.comparisonSide !== firstComment.comparisonSide)
+            const markerLabel = t('openTimelineComment', {
+              author: authorName,
+              time: formatTimeWithMode(group.time, videoFps, videoDuration, timestampDisplayMode),
+            })
             return (
               <button
                 key={group.key}
                 type="button"
-                className={`absolute bottom-4 z-30 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border-2 bg-background text-[10px] font-semibold text-foreground shadow-md transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${
+                className={`absolute bottom-4 z-30 flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded-full border-2 bg-background text-[10px] font-semibold text-foreground shadow-md transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   mixedVersions
                     ? 'border-primary'
                     : firstComment.comparisonSide === 'A'
@@ -296,13 +309,19 @@ export default function VideoComparisonControls({
                   onSeek(group.time)
                   setActiveCommentGroupKey(current => current === group.key ? null : group.key)
                 }}
-                aria-label={t('openTimelineComment', {
-                  author: authorName,
-                  time: formatTimeWithMode(group.time, videoFps, videoDuration, timestampDisplayMode),
-                })}
+                aria-label={markerLabel}
                 aria-expanded={activeCommentGroupKey === group.key}
+                title={markerLabel}
               >
-                <span aria-hidden="true">{authorName.trim().slice(0, 1).toUpperCase()}</span>
+                <span aria-hidden="true">
+                  <InitialsAvatar
+                    name={authorName}
+                    src={firstComment.avatarUrl}
+                    size="xs"
+                    className="ring-0"
+                    isInternal={firstComment.isInternal}
+                  />
+                </span>
                 {group.comments.length > 1 && (
                   <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[9px] leading-4 text-primary-foreground">
                     {group.comments.length}
@@ -320,37 +339,37 @@ export default function VideoComparisonControls({
         <div className="flex items-center gap-1 sm:gap-2">
           <button
             onClick={() => onFrameStep('backward')}
-            className="p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+            className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/15 rounded-lg transition-colors touch-manipulation"
             aria-label={t('previousFrame')}
             title={t('previousFrame') + ' (Ctrl+J)'}
           >
-            <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
           </button>
 
           <button
             onClick={onPlayPause}
-            className="p-2.5 sm:p-3 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
-            aria-label={isPlaying ? t('decreaseSpeed') : t('playPause')}
-            title={(isPlaying ? t('decreaseSpeed') : t('playPause')) + ' (Ctrl+Space)'}
+            className="p-2.5 sm:p-3 hover:bg-foreground/10 active:bg-foreground/15 rounded-lg transition-colors touch-manipulation"
+            aria-label={isPlaying ? t('pause') : t('playPause')}
+            title={(isPlaying ? t('pause') : t('playPause')) + ' (Ctrl+Space)'}
           >
             {isPlaying ? (
-              <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-white fill-white" />
+              <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-foreground fill-foreground" />
             ) : (
-              <Play className="w-5 h-5 sm:w-6 sm:h-6 text-white fill-white" />
+              <Play className="w-5 h-5 sm:w-6 sm:h-6 text-foreground fill-foreground" />
             )}
           </button>
 
           <button
             onClick={() => onFrameStep('forward')}
-            className="p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+            className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/15 rounded-lg transition-colors touch-manipulation"
             aria-label={t('nextFrame')}
             title={t('nextFrame') + ' (Ctrl+L)'}
           >
-            <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
           </button>
 
           {/* Time Display */}
-          <div className="text-white text-xs sm:text-sm font-sans font-medium tabular-nums ml-1 sm:ml-2 whitespace-nowrap">
+          <div className="text-foreground text-xs sm:text-sm font-sans font-medium tabular-nums ml-1 sm:ml-2 whitespace-nowrap">
             {formatTimeWithMode(currentTime, videoFps, videoDuration, timestampDisplayMode)} / {formatTimeWithMode(videoDuration, videoFps, videoDuration, timestampDisplayMode)}
           </div>
         </div>
@@ -365,7 +384,7 @@ export default function VideoComparisonControls({
               const next = idx >= 0 && idx < speeds.length - 1 ? speeds[idx + 1] : speeds[0]
               onSpeedChange(next)
             }}
-            className="px-2 py-1 sm:px-2.5 sm:py-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors text-white text-xs sm:text-sm font-sans tabular-nums touch-manipulation"
+            className="px-2 py-1 sm:px-2.5 sm:py-1.5 hover:bg-foreground/10 active:bg-foreground/15 rounded-lg transition-colors text-foreground text-xs sm:text-sm font-sans tabular-nums touch-manipulation"
             aria-label={t('playbackSpeed')}
             title={t('cycleSpeed')}
           >
@@ -375,14 +394,14 @@ export default function VideoComparisonControls({
           {/* Mode Toggle */}
           <button
             onClick={() => onModeChange(mode === 'side-by-side' ? 'slider' : 'side-by-side')}
-            className="p-2 sm:p-2.5 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors touch-manipulation"
+            className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/15 rounded-lg transition-colors touch-manipulation"
             aria-label={mode === 'side-by-side' ? t('switchToSlider') : t('switchToSideBySide')}
             title={mode === 'side-by-side' ? t('sliderMode') : t('sideBySideMode')}
           >
             {mode === 'side-by-side' ? (
-              <SplitSquareHorizontal className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <SplitSquareHorizontal className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
             ) : (
-              <Columns2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <Columns2 className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
             )}
           </button>
         </div>
