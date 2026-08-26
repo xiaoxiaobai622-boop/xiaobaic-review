@@ -117,7 +117,7 @@ jobs:
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Pull through Hong Kong proxy and deploy with rollback
+      - name: Pull through Taiwan proxy and deploy with rollback
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -158,6 +158,23 @@ jobs:
             cleanup
             sudo mkdir -p "$auth_dir"
             printf '%s\n' "$GHCR_TOKEN" | sudo DOCKER_CONFIG="$auth_dir" /usr/local/bin/crane auth login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            sudo systemctl restart sing-box-ghcr
+            proxy_ready=0
+            for proxy_attempt in $(seq 1 12); do
+              proxy_status=$(curl --proxy http://127.0.0.1:17890 --silent --show-error --output /tmp/ghcr-proxy-check-$DEPLOY_SHA.txt --write-out '%{http_code}' https://ghcr.io/v2/ 2>/tmp/ghcr-proxy-error-$DEPLOY_SHA.txt || true)
+              if [ "$proxy_status" = 200 ] || [ "$proxy_status" = 401 ]; then
+                proxy_ready=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$proxy_ready" -ne 1 ]; then
+              echo "GHCR proxy did not become ready"
+              sudo systemctl status sing-box-ghcr --no-pager || true
+              sudo journalctl -u sing-box-ghcr -n 80 --no-pager || true
+              cat /tmp/ghcr-proxy-error-$DEPLOY_SHA.txt || true
+              exit 1
+            fi
             timeout 20m sudo DOCKER_CONFIG="$auth_dir" /usr/local/bin/ghcr-pull "$DEPLOY_IMAGE" "$image_tar"
             sudo docker load -i "$image_tar"
             docker image inspect "$DEPLOY_IMAGE" >/dev/null
