@@ -18,7 +18,6 @@ import { runPreviewThumbnailBackfill } from './backfill'
 import { logError, logMessage } from '../lib/logging'
 import { dispatchPendingDurableTasks } from '../lib/durable-tasks'
 import { purgeExpiredRecycleBinItems } from '../lib/recycle-bin'
-import { configureMpsTranscodeTemplate } from '../lib/tencent-mps'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -47,10 +46,6 @@ async function main() {
   }
 
   await initStorage()
-  const mpsBitrateKbps = await configureMpsTranscodeTemplate()
-  if (mpsBitrateKbps !== null) {
-    logMessage(`[WORKER] Tencent MPS 720p template configured at ${mpsBitrateKbps} Kbps`)
-  }
   await dispatchPendingDurableTasks().catch((err) => {
     logError('Initial durable task dispatch failed', err)
   })

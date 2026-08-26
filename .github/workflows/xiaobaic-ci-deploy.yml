@@ -175,20 +175,28 @@ jobs:
             deployed_image_id=$(docker image inspect -f '{{.Id}}' "$live_tag")
             docker compose up -d --no-deps --force-recreate app worker
 
-            for attempt in $(seq 1 36); do
+            healthy_streak=0
+            for attempt in $(seq 1 48); do
               app_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' vitransfer-app 2>/dev/null || true)
               worker_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' vitransfer-worker 2>/dev/null || true)
+              worker_restart_count=$(docker inspect -f '{{.RestartCount}}' vitransfer-worker 2>/dev/null || echo 1)
               app_image_id=$(docker inspect -f '{{.Image}}' vitransfer-app 2>/dev/null || true)
               worker_image_id=$(docker inspect -f '{{.Image}}' vitransfer-worker 2>/dev/null || true)
-              echo "Health check $attempt: app=$app_status worker=$worker_status"
+              echo "Health check $attempt: app=$app_status worker=$worker_status worker_restarts=$worker_restart_count stable=$healthy_streak/6"
               if [ "$app_status" = healthy ] && \
                  [ "$worker_status" = healthy ] && \
+                 [ "$worker_restart_count" = 0 ] && \
                  [ "$app_image_id" = "$deployed_image_id" ] && \
                  [ "$worker_image_id" = "$deployed_image_id" ]; then
-                trap - ERR
-                curl --fail --silent --show-error https://mle6.cn/api/health
-                echo "Deployment completed successfully: $DEPLOY_IMAGE"
-                exit 0
+                healthy_streak=$((healthy_streak + 1))
+                if [ "$healthy_streak" -ge 6 ]; then
+                  curl --fail --silent --show-error https://mle6.cn/api/health
+                  trap - ERR
+                  echo "Deployment completed successfully after 30 seconds stable: $DEPLOY_IMAGE"
+                  exit 0
+                fi
+              else
+                healthy_streak=0
               fi
               sleep 5
             done
