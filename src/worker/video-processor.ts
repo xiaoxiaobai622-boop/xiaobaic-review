@@ -1,6 +1,8 @@
 import { Job } from 'bullmq'
 import { VideoProcessingJob } from '../lib/queue'
 import { logMessage } from '../lib/logging'
+import { isMpsEnabled, submitMpsHls, waitForMpsHls } from '../lib/tencent-mps'
+import { prisma } from '../lib/db'
 import {
   TempFiles,
   downloadAndValidateVideo,
@@ -35,6 +37,35 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
     const videoInfo = await downloadAndValidateVideo(videoId, originalStoragePath, tempFiles)
 
     const settings = await fetchProcessingSettings(projectId, videoId)
+
+    // New uploads use Tencent MPS for HLS. The existing MP4/FFmpeg path remains
+    // the fallback so older deployments and transient MPS failures stay usable.
+    if (isMpsEnabled()) {
+      try {
+        logMessage(`[WORKER] Submitting video ${videoId} to Tencent MPS`)
+        await prisma.video.update({ where: { id: videoId }, data: { mpsStatus: 'SUBMITTING', mpsError: null } })
+        const taskId = await submitMpsHls(originalStoragePath, videoId)
+        await prisma.video.update({ where: { id: videoId }, data: { mpsTaskId: taskId, mpsStatus: 'PROCESSING' } })
+        const result = await waitForMpsHls(taskId)
+        await prisma.video.update({
+          where: { id: videoId },
+          data: { mpsStatus: 'READY', hlsPath: result.hlsPath, mpsError: null, status: 'READY', processingProgress: 100 },
+        })
+        logMessage(`[WORKER] Tencent MPS HLS ready for video ${videoId}: ${result.hlsPath}`)
+
+        // Keep thumbnails and metadata local; only the video rendition moves to MPS.
+        const thumbnailPath = await processThumbnail(videoId, projectId, videoInfo.path, videoInfo.metadata.duration, tempFiles)
+        await prisma.video.update({
+          where: { id: videoId },
+          data: { thumbnailPath, duration: videoInfo.metadata.duration, width: videoInfo.metadata.width, height: videoInfo.metadata.height, fps: videoInfo.metadata.fps, codec: videoInfo.metadata.codec },
+        })
+        return
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        await prisma.video.update({ where: { id: videoId }, data: { mpsStatus: 'ERROR', mpsError: message } })
+        logMessage(`[WORKER] Tencent MPS failed for ${videoId}; falling back to local MP4 processing: ${message}`)
+      }
+    }
 
     if (settings.skipTranscoding) {
       logMessage(`[WORKER] Ignoring skipTranscoding for video ${videoId}; originals are download-only`)

@@ -304,6 +304,7 @@ export async function DELETE(
       video.preview2160Path,
       video.preview1080Path,
       video.preview720Path,
+      (video as any).hlsPath,
       video.cleanPreview2160Path,
       video.cleanPreview1080Path,
       video.cleanPreview720Path,

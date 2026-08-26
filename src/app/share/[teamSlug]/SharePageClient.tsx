@@ -623,6 +623,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         }
 
         try {
+          let streamTokenHls = ''
           let streamToken720p = ''
           let streamToken1080p = ''
           let streamToken2160p = ''
@@ -632,6 +633,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               ? ['1080p', '720p', '2160p']
               : ['720p', '1080p', '2160p']
 
+          streamTokenHls = await fetchVideoToken(video.id, 'hls')
           // Fetch only the configured playback quality and fall back one at a
           // time. Original downloads and thumbnails are requested on demand.
           for (const quality of qualityOrder) {
@@ -645,6 +647,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           const tokenized = {
             ...video,
             streamUrl720p: streamToken720p ? `/api/content/${streamToken720p}` : '',
+            hlsUrl720p: streamTokenHls ? `/api/content/${streamTokenHls}` : '',
             streamUrl1080p: streamToken1080p ? `/api/content/${streamToken1080p}` : '',
             streamUrl2160p: streamToken2160p ? `/api/content/${streamToken2160p}` : '',
             downloadUrl: null,

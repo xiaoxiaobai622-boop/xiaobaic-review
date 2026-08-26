@@ -421,6 +421,13 @@ model Video {
   processingProgress Float       @default(0)
   processingError    String?
 
+  // Tencent Cloud MPS/HLS processing. Existing MP4 preview fields remain
+  // populated for older videos and local-FFmpeg fallback jobs.
+  mpsTaskId    String?
+  mpsStatus    String?
+  mpsError     String?
+  hlsPath      String?
+
   // Preview versions (watermarked)
   preview2160Path String?
   preview1080Path String?

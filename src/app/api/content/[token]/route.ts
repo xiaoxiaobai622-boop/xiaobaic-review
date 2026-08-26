@@ -4,7 +4,7 @@ import { getRedis } from '@/lib/redis'
 import { prisma } from '@/lib/db'
 import { createReadStream, existsSync, statSync } from 'fs'
 import { getFilePath, sanitizeFilenameForHeader, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
-import { s3GetPresignedDownloadUrl, s3GetPresignedStreamUrl, s3FileExists } from '@/lib/s3-storage'
+import { s3GetPresignedDownloadUrl, s3GetPresignedStreamUrl, s3FileExists, s3DownloadFile } from '@/lib/s3-storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -166,6 +166,30 @@ export async function GET(
 
     const originalPath = video.originalStoragePath
     const requestedQuality = verifiedToken.quality
+    const hlsPath = (video as any).hlsPath as string | null | undefined
+
+    // HLS manifests are served through the authenticated token endpoint. Each
+    // media URI is rewritten to a short-lived COS/CDN URL so segment requests
+    // do not need a second application token.
+    if (requestedQuality === 'hls' && hlsPath && isS3Mode()) {
+      if (!(await s3FileExists(hlsPath))) {
+        return NextResponse.json({ error: '视频正在处理，请稍后再试', code: 'HLS_NOT_READY' }, { status: 409, headers: { 'Retry-After': '10' } })
+      }
+      const manifestStream = await s3DownloadFile(hlsPath)
+      const chunks: Buffer[] = []
+      for await (const chunk of manifestStream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      const manifest = Buffer.concat(chunks).toString('utf8')
+      const basePath = hlsPath.slice(0, hlsPath.lastIndexOf('/') + 1)
+      const rewritten = await Promise.all(manifest.split(/\r?\n/).map(async (line) => {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#') || /^https?:\/\//i.test(trimmed)) return line
+        const segmentPath = trimmed.split('?')[0]
+        return await s3GetPresignedStreamUrl(`${basePath}${segmentPath}`, 900, 'video/mp2t')
+      }))
+      return new NextResponse(rewritten.join('\n'), {
+        headers: { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'private, max-age=30', 'Access-Control-Allow-Origin': '*' },
+      })
+    }
 
     const getPreferredPreviewPath = (preferClean: boolean): string | null => {
       const clean2160 = (video as any).cleanPreview2160Path as string | null | undefined

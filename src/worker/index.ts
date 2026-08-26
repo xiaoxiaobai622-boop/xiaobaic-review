@@ -61,7 +61,9 @@ async function main() {
   const worker = new Worker<VideoProcessingJob>('video-processing', processVideo, {
     connection: getRedisForQueue(),
     concurrency,
-    lockDuration: 600_000,
+    // MPS polling can legitimately run for up to 30 minutes. Keep the BullMQ
+    // lock longer than that so a slow transcode is not processed twice.
+    lockDuration: 2_000_000,
     stalledInterval: 300_000,
     maxStalledCount: 2,
     limiter: {

@@ -437,6 +437,14 @@ export default function VideoPlayer({
           }
         }
 
+        // Safari/iOS can play HLS natively. Other browsers use the retained
+        // MP4 preview URL, so HLS adoption never removes existing playback.
+        const nativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl') !== ''
+        if (nativeHls && (selectedVideo as any).hlsUrl720p && defaultQuality === '720p') {
+          url = (selectedVideo as any).hlsUrl720p
+          qualityUsed = '720p'
+        }
+
         if (url) {
           currentTimeRef.current = 0
           setResolvedPlaybackQuality(qualityUsed)

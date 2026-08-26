@@ -236,7 +236,8 @@ export default function AdminSharePage() {
         }
 
         try {
-          const [token720, token1080, token2160] = await Promise.all([
+          const [tokenHls, token720, token1080, token2160] = await Promise.all([
+            fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId),
             fetchAdminVideoTokenWithRetry(video.id, '720p', sessionId),
             fetchAdminVideoTokenWithRetry(video.id, '1080p', sessionId),
             fetchAdminVideoTokenWithRetry(video.id, '2160p', sessionId),
@@ -265,6 +266,7 @@ export default function AdminSharePage() {
           const tokenized = {
             ...video,
             streamUrl720p: streamToken720p ? `/api/content/${streamToken720p}` : '',
+            hlsUrl720p: tokenHls ? `/api/content/${tokenHls}` : '',
             streamUrl1080p: streamToken1080p ? `/api/content/${streamToken1080p}` : '',
             streamUrl2160p: streamToken2160p ? `/api/content/${streamToken2160p}` : '',
             downloadUrl: downloadToken ? `/api/content/${downloadToken}?download=true` : null,
