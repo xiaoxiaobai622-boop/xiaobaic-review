@@ -464,7 +464,11 @@ export default function AdminVideoManager({
 
   const handleCopyReviewLink = async (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const baseUrl = shareUrl || `${window.location.origin}/studio/projects/${projectId}/share`
+    if (!shareUrl) {
+      alert(tc('errorTryAgain'))
+      return
+    }
+    const baseUrl = shareUrl
     const separator = baseUrl.includes('?') ? '&' : '?'
     const copied = await copyTextToClipboard(`${baseUrl}${separator}video=${encodeURIComponent(groupName)}`)
     if (!copied) {

@@ -146,6 +146,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
   const urlTimestamp = searchParams?.get('t') ? parseFloat(searchParams.get('t')!) : null
   const urlVideoName = searchParams?.get('video') || null
+  const urlFolderId = searchParams?.get('folder') || null
   const urlVersion = searchParams?.get('version') ? parseInt(searchParams.get('version')!, 10) : null
   const urlFocusCommentId = searchParams?.get('comment') || null
 
@@ -477,6 +478,17 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           }
           if (isMounted) {
             projectVideoCatalogRef.current = getVideoCatalogSignature(projectData)
+            // Folder share links reuse the public review page, scoped to the
+            // videos that belong to the requested folder.
+            if (urlFolderId && projectData.videosByName) {
+              const filteredVideosByName = Object.entries(projectData.videosByName).reduce((acc: Record<string, any[]>, [name, videos]) => {
+                const folderVideos = (videos as any[]).filter((video) => video.folderId === urlFolderId)
+                if (folderVideos.length > 0) acc[name] = folderVideos
+                return acc
+              }, {})
+              projectData.videosByName = filteredVideosByName
+              projectData.videos = Object.values(filteredVideosByName).flat()
+            }
             setProject(projectData)
             setIsPasswordProtected(!!projectData.recipients && projectData.recipients.length > 0)
             setIsAuthenticated(true)
@@ -501,7 +513,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     return () => {
       isMounted = false
     }
-  }, [token, shareToken, storageKey, fetchComments, getConsentHeader])
+  }, [token, shareToken, storageKey, fetchComments, getConsentHeader, urlFolderId])
 
   // Keep an already-open share page current when a new version becomes READY.
   // The response is applied only when the video catalog actually changes, so

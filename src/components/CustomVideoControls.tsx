@@ -329,12 +329,14 @@ export default function CustomVideoControls({
   const t = useTranslations('controls')
   const tComments = useTranslations('comments')
   const [isDragging, setIsDragging] = useState(false)
+  const [dragPreviewTime, setDragPreviewTime] = useState<number | null>(null)
   const [showVolume, setShowVolume] = useState(false)
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null)
   const [hoveredTime, setHoveredTime] = useState<number | null>(null)
   const [loadedProgress, setLoadedProgress] = useState(0)
   const timelineRef = useRef<HTMLDivElement>(null)
   const suppressTimelineClickRef = useRef(false)
+  const dragSeekTimeRef = useRef<number | null>(null)
   const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const touchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -426,16 +428,19 @@ export default function CustomVideoControls({
     return groups
   }, [markers, videoDuration])
 
-  const seekFromClientX = useCallback((clientX: number) => {
-    if (!timelineRef.current || !videoDuration) return
+  const getTimeFromClientX = useCallback((clientX: number): number | null => {
+    if (!timelineRef.current || !videoDuration) return null
 
     const rect = timelineRef.current.getBoundingClientRect()
     const x = clientX - rect.left
     const percentage = Math.max(0, Math.min(1, x / rect.width))
-    const time = percentage * videoDuration
+    return percentage * videoDuration
+  }, [videoDuration])
 
-    onSeek(time)
-  }, [videoDuration, onSeek])
+  const seekFromClientX = useCallback((clientX: number) => {
+    const time = getTimeFromClientX(clientX)
+    if (time !== null) onSeek(time)
+  }, [getTimeFromClientX, onSeek])
 
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (suppressTimelineClickRef.current) return
@@ -448,30 +453,48 @@ export default function CustomVideoControls({
     e.currentTarget.setPointerCapture(e.pointerId)
     videoRef.current?.pause()
     document.body.style.userSelect = 'none'
-    suppressTimelineClickRef.current = false
+    suppressTimelineClickRef.current = true
+    const time = getTimeFromClientX(e.clientX)
+    dragSeekTimeRef.current = time
+    setDragPreviewTime(time)
     setIsDragging(true)
-    seekFromClientX(e.clientX)
-  }, [seekFromClientX, videoRef])
+  }, [getTimeFromClientX, videoRef])
 
   const handleTimelinePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!timelineRef.current || !videoDuration) return
     const isCaptured = e.currentTarget.hasPointerCapture(e.pointerId)
-    if (isDragging && isCaptured) {
+    if (isCaptured) {
       e.preventDefault()
-      suppressTimelineClickRef.current = true
-      seekFromClientX(e.clientX)
+      const time = getTimeFromClientX(e.clientX)
+      dragSeekTimeRef.current = time
+      setDragPreviewTime(time)
     }
 
     const rect = timelineRef.current.getBoundingClientRect()
     const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     setHoveredTime(percentage * videoDuration)
-  }, [isDragging, seekFromClientX, videoDuration])
+  }, [getTimeFromClientX, videoDuration])
 
   const handleTimelinePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId)
     }
     document.body.style.userSelect = ''
+    const targetTime = dragSeekTimeRef.current
+    dragSeekTimeRef.current = null
+    setDragPreviewTime(null)
+    setIsDragging(false)
+    if (targetTime !== null) onSeek(targetTime)
+    window.setTimeout(() => { suppressTimelineClickRef.current = false }, 0)
+  }, [onSeek])
+
+  const handleTimelinePointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    document.body.style.userSelect = ''
+    dragSeekTimeRef.current = null
+    setDragPreviewTime(null)
     setIsDragging(false)
     window.setTimeout(() => { suppressTimelineClickRef.current = false }, 0)
   }, [])
@@ -646,8 +669,9 @@ export default function CustomVideoControls({
   }, [])
 
   const safeDuration = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : 0
+  const displayedCurrentTime = dragPreviewTime ?? currentTime
   const safeCurrentTime = safeDuration > 0
-    ? Math.min(safeDuration, Math.max(0, Number.isFinite(currentTime) ? currentTime : 0))
+    ? Math.min(safeDuration, Math.max(0, Number.isFinite(displayedCurrentTime) ? displayedCurrentTime : 0))
     : 0
   const progress = safeDuration > 0 ? (safeCurrentTime / safeDuration) * 100 : 0
   const isTimelineActive = isDragging || hoveredTime !== null
@@ -671,7 +695,7 @@ export default function CustomVideoControls({
           onPointerMove={handleTimelinePointerMove}
           onPointerLeave={handleTimelinePointerLeave}
           onPointerUp={handleTimelinePointerUp}
-          onPointerCancel={handleTimelinePointerUp}
+          onPointerCancel={handleTimelinePointerCancel}
           onSelect={(event) => event.preventDefault()}
           role="slider"
           tabIndex={0}

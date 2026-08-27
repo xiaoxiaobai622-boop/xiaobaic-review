@@ -159,6 +159,7 @@ export async function GET(
       approvedAt: video.approvedAt,
       reviewStatus: video.reviewStatus,
       thumbnailPath: video.thumbnailPath,
+      folderId: video.folderId,
       createdAt: video.createdAt,
       hasAssets: (video._count?.assets ?? 0) > 0,
       // Explicitly omit: projectId, originalStoragePath, preview720Path, preview1080Path,
@@ -237,6 +238,7 @@ export async function GET(
       downloadUrl: video.downloadUrl,
       thumbnailUrl: video.thumbnailUrl,
       thumbnailPath: video.thumbnailPath,
+      folderId: video.folderId,
     })) : videosSanitizedBase
 
     const sanitizedVideosByName = isGuest ? Object.keys(sortedVideosByName).reduce((acc: any, name: string) => {
@@ -255,6 +257,7 @@ export async function GET(
         downloadUrl: video.downloadUrl,
         thumbnailUrl: video.thumbnailUrl,
         thumbnailPath: video.thumbnailPath,
+        folderId: video.folderId,
       }))
       return acc
     }, {}) : sortedVideosByName

@@ -11,13 +11,14 @@ import ProjectActions from '@/components/ProjectActions'
 import ProjectUploadsBlock from '@/components/ProjectUploadsBlock'
 import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
 import RecycleBinBlock from '@/components/RecycleBinBlock'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical } from 'lucide-react'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
 import { cn } from '@/lib/utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { useAuth } from '@/components/AuthProvider'
+import FolderInteraction from '@/components/ui/folder-interaction'
 
 // Force dynamic rendering (no static pre-rendering)
 export const dynamic = 'force-dynamic'
@@ -137,7 +138,10 @@ export default function ProjectPage() {
   const [projectFolders, setProjectFolders] = useState<Array<{ id: string; name: string; createdAt?: string; _count?: { videos: number } }>>([])
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [folderMenuId, setFolderMenuId] = useState<string | null>(null)
+  const [copiedFolderId, setCopiedFolderId] = useState<string | null>(null)
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null | undefined>(undefined)
+  const [folderCoverUrls, setFolderCoverUrls] = useState<Record<string, string[]>>({})
+  const [folderCoverSessionId] = useState(() => `folder-covers:${Date.now()}`)
 
   const handlePhotoCounts = useCallback((albumCount: number, photoCount: number) => {
     setPhotoCounts({ albums: albumCount, photos: photoCount })
@@ -210,6 +214,41 @@ export default function ProjectPage() {
   useEffect(() => {
     fetchProject()
   }, [fetchProject])
+
+  useEffect(() => {
+    if (!project?.folders?.length || !project?.videos?.length) {
+      setFolderCoverUrls({})
+      return
+    }
+    let cancelled = false
+    const loadFolderCovers = async () => {
+      const next: Record<string, string[]> = {}
+      for (const folder of project.folders as Array<{ id: string }>) {
+        const latestByName = new Map<string, any>()
+        for (const video of project.videos as any[]) {
+          if (video.folderId !== folder.id || !video.thumbnailPath) continue
+          const current = latestByName.get(video.name)
+          if (!current || Number(video.version || 0) > Number(current.version || 0)) latestByName.set(video.name, video)
+        }
+        const candidates = [...latestByName.values()].slice(0, 3)
+        const urls = await Promise.all(candidates.map(async (video) => {
+          try {
+            const query = new URLSearchParams({ videoId: video.id, projectId: String(id), quality: 'thumbnail', sessionId: folderCoverSessionId })
+            const response = await apiFetch(`/api/studio/video-token?${query.toString()}`, { cache: 'no-store' })
+            if (!response.ok) return null
+            const data = await response.json()
+            return data.token ? `/api/content/${data.token}` : null
+          } catch {
+            return null
+          }
+        }))
+        next[folder.id] = urls.filter(Boolean) as string[]
+      }
+      if (!cancelled) setFolderCoverUrls(next)
+    }
+    void loadFolderCovers()
+    return () => { cancelled = true }
+  }, [id, project?.folders, project?.videos, folderCoverSessionId])
 
   // Listen for immediate updates (approval changes, comment deletes/posts, etc.)
   useEffect(() => {
@@ -362,6 +401,22 @@ export default function ProjectPage() {
     } finally {
       setRollingBackVideoId(null)
     }
+  }
+
+  const copyFolderShareLink = async (folderId: string) => {
+    setFolderMenuId(null)
+    if (!shareUrl) {
+      alert(tc('errorTryAgain'))
+      return
+    }
+    const separator = shareUrl.includes('?') ? '&' : '?'
+    const copied = await copyTextToClipboard(`${shareUrl}${separator}folder=${encodeURIComponent(folderId)}`)
+    if (!copied) {
+      alert(tc('errorTryAgain'))
+      return
+    }
+    setCopiedFolderId(folderId)
+    window.setTimeout(() => setCopiedFolderId((current) => current === folderId ? null : current), 1600)
   }
 
   const createProjectFolder = async () => {
@@ -595,16 +650,17 @@ export default function ProjectPage() {
                     return (
                       <div
                         key={folder.id}
-                        className={cn('group relative overflow-hidden rounded-md border bg-card transition-all', folderDropTargetId === folder.id ? 'border-primary ring-2 ring-primary/40 bg-primary/5' : folderMenuId === folder.id ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/50 hover:shadow-sm')}
+                        className={cn('group relative overflow-hidden bg-card transition-[filter]', folderDropTargetId === folder.id ? 'drop-shadow-sm' : 'hover:drop-shadow-sm')}
+                        style={{ clipPath: 'polygon(0 4%, 1% 2%, 3% 0.5%, 5% 0, 27% 0, 29% 0.5%, 31% 2%, 39% 7.5%, 41% 8.5%, 96% 8.5%, 98% 9.5%, 99.5% 11.5%, 100% 14%, 100% 96%, 99.5% 98%, 98% 99.5%, 96% 100%, 4% 100%, 2% 99.5%, 0.5% 98%, 0 96%)' }}
                         onDoubleClick={() => setActiveFolderId(folder.id)}
                         onDragEnter={(event) => { event.preventDefault(); setFolderDropTargetId(folder.id) }}
                         onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setFolderDropTargetId(folder.id) }}
                         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFolderDropTargetId(undefined) }}
                         onDrop={(event) => void moveVideoToFolder(event, folder.id)}
                       >
-                        <button type="button" className="block w-full text-left" onClick={() => setActiveFolderId(folder.id)}>
-                          <div className="flex aspect-video items-center justify-center bg-muted/40">
-                            <FolderOpen className="h-8 w-8 text-primary/70 transition-transform group-hover:scale-105" strokeWidth={1.5} />
+                        <div role="button" tabIndex={0} className="block w-full text-left focus-visible:outline-none" onClick={() => setActiveFolderId(folder.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveFolderId(folder.id) } }}>
+                          <div className="flex aspect-video items-center justify-center overflow-hidden bg-muted/40">
+                            <FolderInteraction coverUrls={folderCoverUrls[folder.id] || []} itemCount={count} />
                           </div>
                           <div className="flex items-start gap-1.5 border-t border-border px-2.5 py-2.5 pr-11">
                             <div className="min-w-0 flex-1">
@@ -616,16 +672,23 @@ export default function ProjectPage() {
                               </p>
                             </div>
                           </div>
-                        </button>
+                        </div>
                         <button type="button" className="absolute bottom-2.5 right-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="文件夹操作" title="文件夹操作" onClick={(event) => { event.stopPropagation(); setFolderMenuId((current) => current === folder.id ? null : folder.id) }}>
                           <MoreVertical className="h-4 w-4" />
                         </button>
                         {folderMenuId === folder.id && (
                           <div className="absolute right-2 bottom-10 z-20 w-32 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg" onClick={(event) => event.stopPropagation()}>
                             <button type="button" className="flex w-full rounded-sm px-2.5 py-1.5 text-left text-xs hover:bg-accent" onClick={() => { setFolderMenuId(null); setActiveFolderId(folder.id) }}>打开</button>
+                            <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-left text-xs hover:bg-accent" onClick={() => void copyFolderShareLink(folder.id)}>
+                              {copiedFolderId === folder.id ? <Check className="h-3.5 w-3.5 text-success" /> : <Link2 className="h-3.5 w-3.5" />}
+                              {copiedFolderId === folder.id ? tc('copied') : '分享链接'}
+                            </button>
                             <button type="button" className="flex w-full rounded-sm px-2.5 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={() => void deleteProjectFolder(folder.id)}>删除</button>
                           </div>
                         )}
+                        <svg className={cn('pointer-events-none absolute inset-0 z-30 h-full w-full transition-colors group-focus-within:text-primary', folderDropTargetId === folder.id || folderMenuId === folder.id ? 'text-primary' : 'text-border group-hover:text-primary/60')} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                          <path d="M0.5 8 V5 Q0.5 0.5 5 0.5 H27 Q29 0.5 31 2 L39 7.5 Q40.5 8.5 43 8.5 H96 Q99.5 8.5 99.5 12 V96 Q99.5 99.5 96 99.5 H4 Q0.5 99.5 0.5 96 Z" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+                        </svg>
                       </div>
                     )
                   })}

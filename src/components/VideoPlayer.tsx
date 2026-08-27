@@ -1173,7 +1173,7 @@ export default function VideoPlayer({
                 >
                   <CustomVideoControls
                     videoRef={videoRef as React.RefObject<HTMLVideoElement>}
-                    previewVideoUrl={videoUrl}
+                    previewVideoUrl={videoUrl === (selectedVideo as any).hlsUrl720p ? null : videoUrl}
                     videoDuration={videoDuration}
                     currentTime={currentTimeState}
                     isPlaying={isPlaying}
