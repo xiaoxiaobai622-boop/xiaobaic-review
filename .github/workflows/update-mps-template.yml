@@ -1,0 +1,86 @@
+name: Update production MPS template
+
+on:
+  workflow_dispatch:
+    inputs:
+      template_id:
+        description: Tencent MPS transcode template ID
+        required: true
+        type: string
+        default: "1796772"
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Update MPS template on production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://mle6.cn
+    env:
+      TEMPLATE_ID: ${{ inputs.template_id }}
+    steps:
+      - name: Update configuration and restart worker
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: TEMPLATE_ID
+          command_timeout: 8m
+          script: |
+            set -eu
+
+            case "$TEMPLATE_ID" in
+              ''|*[!0-9]*) echo "Invalid Tencent MPS template ID"; exit 1 ;;
+            esac
+
+            app_dir=/opt/vitransfer/vitransfer-test
+            env_file="$app_dir/.env"
+            env_backup="/tmp/vitransfer-env-mps-$TEMPLATE_ID-$$"
+
+            cd "$app_dir"
+            cp "$env_file" "$env_backup"
+            rollback() {
+              trap - ERR
+              echo "MPS template update failed; restoring previous configuration"
+              cp "$env_backup" "$env_file"
+              docker compose up -d --no-deps --force-recreate worker
+              rm -f "$env_backup"
+            }
+            trap rollback ERR
+
+            if grep -q '^TENCENT_MPS_TEMPLATE_ID=' "$env_file"; then
+              sed -i "s/^TENCENT_MPS_TEMPLATE_ID=.*/TENCENT_MPS_TEMPLATE_ID=$TEMPLATE_ID/" "$env_file"
+            else
+              printf '\nTENCENT_MPS_TEMPLATE_ID=%s\n' "$TEMPLATE_ID" >> "$env_file"
+            fi
+
+            docker compose up -d --no-deps --force-recreate worker
+
+            healthy_streak=0
+            for attempt in $(seq 1 36); do
+              worker_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' vitransfer-worker 2>/dev/null || true)
+              worker_restart_count=$(docker inspect -f '{{.RestartCount}}' vitransfer-worker 2>/dev/null || echo 1)
+              worker_template_id=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' vitransfer-worker 2>/dev/null | sed -n 's/^TENCENT_MPS_TEMPLATE_ID=//p' || true)
+              echo "Check $attempt: worker=$worker_status restarts=$worker_restart_count template=$worker_template_id stable=$healthy_streak/6"
+              if [ "$worker_status" = healthy ] && \
+                 [ "$worker_restart_count" = 0 ] && \
+                 [ "$worker_template_id" = "$TEMPLATE_ID" ]; then
+                healthy_streak=$((healthy_streak + 1))
+                if [ "$healthy_streak" -ge 6 ]; then
+                  trap - ERR
+                  rm -f "$env_backup"
+                  echo "Tencent MPS template updated successfully: $TEMPLATE_ID"
+                  exit 0
+                fi
+              else
+                healthy_streak=0
+              fi
+              sleep 5
+            done
+
+            false
