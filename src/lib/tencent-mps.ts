@@ -26,7 +26,7 @@ function required(name: string): string {
 }
 
 function config(): MpsConfig {
-  const templateId = Number(process.env.TENCENT_MPS_TEMPLATE_ID || '100230')
+  const templateId = Number(process.env.TENCENT_MPS_TEMPLATE_ID || '1796772')
   if (!Number.isInteger(templateId) || templateId <= 0) {
     throw new Error('TENCENT_MPS_TEMPLATE_ID must be a positive integer')
   }
