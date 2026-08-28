@@ -117,7 +117,7 @@ jobs:
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Pull through Taiwan proxy and deploy with rollback
+      - name: Pull through Hong Kong proxy and deploy with rollback
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -178,7 +178,22 @@ jobs:
               cat /tmp/ghcr-proxy-error-$DEPLOY_SHA.txt || true
               exit 1
             fi
-            timeout 20m sudo DOCKER_CONFIG="$auth_dir" /usr/local/bin/ghcr-pull "$DEPLOY_IMAGE" "$image_tar"
+            pull_succeeded=0
+            for pull_attempt in $(seq 1 3); do
+              sudo rm -f "$image_tar"
+              echo "GHCR pull attempt $pull_attempt/3"
+              if timeout 20m sudo DOCKER_CONFIG="$auth_dir" /usr/local/bin/ghcr-pull "$DEPLOY_IMAGE" "$image_tar"; then
+                pull_succeeded=1
+                break
+              fi
+              echo "GHCR pull attempt $pull_attempt failed; retrying after a clean proxy restart"
+              sudo systemctl restart sing-box-ghcr
+              sleep 3
+            done
+            if [ "$pull_succeeded" -ne 1 ]; then
+              echo "GHCR image pull failed after 3 attempts"
+              exit 1
+            fi
             sudo docker load -i "$image_tar"
             docker image inspect "$DEPLOY_IMAGE" >/dev/null
 
