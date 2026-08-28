@@ -16,6 +16,7 @@ import { AnnotationData, type DrawingTool } from '@/types/annotations'
 import { secondsToTimecode } from '@/lib/timecode'
 import { logError } from '@/lib/logging'
 import { filterCommentsForVideo } from '@/lib/video-comment-filter'
+import { useHlsSource } from '@/hooks/useHlsSource'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -116,7 +117,9 @@ export default function VideoPlayer({
   // null means automatic selection. This lets a default viewer follow a newly
   // published latest version while preserving a version chosen by the user.
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
+  const [sourceVideoId, setSourceVideoId] = useState<string | null>(null)
   const [videoUrl, setVideoUrl] = useState<string>('')
+  const [hlsUrl, setHlsUrl] = useState<string>('')
   const [videoCrossOrigin, setVideoCrossOrigin] = useState<'anonymous' | null>('anonymous')
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<'720p' | '1080p' | '2160p'>(defaultQuality)
@@ -174,10 +177,30 @@ export default function VideoPlayer({
     ? explicitVideoIndex
     : Math.max(0, Math.min(automaticVideoIndex, displayVideos.length - 1))
   const selectedVideo = displayVideos[selectedVideoIndex]
+  const sourceMatchesSelectedVideo = sourceVideoId === (selectedVideo?.id ?? null)
+  const activeVideoUrl = sourceMatchesSelectedVideo ? videoUrl : ''
+  const activeHlsUrl = sourceMatchesSelectedVideo ? hlsUrl : ''
   const selectedVideoComments = useMemo(
     () => filterCommentsForVideo(comments, selectedVideo?.id),
     [comments, selectedVideo?.id],
   )
+
+  const handlePlaybackError = useCallback(() => {
+    if (videoCrossOrigin === 'anonymous') {
+      setVideoCrossOrigin(null)
+    } else {
+      setVideoLoadFailed(true)
+    }
+  }, [videoCrossOrigin])
+
+  const { isUsingHls } = useHlsSource({
+    videoRef,
+    hlsUrl: activeHlsUrl,
+    fallbackUrl: activeVideoUrl,
+    enabled: Boolean(activeHlsUrl || activeVideoUrl),
+    attachmentKey: `${selectedVideo?.id ?? 'none'}:${videoCrossOrigin ?? 'no-cors'}`,
+    onPlaybackError: handlePlaybackError,
+  })
 
   // Comparison mode state
   const [showComparison, setShowComparison] = useState(false)
@@ -376,7 +399,9 @@ export default function VideoPlayer({
     if (!activeVideoName) return
     if (previousVideoNameRef.current && previousVideoNameRef.current !== activeVideoName) {
       setSelectedVideoId(null)
+      setSourceVideoId(null)
       setVideoUrl('')
+      setHlsUrl('')
       currentTimeRef.current = 0
     }
     previousVideoNameRef.current = activeVideoName
@@ -393,6 +418,9 @@ export default function VideoPlayer({
     async function loadVideoUrl() {
       try {
         if (!selectedVideo) {
+          setSourceVideoId(null)
+          setVideoUrl('')
+          setHlsUrl('')
           return
         }
 
@@ -437,21 +465,18 @@ export default function VideoPlayer({
           }
         }
 
-        // Safari/iOS can play HLS natively. Other browsers use the retained
-        // MP4 preview URL, so HLS adoption never removes existing playback.
-        const nativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl') !== ''
-        if (nativeHls && (selectedVideo as any).hlsUrl720p && defaultQuality === '720p') {
-          url = (selectedVideo as any).hlsUrl720p
+        const nextHlsUrl = (selectedVideo as any).hlsUrl720p || ''
+        if (nextHlsUrl) {
           qualityUsed = '720p'
         }
 
-        if (url) {
-          currentTimeRef.current = 0
-          setResolvedPlaybackQuality(qualityUsed)
-          setVideoCrossOrigin('anonymous')
-          setVideoLoadFailed(false)
-          setVideoUrl(url)
-        }
+        currentTimeRef.current = 0
+        setResolvedPlaybackQuality(qualityUsed)
+        setVideoCrossOrigin('anonymous')
+        setVideoLoadFailed(false)
+        setVideoUrl(url || '')
+        setHlsUrl(nextHlsUrl)
+        setSourceVideoId(selectedVideo.id)
       } catch (error) {
       }
     }
@@ -461,13 +486,7 @@ export default function VideoPlayer({
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !videoUrl) return
-    video.load()
-  }, [videoCrossOrigin, videoUrl])
-
-  useEffect(() => {
-    const video = videoRef.current
-    if (initialSeekTime !== null && video && videoUrl && !hasInitiallySeenRef.current) {
+    if (initialSeekTime !== null && video && (activeHlsUrl || activeVideoUrl) && !hasInitiallySeenRef.current) {
       const handleLoadedMetadata = () => {
         if (video && initialSeekTime !== null) {
           const duration = video.duration
@@ -491,7 +510,7 @@ export default function VideoPlayer({
         video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       }
     }
-  }, [initialSeekTime, videoUrl])
+  }, [activeHlsUrl, activeVideoUrl, initialSeekTime])
 
 
   useEffect(() => {
@@ -1010,7 +1029,7 @@ export default function VideoPlayer({
                   fillContainer ? 'lg:flex lg:min-h-0 lg:flex-1 lg:flex-col' : 'flex-shrink min-h-0 lg:order-1'
         } ${isPlaying && !showControls ? 'cursor-none' : ''}`}
       >
-        {videoUrl ? (
+        {activeHlsUrl || activeVideoUrl ? (
           <>
             {/*
               Simple letterbox approach:
@@ -1028,7 +1047,6 @@ export default function VideoPlayer({
               <video
                 key={selectedVideo?.id}
                 ref={videoRef}
-                src={videoUrl}
                 poster={(selectedVideo as any).thumbnailUrl || undefined}
                 className={`h-full w-full object-contain ${playerSurfaceClassName} ${isDrawingMode ? 'pointer-events-none' : 'cursor-pointer'}`}
                 style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}
@@ -1037,13 +1055,6 @@ export default function VideoPlayer({
                 onContextMenu={!isAdmin ? (e) => e.preventDefault() : undefined}
                 onClick={isDrawingMode ? undefined : handlePlayPause}
                 crossOrigin={videoCrossOrigin || undefined}
-                onError={() => {
-                  if (videoCrossOrigin === 'anonymous') {
-                    setVideoCrossOrigin(null)
-                  } else {
-                    setVideoLoadFailed(true)
-                  }
-                }}
                 playsInline
                 loop={isLooping}
                 preload="metadata"
@@ -1173,7 +1184,7 @@ export default function VideoPlayer({
                 >
                   <CustomVideoControls
                     videoRef={videoRef as React.RefObject<HTMLVideoElement>}
-                    previewVideoUrl={videoUrl === (selectedVideo as any).hlsUrl720p ? null : videoUrl}
+                    previewVideoUrl={isUsingHls ? null : activeVideoUrl}
                     videoDuration={videoDuration}
                     currentTime={currentTimeState}
                     isPlaying={isPlaying}

@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
@@ -69,7 +71,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
     if (isCurrentlyApproved) {
       setShowUnapproveModal(true)
     } else {
-      if (!confirm(t('confirmApproveProject'))) {
+      if (!await appConfirm(t('confirmApproveProject'))) {
         return
       }
 
@@ -77,12 +79,12 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
 
       apiPatch(`/api/projects/${project.id}`, { status: 'APPROVED' })
         .then(() => {
-          alert(t('approvedSuccessfully'))
+          appAlert(t('approvedSuccessfully'))
           onRefresh?.()
           router.refresh()
         })
         .catch(() => {
-          alert(t('failedToApprove'))
+          appAlert(t('failedToApprove'))
         })
         .finally(() => {
           setIsTogglingApproval(false)
@@ -101,17 +103,17 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
       .then((data) => {
         // Show appropriate success message
         if (data.unapprovedVideos && data.unapprovedCount > 0) {
-          alert(`${t('unapprovedSuccessfully')} ${data.unapprovedCount} ${t('videosUnapproved')}`)
+          appAlert(`${t('unapprovedSuccessfully')} ${data.unapprovedCount} ${t('videosUnapproved')}`)
         } else if (data.unapprovedVideos && data.unapprovedCount === 0) {
-          alert(`${t('unapprovedSuccessfully')} ${t('noVideosApproved')}`)
+          appAlert(`${t('unapprovedSuccessfully')} ${t('noVideosApproved')}`)
         } else {
-          alert(`${t('unapprovedSuccessfully')} ${t('videosRemainApproved')}`)
+          appAlert(`${t('unapprovedSuccessfully')} ${t('videosRemainApproved')}`)
         }
         onRefresh?.()
         router.refresh()
       })
       .catch(() => {
-        alert(t('failedToUnapprove'))
+        appAlert(t('failedToUnapprove'))
       })
       .finally(() => {
         setIsTogglingApproval(false)
@@ -134,12 +136,12 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
     // Prevent double-clicks during deletion
     if (isDeleting) return
 
-    if (!confirm(t('deleteConfirm'))) {
+    if (!await appConfirm(t('deleteConfirm'))) {
       return
     }
 
     // Double confirmation for safety
-    if (!confirm(t('deleteLastWarning'))) {
+    if (!await appConfirm(t('deleteLastWarning'))) {
       return
     }
 
@@ -151,7 +153,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
         router.refresh()
       })
       .catch(() => {
-        alert(t('failedToDelete'))
+        appAlert(t('failedToDelete'))
         setIsDeleting(false)
       })
   }
@@ -163,7 +165,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
     const action = isCurrentlyArchived ? 'unarchive' : 'archive'
     const newStatus = isCurrentlyArchived ? 'IN_REVIEW' : 'ARCHIVED'
 
-    if (!confirm(isCurrentlyArchived ? t('unarchiveConfirm') : t('archiveConfirm'))) {
+    if (!await appConfirm(isCurrentlyArchived ? t('unarchiveConfirm') : t('archiveConfirm'))) {
       return
     }
 
@@ -171,12 +173,12 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
 
     apiPatch(`/api/projects/${project.id}`, { status: newStatus })
       .then(() => {
-        alert(action === 'archive' ? t('archivedSuccessfully') : t('unarchivedSuccessfully'))
+        appAlert(action === 'archive' ? t('archivedSuccessfully') : t('unarchivedSuccessfully'))
         onRefresh?.()
         router.refresh()
       })
       .catch(() => {
-        alert(action === 'archive' ? t('failedToArchive') : t('failedToUnarchive'))
+        appAlert(action === 'archive' ? t('failedToArchive') : t('failedToUnarchive'))
       })
       .finally(() => {
         setIsArchiving(false)
@@ -266,7 +268,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
                         setLinkCopied(true)
                         setTimeout(() => setLinkCopied(false), 2000)
                       } else {
-                        alert(tc('errorTryAgain'))
+                        appAlert(tc('errorTryAgain'))
                       }
                     }} 
                     variant="outline" 

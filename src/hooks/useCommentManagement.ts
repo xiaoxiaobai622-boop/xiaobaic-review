@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Comment, Video, Prisma } from '@prisma/client'
 import { useRouter } from 'next/navigation'
@@ -388,12 +390,12 @@ export function useCommentManagement({
     if (loading) return
 
     if (!targetVideoId) {
-      alert('Please select a video before commenting.')
+      appAlert('Please select a video before commenting.')
       return
     }
 
     if (useAdminAuth && !adminUser) {
-      alert('Admin session not loaded yet. Please wait a moment and try again.')
+      appAlert('Admin session not loaded yet. Please wait a moment and try again.')
       return
     }
 
@@ -405,7 +407,7 @@ export function useCommentManagement({
       const latestVideoVersion = videos.length > 0 ? Math.max(...videos.map(v => v.version)) : null
       const selectedVideo = videos.find(v => v.id === validatedVideoId)
       if (selectedVideo && selectedVideo.version !== latestVideoVersion) {
-        alert('Comments are only allowed on the latest version of this project.')
+        appAlert('Comments are only allowed on the latest version of this project.')
         return
       }
     }
@@ -594,7 +596,7 @@ export function useCommentManagement({
   }
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!confirm('确定要删除这条批注吗？删除后无法恢复。')) {
+    if (!await appConfirm('确定要删除这条批注吗？删除后无法恢复。')) {
       return
     }
 
@@ -611,7 +613,7 @@ export function useCommentManagement({
 
       window.dispatchEvent(new CustomEvent('commentDeleted'))
     } catch (error) {
-      alert(`批注删除失败：${error instanceof Error ? error.message : '未知错误'}`)
+      appAlert(`批注删除失败：${error instanceof Error ? error.message : '未知错误'}`)
     }
   }
 

@@ -1,5 +1,7 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import {
@@ -209,7 +211,7 @@ export default function PhotoAlbumsBlock({ projectId, sortMode = 'date', onCount
 
   const handleDeleteAlbum = async () => {
     if (!selectedAlbum) return
-    if (!confirm(t('confirmDeleteAlbum'))) return
+    if (!await appConfirm(t('confirmDeleteAlbum'))) return
     try {
       const res = await apiFetch(`/api/projects/${projectId}/photo-albums/${selectedAlbum.id}`, {
         method: 'DELETE',
@@ -242,7 +244,7 @@ export default function PhotoAlbumsBlock({ projectId, sortMode = 'date', onCount
 
   const handleDeletePhoto = async (photo: GalleryPhoto) => {
     if (!selectedAlbum) return
-    if (!confirm(t('confirmDeletePhoto'))) return
+    if (!await appConfirm(t('confirmDeletePhoto'))) return
     setDeletingId(photo.id)
     try {
       const res = await apiFetch(

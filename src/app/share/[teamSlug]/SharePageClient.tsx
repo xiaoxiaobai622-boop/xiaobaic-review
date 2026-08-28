@@ -186,6 +186,12 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const [reviewAuthenticated, setReviewAuthenticated] = useState(false)
   const [loginOpenSignal, setLoginOpenSignal] = useState(0)
 
+  const sharePermissions = Array.isArray(project?.sharePermissions)
+    ? project.sharePermissions as string[]
+    : ['view', 'comment', 'download']
+  const canComment = sharePermissions.includes('comment')
+  const canDownload = sharePermissions.includes('download') && Boolean(project?.allowAssetDownload) && !isGuest
+
   // Guest responses intentionally omit project.id. Comments still carry the
   // same server-validated project id, which keeps the composer usable without
   // broadening the guest project metadata response.
@@ -283,7 +289,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   }, [authenticatedEmail, authenticatedName, project?.recipients])
 
   const fetchComments = useCallback(async () => {
-    if (!token || !shareToken) return
+    if (!token || !shareToken || !canComment) return
 
     setCommentsLoading(true)
     try {
@@ -301,7 +307,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     } finally {
       setCommentsLoading(false)
     }
-  }, [token, shareToken])
+  }, [canComment, token, shareToken])
 
   useEffect(() => {
     const handleCommentPosted = (e: CustomEvent) => {
@@ -328,12 +334,12 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   // Keep comments and timeline markers current when multiple reviewers are
   // working in separate browsers.
   useEffect(() => {
-    if (!shareToken || !project || project.hideFeedback) return
+    if (!shareToken || !project || project.hideFeedback || !canComment) return
     const interval = window.setInterval(() => {
       void fetchComments()
     }, 5000)
     return () => window.clearInterval(interval)
-  }, [fetchComments, project, shareToken])
+  }, [canComment, fetchComments, project, shareToken])
 
   const fetchProjectData = useCallback(async (
     tokenOverride?: string | null,
@@ -373,7 +379,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
         tokenCacheRef.current.clear()
 
-        if (!options.skipComments && !projectData.hideFeedback) {
+        if (!options.skipComments && !projectData.hideFeedback && (!Array.isArray(projectData.sharePermissions) || projectData.sharePermissions.includes('comment'))) {
           fetchComments()
         }
       }
@@ -499,7 +505,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               setDefaultQuality(projectData.previewResolution || projectData.settings.defaultPreviewResolution || '720p')
             }
 
-            if (!projectData.hideFeedback) {
+            if (!projectData.hideFeedback && (!Array.isArray(projectData.sharePermissions) || projectData.sharePermissions.includes('comment'))) {
               fetchComments()
             }
           }
@@ -668,7 +674,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
           // Only cache successful tokenization results.
           // Avoid caching empty URLs from transient failures on first load.
-          if (tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
+          if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
             tokenCacheRef.current.set(cacheKey, tokenized)
           }
           return tokenized
@@ -1175,7 +1181,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           <div className="flex items-center gap-2" data-tutorial="grid-actions" />
 
           <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
-            {project.allowReverseShare && shareToken && (
+            {project.allowReverseShare && project.shareType !== 'DELIVERY' && shareToken && (
               <ReverseShareUploadPanel
                 shareToken={shareToken}
                 shareSlug={token}
@@ -1204,7 +1210,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   onVideoSelect={handleVideoSelect}
                   projectTitle={project.title}
                   projectDescription={isGuest ? undefined : project.description}
-                  allowAssetDownload={false}
+                  allowAssetDownload={canDownload}
                   viewMode={viewMode}
                   albumCount={albumCount}
                   comments={comments}
@@ -1215,7 +1221,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               <SharePhotoSection
                 projectId={project.id}
                 shareToken={shareToken}
-                allowPhotoDownload={project.allowPhotoDownload && !isGuest}
+                allowPhotoDownload={project.allowPhotoDownload && canDownload}
                 viewMode={viewMode}
                 onAlbumCount={setAlbumCount}
               />
@@ -1233,7 +1239,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   }
 
   // Whether to show comment panel
-  const showCommentPanel = !project.hideFeedback
+  const showCommentPanel = !project.hideFeedback && canComment
 
   return (
     <div className="flex min-h-screen flex-col bg-background lg:fixed lg:inset-0 lg:overflow-hidden">
@@ -1245,7 +1251,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           onVideoSelect={handleVideoSelect}
           onBackToGrid={handleBackToGrid}
           showBackButton={true}
-          showCommentToggle={!project.hideFeedback}
+          showCommentToggle={!project.hideFeedback && canComment}
           isCommentPanelVisible={!hideComments}
           onToggleCommentPanel={() => setHideComments(!hideComments)}
           comments={comments}
@@ -1292,12 +1298,12 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 followLatestVersion={urlVersion === null}
                 isAdmin={false}
                 isGuest={isGuest}
-                allowAssetDownload={false}
+                allowAssetDownload={canDownload}
                 clientCanApprove={project.clientCanApprove}
                 shareToken={shareToken}
-                hideDownloadButton={true}
+                hideDownloadButton={!canDownload}
                 allowComparison={false}
-                comments={!project.hideFeedback ? filteredComments : []}
+                comments={!project.hideFeedback && canComment ? filteredComments : []}
                 timestampDisplayMode="AUTO"
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}

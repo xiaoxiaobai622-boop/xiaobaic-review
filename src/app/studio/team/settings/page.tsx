@@ -95,11 +95,11 @@ export default function TeamSettingsPage() {
     ;(async () => {
       try {
         const response = await apiFetch('/api/team-settings')
-        if (!response.ok) throw new Error('无法加载团队设置')
+        if (!response.ok) throw new Error('无法加载视频设置')
         const data = await response.json()
         setSettings({ ...DEFAULTS, ...data.settings })
       } catch (err) {
-        setError(err instanceof Error ? err.message : '无法加载团队设置')
+        setError(err instanceof Error ? err.message : '无法加载视频设置')
       } finally {
         setLoading(false)
       }
@@ -116,7 +116,7 @@ export default function TeamSettingsPage() {
     setSuccess('')
     try {
       await apiPatch('/api/team-settings', settings)
-      setSuccess('团队设置已保存')
+      setSuccess('视频设置已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
     } finally {
@@ -125,13 +125,13 @@ export default function TeamSettingsPage() {
   }
 
   if (loading) {
-    return <div className="p-6 text-sm text-muted-foreground" role="status" aria-live="polite">正在加载团队设置…</div>
+    return <div className="p-6 text-sm text-muted-foreground" role="status" aria-live="polite">正在加载视频设置…</div>
   }
 
   if (!user || (user.teamRole !== 'OWNER' && user.teamRole !== 'ADMIN')) {
     return (
       <div className="mx-auto w-full max-w-2xl p-6 text-center">
-        <h1 className="text-lg font-semibold">无权访问团队设置</h1>
+        <h1 className="text-lg font-semibold">无权访问视频设置</h1>
         <p className="mt-2 text-sm text-muted-foreground">只有团队创建人和管理员可以查看或修改团队设置。</p>
       </div>
     )
@@ -141,7 +141,7 @@ export default function TeamSettingsPage() {
     <div className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">团队设置</h1>
+          <h1 className="text-2xl font-semibold">视频设置</h1>
           <p className="mt-1 text-sm text-muted-foreground">这些默认值只影响当前团队新建的项目。</p>
         </div>
         <Button type="button" onClick={save} disabled={saving}>

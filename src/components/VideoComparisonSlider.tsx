@@ -6,8 +6,6 @@ import { GripVertical } from 'lucide-react'
 interface VideoComparisonSliderProps {
   videoRefA: React.RefObject<HTMLVideoElement | null>
   videoRefB: React.RefObject<HTMLVideoElement | null>
-  videoUrlA: string
-  videoUrlB: string
   labelA: string
   labelB: string
   posterA?: string
@@ -18,8 +16,6 @@ interface VideoComparisonSliderProps {
 export default function VideoComparisonSlider({
   videoRefA,
   videoRefB,
-  videoUrlA,
-  videoUrlB,
   labelA,
   labelB,
   posterA,
@@ -104,7 +100,6 @@ export default function VideoComparisonSlider({
       {/* Video A (full, underneath) */}
       <video
         ref={videoRefA}
-        src={videoUrlA}
         poster={posterA}
         className="absolute inset-0 w-full h-full object-contain"
         crossOrigin="anonymous"
@@ -120,7 +115,6 @@ export default function VideoComparisonSlider({
       >
         <video
           ref={videoRefB}
-          src={videoUrlB}
           poster={posterB}
           className="absolute inset-0 w-full h-full object-contain"
           crossOrigin="anonymous"

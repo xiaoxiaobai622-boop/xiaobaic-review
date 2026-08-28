@@ -21,6 +21,7 @@ import { buildUnsubscribeUrl, generateRecipientUnsubscribeToken } from '@/lib/un
 import { safeParseBody } from '@/lib/validation'
 import crypto from 'crypto'
 import { logError } from '@/lib/logging'
+import { resolveShare, isShareLinkActive } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -80,14 +81,13 @@ export async function POST(
       )
     }
 
-    const project = await prisma.project.findUnique({
-      where: { slug: token },
-      select: {
-        id: true,
-        title: true,
-        authMode: true,
-      },
-    })
+    const resolved = await resolveShare(token)
+    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    const project = resolved.project ? {
+      id: resolved.project.id,
+      title: resolved.project.title,
+      authMode: resolved.link?.authMode || resolved.project.authMode,
+    } : null
 
     if (!project) {
       return NextResponse.json(

@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -31,17 +32,17 @@ export async function POST(
   if (rateLimitResult) return rateLimitResult
 
   try {
-    // Find project by slug
-    const project = await prisma.project.findUnique({
-      where: { slug },
-      select: {
-        id: true,
-        sharePassword: true,
-        authMode: true,
-        allowAssetDownload: true,
-        title: true,
-      },
-    })
+    const resolved = await resolveShare(slug)
+    if (resolved.link && !isShareLinkActive(resolved.link)) {
+      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 410 })
+    }
+    const project = resolved.project ? {
+      id: resolved.project.id,
+      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+      authMode: resolved.link?.authMode || resolved.project.authMode,
+      allowAssetDownload: resolved.link ? resolved.link.permissions.includes('download') : resolved.project.allowAssetDownload,
+      title: resolved.project.title,
+    } : null
 
     if (!project) {
       return NextResponse.json({ error: shareMessages.projectNotFound || 'Project not found' }, { status: 404 })
@@ -88,7 +89,12 @@ export async function POST(
       orderBy: { createdAt: 'desc' },
     })
 
-    if (approvedVideos.length === 0) {
+    const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
+    const scopedApprovedVideos = scopedIds
+      ? approvedVideos.filter(video => scopedIds.has(video.id))
+      : approvedVideos
+
+    if (scopedApprovedVideos.length === 0) {
       return NextResponse.json(
         { error: shareMessages.noApprovedVideos || 'No approved videos available for download' },
         { status: 404 }
@@ -99,7 +105,7 @@ export async function POST(
     const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${project.id}` : `guest:${Date.now()}`)
 
     const urls = await Promise.all(
-      approvedVideos.map(async (video) => {
+      scopedApprovedVideos.map(async (video) => {
         const accessToken = await generateVideoAccessToken(
           video.id,
           project.id,
@@ -113,7 +119,7 @@ export async function POST(
 
     return NextResponse.json({
       urls,
-      videoCount: approvedVideos.length,
+      videoCount: scopedApprovedVideos.length,
     })
   } catch (error) {
     logError('Bulk download token generation error:', error)

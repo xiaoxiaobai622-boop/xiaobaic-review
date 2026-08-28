@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getShareContext } from '@/lib/auth'
+import { verifyProjectAccess } from '@/lib/project-access'
 import { logError } from '@/lib/logging'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,14 +31,23 @@ export async function GET(
     return NextResponse.json({ error: shareMessages?.unauthorized || 'Unauthorized' }, { status: 401 })
   }
 
-  const project = await prisma.project.findUnique({
-    where: { id: shareContext.projectId },
-    select: { id: true, slug: true },
-  })
+  const resolved = await resolveShare(token)
+  if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+  const project = resolved.project ? {
+    id: resolved.project.id,
+    slug: resolved.project.slug,
+    sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+    authMode: resolved.link?.authMode || resolved.project.authMode,
+  } : null
 
-  if (!project || project.slug !== token) {
+  if (!project || shareContext.projectId !== project.id || shareContext.shareId !== token) {
     return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
   }
+
+  const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
+    requiredPermission: quality === 'original' ? 'download' : 'view',
+  })
+  if (!accessCheck.authorized) return accessCheck.errorResponse || NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
 
   const video = await prisma.video.findUnique({
     where: { id: videoId },
@@ -51,6 +62,9 @@ export async function GET(
   if (!video || video.projectId !== project.id) {
     return NextResponse.json({ error: shareMessages?.videoNotFound || 'Video not found' }, { status: 404 })
   }
+
+  const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
+  if (scopedIds && !scopedIds.has(video.id)) return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
 
   if (quality === 'original' && !video.approved) {
     return NextResponse.json({ error: shareMessages?.originalQualityUnavailable || 'Original quality unavailable' }, { status: 403 })

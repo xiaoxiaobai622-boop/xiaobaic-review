@@ -7,6 +7,7 @@ import { validateAssetFile, sanitizeDisplayFilename, sanitizeFilename, isSuspici
 import { deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { resolveShare, isShareLinkActive } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -30,15 +31,14 @@ export async function POST(
   try {
     const { token: shareToken } = await params
 
-    const project = await prisma.project.findUnique({
-      where: { slug: shareToken },
-      select: {
-        id: true,
-        sharePassword: true,
-        authMode: true,
-        allowReverseShare: true,
-      },
-    })
+    const resolved = await resolveShare(shareToken)
+    if (resolved.link && (!isShareLinkActive(resolved.link) || resolved.link.type !== 'COLLECT')) return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    const project = resolved.project ? {
+      id: resolved.project.id,
+      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+      authMode: resolved.link?.authMode || resolved.project.authMode,
+      allowReverseShare: resolved.link ? resolved.link.permissions.includes('upload') : resolved.project.allowReverseShare,
+    } : null
 
     if (!project) {
       return NextResponse.json({ error: shareMessages.projectNotFound || 'Project not found' }, { status: 404 })
@@ -182,10 +182,14 @@ export async function DELETE(
     const { searchParams } = new URL(request.url)
     const uploadId = searchParams.get('uploadId') ?? ''
 
-    const project = await prisma.project.findUnique({
-      where: { slug: shareToken },
-      select: { id: true, sharePassword: true, authMode: true, allowReverseShare: true },
-    })
+    const resolved = await resolveShare(shareToken)
+    if (resolved.link && (!isShareLinkActive(resolved.link) || resolved.link.type !== 'COLLECT')) return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    const project = resolved.project ? {
+      id: resolved.project.id,
+      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+      authMode: resolved.link?.authMode || resolved.project.authMode,
+      allowReverseShare: resolved.link ? resolved.link.permissions.includes('upload') : resolved.project.allowReverseShare,
+    } : null
 
     if (!project || !project.allowReverseShare) {
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })

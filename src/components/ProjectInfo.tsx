@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert } from '@/components/AppDialogProvider'
+
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
@@ -126,7 +128,7 @@ export default function ProjectInfo({
       setCheckingAssets(false)
     }
     if (!downloadUrl) {
-      alert(t('downloadApprovedOnly'))
+      appAlert(t('downloadApprovedOnly'))
       return
     }
 
@@ -200,7 +202,7 @@ export default function ProjectInfo({
 
       window.location.reload()
     } catch (error) {
-      alert(
+      appAlert(
         error instanceof Error
           ? error.message
           : isVideoApproved

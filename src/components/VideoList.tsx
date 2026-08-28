@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
@@ -49,7 +51,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
     // Prevent double-clicks during deletion
     if (deletingId) return
 
-    if (!confirm(t('deleteConfirm'))) {
+    if (!await appConfirm(t('deleteConfirm'))) {
       return
     }
 
@@ -65,7 +67,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
       .catch(() => {
         // Restore video on error
         setVideos(initialVideos)
-        alert(t('failedToDelete'))
+        appAlert(t('failedToDelete'))
       })
       .finally(() => {
         setDeletingId(null)
@@ -76,7 +78,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
     // Prevent double-clicks during approval toggle
     if (approvingId) return
 
-    if (!confirm(currentlyApproved ? t('confirmUnapproveVideo') : t('confirmApproveVideo'))) {
+    if (!await appConfirm(currentlyApproved ? t('confirmUnapproveVideo') : t('confirmApproveVideo'))) {
       return
     }
 
@@ -99,7 +101,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
         setVideos(prev => prev.map(v =>
           v.id === videoId ? { ...v, approved: currentlyApproved } as Video : v
         ))
-        alert(currentlyApproved ? t('failedToUnapproveVideo') : t('failedToApproveVideo'))
+        appAlert(currentlyApproved ? t('failedToUnapproveVideo') : t('failedToApproveVideo'))
       })
       .finally(() => {
         setApprovingId(null)
@@ -140,7 +142,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
       })
       .catch((error) => {
         logError('Download error:', error)
-        alert(error instanceof Error ? error.message : t('failedToGenerateDownload'))
+        appAlert(error instanceof Error ? error.message : t('failedToGenerateDownload'))
       })
       .finally(() => {
         setDownloadingId(null)

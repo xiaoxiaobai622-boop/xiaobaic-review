@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Card } from '@/components/ui/card'
@@ -154,7 +156,7 @@ export default function SecurityEventsClient() {
   }, [t])
 
   const handleUnblockRateLimit = async (key: string) => {
-    if (!confirm(t('unblockConfirm'))) {
+    if (!await appConfirm(t('unblockConfirm'))) {
       return
     }
 
@@ -164,15 +166,15 @@ export default function SecurityEventsClient() {
         body: JSON.stringify({ key })
       })
 
-      alert(data.message)
+      appAlert(data.message)
       loadRateLimits()
     } catch (error) {
-      alert(t('failedToUnblock'))
+      appAlert(t('failedToUnblock'))
     }
   }
 
   const handleClearAllRateLimits = async () => {
-    if (!confirm(t('clearAllConfirm'))) {
+    if (!await appConfirm(t('clearAllConfirm'))) {
       return
     }
 
@@ -182,10 +184,10 @@ export default function SecurityEventsClient() {
         body: JSON.stringify({ clearAll: true })
       })
 
-      alert(data.message)
+      appAlert(data.message)
       loadRateLimits()
     } catch (error) {
-      alert(t('failedToClearAll'))
+      appAlert(t('failedToClearAll'))
     }
   }
 
@@ -224,7 +226,7 @@ export default function SecurityEventsClient() {
       confirmMessage = t('deleteOlderConfirm', { days })
     }
 
-    if (!confirm(confirmMessage)) {
+    if (!await appConfirm(confirmMessage)) {
       return
     }
 
@@ -235,10 +237,10 @@ export default function SecurityEventsClient() {
         body: JSON.stringify({ olderThan: days })
       })
 
-      alert(data.message)
+      appAlert(data.message)
       loadEvents()
     } catch (error) {
-      alert(t('failedToDeleteEvents'))
+      appAlert(t('failedToDeleteEvents'))
     } finally {
       setDeleting(false)
     }

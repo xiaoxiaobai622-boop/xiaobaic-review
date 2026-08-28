@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -21,16 +23,26 @@ import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
 import { VideoReviewStatusControl } from './VideoReviewStatusSelect'
 import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
+import type { SharePreset, ShareTarget } from '@/components/CreateShareDialog'
 
 function isVideoFile(file: File): boolean {
   const name = file.name.toLowerCase()
   return FILE_LIMITS.ALLOWED_EXTENSIONS.includes(name.slice(name.lastIndexOf('.')))
 }
 
-function formatVideoUploadTime(createdAt?: string): string {
-  if (!createdAt) return '--'
-  const date = new Date(createdAt)
-  if (Number.isNaN(date.getTime())) return '--'
+function formatVideoUploadTime(...candidates: unknown[]): string {
+  const rawTimestamp = candidates.find((candidate) => candidate !== null && candidate !== undefined && candidate !== '')
+  if (!rawTimestamp) return '时间未知'
+
+  let date: Date
+  if (typeof rawTimestamp === 'object' && rawTimestamp !== null && '$date' in rawTimestamp) {
+    date = new Date(String((rawTimestamp as { $date?: unknown }).$date))
+  } else if (typeof rawTimestamp === 'number' && rawTimestamp > 0 && rawTimestamp < 10_000_000_000) {
+    date = new Date(rawTimestamp * 1000)
+  } else {
+    date = new Date(rawTimestamp as string | number | Date)
+  }
+  if (Number.isNaN(date.getTime())) return '时间未知'
 
   const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
@@ -63,6 +75,7 @@ interface AdminVideoManagerProps {
   uploadRequestFolderId?: string | null
   timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onShowVideoInfo?: (videoGroup: { name: string; videos: any[] }) => void
+  onCreateShare?: (preset: SharePreset, target: ShareTarget) => void
   selectionToolbarTargetId?: string
 }
 
@@ -92,6 +105,7 @@ export default function AdminVideoManager({
   uploadRequestFolderId = null,
   timestampDisplayMode = 'TIMECODE',
   onShowVideoInfo,
+  onCreateShare,
   selectionToolbarTargetId,
 }: AdminVideoManagerProps) {
   const t = useTranslations('videos')
@@ -126,6 +140,7 @@ export default function AdminVideoManager({
   const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
   const [comparisonComments, setComparisonComments] = useState<VideoComparisonComment[]>([])
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
+  const [shareTypeMenuGroup, setShareTypeMenuGroup] = useState<string | null>(null)
   const [versionSourceMenuGroup, setVersionSourceMenuGroup] = useState<string | null>(null)
   const [reviewStatusMenuGroup, setReviewStatusMenuGroup] = useState<string | null>(null)
   const [collectionTargetGroup, setCollectionTargetGroup] = useState<string | null>(null)
@@ -273,7 +288,7 @@ export default function AdminVideoManager({
       setComparisonComments(mergedComments)
       setComparisonVideos(versionsWithStreams)
     } catch {
-      alert(t('failedToLoadData'))
+      appAlert(t('failedToLoadData'))
     }
   }
 
@@ -333,7 +348,7 @@ export default function AdminVideoManager({
     if (!sourceId || projectStatus === 'APPROVED') return
     const source = videos.find((video) => video.id === sourceId)
     if (!source || source.name === targetGroup || source.status !== 'READY') return
-    if (!window.confirm(t('dragVersionConfirm', { source: source.name, target: targetGroup }))) return
+    if (!await appConfirm(t('dragVersionConfirm', { source: source.name, target: targetGroup }))) return
     setDuplicatingVideoId(sourceId)
     try {
       const response = await apiFetch(`/api/videos/${sourceId}/duplicate`, {
@@ -347,7 +362,7 @@ export default function AdminVideoManager({
       }
       await onRefresh?.()
     } catch (error) {
-      alert(error instanceof Error ? error.message : t('dragVersionFailed'))
+      appAlert(error instanceof Error ? error.message : t('dragVersionFailed'))
     } finally {
       setDuplicatingVideoId(null)
     }
@@ -399,7 +414,7 @@ export default function AdminVideoManager({
       await onRefresh?.()
     } catch (error) {
       await onRefresh?.()
-      alert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
+      appAlert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
     } finally {
       setBulkStatusLoading(false)
     }
@@ -440,7 +455,7 @@ export default function AdminVideoManager({
       await onRefresh?.()
     } catch (error) {
       await onRefresh?.()
-      alert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
+      appAlert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
     } finally {
       setReviewStatusUpdatingVideoId(null)
     }
@@ -455,7 +470,7 @@ export default function AdminVideoManager({
       : baseUrl
     const copied = await copyTextToClipboard(targetUrl)
     if (!copied) {
-      alert(tc('errorTryAgain'))
+      appAlert(tc('errorTryAgain'))
       return
     }
     setSelectionLinkCopied(true)
@@ -465,14 +480,14 @@ export default function AdminVideoManager({
   const handleCopyReviewLink = async (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!shareUrl) {
-      alert(tc('errorTryAgain'))
+      appAlert(tc('errorTryAgain'))
       return
     }
     const baseUrl = shareUrl
     const separator = baseUrl.includes('?') ? '&' : '?'
     const copied = await copyTextToClipboard(`${baseUrl}${separator}video=${encodeURIComponent(groupName)}`)
     if (!copied) {
-      alert(tc('errorTryAgain'))
+      appAlert(tc('errorTryAgain'))
       return
     }
     setCopiedReviewGroup(groupName)
@@ -499,7 +514,7 @@ export default function AdminVideoManager({
     event.target.value = ''
     if (!selectedFile) return
     if (!isVideoFile(selectedFile)) {
-      alert(t('invalidVideoShort'))
+      appAlert(t('invalidVideoShort'))
       setLocalVersionTargetGroup(null)
       return
     }
@@ -543,7 +558,7 @@ export default function AdminVideoManager({
       const data = await response.json()
       setCollectionUploads((data.uploads || []).filter(isCollectedVideo))
     } catch (error) {
-      alert(error instanceof Error ? error.message : t('collectionLoadFailed'))
+      appAlert(error instanceof Error ? error.message : t('collectionLoadFailed'))
       setCollectionTargetGroup(null)
     } finally {
       setCollectionLoading(false)
@@ -573,7 +588,7 @@ export default function AdminVideoManager({
       onRefresh?.()
       router.refresh()
     } catch (error) {
-      alert(error instanceof Error ? error.message : t('collectionReplaceFailed'))
+      appAlert(error instanceof Error ? error.message : t('collectionReplaceFailed'))
     } finally {
       setPromotingCollectionUploadId(null)
     }
@@ -583,7 +598,7 @@ export default function AdminVideoManager({
   const handleDeleteGroup = async (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (deletingGroup) return
-    if (!confirm(t('deleteGroupConfirm'))) return
+    if (!await appConfirm(t('deleteGroupConfirm'))) return
 
     setDeletingGroup(groupName)
     try {
@@ -593,7 +608,7 @@ export default function AdminVideoManager({
       router.refresh()
       onRefresh?.()
     } catch {
-      alert(t('deleteGroupFailed'))
+      appAlert(t('deleteGroupFailed'))
     } finally {
       setDeletingGroup(null)
     }
@@ -612,7 +627,7 @@ export default function AdminVideoManager({
 
   const handleSaveGroupName = async (oldName: string) => {
     if (!editGroupValue.trim()) {
-      alert(t('videoNameEmpty'))
+      appAlert(t('videoNameEmpty'))
       return
     }
 
@@ -631,7 +646,7 @@ export default function AdminVideoManager({
         router.refresh()
       })
       .catch(() => {
-        alert(t('failedToUpdateName'))
+        appAlert(t('failedToUpdateName'))
       })
       .finally(() => {
         setSavingGroupName(null)
@@ -919,7 +934,7 @@ export default function AdminVideoManager({
                   </div>
                   {editingGroupName !== groupName && (
                     <p className={cn('mt-1 flex w-full max-w-sm items-center gap-4 whitespace-nowrap text-muted-foreground', isGridCard ? '-translate-y-0.5 overflow-hidden pr-8 text-xs' : 'text-sm')}>
-                      <span className="tabular-nums">{formatVideoUploadTime(latestVideo.createdAt)}</span>
+                      <span className="tabular-nums">{formatVideoUploadTime(latestVideo.createdAt, latestVideo.updatedAt, latestVideo.created_at, latestVideo.uploadedAt)}</span>
                       <span className="font-medium">{latestVideo.versionLabel || `v${latestVideo.version}`}</span>
                       <span className="inline-flex items-center gap-1 tabular-nums" title={t('feedbackCount', { count: feedbackCount })}>
                         <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
@@ -955,6 +970,7 @@ export default function AdminVideoManager({
                         className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                         onClick={(e) => {
                           e.stopPropagation()
+                          setShareTypeMenuGroup(null)
                           setVersionSourceMenuGroup(null)
                           setReviewStatusMenuGroup(null)
                           setActionMenuGroup(current => current === groupName ? null : groupName)
@@ -973,11 +989,21 @@ export default function AdminVideoManager({
                             onClick={(e) => {
                               e.stopPropagation()
                               setActionMenuGroup(null)
+                              setShareTypeMenuGroup(null)
                               setVersionSourceMenuGroup(null)
                               setReviewStatusMenuGroup(null)
                             }}
                           />
                           <div className="absolute right-0 top-8 z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                            <div className="relative" onMouseEnter={() => { setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); setShareTypeMenuGroup(groupName) }} onMouseLeave={() => setShareTypeMenuGroup(null)}>
+                              <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName}>
+                                <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                              {shareTypeMenuGroup === groupName && <div role="menu" aria-label={`${groupName} 分享类型`} className="absolute left-full top-0 z-[60] -ml-px w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
+                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
+                              </div>}
+                            </div>
                             <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                               <Play className="h-4 w-4" />{t('previewVideo')}
                             </button>
@@ -986,7 +1012,7 @@ export default function AdminVideoManager({
                             </button>
                             <button type="button" onClick={(e) => handleCopyReviewLink(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                               {copiedReviewGroup === groupName ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
-                              {copiedReviewGroup === groupName ? tc('copied') : t('copyReviewLink')}
+                              {copiedReviewGroup === groupName ? tc('copied') : '复制文件链接'}
                             </button>
                             <button
                               type="button"

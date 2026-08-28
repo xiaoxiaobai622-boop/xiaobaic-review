@@ -69,7 +69,7 @@ export default function AdminLayout({
 
   return (
     <AuthProvider requireAuth={true}>
-      <AdminRoleGate><div className="flex flex-1 min-h-0 bg-background flex-col overflow-x-hidden">
+      <AdminRoleGate><div className="flex flex-1 min-h-0 bg-background flex-col overflow-x-clip">
         <a href="#main-content" className="skip-link">
           跳到主要内容
         </a>

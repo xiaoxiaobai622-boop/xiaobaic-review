@@ -68,7 +68,7 @@ export default function PlatformDashboardPage() {
       <div className="rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-semibold">平台说明</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          平台控制台只负责团队授权、功能开关和配额。平台运营账号不会进入团队项目后台，团队业务统一在 `/studio` 中管理。
+          平台控制台负责全平台团队概览、团队授权、功能开关和配额。平台运营账号不会进入团队项目后台，团队业务统一在 `/studio` 中管理。
         </p>
       </div>
     </div>

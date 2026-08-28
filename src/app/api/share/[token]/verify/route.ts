@@ -14,6 +14,7 @@ import { safeParseBody } from '@/lib/validation'
 import jwt from 'jsonwebtoken'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { resolveShare, isShareLinkActive, linkPermissions } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -150,14 +151,13 @@ export async function POST(
       return NextResponse.json({ error: shareMessages?.passwordRequiredShort || 'Password is required' }, { status: 400 })
     }
 
-    const project = await prisma.project.findUnique({
-      where: { slug: token },
-      select: {
-        id: true,
-        title: true,
-        sharePassword: true,
-      },
-    })
+    const resolved = await resolveShare(token)
+    const project = resolved.project ? {
+      id: resolved.project.id,
+      title: resolved.project.title,
+      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+    } : null
+    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
 
     if (!project) {
       return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
@@ -248,7 +248,7 @@ export async function POST(
     const shareToken = signShareToken({
       shareId: token,
       projectId: project.id,
-      permissions: ['view', 'comment', 'download'],
+      permissions: linkPermissions(resolved.link, project),
       guest: false,
       ttlSeconds: shareTokenTtl,
     })

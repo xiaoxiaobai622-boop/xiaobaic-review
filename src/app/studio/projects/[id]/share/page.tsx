@@ -273,7 +273,7 @@ export default function AdminSharePage() {
             thumbnailUrl,
           }
 
-          if (tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p || tokenized.downloadUrl || tokenized.thumbnailUrl) {
+          if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p || tokenized.downloadUrl || tokenized.thumbnailUrl) {
             tokenCacheRef.current.set(cacheKey, tokenized)
           }
           return tokenized

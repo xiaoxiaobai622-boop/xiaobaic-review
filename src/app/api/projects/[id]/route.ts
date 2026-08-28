@@ -130,6 +130,8 @@ export async function GET(
       videos: project.videos.map((video: any) => ({
         ...video,
         originalFileSize: video.originalFileSize.toString(),
+        createdAt: video.createdAt instanceof Date ? video.createdAt.toISOString() : video.createdAt ?? null,
+        updatedAt: video.updatedAt instanceof Date ? video.updatedAt.toISOString() : video.updatedAt ?? null,
       })),
       comments: sanitizedComments,
       sharePassword: decryptedPassword,

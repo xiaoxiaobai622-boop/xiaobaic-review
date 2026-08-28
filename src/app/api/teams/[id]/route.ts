@@ -39,9 +39,10 @@ export async function GET(
           id: true,
           role: true,
           status: true,
-          createdAt: true,
-          user: {
-            select: { id: true, name: true, email: true, phone: true },
+            createdAt: true,
+            updatedAt: true,
+            user: {
+            select: { id: true, name: true, email: true, phone: true, updatedAt: true },
           },
         },
       },

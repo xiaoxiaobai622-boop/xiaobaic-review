@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { X, Save, RefreshCw, Eye, EyeOff, Copy, Check, Fingerprint, Plus, Trash2, UserCog, KeyRound } from 'lucide-react'
@@ -156,7 +158,7 @@ export default function EditUserPage() {
   }
 
   const handleDeletePasskey = async (id: string) => {
-    if (!confirm(t('deletePasskeyConfirm'))) return
+    if (!await appConfirm(t('deletePasskeyConfirm'))) return
 
     setPasskeyError('')
     try {
@@ -217,7 +219,7 @@ export default function EditUserPage() {
 
       setShowPasswordModal(false)
       setPasswordData({ oldPassword: '', password: '', confirmPassword: '' })
-      alert(t('passwordChangedSuccess'))
+      appAlert(t('passwordChangedSuccess'))
     } catch (err: any) {
       setPasswordError(err.message)
     } finally {

@@ -1,5 +1,7 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from './ui/button'
@@ -148,7 +150,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
   }
 
   const deleteRecipient = async (recipientId: string) => {
-    if (!confirm(t('removeConfirm'))) {
+    if (!await appConfirm(t('removeConfirm'))) {
       return
     }
 

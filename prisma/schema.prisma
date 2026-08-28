@@ -347,6 +347,7 @@ model Project {
   recipients        ProjectRecipient[] // Multiple email recipients
   notificationQueue NotificationQueue[] // Pending notifications
   sharePageAccesses SharePageAccess[] // Share page authentication tracking
+  shareLinks        ShareLink[] // Independent share records and scopes
   projectUploads    ProjectUpload[] // Client-submitted files via reverse share
   photoAlbums       PhotoAlbum[] // Photo gallery albums
   recycleBinItems   RecycleBinItem[]
@@ -394,7 +395,7 @@ model ProjectMember {
 }
 
 model Video {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   projectId    String
   folderId     String?
   name         String // Name to distinguish different videos in a project (required)
@@ -426,10 +427,10 @@ model Video {
 
   // Tencent Cloud MPS/HLS processing. Existing MP4 preview fields remain
   // populated for older videos and local-FFmpeg fallback jobs.
-  mpsTaskId    String?
-  mpsStatus    String?
-  mpsError     String?
-  hlsPath      String?
+  mpsTaskId String?
+  mpsStatus String?
+  mpsError  String?
+  hlsPath   String?
 
   // Preview versions (watermarked)
   preview2160Path String?
@@ -963,6 +964,36 @@ model SharePageAccess {
   @@index([projectId, createdAt])
   @@index([projectId, accessMethod])
   @@index([sessionId])
+}
+
+// Independent share records. A project may have many active links, each with
+// its own scope, permissions, authentication, expiry, and view limit.
+model ShareLink {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  token       String   @unique
+  name        String
+  type        String   @default("REVIEW") // REVIEW, DELIVERY, or COLLECT
+  scopeType   String   @default("PROJECT") // PROJECT, FOLDER, VIDEO, VIDEO_VERSION
+  scopeId     String?
+  permissions String[] @default(["view", "comment"])
+
+  authMode      String    @default("PASSWORD")
+  sharePassword String?
+  expiresAt     DateTime?
+  maxViews      Int?
+  viewCount     Int       @default(0)
+  status        String    @default("ACTIVE") // ACTIVE, REVOKED, EXPIRED
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, status])
+  @@index([projectId, createdAt])
+  @@index([expiresAt])
+  @@index([scopeType, scopeId])
 }
 
 model PasskeyCredential {

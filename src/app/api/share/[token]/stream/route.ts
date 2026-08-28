@@ -4,6 +4,8 @@ import { generateVideoAccessToken } from '@/lib/video-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getAppDomain } from '@/lib/url'
 import { logError } from '@/lib/logging'
+import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
+import { verifyProjectAccess } from '@/lib/project-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,17 +27,27 @@ export async function GET(
     const quality = request.nextUrl.searchParams.get('quality') || '720p'
     if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
-    const project = await prisma.project.findUnique({
-      where: { slug: token },
-      select: { id: true },
-    })
+    const resolved = await resolveShare(token)
+    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    const project = resolved.project ? {
+      id: resolved.project.id,
+      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+      authMode: resolved.link?.authMode || resolved.project.authMode,
+    } : null
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
+    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
+      requiredPermission: 'view',
+    })
+    if (!accessCheck.authorized) return accessCheck.errorResponse || NextResponse.json({ error: 'Access denied' }, { status: 403 })
 
     const video = await prisma.video.findFirst({
       where: { id: videoId, projectId: project.id, status: 'READY' },
       select: { id: true },
     })
     if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 })
+    const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
+    if (scopedIds && !scopedIds.has(video.id)) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
 
     const contentToken = await generateVideoAccessToken(
       video.id,

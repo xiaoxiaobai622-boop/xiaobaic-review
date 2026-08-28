@@ -31,10 +31,19 @@ interface ThumbnailGridProps {
   comments?: Array<{ videoId?: string | null }>
 }
 
-function formatBeijingUploadTime(value?: string | Date): string {
-  if (!value) return '--'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '--'
+function formatBeijingUploadTime(...candidates: unknown[]): string {
+  const value = candidates.find((candidate) => candidate !== null && candidate !== undefined && candidate !== '')
+  if (!value) return '时间未知'
+
+  let date: Date
+  if (typeof value === 'object' && value !== null && '$date' in value) {
+    date = new Date(String((value as { $date?: unknown }).$date))
+  } else if (typeof value === 'number' && value > 0 && value < 10_000_000_000) {
+    date = new Date(value * 1000)
+  } else {
+    date = new Date(value as string | number | Date)
+  }
+  if (Number.isNaN(date.getTime())) return '时间未知'
 
   const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
@@ -197,7 +206,7 @@ export default function ThumbnailGrid({
               const hasAssets = allowAssetDownload && videos.some((v: any) => v.hasAssets === true)
               const latestVideo = getLatestVideo(videos)
               const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
-              const uploadTime = formatBeijingUploadTime(latestVideo?.createdAt)
+              const uploadTime = formatBeijingUploadTime(latestVideo?.createdAt, latestVideo?.updatedAt, latestVideo?.created_at, latestVideo?.uploadedAt)
               const feedbackCount = commentCountByName.get(name) || 0
               const thumbnailUrl = thumbnailsByName.get(name)
 
@@ -255,7 +264,7 @@ export default function ThumbnailGrid({
             const latestVideo = getLatestVideo(videos)
             const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
             const durationLabel = formatMinuteSecondDuration(Number(latestVideo?.duration) || 0)
-            const uploadTime = formatBeijingUploadTime(latestVideo?.createdAt)
+            const uploadTime = formatBeijingUploadTime(latestVideo?.createdAt, latestVideo?.updatedAt, latestVideo?.created_at, latestVideo?.uploadedAt)
             const feedbackCount = commentCountByName.get(name) || 0
             const thumbnailUrl = thumbnailsByName.get(name)
 

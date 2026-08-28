@@ -1,5 +1,7 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -461,7 +463,7 @@ export default function GlobalSettingsPage() {
   }
 
   const handleRemoveIP = async (id: string) => {
-    if (!confirm(t('confirmRemoveIP'))) return
+    if (!await appConfirm(t('confirmRemoveIP'))) return
 
     try {
       await apiFetch('/api/security/blocklist/ips', {
@@ -502,7 +504,7 @@ export default function GlobalSettingsPage() {
   }
 
   const handleRemoveDomain = async (id: string) => {
-    if (!confirm(t('confirmRemoveDomain'))) return
+    if (!await appConfirm(t('confirmRemoveDomain'))) return
 
     try {
       await apiFetch('/api/security/blocklist/domains', {

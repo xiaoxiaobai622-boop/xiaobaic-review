@@ -7,6 +7,7 @@ import { StorageConfigProvider, type StorageProvider } from "@/components/Storag
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { prisma } from "@/lib/db";
+import { AppDialogProvider } from "@/components/AppDialogProvider";
 
 // Force Node.js runtime across the app to allow use of Node APIs (e.g., crypto).
 export const runtime = 'nodejs';
@@ -75,13 +76,15 @@ export default async function RootLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <body className="min-h-dvh overflow-x-hidden font-sans flex flex-col">
+      <body className="min-h-dvh overflow-x-clip font-sans flex flex-col">
         <NextIntlClientProvider messages={messages}>
           <StorageConfigProvider provider={storageProvider}>
-            <AccentColorProvider />
-            <ServiceWorkerProvider />
-            <GlobalActivityTracker />
-            <main className="flex-1 min-h-0 flex flex-col">{children}</main>
+            <AppDialogProvider>
+              <AccentColorProvider />
+              <ServiceWorkerProvider />
+              <GlobalActivityTracker />
+              <main className="flex-1 min-h-0 flex flex-col">{children}</main>
+            </AppDialogProvider>
           </StorageConfigProvider>
         </NextIntlClientProvider>
       </body>

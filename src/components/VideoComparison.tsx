@@ -7,6 +7,7 @@ import { X, ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
 import VideoComparisonControls from './VideoComparisonControls'
 import VideoComparisonSlider from './VideoComparisonSlider'
+import { useHlsSource } from '@/hooks/useHlsSource'
 
 export interface VideoComparisonComment {
   id: string
@@ -35,7 +36,7 @@ interface VideoComparisonProps {
   onClose: () => void
 }
 
-function getVideoUrl(video: Video, quality: '720p' | '1080p' | '2160p'): string {
+function getVideoFallbackUrl(video: Video, quality: '720p' | '1080p' | '2160p'): string {
   if (quality === '2160p') {
     return (video as any).streamUrl2160p || (video as any).streamUrl1080p || (video as any).streamUrl720p || ''
   }
@@ -103,8 +104,23 @@ export default function VideoComparison({
 
   const versionA = sorted[versionAIndex]
   const versionB = sorted[versionBIndex]
-  const videoUrlA = getVideoUrl(versionA, defaultQuality)
-  const videoUrlB = getVideoUrl(versionB, defaultQuality)
+  const videoUrlA = getVideoFallbackUrl(versionA, defaultQuality)
+  const videoUrlB = getVideoFallbackUrl(versionB, defaultQuality)
+  const hlsUrlA = (versionA as any)?.hlsUrl720p || ''
+  const hlsUrlB = (versionB as any)?.hlsUrl720p || ''
+
+  useHlsSource({
+    videoRef: videoRefA,
+    hlsUrl: hlsUrlA,
+    fallbackUrl: videoUrlA,
+    attachmentKey: `${mode}:${versionA?.id ?? 'none'}`,
+  })
+  useHlsSource({
+    videoRef: videoRefB,
+    hlsUrl: hlsUrlB,
+    fallbackUrl: videoUrlB,
+    attachmentKey: `${mode}:${versionB?.id ?? 'none'}`,
+  })
   const videoFps = versionA?.fps || versionB?.fps || 24
   const timelineComments = comments.flatMap<VideoComparisonTimelineComment>((comment) => {
     const avatarUrl = comment.avatarUrl ?? comment.user?.avatarUrl ?? null
@@ -219,7 +235,7 @@ export default function VideoComparison({
       a.removeEventListener('pause', onPause)
       a.removeEventListener('ended', onEnded)
     }
-  }, [videoUrlA])
+  }, [mode, versionA?.id])
 
   // Handle metadata load — set duration, apply speed
   const handleLoadedMetadata = useCallback(() => {
@@ -323,8 +339,8 @@ export default function VideoComparison({
   useEffect(() => {
     const a = videoRefA.current
     const b = videoRefB.current
-    if (a) { a.pause(); a.currentTime = 0; a.load() }
-    if (b) { b.pause(); b.currentTime = 0; b.load() }
+    if (a) { a.pause(); a.currentTime = 0 }
+    if (b) { b.pause(); b.currentTime = 0 }
     setCurrentTime(0)
     currentTimeRef.current = 0
     setVideoDuration(0)
@@ -427,7 +443,6 @@ export default function VideoComparison({
                   <video
                     ref={videoRefA}
                     key={`a-${versionA?.id}`}
-                    src={videoUrlA}
                     poster={(versionA as any)?.thumbnailUrl || undefined}
                     className="w-full h-full object-contain cursor-pointer"
                     crossOrigin="anonymous"
@@ -450,7 +465,6 @@ export default function VideoComparison({
                   <video
                     ref={videoRefB}
                     key={`b-${versionB?.id}`}
-                    src={videoUrlB}
                     poster={(versionB as any)?.thumbnailUrl || undefined}
                     className="w-full h-full object-contain cursor-pointer"
                     crossOrigin="anonymous"
@@ -469,8 +483,6 @@ export default function VideoComparison({
                 <VideoComparisonSlider
                   videoRefA={videoRefA}
                   videoRefB={videoRefB}
-                  videoUrlA={videoUrlA}
-                  videoUrlB={videoUrlB}
                   labelA={`版本 A · ${versionA?.versionLabel}`}
                   labelB={`版本 B · ${versionB?.versionLabel}`}
                   posterA={(versionA as any)?.thumbnailUrl}

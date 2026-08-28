@@ -1,5 +1,7 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback } from 'react'
 import { Mail, ChevronRight, RotateCcw, Save, Eye, Code, Copy, Check, AlertCircle, X, Braces, Building2, Image, Type, EyeOff } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
@@ -163,7 +165,7 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
   // Reset template to default
   const handleReset = useCallback(async () => {
     if (!selectedTemplate) return
-    if (!confirm(t('resetConfirm'))) return
+    if (!await appConfirm(t('resetConfirm'))) return
 
     try {
       const res = await apiFetch(`/api/settings/email-templates/${selectedTemplate.type}`, {

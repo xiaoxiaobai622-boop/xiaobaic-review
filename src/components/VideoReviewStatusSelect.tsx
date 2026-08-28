@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert } from '@/components/AppDialogProvider'
+
 import { useEffect, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -157,7 +159,7 @@ export default function VideoReviewStatusSelect({
       await onUpdated?.()
     } catch (error) {
       setDisplayStatus(previousStatus)
-      alert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
+      appAlert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
     } finally {
       setLoading(false)
     }

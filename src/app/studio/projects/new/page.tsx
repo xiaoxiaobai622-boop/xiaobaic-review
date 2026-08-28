@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert } from '@/components/AppDialogProvider'
+
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -80,7 +82,7 @@ export default function NewProjectPage() {
       const project = await apiPost('/api/projects', data)
       router.push(`/studio/projects/${project.id}`)
     } catch (error) {
-      alert(t('failedToCreateProject'))
+      appAlert(t('failedToCreateProject'))
     } finally {
       setLoading(false)
     }

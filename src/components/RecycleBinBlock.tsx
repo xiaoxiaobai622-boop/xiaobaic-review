@@ -1,5 +1,7 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
+
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Trash2, Loader2, AlertTriangle } from 'lucide-react'
@@ -37,7 +39,7 @@ export default function RecycleBinBlock({ projectId, onCountChange }: { projectI
   useEffect(() => { load().catch(() => setItems([])) }, [load])
 
   const permanentlyDelete = async (id: string) => {
-    if (!window.confirm(t('recycleBinConfirmDelete'))) return
+    if (!await appConfirm(t('recycleBinConfirmDelete'))) return
     setDeletingId(id)
     try {
       const response = await apiFetch(`/api/projects/${projectId}/recycle-bin?itemId=${encodeURIComponent(id)}`, { method: 'DELETE' })

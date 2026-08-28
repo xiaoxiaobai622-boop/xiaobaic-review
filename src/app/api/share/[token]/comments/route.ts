@@ -8,6 +8,7 @@ import { sanitizeComment } from '@/lib/comment-sanitization'
 import { getRateLimitSettings } from '@/lib/settings'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -44,17 +45,16 @@ export async function GET(
     if (rateLimitResult) return rateLimitResult
 
     // Fetch project by token (not by ID - more secure)
-    const project = await prisma.project.findUnique({
-      where: { slug: token },
-      select: {
-        id: true,
-        sharePassword: true,
-        authMode: true,
-        companyName: true,
-        hideFeedback: true,
-        guestMode: true,
-      }
-    })
+    const resolved = await resolveShare(token)
+    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    const project = resolved.project ? {
+      id: resolved.project.id,
+      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+      authMode: resolved.link?.authMode || resolved.project.authMode,
+      companyName: resolved.project.companyName,
+      hideFeedback: resolved.project.hideFeedback,
+      guestMode: resolved.project.guestMode,
+    } : null
 
     if (!project) {
       return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
@@ -71,7 +71,9 @@ export async function GET(
     const fallbackName = project.companyName || primaryRecipient?.name || 'Client'
 
     // Verify project access using bearer admin/share tokens
-    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode)
+    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
+      requiredPermission: 'comment',
+    })
 
     if (!accessCheck.authorized) {
       return accessCheck.errorResponse!
@@ -92,10 +94,12 @@ export async function GET(
     }
 
     // Fetch comments with nested replies
+    const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
     const comments = await prisma.comment.findMany({
       where: {
         projectId: project.id,
-        parentId: null, // Only top-level comments
+        parentId: null,
+        ...(scopedIds ? { videoId: { in: Array.from(scopedIds) } } : {}),
       },
       include: {
         user: {

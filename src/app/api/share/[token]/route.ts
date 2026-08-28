@@ -9,6 +9,7 @@ import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-t
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { resolveShare, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions } from '@/lib/share-links'
 export const runtime = 'nodejs'
 
 
@@ -35,17 +36,20 @@ export async function GET(
     }, `share-access:${token}`)
     if (rateLimitResult) return rateLimitResult
 
-    const projectMeta = await prisma.project.findUnique({
-      where: { slug: token },
-      select: {
-        id: true,
-        guestMode: true,
-        guestLatestOnly: true,
-        guestShowPhotos: true,
-        sharePassword: true,
-        authMode: true,
-      },
-    })
+    const resolved = await resolveShare(token)
+    const resolvedProject = resolved.project
+    const shareLink = resolved.link
+    if (shareLink && !isShareLinkActive(shareLink)) {
+      return NextResponse.json({ error: 'This share link is no longer active' }, { status: 410 })
+    }
+    const projectMeta = resolvedProject ? {
+      id: resolvedProject.id,
+      guestMode: shareLink ? false : resolvedProject.guestMode,
+      guestLatestOnly: resolvedProject.guestLatestOnly,
+      guestShowPhotos: resolvedProject.guestShowPhotos,
+      sharePassword: shareLink?.sharePassword || resolvedProject.sharePassword,
+      authMode: shareLink?.authMode || resolvedProject.authMode,
+    } : null
 
     if (!projectMeta) {
       // SECURITY: Return same response shape as auth-required projects
@@ -58,6 +62,9 @@ export async function GET(
     }
 
     const shareContext = await getShareContext(request)
+    if (shareLink && shareContext && shareContext.shareId !== token) {
+      return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
+    }
     const isGuest = !!shareContext?.guest
 
     // SECURITY: If user sent a bearer token but it failed verification (revoked, expired, invalid),
@@ -81,7 +88,7 @@ export async function GET(
     }
 
     const project = await fetchProjectWithVideos(
-      token,
+      resolvedProject?.slug || token,
       isGuest,
       projectMeta.guestLatestOnly || false,
       projectMeta.id
@@ -89,6 +96,11 @@ export async function GET(
 
     if (!project) {
       return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
+    }
+
+    if (shareLink) {
+      const scopedIds = scopeVideoIds(shareLink, project.videos)
+      if (scopedIds) project.videos = project.videos.filter((video: any) => scopedIds.has(video.id))
     }
 
     const accessCheck = await verifyProjectAccess(request, projectMeta.id, projectMeta.sharePassword, projectMeta.authMode)
@@ -103,6 +115,9 @@ export async function GET(
     }
 
     const { isAdmin } = accessCheck
+    if (shareLink && !isAdmin && !(await incrementShareLinkView(shareLink.id))) {
+      return NextResponse.json({ error: 'This share link has reached its viewing limit' }, { status: 410 })
+    }
 
     // Track share page access for projects with no authentication (authMode = NONE)
     // Only track as NONE if guest mode is disabled; otherwise let guest endpoint track as GUEST
@@ -160,7 +175,8 @@ export async function GET(
       reviewStatus: video.reviewStatus,
       thumbnailPath: video.thumbnailPath,
       folderId: video.folderId,
-      createdAt: video.createdAt,
+      createdAt: video.createdAt instanceof Date ? video.createdAt.toISOString() : video.createdAt ?? null,
+      updatedAt: video.updatedAt instanceof Date ? video.updatedAt.toISOString() : video.updatedAt ?? null,
       hasAssets: (video._count?.assets ?? 0) > 0,
       // Explicitly omit: projectId, originalStoragePath, preview720Path, preview1080Path,
       // cleanPreview720Path, cleanPreview1080Path, processingError, processingProgress,
@@ -258,6 +274,8 @@ export async function GET(
         thumbnailUrl: video.thumbnailUrl,
         thumbnailPath: video.thumbnailPath,
         folderId: video.folderId,
+        createdAt: video.createdAt,
+        updatedAt: video.updatedAt,
       }))
       return acc
     }, {}) : sortedVideosByName
@@ -325,6 +343,18 @@ export async function GET(
         privacyDisclosureEnabled: globalSettings?.privacyDisclosureEnabled ?? false,
         privacyDisclosureText: globalSettings?.privacyDisclosureText || null,
       },
+      shareType: shareLink?.type || 'REVIEW',
+      sharePermissions: linkPermissions(shareLink, project),
+    }
+
+    if (shareLink?.type === 'COLLECT') {
+      projectData.videos = []
+      projectData.videosByName = {}
+      projectData.allowAssetDownload = false
+      projectData.allowPhotoDownload = false
+      projectData.allowClientAssetUpload = false
+      projectData.allowReverseShare = true
+      projectData.clientCanApprove = false
     }
 
     const responseBody: any = projectData
@@ -342,7 +372,7 @@ export async function GET(
       const shareToken = signShareToken({
         shareId: token,
         projectId: project.id,
-        permissions: ['view', 'comment', 'download'],
+        permissions: linkPermissions(shareLink, project),
         guest: false,
         sessionId,
         authMode: projectMeta.authMode,

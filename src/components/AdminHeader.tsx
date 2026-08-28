@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
-import { Bug, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, Settings, User, UserRound, Users } from 'lucide-react'
+import { Bug, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, User, UserRound, Users } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -50,9 +50,6 @@ export default function AdminHeader() {
   const navLinks: Array<{ href: string; label: string; icon: typeof FolderKanban; title?: string }> = [
     { href: '/studio/projects', label: t('projects'), icon: FolderKanban },
     { href: '/studio/team', label: '团队', icon: Users },
-    ...(user.teamRole === 'OWNER' || user.teamRole === 'ADMIN' ? [
-      { href: '/studio/team/settings', label: '团队设置', icon: Settings },
-    ] : []),
   ]
 
   const teamRoleLabel = user.teamRole === 'OWNER'

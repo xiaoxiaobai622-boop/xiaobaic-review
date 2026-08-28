@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { Download, Trash2, Loader2, FileIcon, FileImage, FileVideo, FileMusic, FileArchive, FileText, FilePlay, Square, CheckSquare, Info, RefreshCw } from 'lucide-react'
@@ -212,7 +214,7 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
   }
 
   const handleDelete = async (upload: ProjectUpload) => {
-    if (!confirm(t('confirmDeleteUpload'))) return
+    if (!await appConfirm(t('confirmDeleteUpload'))) return
     setDeletingId(upload.id)
     try {
       const res = await apiFetch(`/api/projects/${projectId}/project-uploads?uploadId=${upload.id}`, {
@@ -269,7 +271,7 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
       onPromoted?.()
       void fetchUploads()
     } catch (error) {
-      alert(error instanceof Error ? error.message : t('promoteUploadFailed'))
+      appAlert(error instanceof Error ? error.message : t('promoteUploadFailed'))
       logError('Error promoting project upload:', error)
     } finally {
       setPromotingId(null)
@@ -324,7 +326,7 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
       onPromoted?.()
       void fetchUploads()
     } catch (error) {
-      alert(error instanceof Error ? error.message : t('promoteUploadFailed'))
+      appAlert(error instanceof Error ? error.message : t('promoteUploadFailed'))
       logError('Error transcoding project upload:', error)
     } finally {
       setTranscodingIds(prev => {
@@ -375,7 +377,7 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
   }
 
   const handleBulkDelete = async () => {
-    if (!confirm(t('confirmDeleteUpload'))) return
+    if (!await appConfirm(t('confirmDeleteUpload'))) return
     setBulkDeleting(true)
     for (const id of Array.from(selectedIds)) {
       try {

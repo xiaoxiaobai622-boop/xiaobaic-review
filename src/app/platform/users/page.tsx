@@ -1,5 +1,7 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
+
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
@@ -361,7 +363,7 @@ export default function UsersPage() {
   }
 
   async function handleDeletePasskey(passkeyId: string) {
-    if (!editingUser || !confirm(t('deletePasskeyConfirm'))) return
+    if (!editingUser || !await appConfirm(t('deletePasskeyConfirm'))) return
 
     try {
       await apiDelete(`/api/auth/passkey/${passkeyId}?userId=${editingUser.id}`)

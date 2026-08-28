@@ -1,5 +1,7 @@
 'use client'
 
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
+
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import {
@@ -86,7 +88,7 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
   }, [fetchAssets, refreshTrigger])
 
   const handleDelete = async (assetId: string, fileName: string) => {
-    if (!confirm(`${t('deleteAssetConfirm')} "${fileName}"?`)) {
+    if (!await appConfirm(`${t('deleteAssetConfirm')} "${fileName}"?`)) {
       return
     }
 
@@ -107,7 +109,7 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
       .catch(() => {
         // Restore on error
         setAssets(previousAssets)
-        alert(t('failedToDeleteAsset'))
+        appAlert(t('failedToDeleteAsset'))
       })
       .finally(() => {
         setDeletingId(null)
@@ -203,7 +205,7 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
         triggerDownload(url)
       })
       .catch(() => {
-        alert(t('failedToDownloadAsset'))
+        appAlert(t('failedToDownloadAsset'))
       })
   }
 
@@ -218,7 +220,7 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
       ? t('removeThumbnailConfirm')
       : t('setThumbnailConfirm')
 
-    if (!confirm(confirmMessage)) {
+    if (!await appConfirm(confirmMessage)) {
       return
     }
 
@@ -237,7 +239,7 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
         }
       })
       .catch(() => {
-        alert(action === 'set' ? t('failedToSetThumbnail') : t('failedToRemoveThumbnail'))
+        appAlert(action === 'set' ? t('failedToSetThumbnail') : t('failedToRemoveThumbnail'))
       })
       .finally(() => {
         setSettingThumbnail(null)
@@ -276,7 +278,7 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
   }
 
   const handleBulkDelete = async () => {
-    if (!confirm(`${t('deleteAssetConfirm')} (${selectedIds.size})?`)) return
+    if (!await appConfirm(`${t('deleteAssetConfirm')} (${selectedIds.size})?`)) return
     setBulkDeleting(true)
     const toDelete = Array.from(selectedIds)
     for (const assetId of toDelete) {

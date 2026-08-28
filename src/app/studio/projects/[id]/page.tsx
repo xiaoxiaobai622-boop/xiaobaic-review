@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,9 @@ import ProjectActions from '@/components/ProjectActions'
 import ProjectUploadsBlock from '@/components/ProjectUploadsBlock'
 import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
 import RecycleBinBlock from '@/components/RecycleBinBlock'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2 } from 'lucide-react'
+import ShareLinksPanel from '@/components/ShareLinksPanel'
+import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, FolderInput, ChevronRight, MessageSquare, PackageCheck } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -19,6 +22,7 @@ import { cn } from '@/lib/utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { useAuth } from '@/components/AuthProvider'
 import FolderInteraction from '@/components/ui/folder-interaction'
+import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
 
 // Force dynamic rendering (no static pre-rendering)
 export const dynamic = 'force-dynamic'
@@ -119,7 +123,7 @@ export default function ProjectPage() {
   const [sortMode, setSortMode] = useState<'status' | 'alphabetical'>('alphabetical')
   const [videoViewMode, setVideoViewMode] = useState<'list' | 'grid'>('grid')
   const [albumSortMode, setAlbumSortMode] = useState<'date' | 'alphabetical'>('date')
-  const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'photos' | 'uploads' | 'trash'>('videos')
+  const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'photos' | 'uploads' | 'shares' | 'trash'>('videos')
   const [photoCounts, setPhotoCounts] = useState<{ albums: number; photos: number } | null>(null)
   const [uploadsCount, setUploadsCount] = useState<number | null>(null)
   const [recycleBinCount, setRecycleBinCount] = useState<number | null>(null)
@@ -137,7 +141,9 @@ export default function ProjectPage() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [projectFolders, setProjectFolders] = useState<Array<{ id: string; name: string; createdAt?: string; _count?: { videos: number } }>>([])
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
-  const [folderMenuId, setFolderMenuId] = useState<string | null>(null)
+  const [folderMenu, setFolderMenu] = useState<{ id: string; left: number; top: number } | null>(null)
+  const [folderShareMenuId, setFolderShareMenuId] = useState<string | null>(null)
+  const [shareDialog, setShareDialog] = useState<{ preset: SharePreset; target: ShareTarget } | null>(null)
   const [copiedFolderId, setCopiedFolderId] = useState<string | null>(null)
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null | undefined>(undefined)
   const [folderCoverUrls, setFolderCoverUrls] = useState<Record<string, string[]>>({})
@@ -153,14 +159,14 @@ export default function ProjectPage() {
 
   // Restore workspace preferences across projects.
   useEffect(() => {
-    const closeMenu = () => { setContextMenu(null); setFolderMenuId(null) }
+    const closeMenu = () => { setContextMenu(null); setFolderMenu(null); setFolderShareMenuId(null) }
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [id])
 
   useEffect(() => {
     const requestedWorkspace = searchParams?.get('workspace')
-    if (requestedWorkspace === 'videos' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads' || requestedWorkspace === 'trash') {
+    if (requestedWorkspace === 'videos' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads' || requestedWorkspace === 'shares' || requestedWorkspace === 'trash') {
       setActiveWorkspace(requestedWorkspace)
       return
     }
@@ -168,18 +174,25 @@ export default function ProjectPage() {
       const savedVideoView = localStorage.getItem(VIDEO_VIEW_MODE_KEY)
       if (savedVideoView === 'list' || savedVideoView === 'grid') setVideoViewMode(savedVideoView)
       const savedWorkspace = localStorage.getItem(WORKSPACE_VIEW_KEY)
-      if (savedWorkspace === 'videos' || savedWorkspace === 'photos' || savedWorkspace === 'uploads' || savedWorkspace === 'trash') {
+      if (savedWorkspace === 'videos' || savedWorkspace === 'photos' || savedWorkspace === 'uploads' || savedWorkspace === 'shares' || savedWorkspace === 'trash') {
         setActiveWorkspace(savedWorkspace)
       }
     } catch {}
   }, [searchParams])
+
+  useEffect(() => {
+    const requestedFolder = searchParams?.get('folder')
+    if (requestedFolder && projectFolders.some((folder) => folder.id === requestedFolder)) {
+      setActiveFolderId(requestedFolder)
+    }
+  }, [projectFolders, searchParams])
 
   const changeVideoViewMode = (mode: 'list' | 'grid') => {
     setVideoViewMode(mode)
     try { localStorage.setItem(VIDEO_VIEW_MODE_KEY, mode) } catch {}
   }
 
-  const changeWorkspace = (workspace: 'videos' | 'photos' | 'uploads' | 'trash') => {
+  const changeWorkspace = (workspace: 'videos' | 'photos' | 'uploads' | 'shares' | 'trash') => {
     setActiveWorkspace(workspace)
     if (workspace === 'trash') setRecycleBinRefreshKey((value) => value + 1)
     if (workspace !== 'videos') setSelectedVideoGroupName(null)
@@ -367,7 +380,7 @@ export default function ProjectPage() {
       setCollectionLinkCopied(true)
       window.setTimeout(() => setCollectionLinkCopied(false), 2000)
     } else {
-      alert(tc('errorTryAgain'))
+      appAlert(tc('errorTryAgain'))
     }
   }
 
@@ -404,28 +417,123 @@ export default function ProjectPage() {
   }
 
   const copyFolderShareLink = async (folderId: string) => {
-    setFolderMenuId(null)
+    setFolderMenu(null)
     if (!shareUrl) {
-      alert(tc('errorTryAgain'))
+      appAlert(tc('errorTryAgain'))
       return
     }
     const separator = shareUrl.includes('?') ? '&' : '?'
     const copied = await copyTextToClipboard(`${shareUrl}${separator}folder=${encodeURIComponent(folderId)}`)
     if (!copied) {
-      alert(tc('errorTryAgain'))
+      appAlert(tc('errorTryAgain'))
       return
     }
     setCopiedFolderId(folderId)
     window.setTimeout(() => setCopiedFolderId((current) => current === folderId ? null : current), 1600)
   }
 
+  const openFolderInNewTab = (folderId: string) => {
+    setFolderMenu(null)
+    window.open(`/studio/projects/${id}?workspace=videos&folder=${encodeURIComponent(folderId)}`, '_blank', 'noopener,noreferrer')
+  }
+
+  const openObjectShare = (preset: SharePreset, target: ShareTarget) => {
+    setFolderMenu(null)
+    setFolderShareMenuId(null)
+    setShareDialog({ preset, target })
+  }
+
+  const downloadFolderOriginals = async (folderId: string) => {
+    setFolderMenu(null)
+    const folderVideos = project.videos.filter((video: any) => video.folderId === folderId)
+    const latestVideos = [...new Map(folderVideos
+      .sort((a: any, b: any) => b.version - a.version)
+      .map((video: any) => [video.name, video])).values()] as any[]
+    if (latestVideos.length === 0) {
+      appAlert('文件夹中没有可下载的视频')
+      return
+    }
+    for (const video of latestVideos) {
+      const response = await apiFetch(`/api/videos/${video.id}/download-token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.url) {
+        appAlert(data.error || '生成下载链接失败')
+        return
+      }
+      const link = document.createElement('a')
+      link.href = data.url
+      link.download = ''
+      link.rel = 'noopener'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
+    }
+  }
+
+  const downloadFolderZip = async (folderId: string) => {
+    setFolderMenu(null)
+    const response = await apiFetch(`/api/projects/${id}/folders/download-zip-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderId }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.url) {
+      appAlert(data.error || '生成打包下载链接失败')
+      return
+    }
+    const link = document.createElement('a')
+    link.href = data.url
+    link.download = ''
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  const renameProjectFolder = async (folder: { id: string; name: string }) => {
+    setFolderMenu(null)
+    const name = (await appPrompt({
+      title: '重命名文件夹',
+      message: '输入新的文件夹名称。',
+      inputLabel: '文件夹名称',
+      defaultValue: folder.name,
+      required: true,
+      maxLength: 120,
+      confirmLabel: '保存',
+    }))?.trim()
+    if (!name || name === folder.name) return
+    const response = await apiFetch(`/api/projects/${id}/folders`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderId: folder.id, name }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      appAlert(data.error || '重命名文件夹失败')
+      return
+    }
+    setProjectFolders((folders) => folders
+      .map((item) => item.id === folder.id ? { ...item, name: data.folder.name } : item)
+      .sort((a, b) => a.name.localeCompare(b.name)))
+  }
+
   const createProjectFolder = async () => {
-    const name = window.prompt('请输入文件夹名称')?.trim()
+    const name = (await appPrompt({
+      title: '新建文件夹',
+      message: '创建后可以把项目中的视频拖入文件夹。',
+      inputLabel: '文件夹名称',
+      placeholder: '例如：第一版素材',
+      required: true,
+      maxLength: 120,
+      confirmLabel: '创建',
+    }))?.trim()
     if (!name) return
     const response = await apiFetch(`/api/projects/${id}/folders`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
-      window.alert(data.error || '新建文件夹失败')
+      appAlert(data.error || '新建文件夹失败')
       return
     }
     const data = await response.json()
@@ -448,7 +556,7 @@ export default function ProjectPage() {
     if (!videoId) return
     const response = await apiFetch(`/api/videos/${videoId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folderId, moveGroup: true }) })
     if (!response.ok) {
-      window.alert('移动视频失败')
+      appAlert('移动视频失败')
       return
     }
     await fetchProject()
@@ -466,20 +574,27 @@ export default function ProjectPage() {
   }
 
   const deleteProjectFolder = async (folderId: string) => {
-    setFolderMenuId(null)
+    const folder = projectFolders.find((item) => item.id === folderId)
+    setFolderMenu(null)
+    if (!await appConfirm({
+      title: '放入回收站',
+      message: `确定将“${folder?.name || '该文件夹'}”及其中的视频放入回收站吗？内容将在 7 天后永久删除。`,
+      confirmLabel: '放入回收站',
+      tone: 'destructive',
+    })) return
     const response = await apiFetch(`/api/projects/${id}/folders?folderId=${encodeURIComponent(folderId)}`, { method: 'DELETE' })
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
-      window.alert(data.error || '删除文件夹失败')
+      appAlert(data.error || '放入回收站失败')
       return
     }
     if (activeFolderId === folderId) setActiveFolderId(null)
-    setProjectFolders((folders) => folders.filter((folder) => folder.id !== folderId))
+    await fetchProject()
   }
 
   const deleteVideoVersion = async (video: any) => {
     if (deletingVersionId) return
-    if (!window.confirm(t('deleteVersionConfirm', { version: video.versionLabel || `v${video.version}` }))) return
+    if (!await appConfirm(t('deleteVersionConfirm', { version: video.versionLabel || `v${video.version}` }))) return
     setDeletingVersionId(video.id)
     try {
       const response = await apiFetch(`/api/videos/${video.id}`, { method: 'DELETE' })
@@ -490,7 +605,7 @@ export default function ProjectPage() {
       if (rollbackTarget?.id === video.id) setRollbackTarget(null)
       await fetchProject()
     } catch (error) {
-      alert(error instanceof Error ? error.message : t('deleteVersionFailed'))
+      appAlert(error instanceof Error ? error.message : t('deleteVersionFailed'))
     } finally {
       setDeletingVersionId(null)
     }
@@ -570,6 +685,7 @@ export default function ProjectPage() {
               { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
               { id: 'photos' as const, label: t('photoAlbums'), count: photoCounts?.albums || 0, icon: Images },
               { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
+              { id: 'shares' as const, label: '分享', count: 0, icon: Share2 },
               { id: 'trash' as const, label: t('recycleBin'), count: recycleBinCount || 0, icon: Trash2 },
             ]).map((item) => {
               const Icon = item.icon
@@ -673,20 +789,21 @@ export default function ProjectPage() {
                             </div>
                           </div>
                         </div>
-                        <button type="button" className="absolute bottom-2.5 right-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="文件夹操作" title="文件夹操作" onClick={(event) => { event.stopPropagation(); setFolderMenuId((current) => current === folder.id ? null : folder.id) }}>
+                        <button type="button" className="absolute bottom-2.5 right-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="文件夹操作" title="文件夹操作" aria-haspopup="menu" aria-expanded={folderMenu?.id === folder.id} onClick={(event) => {
+                          event.stopPropagation()
+                          const rect = event.currentTarget.getBoundingClientRect()
+                          const menuWidth = 208
+                          const menuHeight = 366
+                          const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))
+                          const top = rect.bottom + menuHeight <= window.innerHeight - 8
+                            ? rect.bottom + 6
+                            : Math.max(8, rect.top - menuHeight - 6)
+                          setFolderShareMenuId(null)
+                          setFolderMenu((current) => current?.id === folder.id ? null : { id: folder.id, left, top })
+                        }}>
                           <MoreVertical className="h-4 w-4" />
                         </button>
-                        {folderMenuId === folder.id && (
-                          <div className="absolute right-2 bottom-10 z-20 w-32 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg" onClick={(event) => event.stopPropagation()}>
-                            <button type="button" className="flex w-full rounded-sm px-2.5 py-1.5 text-left text-xs hover:bg-accent" onClick={() => { setFolderMenuId(null); setActiveFolderId(folder.id) }}>打开</button>
-                            <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-left text-xs hover:bg-accent" onClick={() => void copyFolderShareLink(folder.id)}>
-                              {copiedFolderId === folder.id ? <Check className="h-3.5 w-3.5 text-success" /> : <Link2 className="h-3.5 w-3.5" />}
-                              {copiedFolderId === folder.id ? tc('copied') : '分享链接'}
-                            </button>
-                            <button type="button" className="flex w-full rounded-sm px-2.5 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={() => void deleteProjectFolder(folder.id)}>删除</button>
-                          </div>
-                        )}
-                        <svg className={cn('pointer-events-none absolute inset-0 z-30 h-full w-full transition-colors group-focus-within:text-primary', folderDropTargetId === folder.id || folderMenuId === folder.id ? 'text-primary' : 'text-border group-hover:text-primary/60')} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                        <svg className={cn('pointer-events-none absolute inset-0 z-30 h-full w-full transition-colors group-focus-within:text-primary', folderDropTargetId === folder.id || folderMenu?.id === folder.id ? 'text-primary' : 'text-border group-hover:text-primary/60')} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                           <path d="M0.5 8 V5 Q0.5 0.5 5 0.5 H27 Q29 0.5 31 2 L39 7.5 Q40.5 8.5 43 8.5 H96 Q99.5 8.5 99.5 12 V96 Q99.5 99.5 96 99.5 H4 Q0.5 99.5 0.5 96 Z" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
                         </svg>
                       </div>
@@ -694,8 +811,57 @@ export default function ProjectPage() {
                   })}
                 </div>
               )}
+              {folderMenu && typeof document !== 'undefined' && (() => {
+                const folder = projectFolders.find((item) => item.id === folderMenu.id)
+                if (!folder) return null
+                const menuItemClass = 'flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                return createPortal(
+                  <>
+                    <button type="button" className="fixed inset-0 z-[80] cursor-default" aria-label={tc('close')} onClick={() => { setFolderMenu(null); setFolderShareMenuId(null) }} />
+                    <div role="menu" aria-label={`${folder.name} 文件夹操作`} className="fixed z-[90] w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: folderMenu.left, top: folderMenu.top }} onClick={(event) => event.stopPropagation()}>
+                      <div className="relative" onMouseEnter={() => setFolderShareMenuId(folder.id)} onMouseLeave={() => setFolderShareMenuId(null)}>
+                        <button type="button" role="menuitem" className={menuItemClass} onClick={(event) => { event.stopPropagation(); setFolderShareMenuId(folder.id) }} aria-haspopup="menu" aria-expanded={folderShareMenuId === folder.id}>
+                          <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                        {folderShareMenuId === folder.id && <div role="menu" aria-label={`${folder.name} 分享类型`} className="absolute left-full top-0 z-[100] -ml-px w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                          <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('REVIEW', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><MessageSquare className="h-4 w-4" />审阅分享</button>
+                          <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('DELIVERY', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><PackageCheck className="h-4 w-4" />交付分享</button>
+                        </div>}
+                      </div>
+                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => openFolderInNewTab(folder.id)}>
+                        <ExternalLink className="h-4 w-4" />新标签页打开
+                      </button>
+                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyFolderShareLink(folder.id)}>
+                        {copiedFolderId === folder.id ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
+                        {copiedFolderId === folder.id ? tc('copied') : '复制文件链接'}
+                      </button>
+                      <div className="my-1 border-t border-border" />
+                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderZip(folder.id)}>
+                        <Download className="h-4 w-4" />下载原文件
+                      </button>
+                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderOriginals(folder.id)}>
+                        <Package className="h-4 w-4" />打包下载
+                      </button>
+                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void renameProjectFolder(folder)}>
+                        <Pencil className="h-4 w-4" />重命名
+                      </button>
+                      <button type="button" role="menuitem" disabled className={cn(menuItemClass, 'cursor-not-allowed opacity-40')} title="当前项目暂不支持嵌套文件夹">
+                        <Copy className="h-4 w-4" />复制到
+                      </button>
+                      <button type="button" role="menuitem" disabled className={cn(menuItemClass, 'cursor-not-allowed opacity-40')} title="当前项目暂不支持嵌套文件夹">
+                        <FolderInput className="h-4 w-4" />移动到
+                      </button>
+                      <div className="my-1 border-t border-border" />
+                      <button type="button" role="menuitem" className={cn(menuItemClass, 'text-destructive hover:bg-destructive/10')} onClick={() => void deleteProjectFolder(folder.id)}>
+                        <Trash2 className="h-4 w-4" />放入回收站
+                      </button>
+                    </div>
+                  </>,
+                  document.body
+                )
+              })()}
               <input ref={folderUploadInputRef} type="file" multiple accept="video/*" className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
-              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} uploadRequestFiles={uploadRequestFiles} uploadRequestFolderId={uploadRequestFolderId} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={(group) => setSelectedVideoGroupName(group.name)} />
+              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} uploadRequestFiles={uploadRequestFiles} uploadRequestFolderId={uploadRequestFolderId} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={(group) => setSelectedVideoGroupName(group.name)} onCreateShare={(preset, target) => openObjectShare(preset, target)} />
             </section>
 
             <section className={activeWorkspace === 'photos' ? undefined : 'hidden'}>
@@ -737,6 +903,17 @@ export default function ProjectPage() {
                 {recycleBinCount !== null && <span className={countBadgeClassName}>{recycleBinCount}</span>}
               </h2>
               <RecycleBinBlock key={recycleBinRefreshKey} projectId={project.id} onCountChange={setRecycleBinCount} />
+            </section>
+
+            <section className={activeWorkspace === 'shares' ? undefined : 'hidden'}>
+              <div className="mb-4">
+                <h2 className="flex items-center gap-2 text-lg font-semibold">
+                  <span className={iconBadgeClassName}><Share2 className={iconBadgeIconClassName} /></span>
+                  分享
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">管理项目、文件夹、视频和收录链接</p>
+              </div>
+              <ShareLinksPanel project={project} />
             </section>
           </main>
 
@@ -904,6 +1081,7 @@ export default function ProjectPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <CreateShareDialog projectId={project.id} open={Boolean(shareDialog)} preset={shareDialog?.preset || 'REVIEW'} target={shareDialog?.target || null} onOpenChange={(open) => { if (!open) setShareDialog(null) }} onCreated={() => window.dispatchEvent(new Event('shareLinksChanged'))} />
     </div>
   )
 }
