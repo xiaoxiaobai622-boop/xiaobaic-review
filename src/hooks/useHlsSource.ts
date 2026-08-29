@@ -42,11 +42,17 @@ export function useHlsSource({
     let sourceType: 'hls' | 'fallback' | 'none' = 'none'
     let networkRecoveryAttempts = 0
     let mediaRecoveryAttempts = 0
+    let manifestReady = false
+    const previousPreload = video.preload
+    let handleSeeking: (() => void) | null = null
     let disposed = false
 
     const setVideoSource = (source: string, type: 'hls' | 'fallback') => {
       sourceType = type
       setIsUsingHls(type === 'hls')
+      // HLS needs the first media segment available before the first play or seek.
+      // Keep the existing metadata behaviour for ordinary MP4 fallbacks.
+      video.preload = type === 'hls' ? 'auto' : previousPreload
       video.src = source
       video.load()
     }
@@ -81,17 +87,42 @@ export function useHlsSource({
     } else if (hlsUrl && Hls.isSupported()) {
       sourceType = 'hls'
       setIsUsingHls(true)
+      video.preload = 'auto'
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 30,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        // A smaller forward buffer makes a seek abandon stale work sooner.
+        maxBufferLength: 12,
+        maxMaxBufferLength: 24,
+        maxFragLookUpTolerance: 0.1,
       })
 
       hls.on(Events.MEDIA_ATTACHED, () => {
         if (!disposed) hls?.loadSource(hlsUrl)
       })
+
+      hls.on(Events.MANIFEST_PARSED, () => {
+        manifestReady = true
+      })
+
+      // hls.js normally notices the media element's seeking event, but when a
+      // large seek happens during an in-flight fragment request it can wait for
+      // that request to finish. Starting at the requested time cancels stale
+      // work and requests the target fragment immediately.
+      handleSeeking = () => {
+        if (!manifestReady || disposed || !hls || !Number.isFinite(video.currentTime)) return
+        const target = video.currentTime
+        let buffered = false
+        for (let index = 0; index < video.buffered.length; index += 1) {
+          if (target >= video.buffered.start(index) && target <= video.buffered.end(index)) {
+            buffered = true
+            break
+          }
+        }
+        if (!buffered) hls.startLoad(target, true)
+      }
+      video.addEventListener('seeking', handleSeeking)
 
       hls.on(Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal || disposed || !hls) return
@@ -121,8 +152,10 @@ export function useHlsSource({
     return () => {
       disposed = true
       video.removeEventListener('error', handleMediaElementError)
+      if (handleSeeking) video.removeEventListener('seeking', handleSeeking)
       hls?.destroy()
       video.pause()
+      video.preload = previousPreload
       video.removeAttribute('src')
       video.load()
     }

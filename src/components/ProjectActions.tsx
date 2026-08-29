@@ -40,6 +40,14 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
 
   const [showUnapproveModal, setShowUnapproveModal] = useState(false)
 
+  const buildProjectShareCopyText = () => {
+    const projectData = project as Project & { authMode?: string | null; sharePassword?: string | null }
+    const password = (projectData.authMode === 'PASSWORD' || projectData.authMode === 'BOTH')
+      ? projectData.sharePassword?.trim()
+      : ''
+    return `请点击链接，审阅${project.title}\n链接：${shareUrl}${password ? `\n密码：${password}` : ''}`
+  }
+
   // Filter only ready videos
   const readyVideos = videos.filter(v => v.status === 'READY')
 
@@ -264,7 +272,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
                 <div className="flex gap-2">
                   <Button 
                     onClick={async () => {
-                      if (await copyTextToClipboard(shareUrl)) {
+                      if (await copyTextToClipboard(buildProjectShareCopyText())) {
                         setLinkCopied(true)
                         setTimeout(() => setLinkCopied(false), 2000)
                       } else {

@@ -2,15 +2,22 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { FolderKanban, GitBranch, HardDrive, LayoutDashboard, Users } from 'lucide-react'
-import { useAuth } from '@/components/AuthProvider'
+import { FolderKanban, GitBranch, HardDrive, LayoutDashboard, Settings2, Users, type LucideIcon } from 'lucide-react'
 
-const sections = [
+type TeamAdminSection = {
+  key: string
+  label: string
+  href: string
+  icon: LucideIcon
+}
+
+const sections: TeamAdminSection[] = [
   { key: 'overview', label: '团队概览', href: '/studio/team', icon: LayoutDashboard },
   { key: 'members', label: '成员管理', href: '/studio/team/members', icon: Users },
   { key: 'storage', label: '容量管理', href: '/studio/team/storage', icon: HardDrive },
   { key: 'projects', label: '项目管理', href: '/studio/team/projects', icon: FolderKanban },
-  { key: 'workflow', label: '流程管理', href: '/studio/team/workflow', icon: GitBranch, children: [{ label: '视频设置', href: '/studio/team/settings' }] },
+  { key: 'workflow', label: '流程管理', href: '/studio/team/workflow', icon: GitBranch },
+  { key: 'video-settings', label: '视频设置', href: '/studio/team/settings', icon: Settings2 },
 ]
 
 const overviewTabs = [
@@ -41,12 +48,11 @@ const projectTabs = [
 ]
 
 export default function TeamAdminShell({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
   const pathname = usePathname() ?? ''
   const searchParams = useSearchParams()
   const section = pathname === '/studio/team'
     ? sections[0]
-    : sections.slice(1).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`) || item.children?.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`))) || sections[0]
+    : sections.slice(1).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) || sections[0]
   const auxiliaryPage = pathname.startsWith('/studio/team/settings') || pathname.startsWith('/studio/team/invite') || pathname.startsWith('/studio/team/join')
   const tabs = auxiliaryPage ? [] : section.key === 'overview'
     ? overviewTabs
@@ -67,19 +73,18 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
             <p className="text-base font-semibold">团队管理</p>
           </div>
           <nav aria-label="团队管理菜单" className="grid min-w-0 grid-cols-2 gap-1 px-3 pb-3 lg:block lg:space-y-1 lg:px-3 lg:pb-0">
-            {sections.map(({ key, label, href, icon: Icon, children: childItems }) => {
+            {sections.map(({ key, label, href, icon: Icon }) => {
               const active = key === section.key
               return (
-                <div key={key} className="min-w-0">
-                  <Link href={href} className={`flex min-w-0 items-center gap-2 rounded-md px-3 py-2.5 text-sm transition-colors lg:w-full ${active ? 'bg-primary-visible font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </Link>
-                  {active && user && (user.teamRole === 'OWNER' || user.teamRole === 'ADMIN') && childItems?.map((child) => {
-                    const childActive = pathname === child.href || pathname.startsWith(`${child.href}/`)
-                    return <Link key={child.href} href={child.href} className={`ml-5 mt-1 flex min-w-0 items-center rounded-md border-l-2 py-2 pl-3 text-sm transition-colors ${childActive ? 'border-primary text-primary' : 'border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground'}`}>{child.label}</Link>
-                  })}
-                </div>
+                <Link
+                  key={key}
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex min-w-0 items-center gap-2 rounded-md px-3 py-2.5 text-sm transition-colors lg:w-full ${active ? 'bg-primary-visible font-medium text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </Link>
               )
             })}
           </nav>
