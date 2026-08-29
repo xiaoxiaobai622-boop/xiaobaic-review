@@ -184,8 +184,9 @@ jobs:
             germany_authority="${germany_uri#vless://}"
             germany_uuid="${germany_authority%%@*}"
             germany_endpoint="${germany_authority#*@}"
-            germany_server="${germany_endpoint%%:*}"
-            germany_port="${germany_endpoint##*:}"
+            germany_hostport="${germany_endpoint%%\?*}"
+            germany_server="${germany_hostport%%:*}"
+            germany_port="${germany_hostport##*:}"
             germany_query="${germany_uri#*\?}"
             get_query_value() {
               printf '%s\n' "$germany_query" | tr '&' '\n' | sed -n "s/^$1=//p" | head -n 1
