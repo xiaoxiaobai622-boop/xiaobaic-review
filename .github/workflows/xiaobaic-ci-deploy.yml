@@ -221,7 +221,7 @@ jobs:
               ],
               "route": {"final": "germany"}
             }
-EOF
+            EOF
             sudo /usr/local/bin/sing-box check -c "$proxy_config_candidate"
             sudo install -m 600 "$proxy_config_candidate" "$proxy_config"
             sudo systemctl restart sing-box-ghcr
