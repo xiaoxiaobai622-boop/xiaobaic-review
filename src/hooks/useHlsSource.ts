@@ -91,11 +91,15 @@ export function useHlsSource({
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        backBufferLength: 30,
-        // A smaller forward buffer makes a seek abandon stale work sooner.
-        maxBufferLength: 12,
-        maxMaxBufferLength: 24,
-        maxFragLookUpTolerance: 0.1,
+        // Keep only a small amount behind the playhead so seeks do not have
+        // to wait for stale buffered data to be flushed.
+        backBufferLength: 12,
+        // Resume playback sooner after a seek by limiting how much forward
+        // media hls.js will buffer before unpausing.
+        maxBufferLength: 6,
+        maxMaxBufferLength: 12,
+        // Tight tolerance keeps seeks close to the requested timestamp.
+        maxFragLookUpTolerance: 0.05,
       })
 
       hls.on(Events.MEDIA_ATTACHED, () => {
