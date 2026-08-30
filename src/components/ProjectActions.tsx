@@ -10,10 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Trash2, ExternalLink, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Copy, Check, Calendar } from 'lucide-react'
 import { UnapproveModal } from './UnapproveModal'
-import { FeishuPushButton } from './FeishuPushButton'
 import { apiPost, apiPatch, apiDelete } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
-import { useAuth } from '@/components/AuthProvider'
 
 interface Video {
   id: string
@@ -35,16 +33,12 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
   const tc = useTranslations('common')
   const locale = useLocale()
   const router = useRouter()
-  const { user } = useAuth()
   const [isDeleting, setIsDeleting] = useState(false)
   const [isTogglingApproval, setIsTogglingApproval] = useState(false)
   const [isArchiving, setIsArchiving] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
 
   const [showUnapproveModal, setShowUnapproveModal] = useState(false)
-
-  // Check if user has admin privileges (ADMIN or SUPER_ADMIN)
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
 
   const buildProjectShareCopyText = () => {
     const projectData = project as Project & { authMode?: string | null; sharePassword?: string | null }
@@ -334,15 +328,6 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
             <BarChart3 className="w-4 h-4 mr-2" />
             {t('viewAnalytics')}
           </Button>
-
-          {/* Push Project Button - only for ADMIN and SUPER_ADMIN */}
-          {isAdmin && (
-            <FeishuPushButton
-              projectId={project.id}
-              className="w-full"
-              size="default"
-            />
-          )}
 
           {/* Approve/Unapprove Toggle Button - hidden when archived */}
           {project.status !== 'ARCHIVED' && (
