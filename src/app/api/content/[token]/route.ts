@@ -21,6 +21,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const CONTENT_SESSION_WINDOW_SECONDS = 60
+const HLS_MANIFEST_CACHE_TTL_SECONDS = 300
 
 
 /**
@@ -175,6 +176,18 @@ export async function GET(
       if (!(await s3FileExists(hlsPath))) {
         return NextResponse.json({ error: '视频正在处理，请稍后再试', code: 'HLS_NOT_READY' }, { status: 409, headers: { 'Retry-After': '10' } })
       }
+
+      // Cache the rewritten manifest to avoid repeated S3 downloads and
+      // presigning overhead during scrubbing/seeking, where the player may
+      // re-request the manifest several times in quick succession.
+      const manifestCacheKey = `hls_manifest:${hlsPath}`
+      const cachedManifest = await redis.get(manifestCacheKey)
+      if (cachedManifest) {
+        return new NextResponse(cachedManifest, {
+          headers: { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'private, max-age=30', 'Access-Control-Allow-Origin': '*' },
+        })
+      }
+
       const manifestStream = await s3DownloadFile(hlsPath)
       const chunks: Buffer[] = []
       for await (const chunk of manifestStream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
@@ -186,7 +199,9 @@ export async function GET(
         const segmentPath = trimmed.split('?')[0]
         return await s3GetPresignedStreamUrl(`${basePath}${segmentPath}`, 900, 'video/mp2t')
       }))
-      return new NextResponse(rewritten.join('\n'), {
+      const rewrittenManifest = rewritten.join('\n')
+      await redis.setex(manifestCacheKey, HLS_MANIFEST_CACHE_TTL_SECONDS, rewrittenManifest)
+      return new NextResponse(rewrittenManifest, {
         headers: { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'private, max-age=30', 'Access-Control-Allow-Origin': '*' },
       })
     }
