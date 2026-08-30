@@ -18,7 +18,6 @@ import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import { useTranslations } from 'next-intl'
 import VideoReviewStatusSelect from '@/components/VideoReviewStatusSelect'
-import { FeishuPushButton } from '@/components/FeishuPushButton'
 
 const MAX_TOKEN_FETCH_ATTEMPTS = 2
 const TOKEN_FETCH_RETRY_BASE_MS = 120
@@ -45,7 +44,6 @@ export default function AdminSharePage() {
   const pathname = usePathname()
   const id = params?.id as string
 
-  // Parse URL parameters for video seeking (same as public share page)
   const urlTimestamp = searchParams?.get('t') ? parseFloat(searchParams.get('t')!) : null
   const urlVideoName = searchParams?.get('video') || null
   const urlVersion = searchParams?.get('version') ? parseInt(searchParams.get('version')!, 10) : null
@@ -78,8 +76,6 @@ export default function AdminSharePage() {
   const [thumbnailsByName, setThumbnailsByName] = useState<Map<string, string>>(new Map())
   const [thumbnailsLoading, setThumbnailsLoading] = useState(true)
   const tokenCacheRef = useRef<Map<string, any>>(new Map())
-  // Stable per-project session id so tokens are reused across mounts
-  // (server cache key is `video_token_cache:${sessionId}:${videoId}:${quality}`).
   const [sessionId] = useState<string>(() => `admin:${id}`)
   const sessionIdRef = useRef<string>(sessionId)
   const inFlightTokenRequestsRef = useRef<Map<string, Promise<string>>>(new Map())
@@ -175,7 +171,6 @@ export default function AdminSharePage() {
     waitForTokenRetry,
   ])
 
-  // Fetch comments separately for security (same pattern as public share)
   const fetchComments = useCallback(async () => {
     if (!id) return
 
@@ -203,350 +198,197 @@ export default function AdminSharePage() {
       return acc
     }, {})
 
-    // Sort versions within each video name (newest first)
-    Object.keys(videosByName).forEach(name => {
-      videosByName[name].sort((a: any, b: any) => {
-        const versionA = parseInt(a.versionLabel.replace('v', ''), 10)
-        const versionB = parseInt(b.versionLabel.replace('v', ''), 10)
-        return versionB - versionA
-      })
-    })
-
     return {
       ...projectData,
       videosByName,
     }
   }
 
-  const refreshProject = useCallback(async () => {
+  const fetchProject = useCallback(async () => {
+    if (!id) return
+
+    setLoading(true)
     try {
-      const response = await apiFetch(`/api/studio/projects/${id}`, { cache: 'no-store' })
+      const response = await apiFetch(`/api/projects/${id}/share-admin`, { cache: 'no-store' })
       if (response.ok) {
-        const projectData = await response.json()
-        const transformed = transformProjectData(projectData)
-        setProject(transformed)
+        const data = await response.json()
+        setProject(transformProjectData(data.project))
+        setAdminUser(data.adminUser)
+        setCompanyName(data.companyName || 'Studio')
       }
     } catch (error) {
-      // Failed to refresh project
+      // Failed to load project
+    } finally {
+      setLoading(false)
     }
   }, [id])
 
   useEffect(() => {
-    if (!id) {
-      setLoading(false)
-      return
+    fetchProject()
+    fetchComments()
+  }, [fetchProject, fetchComments])
+
+  const refreshProject = useCallback(() => {
+    fetchProject()
+    fetchComments()
+  }, [fetchProject, fetchComments])
+
+  const clientDisplayName = searchParams?.get('client') ?? undefined
+
+  const handleReturnToSource = () => {
+    const from = searchParams?.get('from')
+    if (from === 'analytics') {
+      router.push(`/studio/projects/${id}/analytics`)
+    } else {
+      router.push(`/studio/projects/${id}`)
     }
+  }
 
-    const init = async () => {
-      setLoading(true)
-      try {
-        const [projectResponse, userResponse, settingsResponse] = await Promise.all([
-          apiFetch(`/api/studio/projects/${id}`, { cache: 'no-store' }),
-          apiFetch('/api/auth/user', { cache: 'no-store' }),
-          apiFetch('/api/settings', { cache: 'no-store' }),
-        ])
+  const handleVideoSelect = useCallback((videoName: string) => {
+    setActiveVideoName(videoName)
+    setViewState('player')
+    setInitialSeekTime(null)
+    setInitialVideoIndex(0)
+    setFocusCommentId(null)
 
-        if (projectResponse.ok) {
-          const projectData = await projectResponse.json()
-          const transformed = transformProjectData(projectData)
-          setProject(transformed)
+    const params = new URLSearchParams(searchParams?.toString() || '')
+    params.set('video', videoName)
+    params.delete('version')
+    params.delete('t')
+    params.delete('comment')
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [pathname, router, searchParams])
 
-          if (userResponse.ok) {
-            const userData = await userResponse.json()
-            setAdminUser(userData.user)
-          }
-
-          if (settingsResponse.ok) {
-            const settingsData = await settingsResponse.json()
-            setDefaultQuality(settingsData.defaultQuality || '720p')
-            setCompanyName(settingsData.companyName || 'Studio')
-          }
-
-          // Fetch comments
-          await fetchComments()
-        } else {
-          console.error('Failed to load project')
-        }
-      } catch (error) {
-        console.error('Error loading admin share data:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    init()
-  }, [id, fetchComments])
-
-  useEffect(() => {
-    if (!project) return
-
-    const fetchThumbnails = async () => {
-      setThumbnailsLoading(true)
-      const newThumbnails = new Map<string, string>()
-
-      try {
-        await Promise.all(
-          Object.keys(project.videosByName).map(async (videoName) => {
-            const versions = project.videosByName[videoName]
-            const latestReadyVideo = versions.find((v: any) => v.status === 'READY')
-
-            if (latestReadyVideo?.thumbnailUrl) {
-              const token = await fetchAdminVideoTokenWithRetry(
-                latestReadyVideo.id,
-                '720p',
-                sessionIdRef.current
-              )
-
-              if (token) {
-                const url = `${latestReadyVideo.thumbnailUrl}?token=${token}`
-                newThumbnails.set(videoName, url)
-              }
-            }
-          })
-        )
-
-        setThumbnailsByName(newThumbnails)
-      } catch (error) {
-        console.error('Error fetching thumbnails:', error)
-      } finally {
-        setThumbnailsLoading(false)
-      }
-    }
-
-    fetchThumbnails()
-  }, [project, fetchAdminVideoTokenWithRetry])
+  const handleGridVideoSelect = useCallback((videoName: string) => {
+    handleVideoSelect(videoName)
+  }, [handleVideoSelect])
 
   useEffect(() => {
     if (!project || !urlVideoName) return
 
-    const targetVersions = project.videosByName[urlVideoName]
-    if (!targetVersions || targetVersions.length === 0) {
+    const matchedVersions = project.videosByName[urlVideoName] || []
+    if (matchedVersions.length === 0) {
       setTokensLoading(false)
       return
     }
 
-    const readyVersions = targetVersions.filter((v: any) => v.status === 'READY')
-    if (readyVersions.length === 0) {
+    const targetVideo = urlVersion !== null
+      ? matchedVersions.find((v: any) => v.version === urlVersion)
+      : matchedVersions.reduce((latest: any, current: any) =>
+          new Date(current.uploadedAt) > new Date(latest.uploadedAt) ? current : latest
+        )
+
+    if (!targetVideo) {
       setTokensLoading(false)
       return
     }
 
-    let targetVideo: any
-    if (urlVersion !== null) {
-      targetVideo = readyVersions.find((v: any) => {
-        const versionNumber = parseInt(v.versionLabel.replace('v', ''), 10)
-        return versionNumber === urlVersion
+    const qualities: Array<'720p' | '1080p' | '2160p'> = ['720p', '1080p', '2160p']
+    const sessionId = sessionIdRef.current
+
+    Promise.all(
+      qualities.map((q) =>
+        fetchAdminVideoTokenWithRetry(targetVideo.id, q, sessionId).then((token) => ({ quality: q, token }))
+      )
+    ).then((results) => {
+      const cache = tokenCacheRef.current
+      results.forEach(({ quality, token }) => {
+        if (token) {
+          cache.set(`${targetVideo.id}:${quality}`, token)
+        }
       })
-      if (!targetVideo) {
-        targetVideo = readyVersions[0]
+
+      setActiveVideoName(urlVideoName)
+      setActiveVideos(matchedVersions)
+      setActiveVideosRaw(matchedVersions)
+      setViewState('player')
+
+      if (urlTimestamp !== null) {
+        setInitialSeekTime(urlTimestamp)
       }
-    } else {
-      targetVideo = readyVersions[0]
-    }
 
-    const initializeTargetVideo = async () => {
-      setTokensLoading(true)
-      try {
-        const token720 = await fetchAdminVideoTokenWithRetry(
-          targetVideo.id,
-          '720p',
-          sessionIdRef.current
-        )
-        const token1080 = await fetchAdminVideoTokenWithRetry(
-          targetVideo.id,
-          '1080p',
-          sessionIdRef.current
-        )
-        const token2160 = await fetchAdminVideoTokenWithRetry(
-          targetVideo.id,
-          '2160p',
-          sessionIdRef.current
-        )
-
-        if (token720 || token1080 || token2160) {
-          const cacheKey = targetVideo.id
-          tokenCacheRef.current.set(cacheKey, {
-            '720p': token720,
-            '1080p': token1080,
-            '2160p': token2160,
-          })
-        }
-
-        const targetVersionIndex = readyVersions.findIndex((v: any) => v.id === targetVideo.id)
-        setInitialVideoIndex(targetVersionIndex >= 0 ? targetVersionIndex : 0)
-
-        if (urlTimestamp !== null) {
-          setInitialSeekTime(urlTimestamp)
-        }
-
-        setActiveVideoName(urlVideoName)
-        setViewState('player')
-      } catch (error) {
-        console.error('Error initializing target video:', error)
-      } finally {
-        setTokensLoading(false)
+      const targetIndex = matchedVersions.findIndex((v: any) => v.id === targetVideo.id)
+      if (targetIndex >= 0) {
+        setInitialVideoIndex(targetIndex)
       }
-    }
 
-    initializeTargetVideo()
-  }, [
-    project,
-    urlVideoName,
-    urlVersion,
-    urlTimestamp,
-    fetchAdminVideoTokenWithRetry,
-  ])
+      setTokensLoading(false)
+    })
+  }, [project, urlVideoName, urlVersion, urlTimestamp, fetchAdminVideoTokenWithRetry])
 
   useEffect(() => {
-    if (!project || !activeVideoName) return
+    if (!project) return
+    const videoNames = Object.keys(project.videosByName)
+    if (videoNames.length === 0) return
 
-    const versions = project.videosByName[activeVideoName]
-    if (!versions) {
-      setActiveVideos([])
-      setActiveVideosRaw([])
-      return
-    }
-
-    const readyVersions = versions.filter((v: any) => v.status === 'READY')
-    setActiveVideosRaw(readyVersions)
-
-    const enriched = readyVersions.map((video: any) => {
-      const cacheKey = video.id
-      const cachedTokens = tokenCacheRef.current.get(cacheKey)
-
-      if (cachedTokens) {
-        return {
-          ...video,
-          videoUrl720: cachedTokens['720p']
-            ? `${video.videoUrl720}?token=${cachedTokens['720p']}`
-            : video.videoUrl720,
-          videoUrl1080: cachedTokens['1080p']
-            ? `${video.videoUrl1080}?token=${cachedTokens['1080p']}`
-            : video.videoUrl1080,
-          videoUrl2160: cachedTokens['2160p']
-            ? `${video.videoUrl2160}?token=${cachedTokens['2160p']}`
-            : video.videoUrl2160,
-          thumbnailUrl: cachedTokens['720p']
-            ? `${video.thumbnailUrl}?token=${cachedTokens['720p']}`
-            : video.thumbnailUrl,
-        }
-      }
-
-      return video
+    const tasks = videoNames.map((name) => {
+      const versions = project.videosByName[name]
+      const latestVideo = versions.reduce((latest: any, current: any) =>
+        new Date(current.uploadedAt) > new Date(latest.uploadedAt) ? current : latest
+      )
+      return { name, videoId: latestVideo.id }
     })
 
-    setActiveVideos(enriched)
-  }, [project, activeVideoName])
-
-  const handleVideoSelect = useCallback(
-    async (videoName: string) => {
-      const versions = project?.videosByName[videoName]
-      if (!versions) return
-
-      const readyVersions = versions.filter((v: any) => v.status === 'READY')
-      if (readyVersions.length === 0) return
-
-      setActiveVideoName(videoName)
-      setViewState('player')
-      setInitialSeekTime(null)
-      setInitialVideoIndex(0)
-
-      const latestVideo = readyVersions[0]
-      const cacheKey = latestVideo.id
-      const existingTokens = tokenCacheRef.current.get(cacheKey)
-
-      if (!existingTokens || !existingTokens['720p']) {
-        const [token720, token1080, token2160] = await Promise.all([
-          fetchAdminVideoTokenWithRetry(latestVideo.id, '720p', sessionIdRef.current),
-          fetchAdminVideoTokenWithRetry(latestVideo.id, '1080p', sessionIdRef.current),
-          fetchAdminVideoTokenWithRetry(latestVideo.id, '2160p', sessionIdRef.current),
-        ])
-
-        tokenCacheRef.current.set(cacheKey, {
-          '720p': token720,
-          '1080p': token1080,
-          '2160p': token2160,
-        })
-      }
-    },
-    [project, fetchAdminVideoTokenWithRetry]
-  )
-
-  const handleGridVideoSelect = useCallback(
-    (videoName: string, versionLabel?: string) => {
-      const versions = project?.videosByName[videoName]
-      if (!versions) return
-
-      const readyVersions = versions.filter((v: any) => v.status === 'READY')
-      if (readyVersions.length === 0) return
-
-      let targetIndex = 0
-      if (versionLabel) {
-        const idx = readyVersions.findIndex((v: any) => v.versionLabel === versionLabel)
-        if (idx >= 0) {
-          targetIndex = idx
-        }
-      }
-
-      setActiveVideoName(videoName)
-      setViewState('player')
-      setInitialSeekTime(null)
-      setInitialVideoIndex(targetIndex)
-
-      const targetVideo = readyVersions[targetIndex]
-      if (!targetVideo) return
-
-      const cacheKey = targetVideo.id
-      const existingTokens = tokenCacheRef.current.get(cacheKey)
-
-      if (!existingTokens || !existingTokens['720p']) {
-        Promise.all([
-          fetchAdminVideoTokenWithRetry(targetVideo.id, '720p', sessionIdRef.current),
-          fetchAdminVideoTokenWithRetry(targetVideo.id, '1080p', sessionIdRef.current),
-          fetchAdminVideoTokenWithRetry(targetVideo.id, '2160p', sessionIdRef.current),
-        ]).then(([token720, token1080, token2160]) => {
-          tokenCacheRef.current.set(cacheKey, {
-            '720p': token720,
-            '1080p': token1080,
-            '2160p': token2160,
+    Promise.all(
+      tasks.map(async ({ name, videoId }) => {
+        try {
+          const response = await apiFetch(`/api/studio/thumbnail?videoId=${videoId}&projectId=${id}`, {
+            cache: 'default',
           })
-        })
-      }
-    },
-    [project, fetchAdminVideoTokenWithRetry]
-  )
-
-  const handleReturnToSource = useCallback(() => {
-    router.push(`/studio/projects/${id}`)
-  }, [router, id])
+          if (response.ok) {
+            const data = await response.json()
+            return { name, url: data.thumbnailUrl }
+          }
+        } catch {
+          // ignore
+        }
+        return { name, url: null }
+      })
+    ).then((results) => {
+      const map = new Map<string, string>()
+      results.forEach(({ name, url }) => {
+        if (url) map.set(name, url)
+      })
+      setThumbnailsByName(map)
+      setThumbnailsLoading(false)
+    })
+  }, [project, id])
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">{tc('loading')}</p>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-lg">{t('loading')}</div>
       </div>
     )
   }
 
   if (!project) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">{t('projectNotFound')}</p>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <h2 className="text-xl font-semibold mb-2">{t('projectNotFound')}</h2>
+            <p className="text-muted-foreground mb-4">{t('projectNotFoundDescription')}</p>
+            <Link href="/studio/projects">
+              <Button>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                {t('backToProjects')}
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  const readyVideos = activeVideos.filter((v) => v.status === 'READY')
-  const clientDisplayName = project.clientName || project.recipients?.[0]?.name || 'Client'
-
-  const filteredComments = comments.filter((comment) => {
-    if (!activeVideoState?.selectedVideo) return false
-    return comment.videoId === activeVideoState.selectedVideo.id
-  })
+  const readyVideos = Object.values(project.videosByName).flat().filter((v: any) => v.status === 'READY')
+  const filteredComments = comments.filter((c) => {
+    const videoExists = readyVideos.some((v: any) => v.id === c.videoId)
+    return videoExists
+  })()
 
   const showCommentPanel = !project.hideFeedback
   const canManageApproval = canUserManageApproval(adminUser, project)
-  const isAdmin = adminUser?.role === 'ADMIN' || adminUser?.role === 'SUPER_ADMIN'
   const orderedVideoNames = Object.keys(project.videosByName).sort((a, b) =>
     a.localeCompare(b, undefined, { numeric: true })
   )
@@ -558,13 +400,10 @@ export default function AdminSharePage() {
     ? orderedVideoNames[activeVideoPosition + 1]
     : null
 
-  // Show thumbnail grid when in grid view (same as public share layout)
   if (viewState === 'grid') {
     return (
       <div className="fixed inset-0 bg-background flex flex-col overflow-hidden">
-        {/* Grid view toolbar */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
-          {/* Left: back to project */}
           {canManageApproval && (
             <Button
               variant="ghost"
@@ -578,7 +417,6 @@ export default function AdminSharePage() {
             </Button>
           )}
 
-          {/* Right: view toggle + theme */}
           <div className="flex items-center gap-2 ml-auto">
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
             <LanguageToggle />
@@ -614,7 +452,6 @@ export default function AdminSharePage() {
 
   return (
     <div className="min-h-screen lg:fixed lg:inset-0 bg-background flex flex-col lg:overflow-hidden">
-      {/* Thumbnail Reel - always visible, collapsible */}
       <ThumbnailReel
         videosByName={project.videosByName}
         thumbnailsByName={thumbnailsByName}
@@ -629,25 +466,15 @@ export default function AdminSharePage() {
         isCommentPanelVisible={!hideComments}
         onToggleCommentPanel={() => setHideComments(!hideComments)}
         beforeToolbarAction={canManageApproval ? (
-          <div className="flex items-center gap-2">
-            <VideoReviewStatusSelect
-              projectId={project.id}
-              video={activeVideoState?.selectedVideo || null}
-              onUpdated={refreshProject}
-              className="h-8"
-            />
-            {activeVideoState?.selectedVideo && isAdmin && (
-              <FeishuPushButton
-                projectId={project.id}
-                videoId={activeVideoState.selectedVideo.id}
-                size="sm"
-              />
-            )}
-          </div>
+          <VideoReviewStatusSelect
+            projectId={project.id}
+            video={activeVideoState?.selectedVideo || null}
+            onUpdated={refreshProject}
+            className="h-8"
+          />
         ) : undefined}
         trailingAction={<ReviewLoginActions compact />}
       />
-      {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
         {readyVideos.length === 0 ? (
           <div className="flex-1 flex items-center justify-center p-4">
@@ -661,7 +488,6 @@ export default function AdminSharePage() {
           </div>
         ) : (
           <>
-            {/* Video Player - natural height on mobile, fills space on desktop */}
             <div className={`flex min-w-0 flex-col rounded-[6px] bg-muted/80 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 lg:pb-[11.5px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={readyVideos}
@@ -702,7 +528,6 @@ export default function AdminSharePage() {
               <div id="review-comment-composer" className="lg:mt-auto" />
             </div>
 
-            {/* Comments Section - max one screen height on mobile, side panel on desktop */}
             {showCommentPanel && (
               <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden bg-card lg:max-h-full lg:w-[360px] lg:flex-none">
                 <div aria-hidden="true" className="hidden h-3 shrink-0 bg-muted/80 lg:block" />
