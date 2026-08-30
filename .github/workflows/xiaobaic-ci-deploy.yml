@@ -117,6 +117,7 @@ jobs:
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GHCR_PROXY_SUBSCRIPTION: ${{ secrets.GHCR_PROXY_SUBSCRIPTION }}
+      TENCENT_MPS_TEMPLATE_ID: ${{ secrets.TENCENT_MPS_TEMPLATE_ID }}
     steps:
       - name: Pull through Germany proxy and deploy with rollback
         uses: appleboy/ssh-action@v1.2.2
@@ -124,7 +125,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: DEPLOY_SHA,DEPLOY_IMAGE,GHCR_USERNAME,GHCR_TOKEN,GHCR_PROXY_SUBSCRIPTION
+          envs: DEPLOY_SHA,DEPLOY_IMAGE,GHCR_USERNAME,GHCR_TOKEN,GHCR_PROXY_SUBSCRIPTION,TENCENT_MPS_TEMPLATE_ID
           command_timeout: 35m
           script: |
             set -eu
@@ -149,7 +150,12 @@ jobs:
             image_tar="/tmp/xiaobaic-review-$DEPLOY_SHA.tar"
             auth_dir="/tmp/xiaobaic-review-ghcr-auth-$DEPLOY_SHA"
             env_backup="/tmp/xiaobaic-review-env-$DEPLOY_SHA"
-            target_mps_template_id=1796772
+            target_mps_template_id="$TENCENT_MPS_TEMPLATE_ID"
+
+            if [ -z "$target_mps_template_id" ]; then
+              echo "TENCENT_MPS_TEMPLATE_ID is not configured"
+              exit 1
+            fi
 
             cd "$app_dir"
             docker image inspect "$live_tag" >/dev/null
