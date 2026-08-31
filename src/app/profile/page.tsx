@@ -5,6 +5,7 @@ import { ArrowLeft, Camera, Check, KeyRound, LogOut, Save, UserRound } from 'luc
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
+import { FeishuBindingPrompt } from '@/components/FeishuBindingPrompt'
 import ThemeToggle from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -228,6 +229,7 @@ function ProfileContent() {
                 <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>
                   绑定微信
                 </WechatMiniQrLogin>
+                <FeishuBindingPrompt onBound={() => setMessage('飞书绑定成功')} />
               </div>
             </form>
           </section>
