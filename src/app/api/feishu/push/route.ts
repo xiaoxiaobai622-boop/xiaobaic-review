@@ -22,7 +22,35 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { scope, projectId, videoId, videoIds, rePushAll = false } = body
+    const { retryNotificationId } = body
+    const retryNotification = retryNotificationId
+      ? await prisma.feishuNotification.findUnique({
+          where: { id: retryNotificationId },
+          select: {
+            id: true,
+            projectId: true,
+            videoId: true,
+            scope: true,
+            commentIds: true,
+            uploaderId: true,
+            retryCount: true,
+            status: true,
+          },
+        })
+      : null
+
+    if (retryNotificationId && !retryNotification) {
+      return NextResponse.json({ error: 'Notification not found' }, { status: 404 })
+    }
+    if (retryNotification && retryNotification.status !== 'FAILED') {
+      return NextResponse.json({ error: 'Only failed notifications can be retried' }, { status: 400 })
+    }
+
+    const scope = retryNotification?.scope ?? body.scope
+    const projectId = retryNotification?.projectId ?? body.projectId
+    const videoId = retryNotification?.videoId ?? body.videoId
+    const videoIds = retryNotification ? undefined : body.videoIds
+    const rePushAll = retryNotification ? true : (body.rePushAll ?? false)
 
     if (!scope || !projectId) {
       return NextResponse.json(
@@ -78,7 +106,7 @@ export async function POST(request: NextRequest) {
 
       comments = await prisma.comment.findMany({
         where: { projectId, videoId },
-        select: { id: true, timecode: true, content: true },
+        select: { id: true, videoId: true, timecode: true, content: true },
         orderBy: { timecode: 'asc' },
       })
 
@@ -109,6 +137,17 @@ export async function POST(request: NextRequest) {
       })
 
       uploader = videos[0]?.uploadedBy
+    }
+
+    if (retryNotification?.uploaderId) {
+      uploader = retryNotification.uploaderId
+    }
+
+    if (retryNotification) {
+      const retryCommentIds = new Set(retryNotification.commentIds)
+      comments = comments.filter((comment: any) => retryCommentIds.has(comment.id))
+      const commentVideoIds = new Set(comments.map((comment: any) => comment.videoId).filter(Boolean))
+      videos = videos.filter((video: any) => commentVideoIds.has(video.id))
     }
 
     if (!uploader) {
@@ -217,6 +256,7 @@ export async function POST(request: NextRequest) {
         uploaderId: uploader,
         uploaderOpenId: uploaderUser.feishuBinding.openId,
         status: 'PENDING',
+        retryCount: retryNotification ? retryNotification.retryCount + 1 : 1,
       },
     })
 
@@ -259,7 +299,6 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'FAILED',
           errorMessage: sendError instanceof Error ? sendError.message : String(sendError),
-          retryCount: 1,
         },
       })
 

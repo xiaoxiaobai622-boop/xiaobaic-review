@@ -130,23 +130,19 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Check if uploader has Feishu binding
+    // Video.uploadedBy is legacy metadata without a foreign key. A deleted
+    // user should still produce a useful preview, but cannot receive Feishu.
     const uploaderUser = await prisma.user.findUnique({
       where: { id: uploader },
       select: { id: true, name: true, avatarUrl: true },
     })
 
-    if (!uploaderUser) {
-      return NextResponse.json(
-        { error: 'Uploader user not found' },
-        { status: 404 }
-      )
-    }
-
-    const uploaderBinding = await prisma.feishuBinding.findUnique({
-      where: { userId: uploader },
-      select: { nickname: true, avatarUrl: true },
-    })
+    const uploaderBinding = uploaderUser
+      ? await prisma.feishuBinding.findUnique({
+          where: { userId: uploaderUser.id },
+          select: { nickname: true, avatarUrl: true },
+        })
+      : null
 
     const isBound = !!uploaderBinding
 
@@ -158,6 +154,17 @@ export async function GET(request: NextRequest) {
         status: 'SENT',
       },
       select: { commentIds: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    const lastAttempt = await prisma.feishuNotification.findFirst({
+      where: {
+        projectId,
+        scope,
+        ...(scope === 'video' && videoId ? { videoId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, status: true, errorMessage: true, retryCount: true, createdAt: true },
     })
 
     const pushedCommentIds = new Set(
@@ -214,8 +221,8 @@ export async function GET(request: NextRequest) {
           unpushedComments: videoUnpushed.length,
           lastPushAt: lastPush?.createdAt || null,
           uploader: {
-            id: videoUploader?.id || '',
-            name: videoUploader?.name || null,
+          id: videoUploader?.id || video.uploadedBy || '',
+          name: videoUploader?.name || video.uploadedByName || null,
             avatarUrl: videoUploader?.avatarUrl || null,
             feishuNickname: videoBinding?.nickname || undefined,
             feishuAvatar: videoBinding?.avatarUrl || undefined,
@@ -238,15 +245,23 @@ export async function GET(request: NextRequest) {
       pushedComments: comments.length - unpushedComments.length,
       unpushedComments: unpushedComments.length,
       recipient: {
-        userId: uploaderUser.id,
-        name: uploaderUser.name,
+        userId: uploaderUser?.id || uploader,
+        name: uploaderUser?.name || videos[0]?.uploadedByName || null,
         feishuNickname: uploaderBinding?.nickname || undefined,
-        avatarUrl: uploaderUser.avatarUrl,
+        avatarUrl: uploaderUser?.avatarUrl || null,
         feishuAvatar: uploaderBinding?.avatarUrl || undefined,
         isBound,
       },
       hasPreviousPush: previousNotifications.length > 0,
       lastPushAt: previousNotifications[0]?.createdAt || null,
+      lastFailedPush: lastAttempt?.status === 'FAILED'
+        ? {
+            id: lastAttempt.id,
+            errorMessage: lastAttempt.errorMessage,
+            retryCount: lastAttempt.retryCount,
+            createdAt: lastAttempt.createdAt,
+          }
+        : null,
     })
   } catch (error) {
     console.error('Preview push error:', error)

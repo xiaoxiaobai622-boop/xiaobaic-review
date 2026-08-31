@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Send, AlertTriangle, ChevronDown, ChevronUp, Check } from 'lucide-react'
+import { Send, AlertTriangle, ChevronDown, ChevronUp, Check, RotateCcw } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -14,6 +14,15 @@ import {
 import { apiFetch } from '@/lib/api-client'
 import { Label } from './ui/label'
 import { InitialsAvatar } from './InitialsAvatar'
+
+async function getApiError(response: Response, fallback: string) {
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    const data = await response.json().catch(() => null)
+    if (data?.error) return data.error
+  }
+  return `${fallback}（HTTP ${response.status}）`
+}
 
 interface FeishuPushButtonProps {
   projectId: string
@@ -56,6 +65,12 @@ interface PushPreview {
   }
   hasPreviousPush: boolean
   lastPushAt: string | null
+  lastFailedPush?: {
+    id: string
+    errorMessage: string | null
+    retryCount: number
+    createdAt: string
+  } | null
 }
 
 export function FeishuPushButton({ projectId, videoId, className = '', size = 'default' }: FeishuPushButtonProps) {
@@ -68,6 +83,7 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
   const [selectedVideos, setSelectedVideos] = useState<Set<string>>(new Set())
   const [expandedList, setExpandedList] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
   const handleOpen = async () => {
     setOpen(true)
@@ -84,8 +100,7 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
       const query = videoId ? `?videoId=${videoId}` : ''
       const res = await apiFetch(`/api/feishu/push/${projectId}/preview${query}`)
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || '预览失败')
+        throw new Error(await getApiError(res, '预览失败'))
       }
       const data = await res.json()
 
@@ -158,22 +173,24 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
     setError(null)
 
     try {
-      const query = videoId ? `?videoId=${videoId}` : ''
-      const body = rePushAll
-        ? { rePushAll: true }
-        : preview.scope === 'project'
-        ? { videoIds: Array.from(selectedVideos) }
-        : {}
+      const body = {
+        scope: preview.scope,
+        projectId,
+        ...(preview.scope === 'video' && videoId ? { videoId } : {}),
+        ...(rePushAll ? { rePushAll: true } : {}),
+        ...(preview.scope === 'project' && !rePushAll
+          ? { videoIds: Array.from(selectedVideos) }
+          : {}),
+      }
 
-      const res = await apiFetch(`/api/feishu/push/${projectId}${query}`, {
+      const res = await apiFetch('/api/feishu/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
 
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || '推送失败')
+        throw new Error(await getApiError(res, '推送失败'))
       }
 
       setSuccess(true)
@@ -182,6 +199,29 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
       setError(err.message || '未知错误')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleRetry = async () => {
+    const notificationId = preview?.lastFailedPush?.id
+    if (!notificationId) return
+
+    setRetrying(true)
+    setError(null)
+    try {
+      const res = await apiFetch('/api/feishu/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retryNotificationId: notificationId }),
+      })
+      if (!res.ok) {
+        throw new Error(await getApiError(res, '重试失败'))
+      }
+      setSuccess(true)
+    } catch (err: any) {
+      setError(err.message || '重试失败')
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -445,6 +485,32 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
                           })}
                         </p>
                       )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {preview.lastFailedPush && (
+                <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-sm font-medium">上次推送失败</p>
+                      <p className="text-xs text-muted-foreground break-words">
+                        {preview.lastFailedPush.errorMessage || '飞书接口返回错误'}
+                        {' · '}第 {preview.lastFailedPush.retryCount} 次尝试
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRetry}
+                        disabled={loading || retrying || !preview.recipient.isBound}
+                        className="mt-1"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        {retrying ? '重试中...' : '重试发送'}
+                      </Button>
                     </div>
                   </div>
                 </div>
