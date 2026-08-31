@@ -45,7 +45,24 @@ function ProfileContent() {
   useEffect(() => {
     setReturnUrl(safeReviewReturnUrl())
     setPhoneReturnUrl(safeStudioReturnUrl())
-    setRequirePhone(new URLSearchParams(window.location.search).get('requirePhone') === '1')
+    const params = new URLSearchParams(window.location.search)
+    setRequirePhone(params.get('requirePhone') === '1')
+
+    // Surface the Feishu OAuth callback result, then clean the URL so a
+    // refresh doesn't show a stale message.
+    if (params.get('feishu_success') === 'true') {
+      setMessage('飞书绑定成功')
+    } else if (params.get('feishu_error')) {
+      setError(params.get('feishu_error') === 'invalid_state'
+        ? '飞书授权已过期，请重新绑定'
+        : '飞书绑定失败，请稍后重试')
+    }
+    if (params.has('feishu_success') || params.has('feishu_error')) {
+      params.delete('feishu_success')
+      params.delete('feishu_error')
+      const qs = params.toString()
+      window.history.replaceState({}, '', qs ? `/profile?${qs}` : '/profile')
+    }
   }, [])
 
   useEffect(() => {

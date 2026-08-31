@@ -7,6 +7,16 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
+ * Build an absolute redirect URL from the public app origin. Inside Docker,
+ * request.url resolves to http://localhost:4321, which the user's browser
+ * cannot reach.
+ */
+function redirectTo(path: string): NextResponse {
+  const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://mle6.cn').replace(/\/$/, '')
+  return NextResponse.redirect(`${base}${path}`)
+}
+
+/**
  * GET /api/auth/feishu/callback
  *
  * Feishu OAuth callback. Receives authorization code and creates/updates binding.
@@ -22,7 +32,7 @@ export async function GET(request: NextRequest) {
     const storedUserId = request.cookies.get('feishu_oauth_user_id')?.value
 
     if (!code || !state || !storedState || state !== storedState || !storedUserId) {
-      return NextResponse.redirect(new URL('/settings?feishu_error=invalid_state', request.url))
+      return redirectTo('/profile?feishu_error=invalid_state')
     }
 
     // Exchange code for user info
@@ -51,13 +61,13 @@ export async function GET(request: NextRequest) {
     logMessage(`User ${storedUserId} bound Feishu account: ${feishuUser.openId}`)
 
     // Clear OAuth cookies
-    const response = NextResponse.redirect(new URL('/settings?feishu_success=true', request.url))
+    const response = redirectTo('/profile?feishu_success=true')
     response.cookies.delete('feishu_oauth_state')
     response.cookies.delete('feishu_oauth_user_id')
 
     return response
   } catch (error) {
     logError('Feishu OAuth callback error:', error)
-    return NextResponse.redirect(new URL('/settings?feishu_error=failed', request.url))
+    return redirectTo('/profile?feishu_error=failed')
   }
 }

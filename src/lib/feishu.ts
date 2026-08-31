@@ -88,8 +88,11 @@ export async function getTenantAccessToken(): Promise<string> {
  * User clicks this URL to authorize the app.
  */
 export function getFeishuAuthUrl(state: string): string {
+  if (!FEISHU_APP_ID) throw new Error('FEISHU_APP_ID is not configured')
+  if (!FEISHU_OAUTH_REDIRECT_URI) throw new Error('FEISHU_OAUTH_REDIRECT_URI is not configured')
+
   const params = new URLSearchParams({
-    app_id: FEISHU_APP_ID!,
+    app_id: FEISHU_APP_ID,
     redirect_uri: FEISHU_OAUTH_REDIRECT_URI,
     state,
   })
@@ -111,11 +114,17 @@ interface FeishuUserInfo {
  */
 export async function exchangeCodeForUser(code: string): Promise<FeishuUserInfo> {
   try {
+    // The oidc/access_token endpoint requires a tenant_access_token so Feishu
+    // can identify which app is exchanging the code. Without it the API
+    // returns code 20014.
+    const tenantToken = await getTenantAccessToken()
+
     // Step 1: Exchange code for user_access_token
     const tokenResponse = await fetch(`${FEISHU_API_BASE}/authen/v1/oidc/access_token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${tenantToken}`,
       },
       body: JSON.stringify({
         grant_type: 'authorization_code',
@@ -126,7 +135,7 @@ export async function exchangeCodeForUser(code: string): Promise<FeishuUserInfo>
     const tokenData = await tokenResponse.json()
 
     if (tokenData.code !== 0) {
-      throw new Error(`Failed to exchange code: ${tokenData.msg} (code: ${tokenData.code})`)
+      throw new Error(`Failed to exchange code: ${tokenData.msg || JSON.stringify(tokenData)} (code: ${tokenData.code})`)
     }
 
     const userAccessToken = tokenData.data.access_token
