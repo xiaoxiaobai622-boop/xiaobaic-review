@@ -37,6 +37,8 @@ model User {
   projectMemberships ProjectMember[]
   wechatIdentities   WechatIdentity[]
   feishuBinding      FeishuBinding?
+  feishuNotificationsSent     FeishuNotification[] @relation("FeishuNotificationSender")
+  feishuNotificationsReceived FeishuNotification[] @relation("FeishuNotificationUploader")
 }
 
 // WeChat identities are separate from admin users. The unionId index allows a
@@ -459,6 +461,7 @@ model Video {
   analytics    VideoAnalytics[]
   assets       VideoAsset[]
   comments     Comment[]
+  feishuNotifications FeishuNotification[]
 
   @@unique([projectId, name, version])
   @@index([projectId, version])
@@ -1144,10 +1147,14 @@ model FeishuNotification {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  video    Video?  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user     User    @relation("FeishuNotificationSender", fields: [userId], references: [id], onDelete: Cascade)
+  uploader User    @relation("FeishuNotificationUploader", fields: [uploaderId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([videoId])
-  @@index([userId])
+  @@index([uploaderId])
   @@index([status])
+  @@index([createdAt])
 }
