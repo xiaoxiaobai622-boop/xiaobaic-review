@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Camera, Check, KeyRound, LogOut, Save, UserRound } from 'lucide-react'
+import { ArrowLeft, Camera, Check, KeyRound, LogOut, MessageSquare, Save, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
@@ -228,6 +228,14 @@ function ProfileContent() {
                 <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>
                   绑定微信
                 </WechatMiniQrLogin>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => { window.location.href = '/api/auth/feishu/authorize' }}
+                >
+                  <MessageSquare className="h-4 w-4" />绑定飞书
+                </Button>
               </div>
             </form>
           </section>
