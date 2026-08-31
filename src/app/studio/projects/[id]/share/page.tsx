@@ -18,6 +18,7 @@ import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import { useTranslations } from 'next-intl'
 import VideoReviewStatusSelect from '@/components/VideoReviewStatusSelect'
+import { FeishuPushButton } from '@/components/FeishuPushButton'
 
 const MAX_TOKEN_FETCH_ATTEMPTS = 2
 const TOKEN_FETCH_RETRY_BASE_MS = 120
@@ -594,6 +595,7 @@ export default function AdminSharePage() {
 
   const showCommentPanel = !project.hideFeedback
   const canManageApproval = canUserManageApproval(adminUser, project)
+  const isAdmin = adminUser?.role === 'ADMIN' || adminUser?.role === 'SUPER_ADMIN'
   const orderedVideoNames = Object.keys(project.videosByName).sort((a, b) =>
     a.localeCompare(b, undefined, { numeric: true })
   )
@@ -676,12 +678,21 @@ export default function AdminSharePage() {
         isCommentPanelVisible={!hideComments}
         onToggleCommentPanel={() => setHideComments(!hideComments)}
         beforeToolbarAction={canManageApproval ? (
-          <VideoReviewStatusSelect
-            projectId={project.id}
-            video={activeVideoState?.selectedVideo || null}
-            onUpdated={refreshProject}
-            className="h-8"
-          />
+          <div className="flex items-center gap-2">
+            <VideoReviewStatusSelect
+              projectId={project.id}
+              video={activeVideoState?.selectedVideo || null}
+              onUpdated={refreshProject}
+              className="h-8"
+            />
+            {activeVideoState?.selectedVideo && isAdmin && (
+              <FeishuPushButton
+                projectId={project.id}
+                videoId={activeVideoState.selectedVideo.id}
+                size="sm"
+              />
+            )}
+          </div>
         ) : undefined}
         trailingAction={<ReviewLoginActions compact />}
       />
