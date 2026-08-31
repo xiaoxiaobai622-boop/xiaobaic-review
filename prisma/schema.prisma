@@ -36,6 +36,7 @@ model User {
   savedViews         AdminSavedView[]
   projectMemberships ProjectMember[]
   wechatIdentities   WechatIdentity[]
+  feishuBinding      FeishuBinding?
 }
 
 // WeChat identities are separate from admin users. The unionId index allows a
@@ -352,6 +353,7 @@ model Project {
   photoAlbums       PhotoAlbum[] // Photo gallery albums
   recycleBinItems   RecycleBinItem[]
   members           ProjectMember[]
+  feishuNotifications    FeishuNotification[]
 
   @@unique([teamId, projectCode])
   @@unique([teamId, shareSlug])
@@ -1105,4 +1107,39 @@ model ClientContact {
 
   @@index([companyId])
   @@index([email])
+}
+
+// Feishu Integration
+model FeishuBinding {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  openId      String   @unique
+  unionId     String
+  name        String
+  avatarUrl   String?
+  tenantKey   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feishuNotifications FeishuNotification[]
+
+  @@index([openId])
+  @@index([unionId])
+}
+
+model FeishuNotification {
+  id        String   @id @default(cuid())
+  bindingId String
+  projectId String
+  messageId String?
+  title     String
+  content   String
+  sentAt    DateTime @default(now())
+
+  binding FeishuBinding @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([bindingId])
+  @@index([projectId])
 }
