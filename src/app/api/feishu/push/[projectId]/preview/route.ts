@@ -6,20 +6,24 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * POST /api/feishu/push/preview
+ * GET /api/feishu/push/[projectId]/preview?videoId=xxx
  *
  * Preview what would be pushed (statistics and recipient info).
  * Used before actual push to show confirmation dialog.
  */
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { scope, projectId, videoId } = body
+    // Extract projectId from URL path and videoId from query params
+    const url = new URL(request.url)
+    const pathParts = url.pathname.split('/')
+    const projectId = pathParts[pathParts.length - 2] // .../push/[projectId]/preview
+    const videoId = url.searchParams.get('videoId')
+    const scope = videoId ? 'video' : 'project'
 
     if (!scope || !projectId) {
       return NextResponse.json(
@@ -50,7 +54,7 @@ export async function POST(request: NextRequest) {
     let videos
     let uploader
 
-    if (scope === 'video') {
+    if (scope === 'video' && videoId) {
       // Single video scope
       const video = await prisma.video.findUnique({
         where: { id: videoId },
@@ -80,8 +84,8 @@ export async function POST(request: NextRequest) {
       videos = [video]
       uploader = video.uploadedBy
     } else {
-      // Project scope
-      videos = await prisma.video.findMany({
+      // Project scope - get all videos and keep only the latest version of each
+      const allVideos = await prisma.video.findMany({
         where: { projectId },
         select: {
           id: true,
@@ -91,8 +95,18 @@ export async function POST(request: NextRequest) {
           uploadedBy: true,
           uploadedByName: true,
         },
-        orderBy: [{ name: 'asc' }, { version: 'asc' }],
+        orderBy: [{ name: 'asc' }, { version: 'desc' }],
       })
+
+      // Group by video name and keep only the highest version
+      const videoMap = new Map<string, typeof allVideos[0]>()
+      for (const video of allVideos) {
+        const existing = videoMap.get(video.name)
+        if (!existing || video.version > existing.version) {
+          videoMap.set(video.name, video)
+        }
+      }
+      videos = Array.from(videoMap.values())
 
       const videoIds = videos.map((v) => v.id)
 
@@ -119,13 +133,7 @@ export async function POST(request: NextRequest) {
     // Check if uploader has Feishu binding
     const uploaderUser = await prisma.user.findUnique({
       where: { id: uploader },
-      select: {
-        id: true,
-        name: true,
-        feishuBinding: {
-          select: { id: true, nickname: true },
-        },
-      },
+      select: { id: true, name: true, avatarUrl: true },
     })
 
     if (!uploaderUser) {
@@ -135,7 +143,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const isBound = !!uploaderUser.feishuBinding
+    const uploaderBinding = await prisma.feishuBinding.findUnique({
+      where: { userId: uploader },
+      select: { nickname: true, avatarUrl: true },
+    })
+
+    const isBound = !!uploaderBinding
 
     // Find previously pushed comments
     const previousNotifications = await prisma.feishuNotification.findMany({
@@ -153,13 +166,64 @@ export async function POST(request: NextRequest) {
 
     const unpushedComments = comments.filter((c: any) => !pushedCommentIds.has(c.id))
 
-    // Group comments by video for project scope
-    const commentsByVideo = scope === 'project'
-      ? videos.map((v: any) => ({
-          video: v,
-          count: comments.filter((c: any) => c.videoId === v.id).length,
-        }))
-      : []
+    // Group comments by video for project scope with detailed push status
+    const videoListWithStatus: any[] = []
+    if (scope === 'project') {
+      for (const video of videos) {
+        const videoComments = comments.filter((c: any) => c.videoId === video.id)
+        if (videoComments.length === 0) continue // Skip videos without comments
+
+        // Find last push for this video
+        const lastPush = await prisma.feishuNotification.findFirst({
+          where: {
+            projectId,
+            videoId: video.id,
+            status: 'SENT',
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true, commentIds: true },
+        })
+
+        const videoPushedIds = new Set(lastPush?.commentIds || [])
+        const videoUnpushed = videoComments.filter((c: any) => !videoPushedIds.has(c.id))
+
+        // Get this video's uploader and their Feishu binding.
+        // Queried separately instead of via nested select to keep the types simple.
+        const uploaderId = video.uploadedBy
+        const videoUploader = uploaderId
+          ? await prisma.user.findUnique({
+              where: { id: uploaderId },
+              select: { id: true, name: true, avatarUrl: true },
+            })
+          : null
+        const videoBinding = uploaderId
+          ? await prisma.feishuBinding.findUnique({
+              where: { userId: uploaderId },
+              select: { nickname: true, avatarUrl: true },
+            })
+          : null
+
+        videoListWithStatus.push({
+          video: {
+            id: video.id,
+            name: video.name,
+            versionLabel: video.versionLabel,
+          },
+          totalComments: videoComments.length,
+          pushedComments: videoComments.length - videoUnpushed.length,
+          unpushedComments: videoUnpushed.length,
+          lastPushAt: lastPush?.createdAt || null,
+          uploader: {
+            id: videoUploader?.id || '',
+            name: videoUploader?.name || null,
+            avatarUrl: videoUploader?.avatarUrl || null,
+            feishuNickname: videoBinding?.nickname || undefined,
+            feishuAvatar: videoBinding?.avatarUrl || undefined,
+            isBound: !!videoBinding,
+          },
+        })
+      }
+    }
 
     return NextResponse.json({
       scope,
@@ -169,14 +233,16 @@ export async function POST(request: NextRequest) {
         code: project.projectCode,
       },
       videos: scope === 'video' ? videos[0] : undefined,
-      videoList: scope === 'project' ? commentsByVideo : undefined,
+      videoList: scope === 'project' ? videoListWithStatus : undefined,
       totalComments: comments.length,
       pushedComments: comments.length - unpushedComments.length,
       unpushedComments: unpushedComments.length,
       recipient: {
         userId: uploaderUser.id,
         name: uploaderUser.name,
-        feishuNickname: uploaderUser.feishuBinding?.nickname,
+        feishuNickname: uploaderBinding?.nickname || undefined,
+        avatarUrl: uploaderUser.avatarUrl,
+        feishuAvatar: uploaderBinding?.avatarUrl || undefined,
         isBound,
       },
       hasPreviousPush: previousNotifications.length > 0,

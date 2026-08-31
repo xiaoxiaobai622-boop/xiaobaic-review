@@ -41,6 +41,8 @@ function ProfileContent() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' })
+  const [feishuBinding, setFeishuBinding] = useState<{ bound: boolean; nickname?: string } | null>(null)
+  const [feishuLoading, setFeishuLoading] = useState(false)
 
   useEffect(() => {
     setReturnUrl(safeReviewReturnUrl())
@@ -63,6 +65,19 @@ function ProfileContent() {
       const qs = params.toString()
       window.history.replaceState({}, '', qs ? `/profile?${qs}` : '/profile')
     }
+
+    // Fetch Feishu binding status
+    apiFetch('/api/feishu/binding', { cache: 'no-store' })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json()
+          setFeishuBinding({
+            bound: data.bound || false,
+            nickname: data.feishuNickname,
+          })
+        }
+      })
+      .catch(() => setFeishuBinding({ bound: false }))
   }, [])
 
   useEffect(() => {
@@ -159,6 +174,30 @@ function ProfileContent() {
       window.location.href = data.authUrl
     } catch (bindError) {
       setError(bindError instanceof Error ? bindError.message : '飞书绑定失败')
+    }
+  }
+
+  async function unbindFeishu() {
+    if (!confirm('确认解除飞书绑定吗？解绑后将无法接收批注意见通知。')) {
+      return
+    }
+    setFeishuLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await apiFetch('/api/feishu/unbind', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      if (!response.ok) {
+        throw new Error('解绑失败')
+      }
+      setFeishuBinding({ bound: false })
+      setMessage('已解除飞书绑定')
+    } catch (unbindError) {
+      setError(unbindError instanceof Error ? unbindError.message : '解绑失败，请稍后重试')
+    } finally {
+      setFeishuLoading(false)
     }
   }
 
@@ -260,16 +299,66 @@ function ProfileContent() {
                 <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>
                   绑定微信
                 </WechatMiniQrLogin>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => void bindFeishu()}
-                >
-                  <MessageSquare className="h-4 w-4" />绑定飞书
-                </Button>
+
               </div>
             </form>
+          </section>
+
+          <section aria-labelledby="feishu-title" className="border-t border-border pt-8">
+            <div className="mb-5 flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              <h2 id="feishu-title" className="text-lg font-semibold">飞书通知</h2>
+            </div>
+            <div className="max-w-xl space-y-4">
+              {feishuBinding === null ? (
+                <p className="text-sm text-muted-foreground">加载中...</p>
+              ) : feishuBinding.bound ? (
+                <>
+                  <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium">当前状态：</span>
+                      <span className="text-green-600 dark:text-green-400">✓ 已绑定</span>
+                    </div>
+                    {feishuBinding.nickname && (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                        <span>飞书账号：</span>
+                        <span>{feishuBinding.nickname}</span>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => void unbindFeishu()}
+                    disabled={feishuLoading}
+                  >
+                    {feishuLoading ? '解绑中...' : '解除绑定'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium">当前状态：</span>
+                      <span className="text-muted-foreground">未绑定</span>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      绑定飞书后，可以及时收到逐帧审阅批注意见通知。
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => void bindFeishu()}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    绑定飞书
+                  </Button>
+                </>
+              )}
+            </div>
           </section>
 
           <section aria-labelledby="password-title" className="border-t border-border pt-8">

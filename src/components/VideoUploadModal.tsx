@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
+import { FeishuBindingPrompt } from './FeishuBindingPrompt'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -735,6 +736,13 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Feishu binding prompt - show after all uploads complete */}
+          {allCompleted && (
+            <div className="pt-2">
+              <FeishuBindingPrompt />
             </div>
           )}
 

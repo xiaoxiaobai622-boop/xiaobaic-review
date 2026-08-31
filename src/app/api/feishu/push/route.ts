@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { scope, projectId, videoId, rePushAll = false } = body
+    const { scope, projectId, videoId, videoIds, rePushAll = false } = body
 
     if (!scope || !projectId) {
       return NextResponse.json(
@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
     if (scope === 'video' && !videoId) {
       return NextResponse.json(
         { error: 'videoId is required for video scope' },
+        { status: 400 }
+      )
+    }
+
+    if (scope === 'project' && !videoIds && !rePushAll) {
+      return NextResponse.json(
+        { error: 'videoIds is required for project scope' },
         { status: 400 }
       )
     }
@@ -78,8 +85,12 @@ export async function POST(request: NextRequest) {
       videos = [video]
       uploader = video.uploadedBy
     } else {
+      // Project scope - filter by videoIds if provided
       videos = await prisma.video.findMany({
-        where: { projectId },
+        where: {
+          projectId,
+          ...(videoIds ? { id: { in: videoIds } } : {}),
+        },
         select: {
           id: true,
           name: true,
@@ -90,9 +101,9 @@ export async function POST(request: NextRequest) {
         orderBy: [{ name: 'asc' }, { version: 'asc' }],
       })
 
-      const videoIds = videos.map((v: any) => v.id)
+      const targetVideoIds = videos.map((v: any) => v.id)
       comments = await prisma.comment.findMany({
-        where: { projectId, videoId: { in: videoIds } },
+        where: { projectId, videoId: { in: targetVideoIds } },
         select: { id: true, videoId: true, timecode: true, content: true },
         orderBy: [{ videoId: 'asc' }, { timecode: 'asc' }],
       })
