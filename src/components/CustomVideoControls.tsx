@@ -23,7 +23,7 @@ interface CustomVideoControlsProps {
   isMuted: boolean
   isFullscreen: boolean
   onPlayPause: () => void
-  onSeek: (time: number) => void
+  onSeek: (time: number, resume?: boolean) => void
   onVolumeChange: (volume: number) => void
   onToggleMute: () => void
   onToggleFullscreen: () => void
@@ -337,6 +337,7 @@ export default function CustomVideoControls({
   const timelineRef = useRef<HTMLDivElement>(null)
   const suppressTimelineClickRef = useRef(false)
   const dragSeekTimeRef = useRef<number | null>(null)
+  const wasPlayingBeforeSeekRef = useRef(false)
   const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const touchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -437,28 +438,36 @@ export default function CustomVideoControls({
     return percentage * videoDuration
   }, [videoDuration])
 
-  const seekFromClientX = useCallback((clientX: number) => {
+  const pauseBeforeSeek = useCallback(() => {
+    const video = videoRef.current
+    // `isPlaying` is intentionally included because a play() request can be
+    // pending while the media element still reports paused.
+    if (video && (isPlaying || !video.paused)) onPlayPause()
+  }, [isPlaying, onPlayPause, videoRef])
+
+  const seekFromClientX = useCallback((clientX: number, resume?: boolean) => {
     const time = getTimeFromClientX(clientX)
-    if (time !== null) onSeek(time)
-  }, [getTimeFromClientX, onSeek])
+    if (time !== null) onSeek(time, resume ?? !videoRef.current?.paused)
+  }, [getTimeFromClientX, onSeek, videoRef])
 
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (suppressTimelineClickRef.current) return
-    seekFromClientX(e.clientX)
-  }, [seekFromClientX])
+    seekFromClientX(e.clientX, isPlaying || !videoRef.current?.paused)
+  }, [isPlaying, seekFromClientX, videoRef])
 
   const handleTimelinePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button, input, a')) return
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    videoRef.current?.pause()
+    wasPlayingBeforeSeekRef.current = isPlaying || !videoRef.current?.paused
+    if (isPlaying || !videoRef.current?.paused) pauseBeforeSeek()
     document.body.style.userSelect = 'none'
     suppressTimelineClickRef.current = true
     const time = getTimeFromClientX(e.clientX)
     dragSeekTimeRef.current = time
     setDragPreviewTime(time)
     setIsDragging(true)
-  }, [getTimeFromClientX, videoRef])
+  }, [getTimeFromClientX, isPlaying, pauseBeforeSeek, videoRef])
 
   const handleTimelinePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!timelineRef.current || !videoDuration) return
@@ -484,7 +493,8 @@ export default function CustomVideoControls({
     dragSeekTimeRef.current = null
     setDragPreviewTime(null)
     setIsDragging(false)
-    if (targetTime !== null) onSeek(targetTime)
+    if (targetTime !== null) onSeek(targetTime, wasPlayingBeforeSeekRef.current)
+    wasPlayingBeforeSeekRef.current = false
     window.setTimeout(() => { suppressTimelineClickRef.current = false }, 0)
   }, [onSeek])
 
@@ -496,6 +506,7 @@ export default function CustomVideoControls({
     dragSeekTimeRef.current = null
     setDragPreviewTime(null)
     setIsDragging(false)
+    wasPlayingBeforeSeekRef.current = false
     window.setTimeout(() => { suppressTimelineClickRef.current = false }, 0)
   }, [])
 
@@ -538,8 +549,8 @@ export default function CustomVideoControls({
     if (event.key === 'End') nextTime = videoDuration
     if (nextTime === null) return
     event.preventDefault()
-    onSeek(nextTime)
-  }, [currentTime, onSeek, videoDuration, videoFps])
+    onSeek(nextTime, isPlaying || !videoRef.current?.paused)
+  }, [currentTime, isPlaying, onSeek, videoDuration, videoFps, videoRef])
 
   useEffect(() => {
     const finishPointerInteraction = () => {
@@ -563,7 +574,7 @@ export default function CustomVideoControls({
     const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
     const nextTime = Math.max(pendingRangeStart ?? 0, percentage * videoDuration)
     onRangeEndChange(nextTime)
-    onSeek(nextTime)
+    onSeek(nextTime, false)
   }, [onRangeEndChange, onSeek, pendingRangeStart, videoDuration])
 
   const updateRangeStartFromPointer = useCallback((clientX: number) => {
@@ -572,16 +583,16 @@ export default function CustomVideoControls({
     const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
     const nextTime = Math.min(pendingRangeEnd ?? videoDuration, percentage * videoDuration)
     onRangeStartChange(nextTime)
-    onSeek(nextTime)
+    onSeek(nextTime, false)
   }, [onRangeStartChange, onSeek, pendingRangeEnd, videoDuration])
 
   const handleRangePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     e.preventDefault()
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
-    videoRef.current?.pause()
+    pauseBeforeSeek()
     document.body.style.userSelect = 'none'
-  }, [videoRef])
+  }, [pauseBeforeSeek])
 
   const handleRangePointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
@@ -594,9 +605,9 @@ export default function CustomVideoControls({
     e.preventDefault()
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
-    videoRef.current?.pause()
+    pauseBeforeSeek()
     document.body.style.userSelect = 'none'
-  }, [videoRef])
+  }, [pauseBeforeSeek])
 
   const handleRangeStartPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
@@ -617,24 +628,22 @@ export default function CustomVideoControls({
   const handleMarkerClick = useCallback((marker: MarkerData, e: React.MouseEvent) => {
     e.stopPropagation()
     e.preventDefault()
-    videoRef.current?.pause()
-    onSeek(marker.timestamp)
+    onSeek(marker.timestamp, false)
     // Notify parent to scroll to comment
     if (onMarkerClick) {
       onMarkerClick(marker.id)
     }
-  }, [onSeek, onMarkerClick, videoRef])
+  }, [onSeek, onMarkerClick])
 
   const handleMarkerTouchEnd = useCallback((marker: MarkerData, e: React.TouchEvent) => {
     e.stopPropagation()
     e.preventDefault()
-    videoRef.current?.pause()
-    onSeek(marker.timestamp)
+    onSeek(marker.timestamp, false)
     // Notify parent to scroll to comment
     if (onMarkerClick) {
       onMarkerClick(marker.id)
     }
-  }, [onSeek, onMarkerClick, videoRef])
+  }, [onSeek, onMarkerClick])
 
   const handleMarkerMouseEnter = useCallback((markerId: string) => {
     setHoveredMarkerId(markerId)

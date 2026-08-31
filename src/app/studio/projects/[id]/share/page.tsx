@@ -36,6 +36,25 @@ function canUserManageApproval(user: any, project: any) {
 
 type TokenFetchTelemetryEvent = 'first-attempt-failure' | 'retry-success' | 'retry-failure'
 
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++
+      await mapper(items[index])
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(limit, 1), items.length) }, () => worker())
+  )
+}
+
 export default function AdminSharePage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -56,7 +75,6 @@ export default function AdminSharePage() {
   const [comments, setComments] = useState<any[]>([])
   const [_commentsLoading, setCommentsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [_companyName, setCompanyName] = useState('Studio')
   const [viewMode, setViewMode] = useState<ShareViewMode>('grid')
   const [albumCount, setAlbumCount] = useState(0)
 
@@ -78,6 +96,7 @@ export default function AdminSharePage() {
   const [thumbnailsByName, setThumbnailsByName] = useState<Map<string, string>>(new Map())
   const [thumbnailsLoading, setThumbnailsLoading] = useState(true)
   const tokenCacheRef = useRef<Map<string, any>>(new Map())
+  const thumbnailUrlsRef = useRef<Map<string, string>>(new Map())
   // Stable per-project session id so tokens are reused across mounts
   // (server cache key is `video_token_cache:${sessionId}:${videoId}:${quality}`).
   const [sessionId] = useState<string>(() => `admin:${id}`)
@@ -230,51 +249,59 @@ export default function AdminSharePage() {
 
     return Promise.all(
       videos.map(async (video: any) => {
-        const cacheKey = `${sessionId}:${video.id}`
+        // Non-ready assets cannot be played. Avoid spending one or more token
+        // requests on them while retaining the raw record for the status UI.
+        if (video.status !== 'READY') {
+          return video
+        }
+
+        const cacheKey = `${sessionId}:${video.id}:${defaultQuality}`
         const cached = tokenCacheRef.current.get(cacheKey)
         if (cached) {
           return cached
         }
 
         try {
-          const [tokenHls, token720, token1080, token2160] = await Promise.all([
-            fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId),
-            fetchAdminVideoTokenWithRetry(video.id, '720p', sessionId),
-            fetchAdminVideoTokenWithRetry(video.id, '1080p', sessionId),
-            fetchAdminVideoTokenWithRetry(video.id, '2160p', sessionId),
-          ])
-
-          let streamToken720p = token720
-          let streamToken1080p = token1080
-          let streamToken2160p = token2160
-          let downloadToken = null
-
-          if (video.approved) {
-            const originalToken = await fetchAdminVideoTokenWithRetry(video.id, 'original', sessionId)
-            if (originalToken) {
-              downloadToken = originalToken
-            }
+          const qualityOrder: Array<'720p' | '1080p' | '2160p'> = defaultQuality === '2160p'
+            ? ['2160p', '1080p', '720p']
+            : defaultQuality === '1080p'
+              ? ['1080p', '720p', '2160p']
+              : ['720p', '1080p', '2160p']
+          const streamTokens: Record<'720p' | '1080p' | '2160p', string> = {
+            '720p': '',
+            '1080p': '',
+            '2160p': '',
           }
 
-          let thumbnailUrl = null
-          if (video.thumbnailPath) {
-            const thumbToken = await fetchAdminVideoTokenWithRetry(video.id, 'thumbnail', sessionId)
-            if (thumbToken) {
-              thumbnailUrl = `/api/content/${thumbToken}`
+          // HLS and the preferred progressive rendition are independent. Start
+          // both together, then probe lower renditions only when needed.
+          const [tokenHls, preferredToken] = await Promise.all([
+            fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId),
+            fetchAdminVideoTokenWithRetry(video.id, qualityOrder[0], sessionId),
+          ])
+          streamTokens[qualityOrder[0]] = preferredToken
+
+          if (!preferredToken) {
+            for (const quality of qualityOrder.slice(1)) {
+              const streamToken = await fetchAdminVideoTokenWithRetry(video.id, quality, sessionId)
+              streamTokens[quality] = streamToken
+              if (streamToken) break
             }
           }
 
           const tokenized = {
             ...video,
-            streamUrl720p: streamToken720p ? `/api/content/${streamToken720p}` : '',
+            streamUrl720p: streamTokens['720p'] ? `/api/content/${streamTokens['720p']}` : '',
             hlsUrl720p: tokenHls ? `/api/content/${tokenHls}` : '',
-            streamUrl1080p: streamToken1080p ? `/api/content/${streamToken1080p}` : '',
-            streamUrl2160p: streamToken2160p ? `/api/content/${streamToken2160p}` : '',
-            downloadUrl: downloadToken ? `/api/content/${downloadToken}?download=true` : null,
-            thumbnailUrl,
+            streamUrl1080p: streamTokens['1080p'] ? `/api/content/${streamTokens['1080p']}` : '',
+            streamUrl2160p: streamTokens['2160p'] ? `/api/content/${streamTokens['2160p']}` : '',
+            // Downloads and thumbnails are requested independently when the
+            // corresponding UI needs them; they should not delay playback.
+            downloadUrl: null,
+            thumbnailUrl: null,
           }
 
-          if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p || tokenized.downloadUrl || tokenized.thumbnailUrl) {
+          if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
             tokenCacheRef.current.set(cacheKey, tokenized)
           }
           return tokenized
@@ -283,7 +310,7 @@ export default function AdminSharePage() {
         }
       })
     )
-  }, [fetchAdminVideoTokenWithRetry])
+  }, [defaultQuality, fetchAdminVideoTokenWithRetry])
 
   // Load project data, settings, and admin user
   useEffect(() => {
@@ -296,11 +323,10 @@ export default function AdminSharePage() {
         return
       }
       try {
-        // Fetch project, settings, and current user in parallel
-        const [projectResponse, userResponse, settingsResponse] = await Promise.all([
+        // Fetch only data needed to authorize and render the review page.
+        const [projectResponse, userResponse] = await Promise.all([
           apiFetch(`/api/projects/${id}`, { cache: 'no-store' }),
           apiFetch('/api/auth/session', { cache: 'no-store' }),
-          apiFetch('/api/settings', { cache: 'no-store' }),
         ])
 
         if (!isMounted) return
@@ -319,18 +345,11 @@ export default function AdminSharePage() {
             setAdminUser(userData.user)
           }
 
-          if (settingsResponse.ok) {
-            const settingsData = await settingsResponse.json()
-            setCompanyName(settingsData.companyName || 'Studio')
-          } else {
-            setCompanyName(projectData.companyName || 'Studio')
-          }
-
           if (isMounted) {
             const transformedData = transformProjectData(projectData)
             setProject(transformedData)
 
-            // Use project/company fallback for studio name and preview quality
+            // Use the project's configured preview quality for playback.
             setDefaultQuality(projectData.previewResolution || '720p')
 
             if (!projectData.hideFeedback) {
@@ -444,6 +463,11 @@ export default function AdminSharePage() {
     let isMounted = true
 
     async function loadTokens() {
+      if (viewState !== 'player') {
+        setActiveVideos([])
+        setTokensLoading(false)
+        return
+      }
       if (!activeVideosRaw || activeVideosRaw.length === 0) {
         setTokensLoading(false)
         return
@@ -453,7 +477,7 @@ export default function AdminSharePage() {
       if (isMounted) {
         setActiveVideos(tokenized)
       }
-      setTokensLoading(false)
+      if (isMounted) setTokensLoading(false)
     }
 
     loadTokens()
@@ -461,37 +485,59 @@ export default function AdminSharePage() {
     return () => {
       isMounted = false
     }
-  }, [activeVideosRaw, fetchTokensForVideos])
+  }, [activeVideosRaw, fetchTokensForVideos, viewState])
 
-  // Fetch thumbnails for all video groups
+  // Fetch thumbnails independently from playback tokens. A small concurrency
+  // limit and progressive state updates keep the grid responsive while the
+  // remaining groups continue loading in the background.
   useEffect(() => {
     let isMounted = true
     const sessionId = sessionIdRef.current
 
     async function fetchThumbnails() {
       if (!project?.videosByName || !id) {
+        if (isMounted) setThumbnailsLoading(false)
         return
       }
 
-      setThumbnailsLoading(true)
+      const groups = Object.entries(project.videosByName as Record<string, any[]>)
+        .sort(([nameA], [nameB]) => {
+          if (nameA === activeVideoName) return -1
+          if (nameB === activeVideoName) return 1
+          return nameA.localeCompare(nameB, undefined, { numeric: true })
+        })
       const newThumbnails = new Map<string, string>()
+      let pendingGroups = 0
+
+      for (const [name, videos] of groups) {
+        const videoWithThumb = videos.find((v: any) => v.thumbnailPath)
+        if (!videoWithThumb) continue
+        const cachedUrl = thumbnailUrlsRef.current.get(videoWithThumb.id)
+        if (cachedUrl) {
+          newThumbnails.set(name, cachedUrl)
+        } else {
+          pendingGroups += 1
+        }
+      }
+
+      if (isMounted) {
+        setThumbnailsByName(new Map(newThumbnails))
+        setThumbnailsLoading(pendingGroups > 0)
+      }
 
       try {
-        await Promise.all(
-          Object.entries(project.videosByName as Record<string, any[]>).map(async ([name, videos]) => {
-            const videoWithThumb = videos.find((v: any) => v.thumbnailPath)
-            if (videoWithThumb) {
-              const thumbToken = await fetchAdminVideoTokenWithRetry(videoWithThumb.id, 'thumbnail', sessionId)
-              if (thumbToken && isMounted) {
-                newThumbnails.set(name, `/api/content/${thumbToken}`)
-              }
-            }
-          })
-        )
+        await mapWithConcurrency(groups, 4, async ([name, videos]) => {
+          const videoWithThumb = videos.find((v: any) => v.thumbnailPath)
+          if (!videoWithThumb || thumbnailUrlsRef.current.has(videoWithThumb.id)) return
 
-        if (isMounted) {
-          setThumbnailsByName(newThumbnails)
-        }
+          const thumbToken = await fetchAdminVideoTokenWithRetry(videoWithThumb.id, 'thumbnail', sessionId)
+          if (!thumbToken || !isMounted) return
+
+          const thumbnailUrl = `/api/content/${thumbToken}`
+          thumbnailUrlsRef.current.set(videoWithThumb.id, thumbnailUrl)
+          newThumbnails.set(name, thumbnailUrl)
+          setThumbnailsByName(new Map(newThumbnails))
+        })
       } catch (error) {
         // Failed to load thumbnails
       } finally {
@@ -506,7 +552,25 @@ export default function AdminSharePage() {
     return () => {
       isMounted = false
     }
-  }, [project?.videosByName, id, fetchAdminVideoTokenWithRetry])
+  }, [project?.videosByName, id, activeVideoName, fetchAdminVideoTokenWithRetry])
+
+  // The thumbnail request is intentionally independent from playback token
+  // generation. Merge it into already-tokenized versions once it arrives so a
+  // late poster load never forces the player to remount.
+  useEffect(() => {
+    const thumbnailUrl = thumbnailsByName.get(activeVideoName)
+    if (!thumbnailUrl || activeVideos.length === 0) return
+
+    setActiveVideos((currentVideos) => {
+      let changed = false
+      const nextVideos = currentVideos.map((video: any) => {
+        if (video.thumbnailUrl === thumbnailUrl) return video
+        changed = true
+        return { ...video, thumbnailUrl }
+      })
+      return changed ? nextVideos : currentVideos
+    })
+  }, [activeVideoName, activeVideos, thumbnailsByName])
 
   // Determine initial view state based on URL params (same behavior as public share)
   useEffect(() => {

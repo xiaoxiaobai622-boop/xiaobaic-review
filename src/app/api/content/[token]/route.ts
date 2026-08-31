@@ -22,6 +22,194 @@ export const dynamic = 'force-dynamic'
 
 const CONTENT_SESSION_WINDOW_SECONDS = 60
 const HLS_MANIFEST_CACHE_TTL_SECONDS = 300
+const HLS_SEGMENT_URL_TTL_SECONDS = 900
+const HLS_MANIFEST_QUERY_PARAM = 'manifest'
+
+// A page can mount more than one player (or issue duplicate manifest loads
+// while the first response is still in flight). Coalesce those requests in a
+// process so COS and URL-signing work is done once per manifest cache miss.
+const hlsManifestInflight = new Map<string, Promise<string | null>>()
+
+const hlsManifestHeaders = {
+  'Content-Type': 'application/vnd.apple.mpegurl',
+  // The manifest contains short-lived signed segment URLs. Keep it private,
+  // but allow the browser to reuse it for the same review session.
+  'Cache-Control': 'private, max-age=300, stale-while-revalidate=30',
+  'Access-Control-Allow-Origin': '*',
+}
+
+function hlsManifestResponse(manifest: string): NextResponse {
+  return new NextResponse(manifest, { headers: hlsManifestHeaders })
+}
+
+function normalizeHlsObjectKey(candidate: string): string | null {
+  const segments: string[] = []
+  for (const segment of candidate.split('/')) {
+    if (!segment || segment === '.') continue
+    if (segment === '..') {
+      if (segments.length === 0) return null
+      segments.pop()
+      continue
+    }
+    segments.push(segment)
+  }
+  return segments.length > 0 ? segments.join('/') : null
+}
+
+/**
+ * Resolve a URI from an HLS playlist against that playlist's object key.
+ * Playlist files are trusted server output, but normalizing here keeps a
+ * malformed or encoded `..` path from escaping the bucket namespace.
+ */
+function resolveHlsObjectKey(manifestPath: string, uri: string): string | null {
+  const rawUri = uri.trim()
+  if (!rawUri || /^https?:\/\//i.test(rawUri) || /^data:/i.test(rawUri) || rawUri.startsWith('//')) {
+    return null
+  }
+
+  let decodedUri = rawUri
+  try {
+    decodedUri = decodeURIComponent(rawUri)
+  } catch {
+    // Keep the original path when a provider returns a malformed escape.
+  }
+  const pathOnly = decodedUri.split(/[?#]/, 1)[0]
+  const basePath = manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1)
+  const candidate = pathOnly.startsWith('/')
+    ? pathOnly.slice(1)
+    : `${basePath}${pathOnly}`
+  return normalizeHlsObjectKey(candidate)
+}
+
+function resolveHlsManifestPath(rootPath: string, requestedPath: string | null): string | null {
+  if (!requestedPath) return rootPath
+
+  let decodedPath = requestedPath
+  try {
+    decodedPath = decodeURIComponent(requestedPath)
+  } catch {
+    // URLSearchParams normally decodes this already; retain the raw value.
+  }
+  if (!decodedPath || decodedPath.includes('\0')) return null
+
+  const rootDirectory = rootPath.slice(0, rootPath.lastIndexOf('/') + 1)
+  const candidate = decodedPath === rootPath
+    ? rootPath
+    : decodedPath.startsWith(rootDirectory)
+      ? normalizeHlsObjectKey(decodedPath)
+    : resolveHlsObjectKey(rootPath, decodedPath)
+  if (!candidate || !candidate.toLowerCase().endsWith('.m3u8')) return null
+  if (candidate !== rootPath && !candidate.startsWith(rootDirectory)) return null
+  return candidate
+}
+
+function isHlsObjectWithinRoot(rootPath: string, objectKey: string): boolean {
+  const rootDirectory = rootPath.slice(0, rootPath.lastIndexOf('/') + 1)
+  // HLS objects are normally stored alongside the root playlist. If a legacy
+  // key has no directory component, only allow other objects at that same
+  // bucket level rather than permitting a path traversal into a subdirectory.
+  return rootDirectory ? objectKey.startsWith(rootDirectory) : !objectKey.includes('/')
+}
+
+async function buildHlsManifest(
+  hlsPath: string,
+  redis: ReturnType<typeof getRedis>,
+  manifestCacheKey: string,
+  accessToken: string,
+): Promise<string | null> {
+  const cachedManifest = await redis.get(manifestCacheKey)
+  if (cachedManifest) return cachedManifest
+
+  const existing = hlsManifestInflight.get(manifestCacheKey)
+  if (existing) return existing
+
+  const buildPromise = (async () => {
+    // hlsPath is persisted as soon as MPS reports success, but COS can take a
+    // short moment to expose the object. Preserve the existing 409 response for
+    // that transient state while avoiding this HEAD request on cache hits.
+    if (!(await s3FileExists(hlsPath))) return null
+
+    const manifestStream = await s3DownloadFile(hlsPath)
+    const chunks: Buffer[] = []
+    for await (const chunk of manifestStream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+
+    const manifest = Buffer.concat(chunks).toString('utf8')
+    const signedUriPromises = new Map<string, Promise<string>>()
+
+    const signUri = (uri: string): Promise<string> => {
+      const objectKey = resolveHlsObjectKey(hlsPath, uri)
+      if (!objectKey || !isHlsObjectWithinRoot(hlsPath, objectKey)) {
+        return Promise.resolve(uri)
+      }
+
+      // A master playlist can reference a media playlist. Route that request
+      // back through this authenticated endpoint so its own segment URIs are
+      // rewritten as well; a direct COS URL would leave them relative/unsigned.
+      if (objectKey.toLowerCase().endsWith('.m3u8')) {
+        const nestedUrl = `/api/content/${encodeURIComponent(accessToken)}?${HLS_MANIFEST_QUERY_PARAM}=${encodeURIComponent(objectKey)}`
+        return Promise.resolve(nestedUrl)
+      }
+
+      const existingPromise = signedUriPromises.get(objectKey)
+      if (existingPromise) return existingPromise
+
+      const signedPromise = s3GetPresignedStreamUrl(
+        objectKey,
+        HLS_SEGMENT_URL_TTL_SECONDS,
+        'video/mp2t',
+      )
+      signedUriPromises.set(objectKey, signedPromise)
+      return signedPromise
+    }
+
+    const rewriteUriAttributes = async (line: string): Promise<string> => {
+      const uriPattern = /URI=(['"])(.*?)\1/gi
+      const matches = Array.from(line.matchAll(uriPattern))
+      if (matches.length === 0) return line
+
+      const replacements = await Promise.all(matches.map((match) => signUri(match[2])))
+      let rewrittenLine = line
+      for (let index = matches.length - 1; index >= 0; index -= 1) {
+        const match = matches[index]
+        const replacement = replacements[index]
+        const valueStart = match.index! + match[0].indexOf(match[2])
+        rewrittenLine = `${rewrittenLine.slice(0, valueStart)}${replacement}${rewrittenLine.slice(valueStart + match[2].length)}`
+      }
+      return rewrittenLine
+    }
+
+    const rewritten = await Promise.all(manifest.split(/\r?\n/).map(async (line) => {
+      const trimmed = line.trim()
+      if (!trimmed || /^https?:\/\//i.test(trimmed)) {
+        return line
+      }
+      if (trimmed.startsWith('#')) return rewriteUriAttributes(line)
+      return signUri(trimmed)
+    }))
+    const rewrittenManifest = rewritten.join('\n')
+
+    // Cache is an optimization; a transient Redis write failure must not turn
+    // an otherwise valid manifest into a playback error.
+    await redis.setex(
+      manifestCacheKey,
+      HLS_MANIFEST_CACHE_TTL_SECONDS,
+      rewrittenManifest,
+    ).catch(() => undefined)
+
+    return rewrittenManifest
+  })()
+
+  hlsManifestInflight.set(manifestCacheKey, buildPromise)
+  try {
+    return await buildPromise
+  } finally {
+    if (hlsManifestInflight.get(manifestCacheKey) === buildPromise) {
+      hlsManifestInflight.delete(manifestCacheKey)
+    }
+  }
+}
 
 
 /**
@@ -43,9 +231,10 @@ export async function GET(
     const shareMessages = messages?.share || {}
 
     const { token } = await params
-    const { searchParams } = new URL(request.url)
+    const { searchParams } = request.nextUrl
     const isDownload = searchParams.get('download') === 'true'
     const assetId = searchParams.get('assetId')
+    const requestedManifestPath = searchParams.get(HLS_MANIFEST_QUERY_PARAM)
 
     const securitySettings = await getSecuritySettings()
 
@@ -173,37 +362,25 @@ export async function GET(
     // media URI is rewritten to a short-lived COS/CDN URL so segment requests
     // do not need a second application token.
     if (requestedQuality === 'hls' && hlsPath && isS3Mode()) {
-      if (!(await s3FileExists(hlsPath))) {
-        return NextResponse.json({ error: '视频正在处理，请稍后再试', code: 'HLS_NOT_READY' }, { status: 409, headers: { 'Retry-After': '10' } })
+      const manifestPath = resolveHlsManifestPath(hlsPath, requestedManifestPath)
+      if (!manifestPath) {
+        return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 400 })
       }
 
       // Cache the rewritten manifest to avoid repeated S3 downloads and
       // presigning overhead during scrubbing/seeking, where the player may
       // re-request the manifest several times in quick succession.
-      const manifestCacheKey = `hls_manifest:${hlsPath}`
-      const cachedManifest = await redis.get(manifestCacheKey)
-      if (cachedManifest) {
-        return new NextResponse(cachedManifest, {
-          headers: { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'private, max-age=30', 'Access-Control-Allow-Origin': '*' },
-        })
+      // Nested playlist URLs carry the caller's access token. Keep the cache
+      // token-scoped so one viewer never receives another viewer's URL.
+      const manifestCacheKey = `hls_manifest:${manifestPath}:${token}`
+      const rewrittenManifest = await buildHlsManifest(manifestPath, redis, manifestCacheKey, token)
+      if (!rewrittenManifest) {
+        return NextResponse.json(
+          { error: '视频正在处理，请稍后再试', code: 'HLS_NOT_READY' },
+          { status: 409, headers: { 'Retry-After': '10' } },
+        )
       }
-
-      const manifestStream = await s3DownloadFile(hlsPath)
-      const chunks: Buffer[] = []
-      for await (const chunk of manifestStream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-      const manifest = Buffer.concat(chunks).toString('utf8')
-      const basePath = hlsPath.slice(0, hlsPath.lastIndexOf('/') + 1)
-      const rewritten = await Promise.all(manifest.split(/\r?\n/).map(async (line) => {
-        const trimmed = line.trim()
-        if (!trimmed || trimmed.startsWith('#') || /^https?:\/\//i.test(trimmed)) return line
-        const segmentPath = trimmed.split('?')[0]
-        return await s3GetPresignedStreamUrl(`${basePath}${segmentPath}`, 900, 'video/mp2t')
-      }))
-      const rewrittenManifest = rewritten.join('\n')
-      await redis.setex(manifestCacheKey, HLS_MANIFEST_CACHE_TTL_SECONDS, rewrittenManifest)
-      return new NextResponse(rewrittenManifest, {
-        headers: { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'private, max-age=30', 'Access-Control-Allow-Origin': '*' },
-      })
+      return hlsManifestResponse(rewrittenManifest)
     }
 
     const getPreferredPreviewPath = (preferClean: boolean): string | null => {
