@@ -54,8 +54,10 @@ export async function GET(request: NextRequest) {
     // Generate random state token to prevent CSRF
     const state = randomBytes(32).toString('hex')
 
-    // Store state in httpOnly cookie (expires in 10 minutes)
-    const response = NextResponse.redirect(getFeishuAuthUrl(state))
+    // Return the auth URL as JSON so the client (which holds the JWT in
+    // localStorage) can fetch this endpoint with an Authorization header and
+    // then navigate. A server-side redirect would lose the auth context.
+    const response = NextResponse.json({ authUrl: getFeishuAuthUrl(state) })
     response.cookies.set('feishu_oauth_state', state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

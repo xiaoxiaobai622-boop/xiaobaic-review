@@ -130,6 +130,21 @@ function ProfileContent() {
     }
   }
 
+  async function bindFeishu() {
+    setError('')
+    setMessage('')
+    try {
+      const response = await apiFetch('/api/auth/feishu/authorize', { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.authUrl) {
+        throw new Error(data.error || '无法启动飞书授权')
+      }
+      window.location.href = data.authUrl
+    } catch (bindError) {
+      setError(bindError instanceof Error ? bindError.message : '飞书绑定失败')
+    }
+  }
+
   async function changePassword(event: React.FormEvent) {
     event.preventDefault()
     if (!user?.id) return
@@ -232,7 +247,7 @@ function ProfileContent() {
                   type="button"
                   variant="outline"
                   className="gap-2"
-                  onClick={() => { window.location.href = '/api/auth/feishu/authorize' }}
+                  onClick={() => void bindFeishu()}
                 >
                   <MessageSquare className="h-4 w-4" />绑定飞书
                 </Button>
