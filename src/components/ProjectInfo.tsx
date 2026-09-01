@@ -2,7 +2,7 @@
 
 import { appAlert } from '@/components/AppDialogProvider'
 
-import { useState, useEffect } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
 import { Button } from './ui/button'
@@ -48,7 +48,7 @@ interface ProjectInfoProps {
   hideApprovalAction?: boolean
 }
 
-export default function ProjectInfo({
+function ProjectInfo({
   selectedVideo,
   displayLabel: _displayLabel,
   isVideoApproved,
@@ -488,3 +488,7 @@ export default function ProjectInfo({
     </div>
   )
 }
+
+// Project metadata and download actions do not depend on the playhead. Memoize
+// the panel so throttled playback updates do not reconcile its dialogs/buttons.
+export default memo(ProjectInfo)

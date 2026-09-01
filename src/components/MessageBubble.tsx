@@ -1,5 +1,6 @@
 'use client'
 
+import { memo, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Clock, Trash2, Brush, Check } from 'lucide-react'
@@ -11,6 +12,8 @@ import { getCommentCategory } from '@/lib/comment-categories'
 type CommentWithReplies = Comment & {
   replies?: Comment[]
 }
+
+const EMPTY_REPLIES: Comment[] = []
 
 interface MessageBubbleProps {
   comment: CommentWithReplies
@@ -47,7 +50,7 @@ function sanitizeContent(content: string): string {
   })
 }
 
-export default function MessageBubble({
+function MessageBubble({
   comment,
   isReply,
   onReply,
@@ -91,9 +94,13 @@ export default function MessageBubble({
     handleTimestampClick()
   }
 
-  const threadReplies = !isReply && replies && replies.length > 0 ? replies : []
+  const threadReplies = !isReply && replies && replies.length > 0 ? replies : EMPTY_REPLIES
   const hasReplies = threadReplies.length > 0
   const category = getCommentCategory((comment as any).category)
+  const sanitizedCommentContent = useMemo(() => sanitizeContent(comment.content), [comment.content])
+  const sanitizedReplyContent = useMemo(() => (
+    new Map(threadReplies.map((reply) => [reply.id, sanitizeContent(reply.content)]))
+  ), [threadReplies])
 
   return (
     <div className="w-full" id={`comment-${comment.id}`}>
@@ -177,7 +184,7 @@ export default function MessageBubble({
             >
               <div
                 className="[&>p]:m-0"
-                dangerouslySetInnerHTML={{ __html: sanitizeContent(comment.content) }}
+                dangerouslySetInnerHTML={{ __html: sanitizedCommentContent }}
               />
             </div>
 
@@ -252,7 +259,7 @@ export default function MessageBubble({
                   </div>
                   <div
                     className="break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap [&>p]:m-0"
-                    dangerouslySetInnerHTML={{ __html: sanitizeContent(reply.content) }}
+                    dangerouslySetInnerHTML={{ __html: sanitizedReplyContent.get(reply.id) || '' }}
                   />
                   {(reply as any).assets && (reply as any).assets.length > 0 && (
                     <CommentAttachments
@@ -270,3 +277,5 @@ export default function MessageBubble({
     </div>
   )
 }
+
+export default memo(MessageBubble)

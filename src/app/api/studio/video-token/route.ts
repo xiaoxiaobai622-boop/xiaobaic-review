@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { findAccessibleVideo } from '@/lib/project-access'
 import { generateVideoAccessToken, getCachedVideoAccessToken } from '@/lib/video-access'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
@@ -44,23 +44,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
+    const video = await findAccessibleVideo(prisma, authResult, projectId, videoId)
+    if (!video) {
       return NextResponse.json(
         { error: '你没有这个项目的访问权限，请联系团队管理员' },
         { status: 403 }
-      )
-    }
-
-    // Verify video belongs to project
-    const video = await prisma.video.findUnique({
-      where: { id: videoId },
-      select: { id: true, projectId: true }
-    })
-
-    if (!video || video.projectId !== projectId) {
-      return NextResponse.json(
-        { error: videosMessages.videoNotFoundOrDoesNotBelongToProject || 'Video not found or does not belong to project' },
-        { status: 404 }
       )
     }
 
@@ -87,7 +75,8 @@ export async function GET(request: NextRequest) {
       projectId,
       quality,
       request,
-      sessionId
+      sessionId,
+      { skipCacheCheck: true },
     )
 
     return NextResponse.json({ token })

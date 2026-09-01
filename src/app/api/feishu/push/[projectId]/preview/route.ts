@@ -123,7 +123,11 @@ export async function GET(request: NextRequest) {
       uploader = videos[0]?.uploadedBy
     }
 
-    if (!uploader) {
+    // A project can contain videos uploaded by different users (or legacy
+    // rows without an uploader). Keep those rows in the preview so the UI can
+    // show their individual recipient state; only a single-video preview
+    // requires a recipient at this stage.
+    if (!uploader && scope === 'video') {
       return NextResponse.json(
         { error: 'No uploader found for this scope' },
         { status: 400 }
@@ -132,10 +136,12 @@ export async function GET(request: NextRequest) {
 
     // Video.uploadedBy is legacy metadata without a foreign key. A deleted
     // user should still produce a useful preview, but cannot receive Feishu.
-    const uploaderUser = await prisma.user.findUnique({
-      where: { id: uploader },
-      select: { id: true, name: true, avatarUrl: true },
-    })
+    const uploaderUser = uploader
+      ? await prisma.user.findUnique({
+          where: { id: uploader },
+          select: { id: true, name: true, avatarUrl: true },
+        })
+      : null
 
     const uploaderBinding = uploaderUser
       ? await prisma.feishuBinding.findUnique({
@@ -153,7 +159,7 @@ export async function GET(request: NextRequest) {
         ...(scope === 'video' && videoId ? { videoId } : {}),
         status: 'SENT',
       },
-      select: { commentIds: true, createdAt: true },
+      select: { videoId: true, commentIds: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -171,6 +177,22 @@ export async function GET(request: NextRequest) {
       previousNotifications.flatMap((n: any) => n.commentIds)
     )
 
+    // Keep the complete SENT history per video. Looking only at the latest
+    // notification loses comments that were sent in an earlier batch.
+    const pushedCommentIdsByVideo = new Map<string, Set<string>>()
+    const lastPushAtByVideo = new Map<string, Date>()
+    for (const notification of previousNotifications) {
+      if (!notification.videoId) continue
+
+      const videoCommentIds = pushedCommentIdsByVideo.get(notification.videoId) || new Set<string>()
+      notification.commentIds.forEach((commentId: string) => videoCommentIds.add(commentId))
+      pushedCommentIdsByVideo.set(notification.videoId, videoCommentIds)
+
+      if (!lastPushAtByVideo.has(notification.videoId)) {
+        lastPushAtByVideo.set(notification.videoId, notification.createdAt)
+      }
+    }
+
     const unpushedComments = comments.filter((c: any) => !pushedCommentIds.has(c.id))
 
     // Group comments by video for project scope with detailed push status
@@ -180,18 +202,7 @@ export async function GET(request: NextRequest) {
         const videoComments = comments.filter((c: any) => c.videoId === video.id)
         if (videoComments.length === 0) continue // Skip videos without comments
 
-        // Find last push for this video
-        const lastPush = await prisma.feishuNotification.findFirst({
-          where: {
-            projectId,
-            videoId: video.id,
-            status: 'SENT',
-          },
-          orderBy: { createdAt: 'desc' },
-          select: { createdAt: true, commentIds: true },
-        })
-
-        const videoPushedIds = new Set(lastPush?.commentIds || [])
+        const videoPushedIds = pushedCommentIdsByVideo.get(video.id) || new Set<string>()
         const videoUnpushed = videoComments.filter((c: any) => !videoPushedIds.has(c.id))
 
         // Get this video's uploader and their Feishu binding.
@@ -219,7 +230,7 @@ export async function GET(request: NextRequest) {
           totalComments: videoComments.length,
           pushedComments: videoComments.length - videoUnpushed.length,
           unpushedComments: videoUnpushed.length,
-          lastPushAt: lastPush?.createdAt || null,
+          lastPushAt: lastPushAtByVideo.get(video.id) || null,
           uploader: {
           id: videoUploader?.id || video.uploadedBy || '',
           name: videoUploader?.name || video.uploadedByName || null,

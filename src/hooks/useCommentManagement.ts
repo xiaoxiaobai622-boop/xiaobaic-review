@@ -4,7 +4,6 @@ import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Comment, Video, Prisma } from '@prisma/client'
-import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { apiPost, apiDelete } from '@/lib/api-client'
 import { secondsToTimecode, timecodeToSeconds } from '@/lib/timecode'
@@ -45,7 +44,6 @@ export function useCommentManagement({
   useAdminAuth = false,
   authenticatedName = null,
 }: UseCommentManagementProps) {
-  const router = useRouter()
   const tComments = useTranslations('comments')
 
   const [optimisticComments, setOptimisticComments] = useState<CommentWithReplies[]>([])
@@ -62,6 +60,7 @@ export function useCommentManagement({
   const [pendingAnnotation, setPendingAnnotation] = useState<AnnotationData | null>(null)
   const [selectedTimecodeEnd, setSelectedTimecodeEnd] = useState<string | null>(null)
   const [isSelectingTimecodeEnd, setIsSelectingTimecodeEnd] = useState(false)
+  const submittingCommentRef = useRef(false)
   const attachmentUploadCountRef = useRef(0)
   const previousVideoIdRef = useRef<string | null>(null)
   const rangeWasAdjustedRef = useRef(false)
@@ -156,8 +155,9 @@ export function useCommentManagement({
     previousVideoIdRef.current = selectedVideoId
   }, [selectedVideoId, pendingAttachments, cleanupAttachmentAsset])
 
-  // Sync with video player if available (share page with player)
-  // Reduced from 1s to 5s to prevent UI lag during heavy interaction
+  // Sync with the video player once per selected-video change. The player
+  // emits `videoChanged` for subsequent changes, so a polling timer is not
+  // needed while the reviewer is playing or scrubbing.
   useEffect(() => {
     const syncCurrentVideo = () => {
       window.dispatchEvent(
@@ -174,8 +174,6 @@ export function useCommentManagement({
     }
 
     syncCurrentVideo()
-    const interval = setInterval(syncCurrentVideo, 5000)
-    return () => clearInterval(interval)
   }, [selectedVideoId])
 
   // Listen for immediate video changes from VideoPlayer
@@ -387,7 +385,9 @@ export function useCommentManagement({
 
     if (!newComment.trim() && !hasAttachments && !hasAnnotations) return
 
-    if (loading) return
+    // State updates are asynchronous; the ref closes the double-click window
+    // before React has committed `loading=true`.
+    if (loading || submittingCommentRef.current) return
 
     if (!targetVideoId) {
       appAlert('Please select a video before commenting.')
@@ -412,6 +412,7 @@ export function useCommentManagement({
       }
     }
 
+    submittingCommentRef.current = true
     setLoading(true)
 
     let commentContent = newComment
@@ -536,29 +537,15 @@ export function useCommentManagement({
           } : undefined)
         : Promise.reject(new Error('Authentication required to submit comment'))
 
-      submitPromise
-        .then((updatedComments) => {
-          setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
+      // Keep the submit lifecycle inside this async function. Previously the
+      // promise was detached, which cleared `loading` immediately and allowed
+      // duplicate POSTs while the first request was still in flight.
+      const updatedComments = await submitPromise
+      setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
 
-          router.refresh()
-
-          window.dispatchEvent(new CustomEvent('commentPosted', {
-            detail: { comments: updatedComments }
-          }))
-        })
-        .catch((error) => {
-          setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
-          setNewComment(commentContent)
-          setSelectedTimestamp(commentTimestamp)
-          setSelectedVideoId(commentVideoId)
-          setPendingAnnotation(annotationForComment)
-          setAttachmentError(error instanceof Error ? error.message : 'Failed to submit comment')
-          setPendingAttachments(prev => {
-            const existingIds = new Set(prev.map(a => a.assetId))
-            const toRestore = attachmentsForComment.filter(a => !existingIds.has(a.assetId))
-            return toRestore.length > 0 ? [...prev, ...toRestore] : prev
-          })
-        })
+      window.dispatchEvent(new CustomEvent('commentPosted', {
+        detail: { comments: updatedComments, projectId }
+      }))
 
     } catch (error) {
       setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
@@ -573,6 +560,7 @@ export function useCommentManagement({
         return toRestore.length > 0 ? [...prev, ...toRestore] : prev
       })
     } finally {
+      submittingCommentRef.current = false
       setLoading(false)
     }
   }
@@ -611,7 +599,9 @@ export function useCommentManagement({
         throw new Error('删除批注需要先登录')
       }
 
-      window.dispatchEvent(new CustomEvent('commentDeleted'))
+      window.dispatchEvent(new CustomEvent('commentDeleted', {
+        detail: { commentId, projectId },
+      }))
     } catch (error) {
       appAlert(`批注删除失败：${error instanceof Error ? error.message : '未知错误'}`)
     }

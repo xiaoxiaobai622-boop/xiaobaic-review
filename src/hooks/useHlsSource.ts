@@ -60,13 +60,18 @@ export function useHlsSource({
     const isBufferedAt = (position: number): boolean => {
       if (!Number.isFinite(position)) return false
 
+      const duration = Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : null
+      const isAtMediaEnd = duration !== null && position >= duration - 0.05
+
       for (let index = 0; index < video.buffered.length; index += 1) {
         // Keep the same tolerance hls.js uses for small buffer holes. Treating
         // a position at the exact end of a range as buffered can leave the
         // player waiting for the next fragment, so leave a small tail here.
         const start = video.buffered.start(index)
         const end = video.buffered.end(index)
-        if (position >= start && position < end - 0.15) return true
+        if (position >= start && (position < end - 0.15 || (isAtMediaEnd && end >= (duration ?? 0) - 0.05))) return true
       }
       return false
     }
@@ -92,7 +97,6 @@ export function useHlsSource({
         if (disposed || !hls || !manifestReady) return
 
         const forceLoad = pendingForceLoad
-        pendingForceLoad = false
 
         const currentTarget = Number.isFinite(video.currentTime)
           ? Math.max(0, video.currentTime)
@@ -114,18 +118,32 @@ export function useHlsSource({
           // allowing a later retry when a request has genuinely stalled.
           now - lastLoadRequestAt < 2000
         ) {
-          pendingSeekPosition = null
+          // Keep the target alive. A seek can emit `waiting` only once, so
+          // dropping it here can leave a paused player stuck forever when the
+          // original fragment request stalls. Retry after the cooldown.
+          const retryDelay = Math.max(50, 2000 - (now - lastLoadRequestAt) + 25)
+          seekLoadTimer = setTimeout(() => {
+            seekLoadTimer = null
+            if (pendingSeekPosition !== null) {
+              scheduleLoadAt(pendingSeekPosition, pendingForceLoad)
+            }
+          }, retryDelay)
           return
         }
 
         lastLoadRequestPosition = currentTarget
         lastLoadRequestAt = now
-        pendingSeekPosition = null
+        pendingForceLoad = false
 
         // Run after hls.js' own media-seeking listener. startLoad(..., true)
         // aborts stale fragment work and makes the requested position the next
         // load position without moving the media element back to zero.
-        hls.startLoad(currentTarget, true)
+        try {
+          hls.startLoad(currentTarget, true)
+          pendingSeekPosition = null
+        } catch {
+          // Retain the target and let a later waiting/stalled event retry.
+        }
       }, 0)
     }
 

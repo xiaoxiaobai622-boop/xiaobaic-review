@@ -8,7 +8,7 @@ import { sanitizeComment } from '@/lib/comment-sanitization'
 import { getRateLimitSettings } from '@/lib/settings'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
+import { resolveShareMetadata, getShareScopeVideoIds, isShareLinkActive } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -45,7 +45,7 @@ export async function GET(
     if (rateLimitResult) return rateLimitResult
 
     // Fetch project by token (not by ID - more secure)
-    const resolved = await resolveShare(token)
+    const resolved = await resolveShareMetadata(token)
     if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
     const project = resolved.project ? {
       id: resolved.project.id,
@@ -94,7 +94,7 @@ export async function GET(
     }
 
     // Fetch comments with nested replies
-    const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
+    const scopedIds = resolved.link ? await getShareScopeVideoIds(resolved.link, project.id) : null
     const comments = await prisma.comment.findMany({
       where: {
         projectId: project.id,

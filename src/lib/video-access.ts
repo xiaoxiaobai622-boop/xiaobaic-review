@@ -73,13 +73,16 @@ export async function generateVideoAccessToken(
   projectId: string,
   quality: string,
   request: NextRequest,
-  sessionId: string
+  sessionId: string,
+  options?: { skipCacheCheck?: boolean },
 ): Promise<string> {
   const redis = getRedis()
 
-  const cachedToken = await getCachedVideoAccessToken(videoId, projectId, quality, sessionId)
-  if (cachedToken) {
-    return cachedToken
+  if (!options?.skipCacheCheck) {
+    const cachedToken = await getCachedVideoAccessToken(videoId, projectId, quality, sessionId)
+    if (cachedToken) {
+      return cachedToken
+    }
   }
 
   const token = crypto.randomBytes(16).toString('base64url')
@@ -114,7 +117,8 @@ export async function generateVideoAccessToken(
 export async function verifyVideoAccessToken(
   token: string,
   request: NextRequest,
-  sessionId: string
+  sessionId: string,
+  rawTokenData?: string | null,
 ): Promise<VideoAccessToken | null> {
   const redis = getRedis()
   const now = Date.now()
@@ -131,7 +135,10 @@ export async function verifyVideoAccessToken(
   }
 
   const key = `video_access:${token}`
-  const data = await redis.get(key)
+  // The content endpoint already fetched this value to obtain the bound
+  // session id. Reuse it when supplied, while keeping the Redis lookup for
+  // callers that do not have a prefetched value.
+  const data = rawTokenData === undefined ? await redis.get(key) : rawTokenData
 
   if (!data) {
     return null

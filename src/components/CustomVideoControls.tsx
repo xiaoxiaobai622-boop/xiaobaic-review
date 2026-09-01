@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Repeat } from 'lucide-react'
@@ -8,6 +8,7 @@ import { getUserColor } from '@/lib/utils'
 import { timecodeToSeconds, timecodeToSeekSeconds, secondsToTimecode, formatCommentTimestamp } from '@/lib/timecode'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import TimelineHoverPreview from './TimelineHoverPreview'
+import { useMediaPosition } from '@/hooks/useMediaPosition'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -296,7 +297,315 @@ interface RangeBarData {
   colorKey: string
 }
 
-export default function CustomVideoControls({
+interface TimelineMarkersProps {
+  groups: MarkerData[][]
+  hoveredMarkerId: string | null
+  isDragging: boolean
+  onMarkerClick: (marker: MarkerData, event: React.MouseEvent<HTMLButtonElement>) => void
+  onMarkerTouchEnd: (marker: MarkerData, event: React.TouchEvent<HTMLButtonElement>) => void
+  onMarkerMouseEnter: (markerId: string) => void
+  onMarkerMouseLeave: () => void
+  onMarkerTouchStart: (markerId: string, event: React.TouchEvent<HTMLButtonElement>) => void
+}
+
+interface TimelineRangeBarsProps {
+  bars: RangeBarData[]
+}
+
+const TimelineRangeBars = memo(function TimelineRangeBars({ bars }: TimelineRangeBarsProps) {
+  if (bars.length === 0) return null
+
+  return (
+    <>
+      {bars.map((bar) => {
+        const width = bar.endPosition - bar.startPosition
+        return (
+          <div
+            data-testid="comment-range-line"
+            key={`range-${bar.id}`}
+            className="pointer-events-none absolute top-[19px] h-[3px] -translate-y-1/2 bg-sky-400/85"
+            style={{
+              left: `${bar.startPosition}%`,
+              width: `${Math.max(width, 0.5)}%`,
+            }}
+          />
+        )
+      })}
+    </>
+  )
+})
+
+function getTooltipAlignment(position: number): string {
+  if (position < 20) return 'left-0'
+  if (position > 80) return 'right-0'
+  return 'left-1/2 -translate-x-1/2'
+}
+
+/**
+ * Comment markers are independent of playback position. Keeping them in a
+ * memoized subtree prevents the complete marker/tooltip DOM from being
+ * reconciled on every `timeupdate` tick.
+ */
+const TimelineMarkers = memo(function TimelineMarkers({
+  groups,
+  hoveredMarkerId,
+  isDragging,
+  onMarkerClick,
+  onMarkerTouchEnd,
+  onMarkerMouseEnter,
+  onMarkerMouseLeave,
+  onMarkerTouchStart,
+}: TimelineMarkersProps) {
+  const t = useTranslations('controls')
+  const tComments = useTranslations('comments')
+
+  if (groups.length === 0) return null
+
+  return (
+    <>
+      {groups.map((group) => {
+        const primaryMarker = group[0]
+        const isHovered = group.some((marker) => marker.id === hoveredMarkerId)
+        const isStacked = group.length > 1
+
+        return (
+          <div
+            key={primaryMarker.id}
+            className={`absolute z-30 -translate-y-1/2 ${isDragging ? 'pointer-events-none' : 'pointer-events-auto'}`}
+            style={{
+              left: `${primaryMarker.position}%`,
+              top: '19px',
+              transform: 'translateX(-50%) translateY(-50%)',
+            }}
+          >
+            <button
+              type="button"
+              data-testid="comment-marker"
+              onClick={(event) => onMarkerClick(primaryMarker, event)}
+              onTouchEnd={(event) => onMarkerTouchEnd(primaryMarker, event)}
+              onMouseEnter={() => onMarkerMouseEnter(primaryMarker.id)}
+              onMouseLeave={onMarkerMouseLeave}
+              onTouchStart={(event) => onMarkerTouchStart(primaryMarker.id, event)}
+              className={`
+                relative flex items-center justify-center
+                h-5 w-5 min-h-5 min-w-5 shrink-0
+                rounded-full select-none
+                transition-[filter,box-shadow] duration-150 ease-out
+                hover:brightness-105
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-white
+                ${isHovered ? 'ring-2 ring-primary/70 shadow-md z-30' : 'z-10'}
+              `}
+              aria-label={`Comment by ${primaryMarker.authorName || tComments('anonymous')} at ${formatTime(primaryMarker.timestamp)}`}
+            >
+              <InitialsAvatar
+                name={primaryMarker.authorName}
+                size="xs"
+                isInternal={primaryMarker.isInternal}
+                className="pointer-events-none h-5 w-5 min-h-5 min-w-5 max-h-5 max-w-5 text-[9px]"
+              />
+
+              {isStacked && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-0.5 bg-foreground text-background text-[8px] font-bold rounded-full flex items-center justify-center shadow-md">
+                  {group.length}
+                </span>
+              )}
+            </button>
+
+            {isHovered && (
+              <div
+                className={`
+                  absolute bottom-full mb-2 ${getTooltipAlignment(primaryMarker.position)}
+                  bg-black/95 text-white backdrop-blur-sm
+                  rounded-lg shadow-2xl
+                  p-2 w-[180px] sm:w-[220px] max-w-[calc(100vw-2rem)]
+                  z-50
+                  animate-in fade-in-0 slide-in-from-bottom-1 duration-150
+                `}
+              >
+                {group.slice(0, 3).map((marker, index) => (
+                  <div
+                    key={marker.id}
+                    className={`${index > 0 ? 'mt-2 pt-2 border-t border-white/20' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <InitialsAvatar
+                        name={marker.authorName}
+                        size="xs"
+                        isInternal={marker.isInternal}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-semibold text-[10px] text-white truncate block">
+                          {marker.authorName || tComments('anonymous')}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-white/70 font-sans tabular-nums">
+                        {formatTime(marker.timestamp)}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-white/80 leading-relaxed line-clamp-2 pl-6">
+                      {marker.content || 'No content'}
+                    </p>
+                  </div>
+                ))}
+                {group.length > 3 && (
+                  <p className="text-[9px] text-white/60 mt-2 pt-2 border-t border-white/20">
+                    {t('moreComments', { count: group.length - 3 })}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+})
+
+interface FramePlaybackButtonsProps {
+  isPlaying: boolean
+  onPlayPause: () => void
+  onFrameStep: (direction: 'forward' | 'backward') => void
+}
+
+const FramePlaybackButtons = memo(function FramePlaybackButtons({
+  isPlaying,
+  onPlayPause,
+  onFrameStep,
+}: FramePlaybackButtonsProps) {
+  const t = useTranslations('controls')
+
+  return (
+    <div className="hidden sm:flex h-[26px] items-center gap-1">
+      <button
+        onClick={() => onFrameStep('backward')}
+        className="flex items-center justify-center text-foreground opacity-80 transition-opacity hover:opacity-100"
+        aria-label={t('previousFrame')}
+        title={`${t('previousFrame')} (Ctrl+J)`}
+      >
+        <SkipBack className="h-[14px] w-[14px]" />
+      </button>
+
+      <button
+        onClick={onPlayPause}
+        className="mx-1 flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
+        aria-label={isPlaying ? t('pauseVideo') : t('playVideo')}
+        title={isPlaying ? `${t('pauseVideo')} (Ctrl+Space)` : `${t('playVideo')} (Ctrl+Space)`}
+      >
+        {isPlaying ? (
+          <Pause className="h-5 w-5 fill-current" />
+        ) : (
+          <Play className="h-5 w-5 fill-current" />
+        )}
+      </button>
+
+      <button
+        onClick={() => onFrameStep('forward')}
+        className="flex items-center justify-center text-foreground opacity-80 transition-opacity hover:opacity-100"
+        aria-label={t('nextFrame')}
+        title={`${t('nextFrame')} (Ctrl+L)`}
+      >
+        <SkipForward className="h-[14px] w-[14px]" />
+      </button>
+    </div>
+  )
+})
+
+interface UtilityPlaybackButtonsProps {
+  volume: number
+  isMuted: boolean
+  isFullscreen: boolean
+  isLooping: boolean
+  showVolume: boolean
+  onVolumeMouseEnter: () => void
+  onVolumeMouseLeave: () => void
+  onVolumeChange: (volume: number) => void
+  onToggleMute: () => void
+  onToggleLoop: () => void
+  onToggleFullscreen: () => void
+}
+
+const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
+  volume,
+  isMuted,
+  isFullscreen,
+  isLooping,
+  showVolume,
+  onVolumeMouseEnter,
+  onVolumeMouseLeave,
+  onVolumeChange,
+  onToggleMute,
+  onToggleLoop,
+  onToggleFullscreen,
+}: UtilityPlaybackButtonsProps) {
+  const t = useTranslations('controls')
+
+  return (
+    <div className="relative z-[2] flex items-center gap-1 sm:gap-2">
+      <div
+        className="relative"
+        onMouseEnter={onVolumeMouseEnter}
+        onMouseLeave={onVolumeMouseLeave}
+      >
+        <button
+          onClick={onToggleMute}
+          className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation"
+          aria-label={isMuted ? t('unmute') : t('mute')}
+          title={isMuted ? t('unmute') : t('mute')}
+        >
+          {isMuted || volume === 0 ? (
+            <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
+          ) : (
+            <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
+          )}
+        </button>
+
+        {showVolume && (
+          <div className="absolute bottom-full right-0 mb-2 bg-black/90 p-3 rounded-lg shadow-xl border border-white/20 flex items-center justify-center backdrop-blur-sm">
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={isMuted ? 0 : volume}
+              onChange={(event) => onVolumeChange(parseFloat(event.target.value))}
+              aria-label="音量"
+              className="h-20 sm:h-24 w-2 cursor-pointer accent-primary"
+              style={{
+                writingMode: 'vertical-lr',
+                direction: 'rtl',
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={onToggleLoop}
+        className={`p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation ${isLooping ? 'bg-foreground/10' : ''}`}
+        aria-label={t('loop')}
+        aria-pressed={isLooping}
+        title={t('loop')}
+      >
+        <Repeat className={`w-4 h-4 sm:w-5 sm:h-5 ${isLooping ? 'text-primary' : 'text-foreground'}`} />
+      </button>
+
+      <button
+        onClick={onToggleFullscreen}
+        className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation"
+        aria-label={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
+        title={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
+      >
+        {isFullscreen ? (
+          <Minimize className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
+        ) : (
+          <Maximize className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
+        )}
+      </button>
+    </div>
+  )
+})
+
+function CustomVideoControls({
   videoRef,
   previewVideoUrl = null,
   videoDuration,
@@ -326,8 +635,7 @@ export default function CustomVideoControls({
   onRangeEndChange,
   surfaceClassName = 'bg-background',
 }: CustomVideoControlsProps) {
-  const t = useTranslations('controls')
-  const tComments = useTranslations('comments')
+  const mediaCurrentTime = useMediaPosition(videoRef, currentTime, videoId)
   const [isDragging, setIsDragging] = useState(false)
   const [dragPreviewTime, setDragPreviewTime] = useState<number | null>(null)
   const [showVolume, setShowVolume] = useState(false)
@@ -533,7 +841,7 @@ export default function CustomVideoControls({
       video.removeEventListener('durationchange', updateLoadedProgress)
       document.body.style.userSelect = ''
     }
-  }, [videoDuration, videoRef])
+  }, [videoDuration, videoId, videoRef])
 
   const handleTimelinePointerLeave = useCallback(() => {
     setHoveredTime(null)
@@ -543,14 +851,14 @@ export default function CustomVideoControls({
     if (!videoDuration) return
     const step = videoFps ? 1 / videoFps : 1
     let nextTime: number | null = null
-    if (event.key === 'ArrowLeft') nextTime = Math.max(0, currentTime - (event.shiftKey ? 5 : step))
-    if (event.key === 'ArrowRight') nextTime = Math.min(videoDuration, currentTime + (event.shiftKey ? 5 : step))
+    if (event.key === 'ArrowLeft') nextTime = Math.max(0, mediaCurrentTime - (event.shiftKey ? 5 : step))
+    if (event.key === 'ArrowRight') nextTime = Math.min(videoDuration, mediaCurrentTime + (event.shiftKey ? 5 : step))
     if (event.key === 'Home') nextTime = 0
     if (event.key === 'End') nextTime = videoDuration
     if (nextTime === null) return
     event.preventDefault()
     onSeek(nextTime, isPlaying || !videoRef.current?.paused)
-  }, [currentTime, isPlaying, onSeek, videoDuration, videoFps, videoRef])
+  }, [isPlaying, mediaCurrentTime, onSeek, videoDuration, videoFps, videoRef])
 
   useEffect(() => {
     const finishPointerInteraction = () => {
@@ -678,18 +986,12 @@ export default function CustomVideoControls({
   }, [])
 
   const safeDuration = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : 0
-  const displayedCurrentTime = dragPreviewTime ?? currentTime
+  const displayedCurrentTime = dragPreviewTime ?? mediaCurrentTime
   const safeCurrentTime = safeDuration > 0
     ? Math.min(safeDuration, Math.max(0, Number.isFinite(displayedCurrentTime) ? displayedCurrentTime : 0))
     : 0
   const progress = safeDuration > 0 ? (safeCurrentTime / safeDuration) * 100 : 0
   const isTimelineActive = isDragging || hoveredTime !== null
-
-  const getTooltipAlignment = (position: number): string => {
-    if (position < 20) return 'left-0'
-    if (position > 80) return 'right-0'
-    return 'left-1/2 -translate-x-1/2'
-  }
 
   return (
     <div className={`absolute left-0 right-0 top-full z-30 min-h-0 text-foreground ${surfaceClassName}`} style={{ borderRadius: '0 0 6px 6px' }}>
@@ -742,21 +1044,8 @@ export default function CustomVideoControls({
           {/* The annotation lane is intentionally independent from the rail. */}
           <div data-testid="annotation-lane" className={`pointer-events-none absolute inset-x-0 bottom-0 h-[26px] ${surfaceClassName}`} />
 
-          {/* Range Bars for comments with timecodeEnd */}
-          {rangeBars.map((bar) => {
-            const width = bar.endPosition - bar.startPosition
-            return (
-              <div
-                data-testid="comment-range-line"
-                key={`range-${bar.id}`}
-                className="pointer-events-none absolute top-[19px] h-[3px] -translate-y-1/2 bg-sky-400/85"
-                style={{
-                  left: `${bar.startPosition}%`,
-                  width: `${Math.max(width, 0.5)}%`,
-                }}
-              />
-            )
-          })}
+          {/* Range bars are static while the playhead moves. */}
+          <TimelineRangeBars bars={rangeBars} />
 
           {isSelectingRange && pendingRangeStart !== null && pendingRangeStart !== undefined && videoDuration > 0 && (
             <>
@@ -802,104 +1091,17 @@ export default function CustomVideoControls({
             </>
           )}
 
-          {/* Comment Markers */}
-          {groupedMarkers.map((group) => {
-            const primaryMarker = group[0]
-            const isHovered = group.some((m) => m.id === hoveredMarkerId)
-            const isStacked = group.length > 1
-
-            return (
-              <div
-                key={primaryMarker.id}
-                className={`absolute z-30 -translate-y-1/2 ${isDragging ? 'pointer-events-none' : 'pointer-events-auto'}`}
-                style={{
-                  left: `${primaryMarker.position}%`,
-                  top: '19px',
-                  transform: 'translateX(-50%) translateY(-50%)',
-                }}
-              >
-                <button
-                  type="button"
-                  data-testid="comment-marker"
-                  onClick={(e) => handleMarkerClick(primaryMarker, e)}
-                  onTouchEnd={(e) => handleMarkerTouchEnd(primaryMarker, e)}
-                  onMouseEnter={() => handleMarkerMouseEnter(primaryMarker.id)}
-                  onMouseLeave={handleMarkerMouseLeave}
-                  onTouchStart={(e) => handleMarkerTouchStart(primaryMarker.id, e)}
-                  className={`
-                    relative flex items-center justify-center
-                    h-5 w-5 min-h-5 min-w-5 shrink-0
-                    rounded-full select-none
-                    transition-[filter,box-shadow] duration-150 ease-out
-                    hover:brightness-105
-                    focus:outline-none focus-visible:ring-2 focus-visible:ring-white
-                    ${isHovered ? 'ring-2 ring-primary/70 shadow-md z-30' : 'z-10'}
-                  `}
-                  aria-label={`Comment by ${primaryMarker.authorName || tComments('anonymous')} at ${formatTime(primaryMarker.timestamp)}`}
-                >
-                  <InitialsAvatar
-                    name={primaryMarker.authorName}
-                    size="xs"
-                    isInternal={primaryMarker.isInternal}
-                    className="pointer-events-none h-5 w-5 min-h-5 min-w-5 max-h-5 max-w-5 text-[9px]"
-                  />
-
-                  {isStacked && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-0.5 bg-foreground text-background text-[8px] font-bold rounded-full flex items-center justify-center shadow-md">
-                      {group.length}
-                    </span>
-                  )}
-                </button>
-
-                {/* Tooltip */}
-                {isHovered && (
-                  <div
-                    className={`
-                      absolute bottom-full mb-2 ${getTooltipAlignment(primaryMarker.position)}
-                      bg-black/95 text-white backdrop-blur-sm
-                      rounded-lg shadow-2xl
-                      p-2 w-[180px] sm:w-[220px] max-w-[calc(100vw-2rem)]
-                      z-50
-                      animate-in fade-in-0 slide-in-from-bottom-1 duration-150
-                    `}
-                  >
-                    {group.slice(0, 3).map((marker, idx) => {
-                      return (
-                        <div
-                          key={marker.id}
-                          className={`${idx > 0 ? 'mt-2 pt-2 border-t border-white/20' : ''}`}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <InitialsAvatar
-                              name={marker.authorName}
-                              size="xs"
-                              isInternal={marker.isInternal}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <span className="font-semibold text-[10px] text-white truncate block">
-                                {marker.authorName || tComments('anonymous')}
-                              </span>
-                            </div>
-                            <span className="text-[9px] text-white/70 font-sans tabular-nums">
-                              {formatTime(marker.timestamp)}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-white/80 leading-relaxed line-clamp-2 pl-6">
-                            {marker.content || 'No content'}
-                          </p>
-                        </div>
-                      )
-                    })}
-                    {group.length > 3 && (
-                      <p className="text-[9px] text-white/60 mt-2 pt-2 border-t border-white/20">
-                        {t('moreComments', { count: group.length - 3 })}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {/* Comment markers stay isolated from the frequently changing playhead. */}
+          <TimelineMarkers
+            groups={groupedMarkers}
+            hoveredMarkerId={hoveredMarkerId}
+            isDragging={isDragging}
+            onMarkerClick={handleMarkerClick}
+            onMarkerTouchEnd={handleMarkerTouchEnd}
+            onMarkerMouseEnter={handleMarkerMouseEnter}
+            onMarkerMouseLeave={handleMarkerMouseLeave}
+            onMarkerTouchStart={handleMarkerTouchStart}
+          />
 
           {/* Hover Time Indicator */}
           {!isDragging && (
@@ -918,39 +1120,12 @@ export default function CustomVideoControls({
       <div className="relative flex h-9 items-center justify-between px-1">
         {/* Left Controls */}
         <div className="relative z-[2] flex items-center">
-          {/* Frame Back / Play / Frame Forward — desktop only; mobile shows these as a center overlay (see VideoPlayer.tsx) */}
-          <div className="hidden sm:flex h-[26px] items-center gap-1">
-            <button
-              onClick={() => onFrameStep('backward')}
-              className="flex items-center justify-center text-foreground opacity-80 transition-opacity hover:opacity-100"
-              aria-label={t('previousFrame')}
-              title={`${t('previousFrame')} (Ctrl+J)`}
-            >
-              <SkipBack className="h-[14px] w-[14px]" />
-            </button>
-
-            <button
-              onClick={onPlayPause}
-              className="mx-1 flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
-              aria-label={isPlaying ? t('pauseVideo') : t('playVideo')}
-              title={isPlaying ? `${t('pauseVideo')} (Ctrl+Space)` : `${t('playVideo')} (Ctrl+Space)`}
-            >
-              {isPlaying ? (
-                <Pause className="h-5 w-5 fill-current" />
-              ) : (
-                <Play className="h-5 w-5 fill-current" />
-              )}
-            </button>
-
-            <button
-              onClick={() => onFrameStep('forward')}
-              className="flex items-center justify-center text-foreground opacity-80 transition-opacity hover:opacity-100"
-              aria-label={t('nextFrame')}
-              title={`${t('nextFrame')} (Ctrl+L)`}
-            >
-              <SkipForward className="h-[14px] w-[14px]" />
-            </button>
-          </div>
+          {/* Frame controls are static while the playhead advances. */}
+          <FramePlaybackButtons
+            isPlaying={isPlaying}
+            onPlayPause={onPlayPause}
+            onFrameStep={onFrameStep}
+          />
 
           {/* Time Display */}
           <div className="mx-1 flex items-center rounded px-1.5 py-0.5 text-[13px] tabular-nums transition-colors hover:bg-muted">
@@ -974,73 +1149,22 @@ export default function CustomVideoControls({
         </div>
 
         {/* Right Controls */}
-        <div className="relative z-[2] flex items-center gap-1 sm:gap-2">
-          {/* Volume */}
-          <div
-            className="relative"
-            onMouseEnter={handleVolumeMouseEnter}
-            onMouseLeave={handleVolumeMouseLeave}
-          >
-            <button
-              onClick={onToggleMute}
-              className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation"
-              aria-label={isMuted ? t('unmute') : t('mute')}
-              title={isMuted ? t('unmute') : t('mute')}
-            >
-              {isMuted || volume === 0 ? (
-                <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
-              ) : (
-                <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
-              )}
-            </button>
-
-            {/* Volume Slider */}
-            {showVolume && (
-              <div className="absolute bottom-full right-0 mb-2 bg-black/90 p-3 rounded-lg shadow-xl border border-white/20 flex items-center justify-center backdrop-blur-sm">
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                  aria-label="音量"
-                  className="h-20 sm:h-24 w-2 cursor-pointer accent-primary"
-                  style={{
-                    writingMode: 'vertical-lr',
-                    direction: 'rtl',
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Loop */}
-          <button
-            onClick={onToggleLoop}
-            className={`p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation ${isLooping ? 'bg-foreground/10' : ''}`}
-            aria-label={t('loop')}
-            aria-pressed={isLooping}
-            title={t('loop')}
-          >
-            <Repeat className={`w-4 h-4 sm:w-5 sm:h-5 ${isLooping ? 'text-primary' : 'text-foreground'}`} />
-          </button>
-
-          {/* Fullscreen */}
-          <button
-            onClick={onToggleFullscreen}
-            className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation"
-            aria-label={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
-            title={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
-          >
-            {isFullscreen ? (
-              <Minimize className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
-            ) : (
-              <Maximize className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
-            )}
-          </button>
-        </div>
+        <UtilityPlaybackButtons
+          volume={volume}
+          isMuted={isMuted}
+          isFullscreen={isFullscreen}
+          isLooping={isLooping}
+          showVolume={showVolume}
+          onVolumeMouseEnter={handleVolumeMouseEnter}
+          onVolumeMouseLeave={handleVolumeMouseLeave}
+          onVolumeChange={onVolumeChange}
+          onToggleMute={onToggleMute}
+          onToggleLoop={onToggleLoop}
+          onToggleFullscreen={onToggleFullscreen}
+        />
       </div>
     </div>
   )
 }
+
+export default memo(CustomVideoControls)

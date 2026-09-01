@@ -3,8 +3,8 @@ import { prisma } from '@/lib/db'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { logError } from '@/lib/logging'
-import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
-import { getAppDomain } from '@/lib/url'
+import { resolveShareMetadata, isShareLinkActive, isVideoInShareScope } from '@/lib/share-links'
+import { getAppUrl } from '@/lib/url'
 import { verifyProjectAccess } from '@/lib/project-access'
 
 export const runtime = 'nodejs'
@@ -26,7 +26,7 @@ export async function GET(
     const videoId = request.nextUrl.searchParams.get('videoId')
     if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
-    const resolved = await resolveShare(token)
+    const resolved = await resolveShareMetadata(token)
     if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
     const project = resolved.project ? {
       id: resolved.project.id,
@@ -42,13 +42,14 @@ export async function GET(
 
     const video = await prisma.video.findFirst({
       where: { id: videoId, projectId: project.id, status: 'READY' },
-      select: { id: true, thumbnailPath: true },
+      select: { id: true, thumbnailPath: true, name: true, folderId: true },
     })
     if (!video || !video.thumbnailPath) {
       return NextResponse.json({ error: 'Thumbnail not found' }, { status: 404 })
     }
-    const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
-    if (scopedIds && !scopedIds.has(video.id)) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    if (resolved.link && !(await isVideoInShareScope(resolved.link, project.id, video))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     const contentToken = await generateVideoAccessToken(
       video.id,
@@ -58,8 +59,8 @@ export async function GET(
       `share-thumb:${project.id}`,
     )
 
-    const appDomain = await getAppDomain()
-    return NextResponse.redirect(new URL(`/api/content/${contentToken}`, appDomain), 302)
+    const appUrl = await getAppUrl(request)
+    return NextResponse.redirect(new URL(`/api/content/${contentToken}`, appUrl), 302)
   } catch (error) {
     logError('[SHARE] Thumbnail generation failed:', error)
     return NextResponse.json({ error: 'Thumbnail generation failed' }, { status: 500 })

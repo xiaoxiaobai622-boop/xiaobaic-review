@@ -5,7 +5,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
+import { resolveShareMetadata, getShareScopeVideoIds, isShareLinkActive } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -32,7 +32,7 @@ export async function POST(
   if (rateLimitResult) return rateLimitResult
 
   try {
-    const resolved = await resolveShare(slug)
+    const resolved = await resolveShareMetadata(slug)
     if (resolved.link && !isShareLinkActive(resolved.link)) {
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 410 })
     }
@@ -89,7 +89,7 @@ export async function POST(
       orderBy: { createdAt: 'desc' },
     })
 
-    const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
+    const scopedIds = resolved.link ? await getShareScopeVideoIds(resolved.link, project.id) : null
     const scopedApprovedVideos = scopedIds
       ? approvedVideos.filter(video => scopedIds.has(video.id))
       : approvedVideos

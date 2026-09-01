@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState, useEffect, RefObject } from 'react'
+import { memo, useMemo, useState, useEffect, RefObject } from 'react'
 import { AnnotationData, Shape } from '@/types/annotations'
 import { timecodeToSeconds } from '@/lib/timecode'
+import { useMediaPosition } from '@/hooks/useMediaPosition'
 
 interface PendingAnnotation {
   annotations: AnnotationData
@@ -21,8 +22,22 @@ interface AnnotationOverlayProps {
   videoFps: number
   containerRef: RefObject<HTMLDivElement | null>
   videoRef: RefObject<HTMLVideoElement | null>
+  videoKey?: string
   hidden?: boolean
   pendingAnnotation?: PendingAnnotation | null
+}
+
+interface TimedAnnotation {
+  commentId: string
+  shapes: Shape[]
+  startTime: number
+  endTime: number
+  tolerance: number
+}
+
+interface VisibleAnnotation {
+  commentId: string
+  shapes: Shape[]
 }
 
 function renderShape(shape: Shape, renderWidth: number, renderHeight: number, key: string) {
@@ -105,15 +120,74 @@ function getVideoRect(
   return { offsetX: ox, offsetY: oy, width: rw, height: rh }
 }
 
-export default function AnnotationOverlay({
+interface AnnotationShapesProps {
+  visibleShapes: VisibleAnnotation[]
+  renderWidth: number
+  renderHeight: number
+  offsetX: number
+  offsetY: number
+}
+
+function areAnnotationShapesEqual(
+  previous: AnnotationShapesProps,
+  next: AnnotationShapesProps,
+): boolean {
+  if (
+    previous.renderWidth !== next.renderWidth ||
+    previous.renderHeight !== next.renderHeight ||
+    previous.offsetX !== next.offsetX ||
+    previous.offsetY !== next.offsetY ||
+    previous.visibleShapes.length !== next.visibleShapes.length
+  ) {
+    return false
+  }
+
+  return previous.visibleShapes.every((entry, index) => {
+    const nextEntry = next.visibleShapes[index]
+    return entry.commentId === nextEntry.commentId && entry.shapes === nextEntry.shapes
+  })
+}
+
+/** Keep SVG geometry isolated while the playhead moves within one range. */
+const AnnotationShapes = memo(function AnnotationShapes({
+  visibleShapes,
+  renderWidth,
+  renderHeight,
+  offsetX,
+  offsetY,
+}: AnnotationShapesProps) {
+  return (
+    <svg
+      className="absolute pointer-events-none z-10"
+      style={{
+        left: offsetX,
+        top: offsetY,
+        width: renderWidth,
+        height: renderHeight,
+      }}
+      viewBox={`0 0 ${renderWidth} ${renderHeight}`}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      {visibleShapes.map(({ commentId, shapes }) =>
+        shapes.map((shape, index) =>
+          renderShape(shape, renderWidth, renderHeight, `${commentId}-${shape.id}-${index}`)
+        )
+      )}
+    </svg>
+  )
+}, areAnnotationShapesEqual)
+
+function AnnotationOverlay({
   comments,
   currentTime,
   videoFps,
   containerRef,
   videoRef,
+  videoKey,
   hidden = false,
   pendingAnnotation = null,
 }: AnnotationOverlayProps) {
+  const mediaCurrentTime = useMediaPosition(videoRef, currentTime, videoKey)
   const [rect, setRect] = useState<{ offsetX: number; offsetY: number; width: number; height: number } | null>(null)
 
   useEffect(() => {
@@ -122,7 +196,17 @@ export default function AnnotationOverlay({
       const container = containerRef.current
       if (!video || !container) return
       const r = getVideoRect(video, container)
-      if (r) setRect(r)
+      if (r) {
+        setRect((previous) => (
+          previous &&
+          previous.offsetX === r.offsetX &&
+          previous.offsetY === r.offsetY &&
+          previous.width === r.width &&
+          previous.height === r.height
+            ? previous
+            : r
+        ))
+      }
     }
 
     recalc()
@@ -142,17 +226,19 @@ export default function AnnotationOverlay({
       observer.disconnect()
       if (video) video.removeEventListener('loadedmetadata', recalc)
     }
-  }, [videoRef, containerRef])
+  }, [containerRef, videoKey, videoRef])
 
   const renderWidth = rect?.width || 0
   const renderHeight = rect?.height || 0
   const offsetX = rect?.offsetX || 0
   const offsetY = rect?.offsetY || 0
 
-  const visibleShapes = useMemo(() => {
-    if (!renderWidth || !renderHeight) return []
-
-    const result: Array<{ commentId: string; shapes: Shape[] }> = []
+  // Normalize annotation payloads and parse timecodes only when comments or
+  // the source frame rate changes. Playback updates now only filter this
+  // compact list instead of walking every raw comment payload.
+  const timedAnnotations = useMemo<TimedAnnotation[]>(() => {
+    const frameDuration = 1 / (videoFps || 24)
+    const result: TimedAnnotation[] = []
 
     for (const comment of comments) {
       const ann = comment.annotations as any
@@ -172,18 +258,34 @@ export default function AnnotationOverlay({
       }
       if (!shapes) continue
 
-      const startTime = timecodeToSeconds(comment.timecode, videoFps)
-      const frameDuration = 1 / (videoFps || 24)
+      let startTime: number
+      let endTime: number
+      try {
+        startTime = timecodeToSeconds(comment.timecode, videoFps)
+        endTime = comment.timecodeEnd
+          ? timecodeToSeconds(comment.timecodeEnd, videoFps)
+          : startTime + frameDuration
+      } catch {
+        // A malformed legacy timecode should not interrupt video playback.
+        continue
+      }
+
       // Use a small tolerance to account for floating point drift in timecode round-trips
       const tolerance = frameDuration * 0.5
-      const endTime = comment.timecodeEnd
-        ? timecodeToSeconds(comment.timecodeEnd, videoFps)
-        : startTime + frameDuration
-
-      if (currentTime < startTime - tolerance || currentTime > endTime + tolerance) continue
-
-      result.push({ commentId: comment.id, shapes })
+      result.push({ commentId: comment.id, shapes, startTime, endTime, tolerance })
     }
+
+    return result
+  }, [comments, videoFps])
+
+  const visibleShapes = useMemo<VisibleAnnotation[]>(() => {
+    if (!renderWidth || !renderHeight) return []
+
+    const result: VisibleAnnotation[] = timedAnnotations
+      .filter(({ startTime, endTime, tolerance }) => (
+        mediaCurrentTime >= startTime - tolerance && mediaCurrentTime <= endTime + tolerance
+      ))
+      .map(({ commentId, shapes }) => ({ commentId, shapes }))
 
     // Always show pending annotation — it was just drawn at the current frame
     if (pendingAnnotation) {
@@ -194,27 +296,19 @@ export default function AnnotationOverlay({
     }
 
     return result
-  }, [comments, currentTime, videoFps, renderWidth, renderHeight, pendingAnnotation])
+  }, [mediaCurrentTime, pendingAnnotation, renderHeight, renderWidth, timedAnnotations])
 
   if (!renderWidth || !renderHeight || visibleShapes.length === 0 || hidden) return null
 
   return (
-    <svg
-      className="absolute pointer-events-none z-10"
-      style={{
-        left: offsetX,
-        top: offsetY,
-        width: renderWidth,
-        height: renderHeight,
-      }}
-      viewBox={`0 0 ${renderWidth} ${renderHeight}`}
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      {visibleShapes.map(({ commentId, shapes }) =>
-        shapes.map((shape, i) =>
-          renderShape(shape, renderWidth, renderHeight, `${commentId}-${shape.id}-${i}`)
-        )
-      )}
-    </svg>
+    <AnnotationShapes
+      visibleShapes={visibleShapes}
+      renderWidth={renderWidth}
+      renderHeight={renderHeight}
+      offsetX={offsetX}
+      offsetY={offsetY}
+    />
   )
 }
+
+export default memo(AnnotationOverlay)

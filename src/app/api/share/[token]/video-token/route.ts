@@ -5,7 +5,7 @@ import { verifyProjectAccess } from '@/lib/project-access'
 import { logError } from '@/lib/logging'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShare, isShareLinkActive, scopeVideoIds } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, isVideoInShareScope } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,7 +31,7 @@ export async function GET(
     return NextResponse.json({ error: shareMessages?.unauthorized || 'Unauthorized' }, { status: 401 })
   }
 
-  const resolved = await resolveShare(token)
+  const resolved = await resolveShareMetadata(token)
   if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
   const project = resolved.project ? {
     id: resolved.project.id,
@@ -50,12 +50,14 @@ export async function GET(
   if (!accessCheck.authorized) return accessCheck.errorResponse || NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
 
   const video = await prisma.video.findUnique({
-    where: { id: videoId },
+    where: { id: videoId, status: { not: 'ROLLED_BACK' } },
     select: {
       id: true,
       projectId: true,
       approved: true,
       thumbnailPath: true,
+      name: true,
+      folderId: true,
     },
   })
 
@@ -63,8 +65,9 @@ export async function GET(
     return NextResponse.json({ error: shareMessages?.videoNotFound || 'Video not found' }, { status: 404 })
   }
 
-  const scopedIds = resolved.link && resolved.project ? scopeVideoIds(resolved.link, resolved.project.videos) : null
-  if (scopedIds && !scopedIds.has(video.id)) return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
+  if (resolved.link && !(await isVideoInShareScope(resolved.link, project.id, video))) {
+    return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
+  }
 
   if (quality === 'original' && !video.approved) {
     return NextResponse.json({ error: shareMessages?.originalQualityUnavailable || 'Original quality unavailable' }, { status: 403 })

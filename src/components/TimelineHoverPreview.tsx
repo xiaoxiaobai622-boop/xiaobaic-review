@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { formatCommentTimestamp, secondsToTimecode } from '@/lib/timecode'
 
 interface TimelineHoverPreviewProps {
@@ -22,7 +22,7 @@ function formatTimeWithMode(
   return formatCommentTimestamp({ timecode, fps, videoDurationSeconds: duration, mode })
 }
 
-export default function TimelineHoverPreview({
+function TimelineHoverPreview({
   videoUrl,
   hoveredTime,
   duration,
@@ -124,3 +124,5 @@ export default function TimelineHoverPreview({
     </div>
   )
 }
+
+export default memo(TimelineHoverPreview)

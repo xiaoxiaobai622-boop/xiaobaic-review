@@ -9,7 +9,7 @@ import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-t
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShare, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions } from '@/lib/share-links'
 export const runtime = 'nodejs'
 
 
@@ -36,7 +36,10 @@ export async function GET(
     }, `share-access:${token}`)
     if (rateLimitResult) return rateLimitResult
 
-    const resolved = await resolveShare(token)
+    // This endpoint performs the one full project/video query needed for the
+    // response below. Resolve authorization metadata separately so the same
+    // request does not first hydrate every video and folder twice.
+    const resolved = await resolveShareMetadata(token)
     const resolvedProject = resolved.project
     const shareLink = resolved.link
     if (shareLink && !isShareLinkActive(shareLink)) {

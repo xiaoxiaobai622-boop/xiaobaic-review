@@ -71,6 +71,50 @@ function getS3Bucket(): string {
 
 const cdnUrlCache = new Map<string, { url: string; expiresAt: number }>()
 
+// Content requests can check the same preview several times while a player is
+// starting or seeking. A short process-local cache avoids a HEAD round trip on
+// every request without making object availability a long-lived assumption.
+const S3_FILE_EXISTS_CACHE_TTL_MS = 15_000
+const S3_FILE_MISSING_CACHE_TTL_MS = 2_000
+const S3_FILE_EXISTS_CACHE_MAX_ENTRIES = 2_048
+type S3FileExistsCacheEntry = { value: boolean; expiresAt: number }
+const s3FileExistsCache = new Map<string, S3FileExistsCacheEntry>()
+const s3FileExistsInflight = new Map<string, Promise<boolean>>()
+const s3FileExistsGenerations = new Map<string, number>()
+
+function setS3FileExistsCache(key: string, value: boolean, ttlMs: number): void {
+  // Map iteration order is insertion order, so remove the oldest entry when
+  // the bounded cache is full. This keeps a long-lived server process from
+  // retaining one entry for every historical object key.
+  if (!s3FileExistsCache.has(key) && s3FileExistsCache.size >= S3_FILE_EXISTS_CACHE_MAX_ENTRIES) {
+    const oldestKey = s3FileExistsCache.keys().next().value
+    if (oldestKey !== undefined) s3FileExistsCache.delete(oldestKey)
+  }
+  s3FileExistsCache.set(key, { value, expiresAt: Date.now() + ttlMs })
+}
+
+function invalidateS3FileExistsCache(key: string): void {
+  s3FileExistsCache.delete(key)
+  if (s3FileExistsInflight.has(key)) {
+    s3FileExistsGenerations.set(key, (s3FileExistsGenerations.get(key) ?? 0) + 1)
+  } else {
+    // No request can observe a generation change once there is no in-flight
+    // check, so avoid retaining a generation entry for every written key.
+    s3FileExistsGenerations.delete(key)
+  }
+}
+
+function markS3FileExistsCache(key: string, value: boolean, ttlMs: number): void {
+  invalidateS3FileExistsCache(key)
+  setS3FileExistsCache(key, value, ttlMs)
+}
+
+function isS3NotFoundError(err: unknown): boolean {
+  if (err instanceof NotFound) return true
+  const e = err as { $metadata?: { httpStatusCode?: number } }
+  return e?.$metadata?.httpStatusCode === 404
+}
+
 function getCdnStreamUrl(key: string, expirySeconds: number): string | null {
   if (process.env.MEDIA_CDN_ENABLED !== 'true') return null
 
@@ -134,6 +178,10 @@ export async function s3UploadFile(
   contentType: string = 'application/octet-stream',
   size?: number
 ): Promise<void> {
+  // A write supersedes both positive and negative HEAD results. Invalidate
+  // before starting so an in-flight check cannot repopulate stale state.
+  invalidateS3FileExistsCache(key)
+
   if (Buffer.isBuffer(body)) {
     if (body.length >= MULTIPART_THRESHOLD) {
       return s3UploadFileMultipart(key, body, contentType, body.length, PART_SIZE)
@@ -148,6 +196,7 @@ export async function s3UploadFile(
           ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
         })
       )
+      markS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
     } catch (err) {
       throw formatS3Error('PUT', key, err)
     }
@@ -167,6 +216,7 @@ export async function s3UploadFile(
           ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
         })
       )
+      markS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
     } catch (err) {
       throw formatS3Error('PUT', key, err)
     }
@@ -295,6 +345,9 @@ export async function s3MoveFile(sourceKey: string, destKey: string): Promise<vo
   const bucket = getS3Bucket()
   const encodedSource = sourceKey.split('/').map(encodeURIComponent).join('/')
 
+  invalidateS3FileExistsCache(sourceKey)
+  invalidateS3FileExistsCache(destKey)
+
   try {
     await client.send(
       new CopyObjectCommand({
@@ -303,12 +356,14 @@ export async function s3MoveFile(sourceKey: string, destKey: string): Promise<vo
         CopySource: `${bucket}/${encodedSource}`,
       })
     )
+    markS3FileExistsCache(destKey, true, S3_FILE_EXISTS_CACHE_TTL_MS)
   } catch (err) {
     throw formatS3Error('COPY', destKey, err)
   }
 
   try {
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: sourceKey }))
+    markS3FileExistsCache(sourceKey, false, S3_FILE_MISSING_CACHE_TTL_MS)
   } catch (err) {
     throw formatS3Error('DELETE', sourceKey, err)
   }
@@ -316,8 +371,10 @@ export async function s3MoveFile(sourceKey: string, destKey: string): Promise<vo
 
 /** Delete a single object. */
 export async function s3DeleteFile(key: string): Promise<void> {
+  invalidateS3FileExistsCache(key)
   try {
     await getS3Client().send(new DeleteObjectCommand({ Bucket: getS3Bucket(), Key: key }))
+    markS3FileExistsCache(key, false, S3_FILE_MISSING_CACHE_TTL_MS)
   } catch (err) {
     throw formatS3Error('DELETE', key, err)
   }
@@ -342,6 +399,9 @@ export async function s3DeleteDirectory(prefix: string): Promise<void> {
           Delete: { Objects: objects.map((o) => ({ Key: o.Key! })), Quiet: true },
         })
       )
+      for (const object of objects) {
+        if (object.Key) markS3FileExistsCache(object.Key, false, S3_FILE_MISSING_CACHE_TTL_MS)
+      }
     }
     continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
   } while (continuationToken)
@@ -349,17 +409,52 @@ export async function s3DeleteDirectory(prefix: string): Promise<void> {
 
 /** Return true if the object exists; false on 404; rethrows on any other error. */
 export async function s3FileExists(key: string): Promise<boolean> {
+  // Validate the configured bucket even when a cached result is available,
+  // preserving the original configuration-error behavior.
+  const bucket = getS3Bucket()
+  const now = Date.now()
+  const cached = s3FileExistsCache.get(key)
+  if (cached) {
+    if (cached.expiresAt > now) return cached.value
+    s3FileExistsCache.delete(key)
+  }
+
+  const existing = s3FileExistsInflight.get(key)
+  if (existing) return existing
+
+  const requestGeneration = s3FileExistsGenerations.get(key) ?? 0
+  const checkPromise = (async () => {
+    try {
+      await getS3Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+      if ((s3FileExistsGenerations.get(key) ?? 0) === requestGeneration) {
+        setS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
+      }
+      return true
+    } catch (err: unknown) {
+      // HeadObject throws NotFound (not NoSuchKey) per AWS SDK v3 spec. Some
+      // S3-compatible providers surface 404 through the response metadata.
+      if (isS3NotFoundError(err)) {
+        if ((s3FileExistsGenerations.get(key) ?? 0) === requestGeneration) {
+          setS3FileExistsCache(key, false, S3_FILE_MISSING_CACHE_TTL_MS)
+        }
+        return false
+      }
+      const e = err as { $metadata?: { httpStatusCode?: number }; message?: string }
+      const status = e?.$metadata?.httpStatusCode
+      // Do not cache provider/network failures: the next request should be
+      // able to recover immediately when the backend becomes available.
+      throw new Error(`S3 HeadObject failed for key "${key}"${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? String(err)}`)
+    }
+  })()
+
+  s3FileExistsInflight.set(key, checkPromise)
   try {
-    await getS3Client().send(new HeadObjectCommand({ Bucket: getS3Bucket(), Key: key }))
-    return true
-  } catch (err: unknown) {
-    // HeadObject throws NotFound (not NoSuchKey) per AWS SDK v3 spec
-    if (err instanceof NotFound) return false
-    // Some S3-compatible providers (MinIO, R2) surface 404 via $metadata instead
-    const e = err as { $metadata?: { httpStatusCode?: number }; message?: string }
-    if (e?.$metadata?.httpStatusCode === 404) return false
-    const status = e?.$metadata?.httpStatusCode
-    throw new Error(`S3 HeadObject failed for key "${key}"${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? String(err)}`)
+    return await checkPromise
+  } finally {
+    if (s3FileExistsInflight.get(key) === checkPromise) {
+      s3FileExistsInflight.delete(key)
+      s3FileExistsGenerations.delete(key)
+    }
   }
 }
 
@@ -402,6 +497,7 @@ export async function s3CompleteMultipartUpload(
   uploadId: string,
   parts: CompletedPart[]
 ): Promise<void> {
+  invalidateS3FileExistsCache(key)
   await getS3Client().send(
     new CompleteMultipartUploadCommand({
       Bucket: getS3Bucket(),
@@ -410,6 +506,7 @@ export async function s3CompleteMultipartUpload(
       MultipartUpload: { Parts: parts },
     })
   )
+  markS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
 }
 
 /** Abort an incomplete multipart upload to free storage. */

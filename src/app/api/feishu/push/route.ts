@@ -8,6 +8,36 @@ import { buildDeepLink } from '@/lib/deep-link'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+function buildVideoMessageCard({
+  project,
+  video,
+  comments,
+  reviewerName,
+}: {
+  project: { title: string }
+  video: { name: string; versionLabel: string | null }
+  comments: Array<{ timecode: string; content: string }>
+  reviewerName: string
+}) {
+  let content = `**项目：** ${project.title}\n**视频：** ${video.name}\n**版本：** ${video.versionLabel || '—'}\n\n本次新增 **${comments.length}** 条批注意见\n\n━━━━━━━━━━━━━━\n\n`
+
+  content += comments
+    .slice(0, 10)
+    .map((comment) => `**${comment.timecode}**\n${comment.content}`)
+    .join('\n\n')
+
+  if (comments.length > 10) {
+    content += `\n\n...还有 ${comments.length - 10} 条批注意见`
+  }
+
+  content += `\n\n━━━━━━━━━━━━━━\n审阅人：${reviewerName}`
+
+  return {
+    title: '🎬 MLE6 逐帧审阅批注意见',
+    content,
+  }
+}
+
 /**
  * POST /api/feishu/push
  *
@@ -139,10 +169,6 @@ export async function POST(request: NextRequest) {
       uploader = videos[0]?.uploadedBy
     }
 
-    if (retryNotification?.uploaderId) {
-      uploader = retryNotification.uploaderId
-    }
-
     if (retryNotification) {
       const retryCommentIds = new Set(retryNotification.commentIds)
       comments = comments.filter((comment: any) => retryCommentIds.has(comment.id))
@@ -150,7 +176,7 @@ export async function POST(request: NextRequest) {
       videos = videos.filter((video: any) => commentVideoIds.has(video.id))
     }
 
-    if (!uploader) {
+    if (!uploader && scope === 'video') {
       return NextResponse.json(
         { error: 'No uploader found' },
         { status: 400 }
@@ -160,19 +186,6 @@ export async function POST(request: NextRequest) {
     if (comments.length === 0) {
       return NextResponse.json(
         { error: 'No comments to push' },
-        { status: 400 }
-      )
-    }
-
-    // Get uploader's Feishu binding
-    const uploaderUser = await prisma.user.findUnique({
-      where: { id: uploader },
-      include: { feishuBinding: true },
-    })
-
-    if (!uploaderUser?.feishuBinding) {
-      return NextResponse.json(
-        { error: 'Uploader has not bound Feishu account' },
         { status: 400 }
       )
     }
@@ -202,117 +215,130 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build message card content
-    let cardTitle: string
-    let cardContent: string
-    let deepLink: string
+    // Project pushes use the same card as a single-video push.  Each video
+    // gets its own notification so the recipient and "查看本集" link match.
+    const groupedVideos = videos
+      .map((video: any) => ({
+        video,
+        comments: commentsToPush.filter((comment: any) => comment.videoId === video.id),
+      }))
+      .filter((group: any) => group.comments.length > 0)
 
-    if (scope === 'video') {
-      const video = videos[0]
-      cardTitle = '🎬 MLE6 逐帧审阅批注意见'
-      cardContent = `**项目：** ${project.title}\n**视频：** ${video.name}\n**版本：** ${video.versionLabel}\n\n本次新增 **${commentsToPush.length}** 条批注意见\n\n━━━━━━━━━━━━━━\n\n`
+    if (groupedVideos.length === 0) {
+      return NextResponse.json({ error: 'No comments to push' }, { status: 400 })
+    }
 
-      // Add up to 10 comments in card
-      const displayComments = commentsToPush.slice(0, 10)
-      cardContent += displayComments.map((c: any) => `**${c.timecode}**\n${c.content}`).join('\n\n')
+    const pushGroups: Array<{
+      video: any
+      comments: any[]
+      uploaderUser: any
+    }> = []
 
-      if (commentsToPush.length > 10) {
-        cardContent += `\n\n...还有 ${commentsToPush.length - 10} 条批注意见`
+    for (const group of groupedVideos) {
+      // A retry for a video whose uploader was removed still uses the
+      // uploader recorded on the failed notification.
+      const retryUploaderId = retryNotification?.videoId === group.video.id
+        ? retryNotification?.uploaderId
+        : null
+      const uploaderId = retryUploaderId
+        ? retryUploaderId
+        : group.video.uploadedBy
+      if (!uploaderId) {
+        return NextResponse.json({ error: `视频「${group.video.name}」没有上传者` }, { status: 400 })
       }
 
-      cardContent += `\n\n━━━━━━━━━━━━━━\n审阅人：${user.name || '管理员'}`
-
-      // Build deep link to video
-      deepLink = buildDeepLink({
-        projectId,
-        videoId,
+      const uploaderUser = await prisma.user.findUnique({
+        where: { id: uploaderId },
+        include: { feishuBinding: true },
       })
-    } else {
-      // Project scope
-      cardTitle = '🎬 MLE6 逐帧审阅批注意见'
-      cardContent = `**项目：** ${project.title}\n\n本次推送：\n**${videos.length}** 个视频\n**${commentsToPush.length}** 条批注意见\n\n━━━━━━━━━━━━━━\n\n`
-
-      // Group by video
-      const grouped = videos.map((v: any) => ({
-        video: v,
-        count: commentsToPush.filter((c: any) => c.videoId === v.id).length,
-      })).filter((g: any) => g.count > 0)
-
-      cardContent += grouped.map((g: any) => `${g.video.name}：${g.count}条`).join('\n')
-      cardContent += `\n\n━━━━━━━━━━━━━━`
-
-      // Build deep link to project
-      deepLink = buildDeepLink({ projectId })
+      if (!uploaderUser?.feishuBinding) {
+        return NextResponse.json(
+          { error: `视频「${group.video.name}」的上传者尚未绑定飞书账号` },
+          { status: 400 }
+        )
+      }
+      pushGroups.push({ video: group.video, comments: group.comments, uploaderUser })
     }
 
-    // Create notification record (PENDING)
-    const notification = await prisma.feishuNotification.create({
-      data: {
-        projectId,
-        videoId: scope === 'video' ? videoId : null,
-        userId: user.id,
-        scope,
-        commentIds: commentsToPush.map((c: any) => c.id),
-        uploaderId: uploader,
-        uploaderOpenId: uploaderUser.feishuBinding.openId,
-        status: 'PENDING',
-        retryCount: retryNotification ? retryNotification.retryCount + 1 : 1,
-      },
-    })
+    const notificationIds: string[] = []
+    const messageIds: string[] = []
+    let sentComments = 0
 
-    // Send message card
-    try {
-      const messageId = await sendMessageCard(uploaderUser.feishuBinding.openId, {
-        title: cardTitle,
-        content: cardContent,
-        buttons: [
-          {
-            text: scope === 'video' ? '查看本集' : '查看项目',
-            url: deepLink,
+    for (const group of pushGroups) {
+      const notification = await prisma.feishuNotification.create({
+        data: {
+          projectId,
+          videoId: group.video.id,
+          userId: user.id,
+          scope,
+          commentIds: group.comments.map((comment: any) => comment.id),
+          uploaderId: group.uploaderUser.id,
+          uploaderOpenId: group.uploaderUser.feishuBinding.openId,
+          status: 'PENDING',
+          retryCount: retryNotification ? retryNotification.retryCount + 1 : 1,
+        },
+      })
+      notificationIds.push(notification.id)
+
+      try {
+        const card = buildVideoMessageCard({
+          project,
+          video: group.video,
+          comments: group.comments,
+          reviewerName: user.name || '管理员',
+        })
+        const messageId = await sendMessageCard(group.uploaderUser.feishuBinding.openId, {
+          title: card.title,
+          content: card.content,
+          buttons: [{
+            text: '查看本集',
+            url: buildDeepLink({
+              projectId,
+              videoId: group.video.id,
+              videoName: group.video.name,
+              version: group.video.version,
+            }),
             type: 'primary',
+          }],
+        })
+
+        await prisma.feishuNotification.update({
+          where: { id: notification.id },
+          data: { status: 'SENT', feishuMessageId: messageId, sentAt: new Date() },
+        })
+        messageIds.push(messageId)
+        sentComments += group.comments.length
+        logMessage(`Pushed ${group.comments.length} comments to Feishu user ${group.uploaderUser.feishuBinding.openId}`)
+      } catch (sendError) {
+        await prisma.feishuNotification.update({
+          where: { id: notification.id },
+          data: {
+            status: 'FAILED',
+            errorMessage: sendError instanceof Error ? sendError.message : String(sendError),
           },
-        ],
-      })
-
-      // Update notification to SENT
-      await prisma.feishuNotification.update({
-        where: { id: notification.id },
-        data: {
-          status: 'SENT',
-          feishuMessageId: messageId,
-          sentAt: new Date(),
-        },
-      })
-
-      logMessage(`Pushed ${commentsToPush.length} comments to Feishu user ${uploaderUser.feishuBinding.openId}`)
-
-      return NextResponse.json({
-        success: true,
-        notificationId: notification.id,
-        messageId,
-        pushedComments: commentsToPush.length,
-      })
-    } catch (sendError) {
-      // Update notification to FAILED
-      await prisma.feishuNotification.update({
-        where: { id: notification.id },
-        data: {
-          status: 'FAILED',
-          errorMessage: sendError instanceof Error ? sendError.message : String(sendError),
-        },
-      })
-
-      logError('Failed to send Feishu message:', sendError)
-
-      return NextResponse.json(
-        {
-          error: 'Failed to send Feishu notification',
-          details: sendError instanceof Error ? sendError.message : 'Unknown error',
-          notificationId: notification.id,
-        },
-        { status: 500 }
-      )
+        })
+        logError('Failed to send Feishu message:', sendError)
+        return NextResponse.json(
+          {
+            error: 'Failed to send Feishu notification',
+            details: sendError instanceof Error ? sendError.message : 'Unknown error',
+            notificationId: notification.id,
+            notificationIds,
+            pushedComments: sentComments,
+          },
+          { status: 500 }
+        )
+      }
     }
+
+    return NextResponse.json({
+      success: true,
+      notificationId: notificationIds[0],
+      notificationIds,
+      messageId: messageIds[0],
+      messageIds,
+      pushedComments: sentComments,
+    })
   } catch (error) {
     logError('Push execution error:', error)
     return NextResponse.json(

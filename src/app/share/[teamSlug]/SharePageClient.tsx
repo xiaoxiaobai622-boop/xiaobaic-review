@@ -24,6 +24,7 @@ import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
 import { apiFetch } from '@/lib/api-client'
+import { useStorageProvider } from '@/components/StorageConfigProvider'
 
 interface SharePageClientProps {
   token: string
@@ -37,6 +38,7 @@ interface ProjectRefreshOptions {
 const THUMBNAIL_TOKEN_CACHE_PREFIX = 'share-thumb-token:'
 const THUMBNAIL_URL_CACHE_PREFIX = 'share-thumb-url:'
 const VIDEO_SEEK_CACHE_PREFIX = 'share-video-seek:'
+const COMMENT_REFRESH_INTERVAL_MS = 30_000
 
 function getVideoCatalogSignature(projectData: any): string {
   const videos = Array.isArray(projectData?.videos) ? projectData.videos : []
@@ -50,6 +52,31 @@ function getVideoCatalogSignature(projectData: any): string {
     ].join(':'))
     .sort()
     .join('|')
+}
+
+function getVideoIdentitySignature(videos: any): string {
+  return (Array.isArray(videos) ? videos : [])
+    .map((video: any) => `${video.id}:${video.version}`)
+    .join('|')
+}
+
+/** Keep folder deep links scoped across the initial load and every refresh. */
+function scopeProjectToFolder(projectData: any, folderId: string | null): any {
+  if (!folderId || !projectData?.videosByName) return projectData
+
+  const videosByName = Object.entries(projectData.videosByName).reduce<Record<string, any[]>>(
+    (scoped: Record<string, any[]>, [name, videos]) => {
+      const folderVideos = (Array.isArray(videos) ? videos : [])
+        .filter((video: any) => video.folderId === folderId)
+      if (folderVideos.length > 0) scoped[name] = folderVideos
+      return scoped
+    }, {})
+
+  return {
+    ...projectData,
+    videosByName,
+    videos: Object.values(videosByName).flat(),
+  }
 }
 
 async function mapWithConcurrency<T, R>(
@@ -143,6 +170,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const collectionMode = searchParams?.get('mode') === 'collect'
   const pathname = usePathname()
   const router = useRouter()
+  const storageProvider = useStorageProvider()
+  const supportsHls = storageProvider === 's3'
 
   const urlTimestamp = searchParams?.get('t') ? parseFloat(searchParams.get('t')!) : null
   const urlVideoName = searchParams?.get('video') || null
@@ -236,9 +265,20 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const storageKey = token || ''
   const tokenCacheRef = useRef<Map<string, any>>(new Map())
   const inFlightTokenRequestsRef = useRef<Map<string, Promise<string>>>(new Map())
+  const commentsRequestRef = useRef<Promise<void> | null>(null)
   const playbackTimesRef = useRef<Map<string, number>>(new Map())
   const activeVideoIdRef = useRef<string | null>(null)
   const projectVideoCatalogRef = useRef('')
+  const activeVideosRawRef = useRef<any[]>([])
+  const activeVideosRef = useRef<any[]>([])
+
+  useEffect(() => {
+    activeVideosRawRef.current = activeVideosRaw
+  }, [activeVideosRaw])
+
+  useEffect(() => {
+    activeVideosRef.current = activeVideos
+  }, [activeVideos])
 
   /** Read GDPR analytics consent from localStorage */
   const getConsentHeader = useCallback((): Record<string, string> => {
@@ -291,54 +331,85 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const fetchComments = useCallback(async () => {
     if (!token || !shareToken || !canComment) return
 
-    setCommentsLoading(true)
-    try {
-      const response = await apiFetch(`/api/share/${token}/comments`, {
-        cache: 'no-store',
-        headers: {
-          'X-Share-Token': `Bearer ${shareToken}`
+    if (commentsRequestRef.current) return commentsRequestRef.current
+
+    const request = (async () => {
+      setCommentsLoading(true)
+      try {
+        const response = await apiFetch(`/api/share/${token}/comments`, {
+          cache: 'no-store',
+          headers: {
+            'X-Share-Token': `Bearer ${shareToken}`
+          }
+        })
+        if (response.ok) {
+          const commentsData = await response.json()
+          if (Array.isArray(commentsData)) setComments(commentsData)
         }
-      })
-      if (response.ok) {
-        const commentsData = await response.json()
-        setComments(commentsData)
+      } catch {
+        // Keep showing the last known comments when a refresh fails.
+      } finally {
+        setCommentsLoading(false)
       }
-    } catch (error) {
+    })()
+
+    commentsRequestRef.current = request
+    try {
+      await request
     } finally {
-      setCommentsLoading(false)
+      if (commentsRequestRef.current === request) commentsRequestRef.current = null
     }
   }, [canComment, token, shareToken])
 
   useEffect(() => {
+    const belongsToProject = (event: CustomEvent) => {
+      const eventProjectId = event.detail?.projectId
+      return !eventProjectId || !project?.id || eventProjectId === project.id
+    }
+
     const handleCommentPosted = (e: CustomEvent) => {
-      if (e.detail?.comments) {
+      if (!belongsToProject(e)) return
+      if (Array.isArray(e.detail?.comments)) {
         setComments(e.detail.comments)
       } else {
-        fetchComments()
+        void fetchComments()
       }
     }
 
-    const handleCommentDeleted = () => {
-      fetchComments()
+    const handleCommentDeleted = (e: CustomEvent) => {
+      if (belongsToProject(e)) void fetchComments()
     }
 
     window.addEventListener('commentPosted', handleCommentPosted as EventListener)
-    window.addEventListener('commentDeleted', handleCommentDeleted)
+    window.addEventListener('commentDeleted', handleCommentDeleted as EventListener)
 
     return () => {
       window.removeEventListener('commentPosted', handleCommentPosted as EventListener)
-      window.removeEventListener('commentDeleted', handleCommentDeleted)
+      window.removeEventListener('commentDeleted', handleCommentDeleted as EventListener)
     }
-  }, [fetchComments])
+  }, [fetchComments, project?.id])
 
   // Keep comments and timeline markers current when multiple reviewers are
-  // working in separate browsers.
+  // working in separate browsers. Hidden tabs stay idle, and focus/visibility
+  // changes trigger one deduplicated refresh when the reviewer returns.
   useEffect(() => {
     if (!shareToken || !project || project.hideFeedback || !canComment) return
-    const interval = window.setInterval(() => {
-      void fetchComments()
-    }, 5000)
-    return () => window.clearInterval(interval)
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') void fetchComments()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshIfVisible()
+    }
+    const interval = window.setInterval(refreshIfVisible, COMMENT_REFRESH_INTERVAL_MS)
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', refreshIfVisible)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', refreshIfVisible)
+    }
   }, [canComment, fetchComments, project, shareToken])
 
   const fetchProjectData = useCallback(async (
@@ -360,7 +431,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       }
 
       if (projectResponse.ok) {
-        const projectData = await projectResponse.json()
+        const projectData = scopeProjectToFolder(await projectResponse.json(), urlFolderId)
         const nextCatalogSignature = getVideoCatalogSignature(projectData)
 
         if (options.onlyIfVideoCatalogChanged && projectVideoCatalogRef.current === nextCatalogSignature) {
@@ -377,7 +448,37 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         projectVideoCatalogRef.current = nextCatalogSignature
         setProject(projectData)
 
-        tokenCacheRef.current.clear()
+        // Tokens are scoped by share token + video id. Retain them across
+        // project metadata refreshes (approval/status changes) so an open
+        // player does not lose its source and remount while polling.
+
+        const nextActiveVideos = activeVideoName
+          ? projectData.videosByName?.[activeVideoName]
+          : null
+        if (Array.isArray(nextActiveVideos)) {
+          const currentRawSignature = getVideoIdentitySignature(activeVideosRawRef.current)
+          const nextRawSignature = getVideoIdentitySignature(nextActiveVideos)
+
+          if (currentRawSignature !== nextRawSignature) {
+            setActiveVideosRaw(nextActiveVideos)
+          } else {
+            // Merge fresh review metadata without replacing token URLs. This
+            // keeps the current media element alive after an approval action.
+            const nextById = new Map(nextActiveVideos.map((video: any) => [video.id, video]))
+            setActiveVideos((currentVideos) => currentVideos.map((currentVideo: any) => {
+              const nextVideo = nextById.get(currentVideo.id)
+              if (!nextVideo) return currentVideo
+              return {
+                ...currentVideo,
+                ...nextVideo,
+                streamUrl720p: currentVideo.streamUrl720p || nextVideo.streamUrl720p || '',
+                streamUrl1080p: currentVideo.streamUrl1080p || nextVideo.streamUrl1080p || '',
+                streamUrl2160p: currentVideo.streamUrl2160p || nextVideo.streamUrl2160p || '',
+                hlsUrl720p: supportsHls ? (currentVideo.hlsUrl720p || nextVideo.hlsUrl720p || '') : '',
+              }
+            }))
+          }
+        }
 
         if (!options.skipComments && !projectData.hideFeedback && (!Array.isArray(projectData.sharePermissions) || projectData.sharePermissions.includes('comment'))) {
           fetchComments()
@@ -385,7 +486,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       }
     } catch (error) {
     }
-  }, [fetchComments, getConsentHeader, shareToken, storageKey, token])
+  }, [activeVideoName, fetchComments, getConsentHeader, shareToken, storageKey, supportsHls, token, urlFolderId])
 
   // Company name and default quality loaded from project settings
 
@@ -477,24 +578,13 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         }
 
         if (response.ok) {
-          const projectData = await response.json()
+          const projectData = scopeProjectToFolder(await response.json(), urlFolderId)
           if (projectData.shareToken) {
             setShareToken(projectData.shareToken)
             saveShareToken(storageKey, projectData.shareToken)
           }
           if (isMounted) {
             projectVideoCatalogRef.current = getVideoCatalogSignature(projectData)
-            // Folder share links reuse the public review page, scoped to the
-            // videos that belong to the requested folder.
-            if (urlFolderId && projectData.videosByName) {
-              const filteredVideosByName = Object.entries(projectData.videosByName).reduce((acc: Record<string, any[]>, [name, videos]) => {
-                const folderVideos = (videos as any[]).filter((video) => video.folderId === urlFolderId)
-                if (folderVideos.length > 0) acc[name] = folderVideos
-                return acc
-              }, {})
-              projectData.videosByName = filteredVideosByName
-              projectData.videos = Object.values(filteredVideosByName).flat()
-            }
             setProject(projectData)
             setIsPasswordProtected(!!projectData.recipients && projectData.recipients.length > 0)
             setIsAuthenticated(true)
@@ -576,9 +666,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         // If URL specifies a version, calculate the index
         if (urlVersion !== null && videos) {
           const targetIndex = videos.findIndex((v: any) => v.version === urlVersion)
-          if (targetIndex !== -1) {
-            setInitialVideoIndex(targetIndex)
-          }
+          setInitialVideoIndex(targetIndex >= 0 ? targetIndex : 0)
         }
 
         if (urlTimestamp !== null) {
@@ -593,10 +681,19 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       } else {
         const videos = project.videosByName[activeVideoName]
         if (videos) {
-          setActiveVideosRaw(videos)
+          // Polling already merges metadata into the tokenized list. Only
+          // replace the raw catalog when the actual version membership/order
+          // changes; otherwise token hydration would restart on every refresh.
+          const currentRawSignature = getVideoIdentitySignature(activeVideosRawRef.current)
+          const nextRawSignature = getVideoIdentitySignature(videos)
+          if (currentRawSignature !== nextRawSignature) {
+            setActiveVideosRaw(videos)
+          }
           if (urlVersion !== null) {
             const targetIndex = videos.findIndex((v: any) => v.version === urlVersion)
-            if (targetIndex !== -1) setInitialVideoIndex(targetIndex)
+            setInitialVideoIndex(targetIndex >= 0 ? targetIndex : 0)
+          } else {
+            setInitialVideoIndex(0)
           }
         }
       }
@@ -627,63 +724,86 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     return requestPromise
   }, [shareToken, token])
 
-  const fetchTokensForVideos = useCallback(async (videos: any[]) => {
+  const fetchTokensForVideos = useCallback(async (videos: any[], concurrency = 2) => {
     if (!shareToken) return videos
 
-    return Promise.all(
-      videos.map(async (video: any) => {
-        if (video.status !== 'READY') return video
+    const tokenizedById = new Map<string, any>()
+    await mapWithConcurrency(videos, concurrency, async (video: any) => {
+      if (video.status !== 'READY') {
+        tokenizedById.set(video.id, video)
+        return
+      }
 
-        const cacheKey = `${shareToken}:${video.id}`
-        const cached = tokenCacheRef.current.get(cacheKey)
-        if (cached) {
-          return cached
-        }
+      // The same video can be requested with different preview qualities.
+      // Include the configured preference so a prior 720p result cannot be
+      // reused after the project switches to 1080p/2160p.
+      const cacheKey = `${shareToken}:${video.id}:${defaultQuality}`
+      const cached = tokenCacheRef.current.get(cacheKey)
+      if (cached) {
+        tokenizedById.set(video.id, cached)
+        return
+      }
 
-        try {
-          let streamTokenHls = ''
-          let streamToken720p = ''
-          let streamToken1080p = ''
-          let streamToken2160p = ''
-          const qualityOrder = defaultQuality === '2160p'
-            ? ['2160p', '1080p', '720p']
-            : defaultQuality === '1080p'
-              ? ['1080p', '720p', '2160p']
-              : ['720p', '1080p', '2160p']
+      try {
+        let streamTokenHls = ''
+        let streamToken720p = ''
+        let streamToken1080p = ''
+        let streamToken2160p = ''
+        const qualityOrder = defaultQuality === '2160p'
+          ? ['2160p', '1080p', '720p']
+          : defaultQuality === '1080p'
+            ? ['1080p', '720p', '2160p']
+            : ['720p', '1080p', '2160p']
 
-          streamTokenHls = await fetchVideoToken(video.id, 'hls')
-          // Fetch only the configured playback quality and fall back one at a
-          // time. Original downloads and thumbnails are requested on demand.
-          for (const quality of qualityOrder) {
+        // HLS and the preferred progressive rendition are independent
+        // requests. Start them together so the first playable source is not
+        // delayed by a serial token round trip.
+        const [hlsToken, preferredToken] = await Promise.all([
+          supportsHls ? fetchVideoToken(video.id, 'hls') : Promise.resolve(''),
+          fetchVideoToken(video.id, qualityOrder[0]),
+        ])
+        streamTokenHls = hlsToken
+        if (qualityOrder[0] === '720p') streamToken720p = preferredToken
+        if (qualityOrder[0] === '1080p') streamToken1080p = preferredToken
+        if (qualityOrder[0] === '2160p') streamToken2160p = preferredToken
+
+        // Fetch a fallback rendition only when the configured quality is not
+        // available. A successful preferred token already gives the player an
+        // MP4 fallback, so probing more qualities would add avoidable requests
+        // to every first playback.
+        if (!preferredToken) {
+          for (const quality of qualityOrder.slice(1)) {
             const streamToken = await fetchVideoToken(video.id, quality)
             if (quality === '720p') streamToken720p = streamToken
             if (quality === '1080p') streamToken1080p = streamToken
             if (quality === '2160p') streamToken2160p = streamToken
             if (streamToken) break
           }
-
-          const tokenized = {
-            ...video,
-            streamUrl720p: streamToken720p ? `/api/content/${streamToken720p}` : '',
-            hlsUrl720p: streamTokenHls ? `/api/content/${streamTokenHls}` : '',
-            streamUrl1080p: streamToken1080p ? `/api/content/${streamToken1080p}` : '',
-            streamUrl2160p: streamToken2160p ? `/api/content/${streamToken2160p}` : '',
-            downloadUrl: null,
-            thumbnailUrl: null,
-          }
-
-          // Only cache successful tokenization results.
-          // Avoid caching empty URLs from transient failures on first load.
-          if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
-            tokenCacheRef.current.set(cacheKey, tokenized)
-          }
-          return tokenized
-        } catch (error) {
-          return video
         }
-      })
-    )
-  }, [defaultQuality, shareToken, fetchVideoToken])
+
+        const tokenized = {
+          ...video,
+          streamUrl720p: streamToken720p ? `/api/content/${streamToken720p}` : '',
+          hlsUrl720p: streamTokenHls ? `/api/content/${streamTokenHls}` : '',
+          streamUrl1080p: streamToken1080p ? `/api/content/${streamToken1080p}` : '',
+          streamUrl2160p: streamToken2160p ? `/api/content/${streamToken2160p}` : '',
+          downloadUrl: null,
+          thumbnailUrl: null,
+        }
+
+        // Only cache successful tokenization results. Avoid caching empty URLs
+        // from transient failures on first load.
+        if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
+          tokenCacheRef.current.set(cacheKey, tokenized)
+        }
+        tokenizedById.set(video.id, tokenized)
+      } catch {
+        tokenizedById.set(video.id, video)
+      }
+    })
+
+    return videos.map((video: any) => tokenizedById.get(video.id) || video)
+  }, [defaultQuality, fetchVideoToken, shareToken, supportsHls])
 
   useEffect(() => {
     let isMounted = true
@@ -703,11 +823,32 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         return
       }
       setTokensLoading(true)
-      const tokenized = await fetchTokensForVideos(activeVideosRaw)
-      if (isMounted) {
-        setActiveVideos(tokenized)
-      }
+
+      // The selected version is the only version needed for the first paint.
+      // Show it as soon as its token is ready and hydrate older versions in the
+      // background so a large version history cannot block playback.
+      const priorityIndex = Math.max(0, Math.min(initialVideoIndex, activeVideosRaw.length - 1))
+      const priorityVideo = activeVideosRaw[priorityIndex]
+      const remainingVideos = activeVideosRaw.filter((_, index) => index !== priorityIndex)
+      const priorityTokenized = await fetchTokensForVideos([priorityVideo], 1)
+
+      if (!isMounted) return
+      const initialVideos = activeVideosRaw.map((video: any) => (
+        video.id === priorityVideo.id ? priorityTokenized[0] : video
+      ))
+      setActiveVideos(initialVideos)
       setTokensLoading(false)
+
+      if (remainingVideos.length === 0) return
+
+      // Keep background version hydration from competing with the selected
+      // video's initial manifest and first segment.
+      await new Promise((resolve) => window.setTimeout(resolve, 500))
+      if (!isMounted) return
+      const remainingTokenized = await fetchTokensForVideos(remainingVideos, 2)
+      if (!isMounted) return
+      const hydratedById = new Map(remainingTokenized.map((video: any) => [video.id, video]))
+      setActiveVideos((currentVideos) => currentVideos.map((video: any) => hydratedById.get(video.id) || video))
     }
 
     loadTokens()
@@ -715,12 +856,13 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     return () => {
       isMounted = false
     }
-  }, [activeVideosRaw, shareToken, fetchTokensForVideos, viewState])
+  }, [activeVideosRaw, fetchTokensForVideos, initialVideoIndex, shareToken, viewState])
 
   useEffect(() => {
     let isMounted = true
+    let thumbnailTimer: number | null = null
 
-    async function fetchThumbnails() {
+    async function loadThumbnails() {
       if (!project?.videosByName || !shareToken) {
         return
       }
@@ -739,7 +881,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       }
 
       try {
-        await mapWithConcurrency(groups, 4, async ([name, videos]) => {
+        const thumbnailConcurrency = urlVideoName ? 2 : 4
+        await mapWithConcurrency(groups, thumbnailConcurrency, async ([name, videos]) => {
             // Find a video with a thumbnail
             const videoWithThumb = videos.find((v: any) => v.thumbnailPath)
             if (videoWithThumb) {
@@ -784,12 +927,20 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       }
     }
 
-    fetchThumbnails()
+    // A deep link opens the player immediately. Defer the non-critical
+    // thumbnail fan-out so it cannot contend with the first playback token
+    // and media request.
+    if (urlVideoName) {
+      thumbnailTimer = window.setTimeout(() => { void loadThumbnails() }, 250)
+    } else {
+      void loadThumbnails()
+    }
 
     return () => {
       isMounted = false
+      if (thumbnailTimer !== null) window.clearTimeout(thumbnailTimer)
     }
-  }, [project?.videosByName, shareToken, token, fetchVideoToken])
+  }, [project?.videosByName, shareToken, token, fetchVideoToken, urlVideoName])
 
   useEffect(() => {
     if (!project?.videosByName) return
@@ -807,12 +958,18 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     const firstVideoId = videos?.[0]?.id
     const savedSeek = firstVideoId ? readVideoSeekCache(token, firstVideoId) : 0
     setInitialSeekTime(savedSeek > 0 ? savedSeek : null)
+    // A newly selected group has its own version list; never carry the
+    // previous group's version index into it.
+    setInitialVideoIndex(0)
     setActiveVideoName(videoName)
     setActiveVideosRaw(project.videosByName[videoName])
     setViewState('player')
 
     const params = new URLSearchParams(searchParams?.toString() || '')
     params.set('video', videoName)
+    params.delete('version')
+    params.delete('t')
+    params.delete('comment')
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [project?.videosByName, searchParams, pathname, router, token])
 

@@ -7,7 +7,7 @@ import { validateAssetFile, sanitizeDisplayFilename, sanitizeFilename, isSuspici
 import { deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { resolveShare, isShareLinkActive } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -31,7 +31,7 @@ export async function POST(
   try {
     const { token: shareToken } = await params
 
-    const resolved = await resolveShare(shareToken)
+    const resolved = await resolveShareMetadata(shareToken)
     if (resolved.link && (!isShareLinkActive(resolved.link) || resolved.link.type !== 'COLLECT')) return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     const project = resolved.project ? {
       id: resolved.project.id,
@@ -182,7 +182,7 @@ export async function DELETE(
     const { searchParams } = new URL(request.url)
     const uploadId = searchParams.get('uploadId') ?? ''
 
-    const resolved = await resolveShare(shareToken)
+    const resolved = await resolveShareMetadata(shareToken)
     if (resolved.link && (!isShareLinkActive(resolved.link) || resolved.link.type !== 'COLLECT')) return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     const project = resolved.project ? {
       id: resolved.project.id,

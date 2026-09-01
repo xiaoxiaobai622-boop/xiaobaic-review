@@ -9,20 +9,70 @@ export const LOCALE_NAMES: Record<string, string> = {
   de: 'Deutsch',
 }
 
+// The configured locale is read on nearly every API request. Keep the value
+// process-local for a short period while coalescing concurrent cache misses.
+// A short TTL keeps admin language changes reasonably fresh without putting a
+// Prisma query on the content-delivery hot path for every request.
+const CONFIGURED_LOCALE_CACHE_TTL_MS = 60_000
+let configuredLocaleCache: { value: string; expiresAt: number } | null = null
+let configuredLocaleInflight: Promise<string> | null = null
+let configuredLocaleGeneration = 0
+
+/** Clear the process-local locale cache after the setting is changed. */
+export function invalidateConfiguredLocaleCache(): void {
+  configuredLocaleCache = null
+  configuredLocaleGeneration += 1
+  // Let the next caller issue a fresh lookup instead of waiting on a query
+  // that started before the setting changed.
+  configuredLocaleInflight = null
+}
+
 /**
  * Get the configured language from the database.
  * Falls back to Chinese if not set or on error.
  */
 export async function getConfiguredLocale(): Promise<string> {
-  try {
-    const settings = await prisma.settings.findUnique({
-      where: { id: 'default' },
-      select: { language: true },
-    })
-    return settings?.language || 'zh'
-  } catch {
-    return 'zh'
+  const now = Date.now()
+  if (configuredLocaleCache && configuredLocaleCache.expiresAt > now) {
+    return configuredLocaleCache.value
   }
+
+  // Multiple requests commonly arrive together during a page load. Share one
+  // database lookup instead of allowing every request to miss independently.
+  if (configuredLocaleInflight) return configuredLocaleInflight
+
+  const requestGeneration = configuredLocaleGeneration
+  const loadPromise = (async () => {
+    try {
+      const settings = await prisma.settings.findUnique({
+        where: { id: 'default' },
+        select: { language: true },
+      })
+      const value = settings?.language || 'zh'
+      if (configuredLocaleGeneration === requestGeneration) {
+        configuredLocaleCache = {
+          value,
+          expiresAt: Date.now() + CONFIGURED_LOCALE_CACHE_TTL_MS,
+        }
+      }
+      return value
+    } catch {
+      // Preserve the existing fallback behavior. Do not cache an error so a
+      // transient database outage can recover on the next request.
+      return 'zh'
+    }
+  })()
+
+  configuredLocaleInflight = loadPromise
+  void loadPromise.then(
+    () => {
+      if (configuredLocaleInflight === loadPromise) configuredLocaleInflight = null
+    },
+    () => {
+      if (configuredLocaleInflight === loadPromise) configuredLocaleInflight = null
+    },
+  )
+  return loadPromise
 }
 
 /**
@@ -62,4 +112,3 @@ function deepMerge(base: Record<string, any>, override: Record<string, any>): Re
 
   return result
 }
-

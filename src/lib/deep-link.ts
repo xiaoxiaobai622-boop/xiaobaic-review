@@ -2,8 +2,8 @@
  * Deep link utilities for Feishu message cards.
  *
  * Deep link format:
- * - Video with timecode: /projects/{projectId}/videos/{videoId}?t={timecode}
- * - Video without timecode: /projects/{projectId}/videos/{videoId}
+ * - Video with timecode: /studio/projects/{projectId}/share?video={videoName}&t={timecode}
+ * - Video without timecode: /studio/projects/{projectId}/share?video={videoName}
  * - Project overview: /projects/{projectId}
  *
  * The timecode parameter 't' can be:
@@ -14,6 +14,10 @@
 export interface DeepLinkParams {
   projectId: string
   videoId?: string
+  /** Display name used by the share page to select the video group. */
+  videoName?: string
+  /** Optional version number used to select the exact uploaded version. */
+  version?: number
   timecode?: string // In seconds or timecode format
 }
 
@@ -24,7 +28,14 @@ export function buildDeepLink(params: DeepLinkParams): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || 'https://mle6.cn'
 
   if (params.videoId) {
-    let url = `${base}/studio/projects/${params.projectId}/share?video=${params.videoId}`
+    // The review page resolves `video` against videosByName, so use the name
+    // when available instead of an internal database id.
+    const videoQuery = encodeURIComponent(params.videoName || params.videoId)
+    let url = `${base}/studio/projects/${params.projectId}/share?video=${videoQuery}`
+
+    if (params.version !== undefined) {
+      url += `&version=${encodeURIComponent(String(params.version))}`
+    }
 
     if (params.timecode) {
       // Convert timecode to seconds if needed

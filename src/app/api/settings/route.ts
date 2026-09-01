@@ -8,7 +8,7 @@ import { isSmtpConfigured } from '@/lib/settings'
 import { getFilePath } from '@/lib/storage'
 import { flushPendingAdminNotifications } from '@/lib/notifications'
 import { invalidateEmailSettingsCache } from '@/lib/email'
-import { getConfiguredLocale, loadLocaleMessages, SUPPORTED_LOCALES } from '@/i18n/locale'
+import { getConfiguredLocale, invalidateConfiguredLocaleCache, loadLocaleMessages, SUPPORTED_LOCALES } from '@/i18n/locale'
 import fs from 'fs/promises'
 import { logError, logMessage } from '@/lib/logging'
 
@@ -493,6 +493,8 @@ export async function PATCH(request: NextRequest) {
         adminNotificationDay: adminNotificationDay !== undefined ? adminNotificationDay : null,
       },
     })
+
+    if (language !== undefined) invalidateConfiguredLocaleCache()
 
     invalidateEmailSettingsCache()
 

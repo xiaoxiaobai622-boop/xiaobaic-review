@@ -48,6 +48,9 @@ export async function GET(
 
   try {
     const { id } = await params
+    // The review shell can defer comments until after the project/video data
+    // is visible. Keep comments enabled by default for existing callers.
+    const includeComments = request.nextUrl.searchParams.get('includeComments') !== 'false'
 
     if (!(await canAccessProject(prisma, authResult, id))) {
       return NextResponse.json({ error: '你没有这个项目的访问权限，请联系团队管理员' }, { status: 403 })
@@ -65,35 +68,37 @@ export async function GET(
             },
           },
         },
-        comments: {
-          where: { parentId: null },
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-                email: true,
-                avatarUrl: true,
-              }
-            },
-            replies: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
-                    username: true,
-                    email: true,
-                    avatarUrl: true,
-                  }
+        ...(includeComments ? {
+          comments: {
+            where: { parentId: null },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  username: true,
+                  email: true,
+                  avatarUrl: true,
                 }
               },
-              orderBy: { createdAt: 'asc' },
+              replies: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      name: true,
+                      username: true,
+                      email: true,
+                      avatarUrl: true,
+                    }
+                  }
+                },
+                orderBy: { createdAt: 'asc' },
+              },
             },
+            orderBy: { createdAt: 'desc' },
           },
-          orderBy: { createdAt: 'desc' },
-        },
+        } : {}),
         recipients: {
           orderBy: [
             { isPrimary: 'desc' },
@@ -117,9 +122,11 @@ export async function GET(
     const primaryRecipient = project.recipients?.find((r: any) => r.isPrimary) || project.recipients?.[0]
     const fallbackName = project.companyName || primaryRecipient?.name || 'Client'
 
-    const sanitizedComments = project.comments.map((comment: any) =>
-      sanitizeComment(comment, true, true, fallbackName)
-    )
+    const sanitizedComments = includeComments
+      ? (project as any).comments.map((comment: any) =>
+          sanitizeComment(comment, true, true, fallbackName)
+        )
+      : []
 
     // Decrypt password for admin view
     const decryptedPassword = project.sharePassword ? decrypt(project.sharePassword) : null

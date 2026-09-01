@@ -19,10 +19,61 @@ import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/compon
 import { useTranslations } from 'next-intl'
 import VideoReviewStatusSelect from '@/components/VideoReviewStatusSelect'
 import { FeishuPushButton } from '@/components/FeishuPushButton'
+import { useStorageProvider } from '@/components/StorageConfigProvider'
 
 const MAX_TOKEN_FETCH_ATTEMPTS = 2
 const TOKEN_FETCH_RETRY_BASE_MS = 120
 const TOKEN_FETCH_RETRY_MAX_MS = 400
+const COMMENT_REFRESH_INTERVAL_MS = 30_000
+
+// Approval/review status changes do not change the media source. Keep them
+// out of this signature so a status action can update the shell without
+// throwing away valid playback tokens and remounting the player.
+function getVideoSourceEntries(projectData: any): Map<string, string> {
+  const videos = Array.isArray(projectData?.videos) ? projectData.videos : []
+  return new Map(videos.map((video: any) => [
+    video.id,
+    JSON.stringify([
+      video.version,
+      video.status,
+      video.originalStoragePath || '',
+      video.hlsPath || '',
+      video.preview720Path || '',
+      video.preview1080Path || '',
+      video.preview2160Path || '',
+      video.cleanPreview720Path || '',
+      video.cleanPreview1080Path || '',
+      video.cleanPreview2160Path || '',
+    ]),
+  ]))
+}
+
+function getVideoThumbnailEntries(projectData: any): Map<string, string> {
+  const videos = Array.isArray(projectData?.videos) ? projectData.videos : []
+  return new Map(videos.map((video: any) => [video.id, video.thumbnailPath || '']))
+}
+
+function getVideoSourceSignature(projectData: any): string {
+  return JSON.stringify([...getVideoSourceEntries(projectData).entries()].sort(([a], [b]) => a.localeCompare(b)))
+}
+
+function getVideoIdentitySignature(videos: any): string {
+  return (Array.isArray(videos) ? videos : [])
+    .map((video: any) => `${video.id}:${video.version}`)
+    .join('|')
+}
+
+function getChangedVideoIds(
+  previous: Map<string, string>,
+  next: Map<string, string>,
+): Set<string> {
+  const changed = new Set<string>()
+  const ids = new Set([...previous.keys(), ...next.keys()])
+  for (const id of ids) {
+    if (previous.get(id) !== next.get(id)) changed.add(id)
+  }
+  return changed
+}
 
 function canUserManageApproval(user: any, project: any) {
   if (!user || !project) return false
@@ -63,6 +114,14 @@ export default function AdminSharePage() {
   const router = useRouter()
   const pathname = usePathname()
   const id = params?.id as string
+  const storageProvider = useStorageProvider()
+  const supportsHls = storageProvider === 's3'
+  // Keep the query used for an authorization redirect from making the
+  // heavyweight project request rerun whenever the selected video changes.
+  const initialQueryRef = useRef<string | null>(null)
+  if (initialQueryRef.current === null) {
+    initialQueryRef.current = searchParams?.toString() || ''
+  }
 
   // Parse URL parameters for video seeking (same as public share page)
   const urlTimestamp = searchParams?.get('t') ? parseFloat(searchParams.get('t')!) : null
@@ -74,6 +133,7 @@ export default function AdminSharePage() {
   const [project, setProject] = useState<any>(null)
   const [comments, setComments] = useState<any[]>([])
   const [_commentsLoading, setCommentsLoading] = useState(false)
+  const commentsRequestRef = useRef<Promise<void> | null>(null)
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ShareViewMode>('grid')
   const [albumCount, setAlbumCount] = useState(0)
@@ -198,19 +258,83 @@ export default function AdminSharePage() {
   const fetchComments = useCallback(async () => {
     if (!id) return
 
-    setCommentsLoading(true)
+    if (commentsRequestRef.current) return commentsRequestRef.current
+
+    const request = (async () => {
+      setCommentsLoading(true)
+      try {
+        const response = await apiFetch(`/api/comments?projectId=${id}`, { cache: 'no-store' })
+        if (response.ok) {
+          const commentsData = await response.json()
+          if (Array.isArray(commentsData)) setComments(commentsData)
+        }
+      } catch {
+        // Keep showing the last known comments when a refresh fails.
+      } finally {
+        setCommentsLoading(false)
+      }
+    })()
+
+    commentsRequestRef.current = request
     try {
-      const response = await apiFetch(`/api/comments?projectId=${id}`, { cache: 'no-store' })
-      if (response.ok) {
-        const commentsData = await response.json()
-      setComments(commentsData)
+      await request
+    } finally {
+      if (commentsRequestRef.current === request) commentsRequestRef.current = null
     }
-  } catch (error) {
-    // Failed to load comments
-  } finally {
-    setCommentsLoading(false)
-  }
   }, [id])
+
+  // The initial project response already contains a sanitized comment tree.
+  // Keep the review shell current at a low rate when another reviewer changes
+  // comments, without coupling refreshes to the currently selected video.
+  useEffect(() => {
+    if (!project || project.hideFeedback) return
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') void fetchComments()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshIfVisible()
+    }
+    const interval = window.setInterval(refreshIfVisible, COMMENT_REFRESH_INTERVAL_MS)
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', refreshIfVisible)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', refreshIfVisible)
+    }
+  }, [fetchComments, project])
+
+  // Listen for comment updates emitted by the composer. The page owns all
+  // network refreshes; CommentSection only receives the updated prop tree.
+  useEffect(() => {
+    const belongsToProject = (event: CustomEvent) => {
+      const eventProjectId = event.detail?.projectId
+      return !eventProjectId || eventProjectId === id
+    }
+
+    const handleCommentPosted = (e: CustomEvent) => {
+      if (!belongsToProject(e)) return
+      if (Array.isArray(e.detail?.comments)) {
+        setComments(e.detail.comments)
+      } else {
+        void fetchComments()
+      }
+    }
+
+    const handleCommentDeleted = (e: CustomEvent) => {
+      if (belongsToProject(e)) void fetchComments()
+    }
+
+    window.addEventListener('commentPosted', handleCommentPosted as EventListener)
+    window.addEventListener('commentDeleted', handleCommentDeleted as EventListener)
+
+    return () => {
+      window.removeEventListener('commentPosted', handleCommentPosted as EventListener)
+      window.removeEventListener('commentDeleted', handleCommentDeleted as EventListener)
+    }
+  }, [fetchComments, id])
 
   const transformProjectData = (projectData: any) => {
     const videosByName = projectData.videos.reduce((acc: any, video: any) => {
@@ -234,83 +358,135 @@ export default function AdminSharePage() {
   }
 
   const refreshProject = useCallback(async () => {
-    const response = await apiFetch(`/api/projects/${id}`, { cache: 'no-store' })
+    const response = await apiFetch(`/api/projects/${id}?includeComments=false`, { cache: 'no-store' })
     if (!response.ok) return
     const projectData = transformProjectData(await response.json())
-    tokenCacheRef.current.clear()
+    const previousSources = getVideoSourceEntries(project)
+    const nextSources = getVideoSourceEntries(projectData)
+    const sourceChanged = getVideoSourceSignature(project) !== getVideoSourceSignature(projectData)
+    const changedSourceIds = sourceChanged ? getChangedVideoIds(previousSources, nextSources) : new Set<string>()
+    const previousThumbnails = getVideoThumbnailEntries(project)
+    const nextThumbnails = getVideoThumbnailEntries(projectData)
+    const changedThumbnailIds = getChangedVideoIds(previousThumbnails, nextThumbnails)
+
+    if (sourceChanged || changedThumbnailIds.size > 0) {
+
+      // Preserve tokens for unchanged videos, especially the one currently
+      // playing. Only invalidate entries whose source disappeared/changed.
+      for (const [cacheKey, tokenizedVideo] of tokenCacheRef.current.entries()) {
+        const videoId = tokenizedVideo?.id
+        if (!videoId || changedSourceIds.has(videoId) || !nextSources.has(videoId)) {
+          tokenCacheRef.current.delete(cacheKey)
+        }
+      }
+
+      for (const videoId of new Set([...changedSourceIds, ...changedThumbnailIds])) {
+        thumbnailUrlsRef.current.delete(videoId)
+      }
+    }
     setProject(projectData)
     if (activeVideoName && projectData.videosByName[activeVideoName]) {
-      setActiveVideosRaw(projectData.videosByName[activeVideoName])
-    }
-  }, [id, activeVideoName])
+      const nextVideos = projectData.videosByName[activeVideoName]
+      const currentIds = getVideoIdentitySignature(activeVideosRaw)
+      const nextIds = getVideoIdentitySignature(nextVideos)
 
-  const fetchTokensForVideos = useCallback(async (videos: any[]) => {
-    const sessionId = sessionIdRef.current
+      // Keep the existing tokenized objects when only approval/review metadata
+      // changed. This prevents the media element from being torn down after a
+      // status click; a real source/catalog change still re-runs tokenization.
+      if (sourceChanged || currentIds !== nextIds) {
+        setActiveVideosRaw(nextVideos)
+      }
 
-    return Promise.all(
-      videos.map(async (video: any) => {
-        // Non-ready assets cannot be played. Avoid spending one or more token
-        // requests on them while retaining the raw record for the status UI.
-        if (video.status !== 'READY') {
-          return video
-        }
-
-        const cacheKey = `${sessionId}:${video.id}:${defaultQuality}`
-        const cached = tokenCacheRef.current.get(cacheKey)
-        if (cached) {
-          return cached
-        }
-
-        try {
-          const qualityOrder: Array<'720p' | '1080p' | '2160p'> = defaultQuality === '2160p'
-            ? ['2160p', '1080p', '720p']
-            : defaultQuality === '1080p'
-              ? ['1080p', '720p', '2160p']
-              : ['720p', '1080p', '2160p']
-          const streamTokens: Record<'720p' | '1080p' | '2160p', string> = {
-            '720p': '',
-            '1080p': '',
-            '2160p': '',
-          }
-
-          // HLS and the preferred progressive rendition are independent. Start
-          // both together, then probe lower renditions only when needed.
-          const [tokenHls, preferredToken] = await Promise.all([
-            fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId),
-            fetchAdminVideoTokenWithRetry(video.id, qualityOrder[0], sessionId),
-          ])
-          streamTokens[qualityOrder[0]] = preferredToken
-
-          if (!preferredToken) {
-            for (const quality of qualityOrder.slice(1)) {
-              const streamToken = await fetchAdminVideoTokenWithRetry(video.id, quality, sessionId)
-              streamTokens[quality] = streamToken
-              if (streamToken) break
-            }
-          }
-
-          const tokenized = {
+      if (currentIds === nextIds) {
+        setActiveVideos((currentVideos) => currentVideos.map((video: any) => {
+          const nextVideo = nextVideos.find((candidate: any) => candidate.id === video.id)
+          if (!nextVideo) return video
+          return {
             ...video,
-            streamUrl720p: streamTokens['720p'] ? `/api/content/${streamTokens['720p']}` : '',
-            hlsUrl720p: tokenHls ? `/api/content/${tokenHls}` : '',
-            streamUrl1080p: streamTokens['1080p'] ? `/api/content/${streamTokens['1080p']}` : '',
-            streamUrl2160p: streamTokens['2160p'] ? `/api/content/${streamTokens['2160p']}` : '',
-            // Downloads and thumbnails are requested independently when the
-            // corresponding UI needs them; they should not delay playback.
-            downloadUrl: null,
-            thumbnailUrl: null,
+            ...nextVideo,
+            // Project metadata carries empty token fields. Preserve the
+            // already-issued URLs so status updates never reset the source.
+            streamUrl720p: video.streamUrl720p || nextVideo.streamUrl720p || '',
+            streamUrl1080p: video.streamUrl1080p || nextVideo.streamUrl1080p || '',
+            streamUrl2160p: video.streamUrl2160p || nextVideo.streamUrl2160p || '',
+            hlsUrl720p: supportsHls ? (video.hlsUrl720p || nextVideo.hlsUrl720p || '') : '',
+            thumbnailUrl: video.thumbnailUrl || nextVideo.thumbnailUrl || null,
           }
+        }))
+      }
+    }
+  }, [activeVideoName, activeVideosRaw, id, project, supportsHls])
 
-          if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
-            tokenCacheRef.current.set(cacheKey, tokenized)
-          }
-          return tokenized
-        } catch (error) {
-          return video
+  const fetchTokensForVideos = useCallback(async (videos: any[], concurrency = 2) => {
+    const sessionId = sessionIdRef.current
+    const tokenizedById = new Map<string, any>()
+
+    await mapWithConcurrency(videos, concurrency, async (video: any) => {
+      // Non-ready assets cannot be played. Avoid spending one or more token
+      // requests on them while retaining the raw record for the status UI.
+      if (video.status !== 'READY') {
+        tokenizedById.set(video.id, video)
+        return
+      }
+
+      const cacheKey = `${sessionId}:${video.id}:${defaultQuality}`
+      const cached = tokenCacheRef.current.get(cacheKey)
+      if (cached) {
+        tokenizedById.set(video.id, cached)
+        return
+      }
+
+      try {
+        const qualityOrder: Array<'720p' | '1080p' | '2160p'> = defaultQuality === '2160p'
+          ? ['2160p', '1080p', '720p']
+          : defaultQuality === '1080p'
+            ? ['1080p', '720p', '2160p']
+            : ['720p', '1080p', '2160p']
+        const streamTokens: Record<'720p' | '1080p' | '2160p', string> = {
+          '720p': '',
+          '1080p': '',
+          '2160p': '',
         }
-      })
-    )
-  }, [defaultQuality, fetchAdminVideoTokenWithRetry])
+
+        // HLS and the preferred progressive rendition are independent. Start
+        // both together, then probe lower renditions only when needed.
+        const [tokenHls, preferredToken] = await Promise.all([
+          supportsHls ? fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId) : Promise.resolve(''),
+          fetchAdminVideoTokenWithRetry(video.id, qualityOrder[0], sessionId),
+        ])
+        streamTokens[qualityOrder[0]] = preferredToken
+
+        if (!preferredToken) {
+          for (const quality of qualityOrder.slice(1)) {
+            const streamToken = await fetchAdminVideoTokenWithRetry(video.id, quality, sessionId)
+            streamTokens[quality] = streamToken
+            if (streamToken) break
+          }
+        }
+
+        const tokenized = {
+          ...video,
+          streamUrl720p: streamTokens['720p'] ? `/api/content/${streamTokens['720p']}` : '',
+          hlsUrl720p: tokenHls ? `/api/content/${tokenHls}` : '',
+          streamUrl1080p: streamTokens['1080p'] ? `/api/content/${streamTokens['1080p']}` : '',
+          streamUrl2160p: streamTokens['2160p'] ? `/api/content/${streamTokens['2160p']}` : '',
+          // Downloads and thumbnails are requested independently when the
+          // corresponding UI needs them; they should not delay playback.
+          downloadUrl: null,
+          thumbnailUrl: null,
+        }
+
+        if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
+          tokenCacheRef.current.set(cacheKey, tokenized)
+        }
+        tokenizedById.set(video.id, tokenized)
+      } catch (error) {
+        tokenizedById.set(video.id, video)
+      }
+    })
+
+    return videos.map((video: any) => tokenizedById.get(video.id) || video)
+  }, [defaultQuality, fetchAdminVideoTokenWithRetry, supportsHls])
 
   // Load project data, settings, and admin user
   useEffect(() => {
@@ -325,7 +501,7 @@ export default function AdminSharePage() {
       try {
         // Fetch only data needed to authorize and render the review page.
         const [projectResponse, userResponse] = await Promise.all([
-          apiFetch(`/api/projects/${id}`, { cache: 'no-store' }),
+          apiFetch(`/api/projects/${id}?includeComments=false`, { cache: 'no-store' }),
           apiFetch('/api/auth/session', { cache: 'no-store' }),
         ])
 
@@ -338,7 +514,7 @@ export default function AdminSharePage() {
             const userData = await userResponse.json()
             if (!canUserManageApproval(userData.user, projectData) && projectData.slug) {
               redirectingMember = true
-              const query = searchParams?.toString()
+              const query = initialQueryRef.current
               router.replace(`/share/${projectData.slug}${query ? `?${query}` : ''}`)
               return
             }
@@ -351,10 +527,11 @@ export default function AdminSharePage() {
 
             // Use the project's configured preview quality for playback.
             setDefaultQuality(projectData.previewResolution || '720p')
-
-            if (!projectData.hideFeedback) {
-              fetchComments()
-            }
+            // The project response contains video/project metadata only.
+            // Load the comment tree separately so a large
+            // history cannot delay the project/video shell.
+            setComments([])
+            if (!projectData.hideFeedback) void fetchComments()
           }
         }
       } catch (error) {
@@ -371,30 +548,7 @@ export default function AdminSharePage() {
     return () => {
       isMounted = false
     }
-  }, [id, fetchComments, router, searchParams])
-
-  // Listen for comment updates (post, delete, etc.)
-  useEffect(() => {
-    const handleCommentPosted = (e: CustomEvent) => {
-      if (e.detail?.comments) {
-        setComments(e.detail.comments)
-      } else {
-        fetchComments()
-      }
-    }
-
-    const handleCommentDeleted = () => {
-      fetchComments()
-    }
-
-    window.addEventListener('commentPosted', handleCommentPosted as EventListener)
-    window.addEventListener('commentDeleted', handleCommentDeleted)
-
-    return () => {
-      window.removeEventListener('commentPosted', handleCommentPosted as EventListener)
-      window.removeEventListener('commentDeleted', handleCommentDeleted)
-    }
-  }, [fetchComments])
+  }, [fetchComments, id, router])
 
   // Set active video when project loads, handling URL parameters
   useEffect(() => {
@@ -437,9 +591,7 @@ export default function AdminSharePage() {
 
         if (urlVersion !== null && videos) {
           const targetIndex = videos.findIndex((v: any) => v.version === urlVersion)
-          if (targetIndex !== -1) {
-            setInitialVideoIndex(targetIndex)
-          }
+          setInitialVideoIndex(targetIndex >= 0 ? targetIndex : 0)
         }
 
         if (urlTimestamp !== null) {
@@ -448,15 +600,22 @@ export default function AdminSharePage() {
       } else {
         const videos = project.videosByName[activeVideoName]
         if (videos) {
-          setActiveVideosRaw(videos)
+          // Refreshes often replace the project object while leaving the
+          // version catalog unchanged. Preserve the raw array identity in
+          // that case so token hydration and the media element stay alive.
+          if (getVideoIdentitySignature(activeVideosRaw) !== getVideoIdentitySignature(videos)) {
+            setActiveVideosRaw(videos)
+          }
           if (urlVersion !== null) {
             const targetIndex = videos.findIndex((v: any) => v.version === urlVersion)
-            if (targetIndex !== -1) setInitialVideoIndex(targetIndex)
+            setInitialVideoIndex(targetIndex >= 0 ? targetIndex : 0)
+          } else {
+            setInitialVideoIndex(0)
           }
         }
       }
     }
-  }, [project, activeVideoName, urlVideoName, urlVersion, urlTimestamp])
+  }, [project, activeVideoName, activeVideosRaw, urlVideoName, urlVersion, urlTimestamp])
 
   // Tokenize active videos lazily
   useEffect(() => {
@@ -473,11 +632,32 @@ export default function AdminSharePage() {
         return
       }
       setTokensLoading(true)
-      const tokenized = await fetchTokensForVideos(activeVideosRaw)
-      if (isMounted) {
-        setActiveVideos(tokenized)
-      }
-      if (isMounted) setTokensLoading(false)
+
+      // Put the requested version first. It is the only version needed for
+      // the first paint; the remaining versions can be hydrated in the
+      // background without creating a request burst.
+      const priorityIndex = Math.max(0, Math.min(initialVideoIndex, activeVideosRaw.length - 1))
+      const priorityVideo = activeVideosRaw[priorityIndex]
+      const remainingVideos = activeVideosRaw.filter((_, index) => index !== priorityIndex)
+      const priorityTokenized = await fetchTokensForVideos([priorityVideo], 1)
+
+      if (!isMounted) return
+      const initialVideos = activeVideosRaw.map((video: any) => (
+        video.id === priorityVideo.id ? priorityTokenized[0] : video
+      ))
+      setActiveVideos(initialVideos)
+      setTokensLoading(false)
+
+      if (remainingVideos.length === 0) return
+
+      // Let the selected video's first media request settle before opening a
+      // burst of background token requests for older versions.
+      await new Promise((resolve) => window.setTimeout(resolve, 500))
+      if (!isMounted) return
+      const remainingTokenized = await fetchTokensForVideos(remainingVideos, 2)
+      if (!isMounted) return
+      const hydratedById = new Map(remainingTokenized.map((video: any) => [video.id, video]))
+      setActiveVideos((currentVideos) => currentVideos.map((video: any) => hydratedById.get(video.id) || video))
     }
 
     loadTokens()
@@ -485,7 +665,7 @@ export default function AdminSharePage() {
     return () => {
       isMounted = false
     }
-  }, [activeVideosRaw, fetchTokensForVideos, viewState])
+  }, [activeVideosRaw, fetchTokensForVideos, initialVideoIndex, viewState])
 
   // Fetch thumbnails independently from playback tokens. A small concurrency
   // limit and progressive state updates keep the grid responsive while the
@@ -526,7 +706,8 @@ export default function AdminSharePage() {
       }
 
       try {
-        await mapWithConcurrency(groups, 4, async ([name, videos]) => {
+        const thumbnailConcurrency = viewState === 'player' ? 2 : 4
+        await mapWithConcurrency(groups, thumbnailConcurrency, async ([name, videos]) => {
           const videoWithThumb = videos.find((v: any) => v.thumbnailPath)
           if (!videoWithThumb || thumbnailUrlsRef.current.has(videoWithThumb.id)) return
 
@@ -552,7 +733,7 @@ export default function AdminSharePage() {
     return () => {
       isMounted = false
     }
-  }, [project?.videosByName, id, activeVideoName, fetchAdminVideoTokenWithRetry])
+  }, [project?.videosByName, id, activeVideoName, fetchAdminVideoTokenWithRetry, viewState])
 
   // The thumbnail request is intentionally independent from playback token
   // generation. Merge it into already-tokenized versions once it arrives so a
@@ -587,11 +768,15 @@ export default function AdminSharePage() {
   const navigateToVideo = useCallback((videoName: string, historyMode: 'push' | 'replace') => {
     setActiveVideoName(videoName)
     setActiveVideosRaw(project.videosByName[videoName])
+    setInitialVideoIndex(0)
     setActiveVideoState(null)
     setViewState('player')
 
     const params = new URLSearchParams(searchParams?.toString() || '')
     params.set('video', videoName)
+    params.delete('version')
+    params.delete('t')
+    params.delete('comment')
     router[historyMode](`${pathname}?${params.toString()}`, { scroll: false })
   }, [project?.videosByName, searchParams, pathname, router])
 

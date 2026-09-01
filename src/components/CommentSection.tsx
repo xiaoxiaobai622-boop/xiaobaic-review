@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Comment, Video } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -141,29 +141,10 @@ export default function CommentSection({
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [localComments, setLocalComments] = useState<CommentWithReplies[]>(initialComments)
 
-  // Fetch comments function (only used for event-triggered updates)
-  const fetchComments = useCallback(async () => {
-    try {
-      const response = isAdminView
-        ? await apiFetch(`/api/comments?projectId=${projectId}`)
-        : shareToken && _projectSlug
-          ? await apiFetch(`/api/share/${encodeURIComponent(_projectSlug)}/comments`, {
-              headers: { 'X-Share-Token': `Bearer ${shareToken}` },
-            })
-          : null
-
-      if (!response) return
-
-      if (response.ok) {
-        const freshComments = await response.json()
-        setLocalComments(freshComments)
-      }
-    } catch (error) {
-      // Silent fail - keep showing existing comments
-    }
-  }, [isAdminView, projectId, shareToken, _projectSlug])
-
-  // Initialize localComments only (no polling - hook handles optimistic updates)
+  // The page-level review shell owns comment fetching and passes the current
+  // tree down. Keep a local copy only for optimistic comments while a parent
+  // update is being committed; this component must not issue a second request
+  // for the same global comment event.
   useEffect(() => {
     setLocalComments(initialComments)
   }, [initialComments])
@@ -199,60 +180,30 @@ export default function CommentSection({
     setTimeout(tryScroll, 100)
   }, [focusCommentId, localComments.length])
 
-  // Listen for immediate comment updates (delete, approve, post, etc.)
-  useEffect(() => {
-    const handleCommentPosted = (e: CustomEvent) => {
-      // Use the comments data from the event if available, otherwise refetch
-      if (e.detail?.comments) {
-        setLocalComments(e.detail.comments)
-      } else {
-        fetchComments()
-      }
-    }
+  const videoById = useMemo(() => new Map(videos.map((video) => [video.id, video])), [videos])
+  const latestVideoVersion = useMemo(() => (
+    videos.length > 0 ? Math.max(...videos.map(v => v.version)) : null
+  ), [videos])
 
-    const handleCommentUpdate = () => {
-      fetchComments()
-    }
-
-    window.addEventListener('commentDeleted', handleCommentUpdate)
-    window.addEventListener('commentPosted', handleCommentPosted as EventListener)
-    window.addEventListener('videoApprovalChanged', handleCommentUpdate)
-
-    return () => {
-      window.removeEventListener('commentDeleted', handleCommentUpdate)
-      window.removeEventListener('commentPosted', handleCommentPosted as EventListener)
-      window.removeEventListener('videoApprovalChanged', handleCommentUpdate)
-    }
-  }, [projectId, fetchComments])
-
-  // Keep separate browsers in sync when another reviewer posts a comment.
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      void fetchComments()
-    }, 5000)
-    return () => window.clearInterval(interval)
-  }, [fetchComments])
-
-  const latestVideoVersion = videos.length > 0
-    ? Math.max(...videos.map(v => v.version))
-    : null
-
-  const currentVideo = videos.find(v => v.id === selectedVideoId)
+  const currentVideo = selectedVideoId ? videoById.get(selectedVideoId) : undefined
   const currentVideoDuration = currentVideo?.duration ?? null
   const isCurrentVideoApproved = currentVideo ? (currentVideo as any).approved === true : false
   // Check if ANY video in the group is approved (for admin view with multiple versions)
-  const approvedVideo = videos.find(v => (v as any).approved === true)
+  const approvedVideo = useMemo(() => videos.find(v => (v as any).approved === true), [videos])
   // Sharing a project is not the same as approving it. Only lock comments for
   // an explicitly approved project or the currently approved version.
   const commentsDisabled = isApproved || isCurrentVideoApproved
 
   // Always use hook comments (includes optimistic updates)
   // Local comments only used as fallback if hook hasn't loaded
-  const mergedComments = Array.from(
-    new Map([...comments, ...localComments].map((comment) => [comment.id, comment])).values(),
-  )
+  const mergedComments = useMemo(() => Array.from(
+    // The page prop is authoritative. This also prevents a stale local copy
+    // from briefly overwriting a freshly fetched tree during the effect that
+    // mirrors `initialComments`.
+    new Map([...localComments, ...comments].map((comment) => [comment.id, comment])).values(),
+  ), [comments, localComments])
 
-  const displayComments = (() => {
+  const displayComments = useMemo(() => {
     if (!selectedVideoId) {
       // No video selected - show all or latest version only
       return restrictToLatestVersion && latestVideoVersion
@@ -262,21 +213,21 @@ export default function CommentSection({
 
     // Both admin and share page: show comments for specific videoId only
     return mergedComments.filter(comment => comment.videoId === selectedVideoId)
-  })()
+  }, [latestVideoVersion, mergedComments, restrictToLatestVersion, selectedVideoId])
 
-  const filteredByStatusAndCategory = displayComments.filter((comment) => {
+  const filteredByStatusAndCategory = useMemo(() => displayComments.filter((comment) => {
     const resolved = resolvedOverrides[comment.id] ?? (comment as any).resolved === true
     if (statusFilter === 'OPEN' && resolved) return false
     if (statusFilter === 'RESOLVED' && !resolved) return false
     if (categoryFilter !== 'ALL' && (comment as any).category !== categoryFilter) return false
     return true
-  })
+  }), [categoryFilter, displayComments, resolvedOverrides, statusFilter])
 
-  const sortedComments = [...filteredByStatusAndCategory].sort((a, b) => {
+  const sortedComments = useMemo(() => {
     const getTimelineSeconds = (comment: Comment) => {
       if (!comment.timecode) return Number.POSITIVE_INFINITY
 
-      const fps = videos.find(video => video.id === comment.videoId)?.fps || 24
+      const fps = videoById.get(comment.videoId)?.fps || 24
       try {
         return timecodeToSeconds(comment.timecode, fps)
       } catch {
@@ -284,31 +235,34 @@ export default function CommentSection({
       }
     }
 
-    const aTimelineSeconds = getTimelineSeconds(a)
-    const bTimelineSeconds = getTimelineSeconds(b)
-    if (aTimelineSeconds !== bTimelineSeconds) return aTimelineSeconds - bTimelineSeconds
+    return [...filteredByStatusAndCategory]
+      .sort((a, b) => {
+        const aTimelineSeconds = getTimelineSeconds(a)
+        const bTimelineSeconds = getTimelineSeconds(b)
+        if (aTimelineSeconds !== bTimelineSeconds) return aTimelineSeconds - bTimelineSeconds
 
-    const createdAtDifference = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    return createdAtDifference || a.id.localeCompare(b.id)
-  })
-
-  sortedComments.forEach(comment => {
-    if (comment.replies && comment.replies.length > 0) {
-      comment.replies.sort((a: Comment, b: Comment) => {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        const createdAtDifference = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        return createdAtDifference || a.id.localeCompare(b.id)
       })
-    }
-  })
+      .map((comment) => comment.replies && comment.replies.length > 0
+        ? {
+            ...comment,
+            replies: [...comment.replies].sort((a: Comment, b: Comment) => (
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            )),
+          }
+        : comment)
+  }, [filteredByStatusAndCategory, videoById])
 
-  const latestComment = sortedComments.reduce<CommentWithReplies | null>((latest, comment) => {
+  const latestComment = useMemo(() => sortedComments.reduce<CommentWithReplies | null>((latest, comment) => {
     if (!latest) return comment
     return new Date(comment.createdAt).getTime() > new Date(latest.createdAt).getTime() ? comment : latest
-  }, null)
+  }, null), [sortedComments])
 
   const isCurrentVideoAllowed = () => {
     if (!restrictToLatestVersion) return true
     if (!selectedVideoId) return true
-    const selectedVideo = videos.find(v => v.id === selectedVideoId)
+    const selectedVideo = selectedVideoId ? videoById.get(selectedVideoId) : undefined
     if (!selectedVideo) return true
     return selectedVideo.version === latestVideoVersion
   }
@@ -351,7 +305,7 @@ export default function CommentSection({
       }))
     } else if (isAdminView) {
       // If in admin view without video player, navigate to admin share page with timestamp
-      const video = videos.find(v => v.id === videoId)
+      const video = videoById.get(videoId)
       if (!video) return
 
       const adminShareUrl = `/studio/projects/${projectId}/share?video=${encodeURIComponent(video.name)}&version=${videoVersion || video.version}&t=${encodeURIComponent(timestamp.toFixed(6))}`
@@ -360,7 +314,7 @@ export default function CommentSection({
   }
 
   const handleSeekToTimecode = (timecode: string, videoId: string, videoVersion: number | null) => {
-    const fps = videos.find(v => v.id === videoId)?.fps || 24
+    const fps = videoById.get(videoId)?.fps || 24
     const seconds = timecodeToSeekSeconds(timecode, fps)
     handleSeekToTimestamp(seconds, videoId, videoVersion)
   }
@@ -579,7 +533,7 @@ export default function CommentSection({
               {sortedComments.map((comment, index) => {
                 const sequenceNumber = index + 1
                 const replies = comment.replies || []
-                const video = videos.find(v => v.id === comment.videoId)
+                const video = videoById.get(comment.videoId)
                 const fps = video?.fps || 24
                 const duration = video?.duration
                 const showTimestamp =
@@ -604,7 +558,11 @@ export default function CommentSection({
                 const hasAnnotation = !!(comment as any).annotations
 
                 return (
-                  <div key={comment.id}>
+                  <div
+                    key={comment.id}
+                    className="[content-visibility:auto]"
+                    style={{ containIntrinsicSize: '0 132px' }}
+                  >
                     <MessageBubble
                       comment={{ ...comment, resolved: resolvedOverrides[comment.id] ?? (comment as any).resolved } as any}
                       isReply={false}

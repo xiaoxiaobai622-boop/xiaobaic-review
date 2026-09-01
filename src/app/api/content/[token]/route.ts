@@ -25,6 +25,104 @@ const HLS_MANIFEST_CACHE_TTL_SECONDS = 300
 const HLS_SEGMENT_URL_TTL_SECONDS = 900
 const HLS_MANIFEST_QUERY_PARAM = 'manifest'
 
+// In filesystem mode every browser seek can result in another authenticated
+// Range request. The token and hotlink checks still run per request, but the
+// immutable media metadata does not need to be fetched from Prisma each time.
+// Keep this cache deliberately short so a completed transcode or rollback is
+// reflected promptly while coalescing bursts of Range requests.
+const VIDEO_METADATA_CACHE_TTL_MS = 5_000
+type VideoMetadata = {
+  id: string
+  projectId: string
+  originalFileName: string
+  originalStoragePath: string
+  hlsPath: string | null
+  cleanPreview2160Path: string | null
+  cleanPreview1080Path: string | null
+  cleanPreview720Path: string | null
+  preview2160Path: string | null
+  preview1080Path: string | null
+  preview720Path: string | null
+  thumbnailPath: string | null
+  approved: boolean
+  status: string
+  project: {
+    title: string
+    allowAssetDownload: boolean
+  }
+}
+
+const videoMetadataCache = new Map<string, { value: VideoMetadata; expiresAt: number }>()
+const videoMetadataInflight = new Map<string, Promise<VideoMetadata | null>>()
+
+// Error messages are needed only when a request is rejected, but this route is
+// also used for every local Range request. Cache the merged locale messages so
+// those hot-path requests do not repeatedly deep-merge the JSON dictionaries.
+const contentShareMessagesCache = new Map<string, Promise<Record<string, any>>>()
+
+function getContentShareMessages(locale: string): Promise<Record<string, any>> {
+  const cached = contentShareMessagesCache.get(locale)
+  if (cached) return cached
+
+  const loadPromise = loadLocaleMessages(locale).then((messages) => messages?.share || {})
+  contentShareMessagesCache.set(locale, loadPromise)
+  void loadPromise.catch(() => {
+    if (contentShareMessagesCache.get(locale) === loadPromise) contentShareMessagesCache.delete(locale)
+  })
+  return loadPromise
+}
+
+async function getVideoMetadata(videoId: string, projectId: string): Promise<VideoMetadata | null> {
+  const cacheKey = `${projectId}:${videoId}`
+  const now = Date.now()
+  const cached = videoMetadataCache.get(cacheKey)
+  if (cached && cached.expiresAt > now) return cached.value
+  if (cached) videoMetadataCache.delete(cacheKey)
+
+  const existing = videoMetadataInflight.get(cacheKey)
+  if (existing) return existing
+
+  const lookup = prisma.video.findFirst({
+    where: {
+      id: videoId,
+      projectId,
+      // A token can outlive a rollback for a few minutes. Do not serve the
+      // superseded file while its access token remains in Redis.
+      status: { not: 'ROLLED_BACK' },
+    },
+    select: {
+      id: true,
+      projectId: true,
+      originalFileName: true,
+      originalStoragePath: true,
+      hlsPath: true,
+      cleanPreview2160Path: true,
+      cleanPreview1080Path: true,
+      cleanPreview720Path: true,
+      preview2160Path: true,
+      preview1080Path: true,
+      preview720Path: true,
+      thumbnailPath: true,
+      approved: true,
+      status: true,
+      project: { select: { title: true, allowAssetDownload: true } },
+    },
+  }).then((video) => video as VideoMetadata | null)
+
+  videoMetadataInflight.set(cacheKey, lookup)
+  try {
+    const value = await lookup
+    if (value) {
+      videoMetadataCache.set(cacheKey, { value, expiresAt: Date.now() + VIDEO_METADATA_CACHE_TTL_MS })
+      // Bound memory in long-lived Node workers serving many projects.
+      if (videoMetadataCache.size > 1_000) videoMetadataCache.clear()
+    }
+    return value
+  } finally {
+    if (videoMetadataInflight.get(cacheKey) === lookup) videoMetadataInflight.delete(cacheKey)
+  }
+}
+
 // A page can mount more than one player (or issue duplicate manifest loads
 // while the first response is still in flight). Coalesce those requests in a
 // process so COS and URL-signing work is done once per manifest cache miss.
@@ -227,8 +325,7 @@ export async function GET(
 ) {
   try {
     const locale = await getConfiguredLocale()
-    const messages = await loadLocaleMessages(locale)
-    const shareMessages = messages?.share || {}
+    const shareMessages = await getContentShareMessages(locale)
 
     const { token } = await params
     const { searchParams } = request.nextUrl
@@ -272,7 +369,7 @@ export async function GET(
   return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 401 })
     }
 
-    const verifiedToken = await verifyVideoAccessToken(token, request, sessionId)
+    const verifiedToken = await verifyVideoAccessToken(token, request, sessionId, rawTokenData)
     if (!verifiedToken) {
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     }
@@ -345,12 +442,9 @@ export async function GET(
       }
     }
 
-    const video = await prisma.video.findUnique({
-      where: { id: verifiedToken.videoId },
-      include: { project: true }
-    })
+    const video = await getVideoMetadata(verifiedToken.videoId, verifiedToken.projectId)
 
-    if (!video || video.projectId !== verifiedToken.projectId) {
+    if (!video) {
   return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 404 })
     }
 

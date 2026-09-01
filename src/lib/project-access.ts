@@ -25,10 +25,7 @@ export function projectAccessWhere(user: AuthUser, teamId?: string | null): Pris
   }
 }
 
-export async function canAccessProject(db: DbClient, user: AuthUser, projectId: string) {
-  // The request user may not carry the selected team's role (for example on
-  // direct video-token requests). Resolve access from the membership stored on
-  // the project's own team so a member cannot bypass project assignments.
+function projectAccessWhereForUser(user: AuthUser, projectId: string): Prisma.ProjectWhereInput {
   const assignmentAccess: Prisma.ProjectWhereInput = user.projectAccessScope === 'ASSIGNED_ONLY'
     ? {
         OR: [
@@ -48,23 +45,51 @@ export async function canAccessProject(db: DbClient, user: AuthUser, projectId: 
       }
     : {}
 
-  const project = await db.project.findFirst({
-    where: {
-      id: projectId,
-      ...(user.authorizedTeamId ? { teamId: user.authorizedTeamId } : {}),
-      team: {
-        members: {
-          some: {
-            userId: user.id,
-            status: 'ACTIVE',
-          },
+  return {
+    id: projectId,
+    ...(user.authorizedTeamId ? { teamId: user.authorizedTeamId } : {}),
+    team: {
+      members: {
+        some: {
+          userId: user.id,
+          status: 'ACTIVE',
         },
       },
-      ...assignmentAccess,
     },
+    ...assignmentAccess,
+  }
+}
+
+export async function canAccessProject(db: DbClient, user: AuthUser, projectId: string) {
+  // The request user may not carry the selected team's role (for example on
+  // direct video-token requests). Resolve access from the membership stored on
+  // the project's own team so a member cannot bypass project assignments.
+  const project = await db.project.findFirst({
+    where: projectAccessWhereForUser(user, projectId),
     select: { id: true },
   })
   return Boolean(project)
+}
+
+/**
+ * Resolve a video only when its parent project is accessible to the user.
+ * This folds the project-membership and video-ownership checks into one
+ * indexed query for the high-frequency admin token endpoint.
+ */
+export async function findAccessibleVideo(
+  db: DbClient,
+  user: AuthUser,
+  projectId: string,
+  videoId: string,
+): Promise<{ id: string; projectId: string } | null> {
+  return db.video.findFirst({
+    where: {
+      id: videoId,
+      projectId,
+      project: projectAccessWhereForUser(user, projectId),
+    },
+    select: { id: true, projectId: true },
+  })
 }
 
 export async function canAdministerProject(db: DbClient, user: AuthUser, projectId: string) {
@@ -296,6 +321,59 @@ export async function fetchProjectWithVideos(
   guestLatestOnly: boolean,
   projectId: string
 ) {
+  // The share response only exposes playback metadata. Selecting the exact
+  // fields here avoids pulling original storage paths, processing errors and
+  // other large/internal columns into every share-page request.
+  const videoSelect = {
+    id: true,
+    name: true,
+    version: true,
+    versionLabel: true,
+    originalFileName: true,
+    originalFileSize: true,
+    duration: true,
+    width: true,
+    height: true,
+    fps: true,
+    codec: true,
+    status: true,
+    approved: true,
+    approvedAt: true,
+    reviewStatus: true,
+    thumbnailPath: true,
+    folderId: true,
+    createdAt: true,
+    updatedAt: true,
+    _count: { select: { assets: { where: { uploadCompletedAt: { not: null } } } } },
+  } as const
+  const projectSelect = {
+    id: true,
+    title: true,
+    description: true,
+    slug: true,
+    status: true,
+    companyName: true,
+    sharePassword: true,
+    authMode: true,
+    guestMode: true,
+    guestLatestOnly: true,
+    guestShowPhotos: true,
+    timestampDisplay: true,
+    enableRevisions: true,
+    maxRevisions: true,
+    restrictCommentsToLatestVersion: true,
+    hideFeedback: true,
+    previewResolution: true,
+    watermarkEnabled: true,
+    usePreviewForApprovedPlayback: true,
+    allowAssetDownload: true,
+    allowPhotoDownload: true,
+    allowClientAssetUpload: true,
+    allowReverseShare: true,
+    clientCanApprove: true,
+    showClientTutorial: true,
+  } as const
+
   if (isGuest && guestLatestOnly) {
     const allVideos = await prisma.video.findMany({
       where: {
@@ -303,6 +381,7 @@ export async function fetchProjectWithVideos(
         status: 'READY',
       },
       orderBy: { version: 'desc' },
+      select: { id: true, name: true, version: true },
     })
 
     const latestVideoIds: string[] = []
@@ -316,16 +395,15 @@ export async function fetchProjectWithVideos(
 
     return prisma.project.findUnique({
       where: { slug: token },
-      include: {
+      select: {
+        ...projectSelect,
         videos: {
           where: {
             id: { in: latestVideoIds },
             status: 'READY',
           },
           orderBy: { version: 'desc' },
-          include: {
-            _count: { select: { assets: { where: { uploadCompletedAt: { not: null } } } } },
-          },
+          select: videoSelect,
         },
       },
     })
@@ -333,13 +411,12 @@ export async function fetchProjectWithVideos(
 
   return prisma.project.findUnique({
     where: { slug: token },
-    include: {
+    select: {
+      ...projectSelect,
       videos: {
         where: { status: 'READY' as const },
         orderBy: { version: 'desc' },
-        include: {
-          _count: { select: { assets: { where: { uploadCompletedAt: { not: null } } } } },
-        },
+        select: videoSelect,
       },
     },
   })

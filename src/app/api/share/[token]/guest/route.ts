@@ -9,7 +9,7 @@ import { getClientIpAddress } from '@/lib/utils'
 import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-tracking'
 import jwt from 'jsonwebtoken'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShare, isShareLinkActive } from '@/lib/share-links'
+import { resolveShareMetadata } from '@/lib/share-links'
 export const runtime = 'nodejs'
 
 
@@ -39,7 +39,7 @@ export async function POST(
     const { token } = await params
 
     // Find project by slug
-    const resolved = await resolveShare(token)
+    const resolved = await resolveShareMetadata(token)
     if (resolved.link) return NextResponse.json({ error: 'Guest access is not available for this share link' }, { status: 403 })
     const project = resolved.project ? { id: resolved.project.id, guestMode: resolved.project.guestMode } : null
 

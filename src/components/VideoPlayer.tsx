@@ -17,6 +17,7 @@ import { secondsToTimecode } from '@/lib/timecode'
 import { logError } from '@/lib/logging'
 import { filterCommentsForVideo } from '@/lib/video-comment-filter'
 import { useHlsSource } from '@/hooks/useHlsSource'
+import { useStorageProvider } from '@/components/StorageConfigProvider'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -27,13 +28,126 @@ type PendingSeek = {
   resume: boolean
 }
 
+type PlaybackQuality = '720p' | '1080p' | '2160p'
+
+interface PlaybackSource {
+  videoId: string | null
+  url: string
+  hlsUrl: string
+  quality: PlaybackQuality
+}
+
+function resolvePlaybackSource(
+  video: {
+    id?: string
+    streamUrl720p?: string | null
+    streamUrl1080p?: string | null
+    streamUrl2160p?: string | null
+    hlsUrl720p?: string | null
+  } | null,
+  defaultQuality: PlaybackQuality,
+  supportsHls: boolean,
+): PlaybackSource {
+  if (!video) {
+    return { videoId: null, url: '', hlsUrl: '', quality: defaultQuality }
+  }
+
+  let url = ''
+  let quality: PlaybackQuality = defaultQuality
+
+  if (defaultQuality === '2160p') {
+    if (video.streamUrl2160p) {
+      url = video.streamUrl2160p
+      quality = '2160p'
+    } else if (video.streamUrl1080p) {
+      url = video.streamUrl1080p
+      quality = '1080p'
+    } else {
+      url = video.streamUrl720p || ''
+      quality = '720p'
+    }
+  } else if (defaultQuality === '1080p') {
+    if (video.streamUrl1080p) {
+      url = video.streamUrl1080p
+      quality = '1080p'
+    } else if (video.streamUrl720p) {
+      url = video.streamUrl720p
+      quality = '720p'
+    } else {
+      url = video.streamUrl2160p || ''
+      quality = '2160p'
+    }
+  } else if (video.streamUrl720p) {
+    url = video.streamUrl720p
+    quality = '720p'
+  } else if (video.streamUrl1080p) {
+    url = video.streamUrl1080p
+    quality = '1080p'
+  } else {
+    url = video.streamUrl2160p || ''
+    quality = '2160p'
+  }
+
+  const hlsUrl = supportsHls ? (video.hlsUrl720p || '') : ''
+  if (hlsUrl) quality = '720p'
+
+  return { videoId: video.id || null, url, hlsUrl, quality }
+}
+
+const POSITION_EVENT_INTERVAL_MS = 200
+const BUFFER_TAIL_TOLERANCE_SECONDS = 0.15
+const MEDIA_END_EPSILON_SECONDS = 0.15
+
 function isTimeBuffered(video: HTMLVideoElement, time: number): boolean {
+  const duration = getFiniteDuration(video)
+  const isAtMediaEnd = duration !== null && time >= duration - 0.05
+
   for (let index = 0; index < video.buffered.length; index += 1) {
-    if (time >= video.buffered.start(index) && time <= video.buffered.end(index)) {
+    const start = video.buffered.start(index)
+    const end = video.buffered.end(index)
+    const rangeLength = Math.max(0, end - start)
+    const tailTolerance = Math.min(BUFFER_TAIL_TOLERANCE_SECONDS, Math.max(0.02, rangeLength / 4))
+    // A timestamp at the exact end of a range can still stall while the next
+    // HLS fragment is fetched. Leave a small tail unless the target is the
+    // actual end of the media.
+    if (
+      time >= start &&
+      (time < end - tailTolerance || (isAtMediaEnd && end >= (duration ?? 0) - 0.05))
+    ) {
       return true
     }
   }
   return false
+}
+
+function getFiniteDuration(video: HTMLVideoElement): number | null {
+  return Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null
+}
+
+function clampMediaTime(video: HTMLVideoElement, time: number): number {
+  if (!Number.isFinite(time)) return 0
+
+  const duration = getFiniteDuration(video)
+  return duration === null
+    ? Math.max(0, time)
+    : Math.min(duration, Math.max(0, time))
+}
+
+function getPendingSeekTarget(video: HTMLVideoElement, pendingSeek: PendingSeek): number {
+  // The duration may become known after a seek was requested. Normalize the
+  // target here so a URL timestamp beyond the media end cannot keep the seek
+  // pending forever or make the playhead jump back to an old buffer.
+  return clampMediaTime(video, pendingSeek.time)
+}
+
+function hasReachedPendingSeek(
+  video: HTMLVideoElement,
+  pendingSeek: PendingSeek,
+  requireBuffered = true,
+): boolean {
+  const target = getPendingSeekTarget(video, pendingSeek)
+  return Math.abs(video.currentTime - target) <= 0.5 &&
+    (!requireBuffered || isTimeBuffered(video, target))
 }
 
 interface VideoPlayerProps {
@@ -128,6 +242,8 @@ export default function VideoPlayer({
   const t = useTranslations('videos')
   const tControls = useTranslations('controls')
   const tShare = useTranslations('share')
+  const storageProvider = useStorageProvider()
+  const supportsHls = storageProvider === 's3'
   // null means automatic selection. This lets a default viewer follow a newly
   // published latest version while preserving a version chosen by the user.
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
@@ -157,7 +273,7 @@ export default function VideoPlayer({
   const videoWrapperRef = useRef<HTMLDivElement>(null)
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const hasInitiallySeenRef = useRef(false) // Track if initial seek already happened
-  const lastTimeUpdateRef = useRef(0) // Throttle time updates
+  const lastTimeUpdateRef = useRef(0) // Throttle cross-component position events
   const previousVideoNameRef = useRef<string | null>(null)
   const currentTimeRef = useRef(0)
   const playIntentRef = useRef(false)
@@ -175,8 +291,16 @@ export default function VideoPlayer({
     playIntentRef.current = true
     setIsBuffering(video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)
 
-    if (video.ended) {
+    const duration = getFiniteDuration(video)
+    const isAtMediaEnd = duration !== null && video.currentTime >= duration - MEDIA_END_EPSILON_SECONDS
+    const hasExplicitSeekTarget = pendingSeekRef.current !== null
+
+    if ((video.ended || isAtMediaEnd) && !hasExplicitSeekTarget) {
       video.currentTime = 0
+      currentTimeRef.current = 0
+      lastTimeUpdateRef.current = 0
+      setCurrentTimeState(0)
+      pendingSeekRef.current = null
     }
 
     if (!video.paused && !video.ended) {
@@ -302,9 +426,36 @@ export default function VideoPlayer({
     ? explicitVideoIndex
     : Math.max(0, Math.min(automaticVideoIndex, displayVideos.length - 1))
   const selectedVideo = displayVideos[selectedVideoIndex]
+  const selectedVideoData = selectedVideo as any
+  const selectedVideoIdValue = selectedVideoData?.id ?? null
+  const selectedStreamUrl720p = selectedVideoData?.streamUrl720p || ''
+  const selectedStreamUrl1080p = selectedVideoData?.streamUrl1080p || ''
+  const selectedStreamUrl2160p = selectedVideoData?.streamUrl2160p || ''
+  const selectedHlsUrl720p = selectedVideoData?.hlsUrl720p || ''
   const sourceMatchesSelectedVideo = sourceVideoId === (selectedVideo?.id ?? null)
   const activeVideoUrl = sourceMatchesSelectedVideo ? videoUrl : ''
-  const activeHlsUrl = sourceMatchesSelectedVideo ? hlsUrl : ''
+  const activeHlsUrl = supportsHls && sourceMatchesSelectedVideo ? hlsUrl : ''
+  const playbackSource = useMemo(() => {
+    return resolvePlaybackSource(
+      selectedVideoIdValue ? {
+        id: selectedVideoIdValue || undefined,
+        streamUrl720p: selectedStreamUrl720p,
+        streamUrl1080p: selectedStreamUrl1080p,
+        streamUrl2160p: selectedStreamUrl2160p,
+        hlsUrl720p: selectedHlsUrl720p,
+      } : null,
+      defaultQuality,
+      supportsHls,
+    )
+  }, [
+    defaultQuality,
+    selectedVideoIdValue,
+    selectedStreamUrl720p,
+    selectedStreamUrl1080p,
+    selectedStreamUrl2160p,
+    selectedHlsUrl720p,
+    supportsHls,
+  ])
   const selectedVideoComments = useMemo(
     () => filterCommentsForVideo(comments, selectedVideo?.id),
     [comments, selectedVideo?.id],
@@ -478,7 +629,7 @@ export default function VideoPlayer({
         detail: { videoId: selectedVideo.id, versionLabel: selectedVideo.versionLabel }
       }))
     }
-  }, [selectedVideo?.id])
+  }, [selectedVideo?.id, selectedVideo?.versionLabel])
 
   useEffect(() => {
     const selectVersion = (event: Event) => {
@@ -542,78 +693,67 @@ export default function VideoPlayer({
     setSelectedVideoId(null)
   }, [followLatestVersion, initialVideoIndex])
 
+  // URL timestamps apply to the newly selected video as well. Reset the
+  // one-shot guard when the review item changes, while preserving the current
+  // position across a same-video HLS/MP4 source fallback.
+  useEffect(() => {
+    hasInitiallySeenRef.current = false
+  }, [activeVideoName, selectedVideo?.id])
+
   // Safety check: ensure selectedVideo exists before accessing properties
   const isVideoApproved = selectedVideo ? (selectedVideo as any).approved === true : false
 
   useEffect(() => {
-    async function loadVideoUrl() {
-      try {
-        if (!selectedVideo) {
-          setSourceVideoId(null)
-          setVideoUrl('')
-          setHlsUrl('')
-          return
-        }
+    currentTimeRef.current = 0
+    setResolvedPlaybackQuality(playbackSource.quality)
+    setVideoCrossOrigin('anonymous')
+    setVideoLoadFailed(false)
+    setVideoUrl(playbackSource.url)
+    setHlsUrl(playbackSource.hlsUrl)
+    setSourceVideoId(playbackSource.videoId)
+  }, [playbackSource])
 
-        let url: string | undefined
-        let qualityUsed: '720p' | '1080p' | '2160p' = defaultQuality
+  const handleTimelineSeek = useCallback((timestamp: number, resume = false) => {
+    const video = videoRef.current
+    if (!video || !Number.isFinite(timestamp)) return
 
-        if (defaultQuality === '2160p') {
-          // Prefer 2160p, fallback to 1080p then 720p
-          if ((selectedVideo as any).streamUrl2160p) {
-            url = (selectedVideo as any).streamUrl2160p
-            qualityUsed = '2160p'
-          } else if ((selectedVideo as any).streamUrl1080p) {
-            url = (selectedVideo as any).streamUrl1080p
-            qualityUsed = '1080p'
-          } else if ((selectedVideo as any).streamUrl720p) {
-            url = (selectedVideo as any).streamUrl720p
-            qualityUsed = '720p'
-          }
-        } else if (defaultQuality === '1080p') {
-          // Prefer 1080p, fallback to 720p
-          if ((selectedVideo as any).streamUrl1080p) {
-            url = (selectedVideo as any).streamUrl1080p
-            qualityUsed = '1080p'
-          } else if ((selectedVideo as any).streamUrl720p) {
-            url = (selectedVideo as any).streamUrl720p
-            qualityUsed = '720p'
-          } else if ((selectedVideo as any).streamUrl2160p) {
-            url = (selectedVideo as any).streamUrl2160p
-            qualityUsed = '2160p'
-          }
-        } else {
-          // Prefer 720p, fallback to 1080p then 2160p
-          if ((selectedVideo as any).streamUrl720p) {
-            url = (selectedVideo as any).streamUrl720p
-            qualityUsed = '720p'
-          } else if ((selectedVideo as any).streamUrl1080p) {
-            url = (selectedVideo as any).streamUrl1080p
-            qualityUsed = '1080p'
-          } else if ((selectedVideo as any).streamUrl2160p) {
-            url = (selectedVideo as any).streamUrl2160p
-            qualityUsed = '2160p'
-          }
-        }
+    const target = clampMediaTime(video, timestamp)
+    const shouldResume = resume === true
 
-        const nextHlsUrl = (selectedVideo as any).hlsUrl720p || ''
-        if (nextHlsUrl) {
-          qualityUsed = '720p'
-        }
-
-        currentTimeRef.current = 0
-        setResolvedPlaybackQuality(qualityUsed)
-        setVideoCrossOrigin('anonymous')
-        setVideoLoadFailed(false)
-        setVideoUrl(url || '')
-        setHlsUrl(nextHlsUrl)
-        setSourceVideoId(selectedVideo.id)
-      } catch (error) {
-      }
+    if (shouldResume) {
+      playIntentRef.current = true
+    } else {
+      pausePlayback()
     }
 
-    loadVideoUrl()
-  }, [selectedVideo, defaultQuality])
+    pendingSeekRef.current = { time: target, resume: shouldResume }
+    setIsSeeking(true)
+    setIsBuffering(!isTimeBuffered(video, target))
+
+    try {
+      video.currentTime = target
+    } catch (error) {
+      pendingSeekRef.current = null
+      setIsSeeking(false)
+      setIsBuffering(false)
+      logError('[PLAYER] Unable to seek video:', error)
+      return
+    }
+
+    currentTimeRef.current = target
+    setCurrentTimeState(target)
+    lastTimeUpdateRef.current = 0
+    window.dispatchEvent(new CustomEvent('videoSeekRequested', {
+      detail: { time: target, videoId: selectedVideoIdRef.current },
+    }))
+    window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+      detail: { time: target, videoId: selectedVideoIdRef.current }
+    }))
+
+    // Calling play immediately also kicks off native HLS loading. If the
+    // target is not buffered yet, the media events retry once data arrives.
+    if (shouldResume) requestPlay()
+  }, [pausePlayback, requestPlay])
 
   useEffect(() => {
     const video = videoRef.current
@@ -625,11 +765,7 @@ export default function VideoPlayer({
             ? Math.min(Math.max(0, initialSeekTime), duration)
             : Math.max(0, initialSeekTime)
 
-          pendingSeekRef.current = { time: seekTime, resume: false }
-          setIsSeeking(true)
-          video.currentTime = seekTime
-          currentTimeRef.current = seekTime
-          setCurrentTimeState(seekTime)
+          handleTimelineSeek(seekTime, false)
           // Don't auto-play - mobile browsers block this
 
           hasInitiallySeenRef.current = true
@@ -646,7 +782,7 @@ export default function VideoPlayer({
         video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       }
     }
-  }, [activeHlsUrl, activeVideoUrl, initialSeekTime])
+  }, [activeHlsUrl, activeVideoUrl, initialSeekTime, handleTimelineSeek])
 
 
   useEffect(() => {
@@ -680,6 +816,8 @@ export default function VideoPlayer({
 
 
   useEffect(() => {
+    let seekTimer: ReturnType<typeof setTimeout> | null = null
+
     const handleSeekToTime = (e: CustomEvent) => {
       const { timestamp, videoId } = e.detail
 
@@ -687,12 +825,10 @@ export default function VideoPlayer({
         const targetVideoIndex = displayVideos.findIndex(v => v.id === videoId)
         if (targetVideoIndex !== -1) {
           setSelectedVideoId(videoId)
-          setTimeout(() => {
+          if (seekTimer !== null) clearTimeout(seekTimer)
+          seekTimer = setTimeout(() => {
             if (videoRef.current) {
-              pausePlayback()
-              videoRef.current.currentTime = timestamp
-              currentTimeRef.current = timestamp
-              setCurrentTimeState(timestamp)
+              handleTimelineSeek(timestamp, false)
               videoRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
             }
           }, 500)
@@ -702,19 +838,17 @@ export default function VideoPlayer({
 
       // Same video - just seek
       if (videoRef.current) {
-        pausePlayback()
-        videoRef.current.currentTime = timestamp
-        currentTimeRef.current = timestamp
-        setCurrentTimeState(timestamp)
+        handleTimelineSeek(timestamp, false)
         videoRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     }
 
     window.addEventListener('seekToTime' as any, handleSeekToTime as EventListener)
     return () => {
+      if (seekTimer !== null) clearTimeout(seekTimer)
       window.removeEventListener('seekToTime' as any, handleSeekToTime as EventListener)
     }
-  }, [selectedVideo?.id, displayVideos, pausePlayback])
+  }, [selectedVideo?.id, displayVideos, handleTimelineSeek])
 
   useEffect(() => {
     const handlePauseForComment = () => {
@@ -787,15 +921,10 @@ export default function VideoPlayer({
         e.stopPropagation()
         if (!selectedVideo?.fps) return
 
-        pausePlayback()
-
         const frameDuration = 1 / selectedVideo.fps
-        video.currentTime = Math.max(0, video.currentTime - frameDuration)
-        currentTimeRef.current = video.currentTime // Update ref for comment timecode
+        const newTime = Math.max(0, video.currentTime - frameDuration)
+        handleTimelineSeek(newTime, false)
         window.dispatchEvent(new CustomEvent('videoTimeUpdated', {
-          detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
-        }))
-        window.dispatchEvent(new CustomEvent('videoPositionChanged', {
           detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
         }))
         return
@@ -807,18 +936,13 @@ export default function VideoPlayer({
         e.stopPropagation()
         if (!selectedVideo?.fps) return
 
-        pausePlayback()
-
         const frameDuration = 1 / selectedVideo.fps
         const duration = Number.isFinite(video.duration) ? video.duration : undefined
-        video.currentTime = duration
+        const newTime = duration
           ? Math.min(duration, video.currentTime + frameDuration)
           : video.currentTime + frameDuration
-        currentTimeRef.current = video.currentTime // Update ref for comment timecode
+        handleTimelineSeek(newTime, false)
         window.dispatchEvent(new CustomEvent('videoTimeUpdated', {
-          detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
-        }))
-        window.dispatchEvent(new CustomEvent('videoPositionChanged', {
           detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
         }))
         return
@@ -830,76 +954,62 @@ export default function VideoPlayer({
     return () => {
       window.removeEventListener('keydown', handleKeyboard, { capture: true })
     }
-  }, [selectedVideo, togglePlayback, pausePlayback])
+  }, [selectedVideo, togglePlayback, handleTimelineSeek])
 
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      const now = Date.now()
-      // Throttle to update max every 200ms instead of 60 times per second
-      if (now - lastTimeUpdateRef.current > 200) {
-        currentTimeRef.current = videoRef.current.currentTime
-        setCurrentTimeState(videoRef.current.currentTime)
-        window.dispatchEvent(new CustomEvent('videoPositionChanged', {
-          detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
-        }))
-        lastTimeUpdateRef.current = now
-      }
-    }
-  }
-
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setVideoDuration(videoRef.current.duration)
-      setVolume(videoRef.current.volume)
-      setIsMuted(videoRef.current.muted)
-    }
-  }
-
-  const handleTimelineSeek = useCallback((timestamp: number, resume = false) => {
+  const handleTimeUpdate = useCallback(() => {
     const video = videoRef.current
-    if (!video || !Number.isFinite(timestamp)) return
+    if (!video) return
 
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null
-    const target = Math.max(0, duration === null ? timestamp : Math.min(duration, timestamp))
-    const shouldResume = resume === true
+    const time = clampMediaTime(video, video.currentTime)
+    const pendingSeek = pendingSeekRef.current
 
-    if (shouldResume) {
-      playIntentRef.current = true
-    } else {
-      pausePlayback()
+    // A source can emit one more timeupdate for its previous buffer after a
+    // seek. Keep the requested position visible until the new range is ready.
+    if (pendingSeek) {
+      const pendingTarget = getPendingSeekTarget(video, pendingSeek)
+      if (Math.abs(time - pendingTarget) > 0.5) return
     }
 
-    pendingSeekRef.current = { time: target, resume: shouldResume }
-    setIsSeeking(true)
-    setIsBuffering(!isTimeBuffered(video, target))
+    currentTimeRef.current = time
+    const now = Date.now()
+    if (now - lastTimeUpdateRef.current < POSITION_EVENT_INTERVAL_MS) return
 
-    try {
-      video.currentTime = target
-    } catch (error) {
+    window.dispatchEvent(new CustomEvent('videoPositionChanged', {
+      detail: { time, videoId: selectedVideoIdRef.current }
+    }))
+    lastTimeUpdateRef.current = now
+
+    if (pendingSeek && hasReachedPendingSeek(video, pendingSeek)) {
       pendingSeekRef.current = null
       setIsSeeking(false)
       setIsBuffering(false)
-      logError('[PLAYER] Unable to seek video:', error)
-      return
     }
+  }, [])
 
-    currentTimeRef.current = target
-    setCurrentTimeState(target)
-    window.dispatchEvent(new CustomEvent('videoPositionChanged', {
-      detail: { time: target, videoId: selectedVideoIdRef.current }
-    }))
+  const handleLoadedMetadata = useCallback(() => {
+    if (videoRef.current) {
+      const video = videoRef.current
+      const duration = getFiniteDuration(video)
+      if (duration !== null) setVideoDuration(duration)
+      setVolume(video.volume)
+      setIsMuted(video.muted)
+    }
+  }, [])
 
-    // Calling play immediately also kicks off native HLS loading. If the
-    // target is not buffered yet, the returned promise stays pending (or the
-    // media emits waiting); the event handlers below retry once data arrives.
-    if (shouldResume) requestPlay()
-  }, [pausePlayback, requestPlay])
+  const handleDurationChange = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    const duration = getFiniteDuration(video)
+    if (duration !== null) {
+      setVideoDuration((currentDuration) => currentDuration === duration ? currentDuration : duration)
+    }
+  }, [])
 
   const handlePlayPause = useCallback(() => {
     togglePlayback()
   }, [togglePlayback])
 
-  const handleVolumeChange = (newVolume: number) => {
+  const handleVolumeChange = useCallback((newVolume: number) => {
     if (videoRef.current) {
       videoRef.current.volume = newVolume
       setVolume(newVolume)
@@ -908,20 +1018,20 @@ export default function VideoPlayer({
         setIsMuted(false)
       }
     }
-  }
+  }, [isMuted])
 
-  const handleToggleMute = () => {
+  const handleToggleMute = useCallback(() => {
     if (videoRef.current) {
       videoRef.current.muted = !videoRef.current.muted
       setIsMuted(videoRef.current.muted)
     }
-  }
+  }, [])
 
-  const handleToggleLoop = () => {
+  const handleToggleLoop = useCallback(() => {
     setIsLooping(prev => !prev)
-  }
+  }, [])
 
-  const handleToggleFullscreen = () => {
+  const handleToggleFullscreen = useCallback(() => {
     if (!containerRef.current || !videoRef.current) return
 
     // Mobile devices (especially iOS) need special handling
@@ -959,23 +1069,17 @@ export default function VideoPlayer({
         logError('Failed to exit fullscreen:', error)
       }
     }
-  }
+  }, [])
 
-  const handleFrameStep = (direction: 'forward' | 'backward') => {
+  const handleFrameStep = useCallback((direction: 'forward' | 'backward') => {
     if (!videoRef.current || !selectedVideo?.fps) return
-
-    pausePlayback()
 
     const frameDuration = 1 / selectedVideo.fps
     const newTime = direction === 'forward'
       ? Math.min(videoDuration, videoRef.current.currentTime + frameDuration)
       : Math.max(0, videoRef.current.currentTime - frameDuration)
-    
-    videoRef.current.currentTime = newTime
-    pendingSeekRef.current = { time: newTime, resume: false }
-    setIsSeeking(true)
-    currentTimeRef.current = newTime
-    setCurrentTimeState(newTime)
+
+    handleTimelineSeek(newTime, false)
     
     window.dispatchEvent(new CustomEvent('videoTimeUpdated', {
       detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
@@ -983,7 +1087,7 @@ export default function VideoPlayer({
     window.dispatchEvent(new CustomEvent('videoPositionChanged', {
       detail: { time: currentTimeRef.current, videoId: selectedVideoIdRef.current }
     }))
-  }
+  }, [handleTimelineSeek, selectedVideo?.fps, videoDuration])
 
   const resetControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) {
@@ -1027,19 +1131,21 @@ export default function VideoPlayer({
       if (!pendingSeek) {
         setIsSeeking(false)
       } else {
-        const reachedTarget = Math.abs(video.currentTime - pendingSeek.time) <= 0.5 &&
-          isTimeBuffered(video, pendingSeek.time)
-        if (reachedTarget || !pendingSeek.resume) {
+        const reachedTarget = hasReachedPendingSeek(video, pendingSeek)
+        if (reachedTarget) {
           pendingSeekRef.current = null
           setIsSeeking(false)
+          setIsBuffering(false)
         } else {
           // `playing` may fire for the old buffer before the requested HLS
           // fragment has been appended. Keep the seek intent alive.
           setIsBuffering(true)
           setIsSeeking(true)
+          if (!pendingSeek.resume && !video.paused) video.pause()
           try {
-            if (Math.abs(video.currentTime - pendingSeek.time) > 0.05) {
-              video.currentTime = pendingSeek.time
+            const pendingTarget = getPendingSeekTarget(video, pendingSeek)
+            if (Math.abs(video.currentTime - pendingTarget) > 0.05) {
+              video.currentTime = pendingTarget
             }
           } catch {
             // The next media event will retry the target position.
@@ -1050,6 +1156,17 @@ export default function VideoPlayer({
     }
     const handlePause = () => {
       setIsPlaying(false)
+      if (Number.isFinite(video.currentTime)) {
+        const pendingSeek = pendingSeekRef.current
+        const actualTime = clampMediaTime(video, video.currentTime)
+        // A pause emitted during a source reset can still expose the previous
+        // buffer. Keep the requested position visible until the new source
+        // confirms it rather than writing the stale value into the controls.
+        currentTimeRef.current = pendingSeek
+          ? getPendingSeekTarget(video, pendingSeek)
+          : actualTime
+        setCurrentTimeState(currentTimeRef.current)
+      }
       // A source swap (for example HLS -> MP4 fallback) can emit `pause`
       // while the user still intends to play. Explicit pausePlayback() clears
       // the intent before calling pause(), so preserve it here when present.
@@ -1077,24 +1194,14 @@ export default function VideoPlayer({
         return
       }
 
-      if (!pendingSeek.resume) {
-        pendingSeekRef.current = null
-        setIsSeeking(false)
-        setIsBuffering(false)
-        return
-      }
-
       // HLS can dispatch `seeked` before the target fragment is appended. Let
       // `canplay` retry rather than clearing the user's play intent here.
-      const reachedTarget = Math.abs(video.currentTime - pendingSeek.time) <= 0.5 &&
-        isTimeBuffered(video, pendingSeek.time)
-      if (!video.paused && reachedTarget) {
+      const reachedTarget = hasReachedPendingSeek(video, pendingSeek)
+      if (reachedTarget) {
         pendingSeekRef.current = null
         setIsSeeking(false)
         setIsBuffering(false)
-      } else if (video.paused && reachedTarget && playIntentRef.current) {
-        setIsSeeking(false)
-        requestPlay()
+        if (pendingSeek.resume && video.paused && playIntentRef.current) requestPlay()
       } else {
         // `seeked` only means the media element accepted the timestamp. HLS
         // may still be fetching the corresponding fragment, so keep the
@@ -1102,8 +1209,9 @@ export default function VideoPlayer({
         setIsSeeking(true)
         setIsBuffering(true)
         try {
-          if (Math.abs(video.currentTime - pendingSeek.time) > 0.05) {
-            video.currentTime = pendingSeek.time
+          const pendingTarget = getPendingSeekTarget(video, pendingSeek)
+          if (Math.abs(video.currentTime - pendingTarget) > 0.05) {
+            video.currentTime = pendingTarget
           }
         } catch {
           // A later canplay/seeking event will retry the position.
@@ -1112,9 +1220,10 @@ export default function VideoPlayer({
     }
     const handleCanPlay = () => {
       const pendingSeek = pendingSeekRef.current
-      if (pendingSeek?.resume && playIntentRef.current) {
-        const reachedTarget = Math.abs(video.currentTime - pendingSeek.time) <= 0.5
-        const targetBuffered = reachedTarget && isTimeBuffered(video, pendingSeek.time)
+      if (pendingSeek) {
+        const pendingTarget = getPendingSeekTarget(video, pendingSeek)
+        const reachedTarget = Math.abs(video.currentTime - pendingTarget) <= 0.5
+        const targetBuffered = reachedTarget && isTimeBuffered(video, pendingTarget)
 
         // `canplay` can describe an older buffered range while a seek is still
         // being applied. Starting playback here would resume from that old
@@ -1123,8 +1232,8 @@ export default function VideoPlayer({
           setIsSeeking(true)
           setIsBuffering(true)
           try {
-            if (Math.abs(video.currentTime - pendingSeek.time) > 0.05) {
-              video.currentTime = pendingSeek.time
+            if (Math.abs(video.currentTime - pendingTarget) > 0.05) {
+              video.currentTime = pendingTarget
             }
           } catch {
             // The media element will retry the seek on its next metadata/event.
@@ -1138,7 +1247,7 @@ export default function VideoPlayer({
           return
         }
 
-        if (video.paused) {
+        if (pendingSeek.resume && playIntentRef.current && video.paused) {
           requestPlay()
           return
         }
@@ -1162,6 +1271,8 @@ export default function VideoPlayer({
       setIsPlaying(false)
       setIsBuffering(false)
       setIsSeeking(false)
+      currentTimeRef.current = getFiniteDuration(video) ?? currentTimeRef.current
+      setCurrentTimeState(currentTimeRef.current)
     }
     const handleVolumeChangeEvent = () => {
       setVolume(video.volume)
@@ -1177,6 +1288,7 @@ export default function VideoPlayer({
     video.addEventListener('seeked', handleSeeked)
     video.addEventListener('canplay', handleCanPlay)
     video.addEventListener('canplaythrough', handleCanPlay)
+    video.addEventListener('durationchange', handleLoadedMetadata)
     video.addEventListener('ended', handleEnded)
     video.addEventListener('volumechange', handleVolumeChangeEvent)
 
@@ -1190,10 +1302,11 @@ export default function VideoPlayer({
       video.removeEventListener('seeked', handleSeeked)
       video.removeEventListener('canplay', handleCanPlay)
       video.removeEventListener('canplaythrough', handleCanPlay)
+      video.removeEventListener('durationchange', handleLoadedMetadata)
       video.removeEventListener('ended', handleEnded)
       video.removeEventListener('volumechange', handleVolumeChangeEvent)
     }
-  }, [requestPlay, resetControlsTimeout])
+  }, [handleLoadedMetadata, requestPlay, resetControlsTimeout, selectedVideo?.id])
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -1233,6 +1346,7 @@ export default function VideoPlayer({
 
   useEffect(() => {
     const container = containerRef.current
+    const controlsTimeout = controlsTimeoutRef.current
 
     const handleInteraction = () => {
       resetControlsTimeout()
@@ -1248,8 +1362,8 @@ export default function VideoPlayer({
         container.removeEventListener('mousemove', handleInteraction)
         container.removeEventListener('touchstart', handleInteraction)
       }
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current)
+      if (controlsTimeout) {
+        clearTimeout(controlsTimeout)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1271,6 +1385,29 @@ export default function VideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVideo?.id, selectedVideo?.reviewStatus, selectedVideoIndex, isVideoApproved])
 
+  const handleRangeStartChange = useCallback((time: number) => {
+    setPendingRangeStart(time)
+    window.dispatchEvent(new CustomEvent('commentRangeStartChanged', {
+      detail: { time, videoId: selectedVideo?.id },
+    }))
+  }, [selectedVideo?.id])
+
+  const handleRangeEndChange = useCallback((time: number) => {
+    setPendingRangeEnd(time)
+    window.dispatchEvent(new CustomEvent('commentRangeEndChanged', {
+      detail: { time, videoId: selectedVideo?.id },
+    }))
+  }, [selectedVideo?.id])
+
+  const handleApprove = useCallback(async () => {
+    if (activeVideoName) {
+      sessionStorage.setItem('approvedVideoName', activeVideoName)
+    }
+    if (onApprove) {
+      await onApprove()
+    }
+  }, [activeVideoName, onApprove])
+
   if (!selectedVideo || displayVideos.length === 0) {
     return (
       <div className="p-8 text-center text-muted-foreground">
@@ -1280,15 +1417,6 @@ export default function VideoPlayer({
   }
 
   const displayLabel = isVideoApproved ? t('approvedVersion') : selectedVideo.versionLabel
-
-  const handleApprove = async () => {
-    if (activeVideoName) {
-      sessionStorage.setItem('approvedVideoName', activeVideoName)
-    }
-    if (onApprove) {
-      await onApprove()
-    }
-  }
 
   return (
     <div className={`flex flex-col ${fillContainer ? 'min-h-0 lg:h-full' : 'space-y-4 max-h-full'}`}>
@@ -1364,12 +1492,13 @@ export default function VideoPlayer({
                 style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
+                onDurationChange={handleDurationChange}
                 onContextMenu={!isAdmin ? (e) => e.preventDefault() : undefined}
                 onClick={isDrawingMode ? undefined : handlePlayPause}
                 crossOrigin={videoCrossOrigin || undefined}
                 playsInline
                 loop={isLooping}
-                preload="auto"
+                preload="metadata"
                 // @ts-ignore - webkit attributes for iOS
                 webkit-playsinline="true"
                 x-webkit-airplay="allow"
@@ -1432,6 +1561,7 @@ export default function VideoPlayer({
                   videoFps={selectedVideo?.fps || 24}
                   containerRef={videoWrapperRef}
                   videoRef={videoRef}
+                  videoKey={selectedVideo?.id}
                   hidden={isDrawingMode}
                   pendingAnnotation={pendingAnnotation}
                 />
@@ -1533,18 +1663,8 @@ export default function VideoPlayer({
                     pendingRangeStart={pendingRangeStart}
                     pendingRangeEnd={pendingRangeEnd}
                     isSelectingRange={isSelectingRange && pendingRangeStart !== null}
-                    onRangeStartChange={(time) => {
-                      setPendingRangeStart(time)
-                      window.dispatchEvent(new CustomEvent('commentRangeStartChanged', {
-                        detail: { time, videoId: selectedVideo?.id },
-                      }))
-                    }}
-                    onRangeEndChange={(time) => {
-                      setPendingRangeEnd(time)
-                      window.dispatchEvent(new CustomEvent('commentRangeEndChanged', {
-                        detail: { time, videoId: selectedVideo?.id },
-                      }))
-                    }}
+                    onRangeStartChange={handleRangeStartChange}
+                    onRangeEndChange={handleRangeEndChange}
                     surfaceClassName={controlsSurfaceClassName}
                   />
                 </div>

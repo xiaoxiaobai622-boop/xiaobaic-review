@@ -14,7 +14,7 @@ import { safeParseBody } from '@/lib/validation'
 import jwt from 'jsonwebtoken'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { resolveShare, isShareLinkActive, linkPermissions } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, linkPermissions } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -151,7 +151,7 @@ export async function POST(
       return NextResponse.json({ error: shareMessages?.passwordRequiredShort || 'Password is required' }, { status: 400 })
     }
 
-    const resolved = await resolveShare(token)
+    const resolved = await resolveShareMetadata(token)
     const project = resolved.project ? {
       id: resolved.project.id,
       title: resolved.project.title,
