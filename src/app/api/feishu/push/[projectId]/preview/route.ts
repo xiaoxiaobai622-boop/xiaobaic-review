@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { fetchFeishuProfileByOpenId } from '@/lib/feishu'
+import {
+  fetchFeishuProfileByOpenId,
+  fetchFeishuProfileByUserAccessToken,
+  refreshFeishuUserAccessToken,
+} from '@/lib/feishu'
+import { decrypt, encrypt } from '@/lib/encryption'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,10 +32,37 @@ export async function GET(request: NextRequest) {
     const scope = videoId ? 'video' : 'project'
     const shouldRefreshProfiles = url.searchParams.get('refresh') === '1'
 
-    async function refreshBinding(binding: { id: string; openId: string; nickname: string | null; avatarUrl: string | null } | null) {
+    async function refreshBinding(binding: {
+      id: string
+      openId: string
+      nickname: string | null
+      avatarUrl: string | null
+      userAccessTokenEncrypted: string | null
+      refreshTokenEncrypted: string | null
+      tokenExpiresAt: Date | null
+    } | null) {
       if (!binding || !shouldRefreshProfiles || !binding.openId) return binding
       try {
-        const profile = await fetchFeishuProfileByOpenId(binding.openId)
+        let accessToken = binding.userAccessTokenEncrypted ? decrypt(binding.userAccessTokenEncrypted) : null
+        let refreshToken = binding.refreshTokenEncrypted ? decrypt(binding.refreshTokenEncrypted) : null
+        let tokenExpiresAt = binding.tokenExpiresAt
+        if ((!accessToken || !tokenExpiresAt || tokenExpiresAt.getTime() <= Date.now() + 60_000) && refreshToken) {
+          const refreshed = await refreshFeishuUserAccessToken(refreshToken)
+          accessToken = refreshed.accessToken
+          refreshToken = refreshed.refreshToken || refreshToken
+          tokenExpiresAt = refreshed.expiresIn ? new Date(Date.now() + refreshed.expiresIn * 1000) : null
+          await prisma.feishuBinding.update({
+            where: { id: binding.id },
+            data: {
+              userAccessTokenEncrypted: encrypt(accessToken),
+              refreshTokenEncrypted: encrypt(refreshToken),
+              tokenExpiresAt,
+            },
+          })
+        }
+        const profile = accessToken
+          ? await fetchFeishuProfileByUserAccessToken(accessToken)
+          : await fetchFeishuProfileByOpenId(binding.openId)
         const nickname = profile.name || binding.nickname
         const avatarUrl = profile.avatarUrl || binding.avatarUrl
         if (nickname !== binding.nickname || avatarUrl !== binding.avatarUrl) {
@@ -163,7 +195,15 @@ export async function GET(request: NextRequest) {
     let uploaderBinding = uploaderUser
       ? await prisma.feishuBinding.findUnique({
           where: { userId: uploaderUser.id },
-          select: { id: true, openId: true, nickname: true, avatarUrl: true },
+          select: {
+            id: true,
+            openId: true,
+            nickname: true,
+            avatarUrl: true,
+            userAccessTokenEncrypted: true,
+            refreshTokenEncrypted: true,
+            tokenExpiresAt: true,
+          },
         })
       : null
     uploaderBinding = await refreshBinding(uploaderBinding)
@@ -235,7 +275,15 @@ export async function GET(request: NextRequest) {
         let videoBinding = uploaderId
           ? await prisma.feishuBinding.findUnique({
               where: { userId: uploaderId },
-              select: { id: true, openId: true, nickname: true, avatarUrl: true },
+              select: {
+                id: true,
+                openId: true,
+                nickname: true,
+                avatarUrl: true,
+                userAccessTokenEncrypted: true,
+                refreshTokenEncrypted: true,
+                tokenExpiresAt: true,
+              },
             })
           : null
         videoBinding = await refreshBinding(videoBinding)

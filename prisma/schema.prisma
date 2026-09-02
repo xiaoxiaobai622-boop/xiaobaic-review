@@ -51,6 +51,9 @@ model WechatIdentity {
   unionId   String?
   nickname  String?
   avatarUrl String?
+  userAccessTokenEncrypted  String?
+  refreshTokenEncrypted     String?
+  tokenExpiresAt            DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1121,6 +1124,9 @@ model FeishuBinding {
   tenantKey String?
   nickname  String?
   avatarUrl String?
+  userAccessTokenEncrypted String?
+  refreshTokenEncrypted    String?
+  tokenExpiresAt           DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

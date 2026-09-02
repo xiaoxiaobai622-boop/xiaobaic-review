@@ -95,6 +95,7 @@ export function getFeishuAuthUrl(state: string): string {
     app_id: FEISHU_APP_ID,
     redirect_uri: FEISHU_OAUTH_REDIRECT_URI,
     state,
+    scope: 'contact:user.base:readonly',
   })
   return `https://open.feishu.cn/open-apis/authen/v1/authorize?${params.toString()}`
 }
@@ -107,6 +108,9 @@ interface FeishuUserInfo {
   avatarUrl?: string
   mobile?: string
   email?: string
+  userAccessToken?: string
+  refreshToken?: string
+  expiresIn?: number
 }
 
 function firstNonEmpty(...values: unknown[]): string | undefined {
@@ -116,6 +120,66 @@ function firstNonEmpty(...values: unknown[]): string | undefined {
 export interface FeishuProfile {
   name?: string
   avatarUrl?: string
+}
+
+function parseFeishuProfile(data: any): FeishuProfile {
+  const profile = data?.data?.user || data?.data || {}
+  const avatar = profile.avatar || {}
+  return {
+    name: firstNonEmpty(profile.name, profile.en_name, profile.nickname),
+    avatarUrl: firstNonEmpty(
+      profile.avatar_url,
+      profile.avatar_big,
+      profile.avatar_middle,
+      profile.avatar_thumb,
+      avatar.avatar_origin,
+      avatar.avatar_640,
+      avatar.avatar_240,
+      avatar.avatar_72,
+      avatar.avatar_32,
+    ),
+  }
+}
+
+/** Read the personal profile returned for an OAuth user access token. */
+export async function fetchFeishuProfileByUserAccessToken(accessToken: string): Promise<FeishuProfile> {
+  const response = await fetch(`${FEISHU_API_BASE}/authen/v1/user_info`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
+  })
+  const data = await response.json().catch(() => null)
+  if (!response.ok || data?.code !== 0) {
+    throw new Error(`Failed to fetch Feishu user profile: ${data?.msg || `HTTP ${response.status}`}`)
+  }
+  return parseFeishuProfile(data)
+}
+
+export interface FeishuUserToken {
+  accessToken: string
+  refreshToken?: string
+  expiresIn?: number
+}
+
+/** Exchange a refresh token for a new OAuth user access token. */
+export async function refreshFeishuUserAccessToken(refreshToken: string): Promise<FeishuUserToken> {
+  const tenantToken = await getTenantAccessToken()
+  const response = await fetch(`${FEISHU_API_BASE}/authen/v1/oidc/refresh_access_token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${tenantToken}`,
+    },
+    body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+  })
+  const data = await response.json().catch(() => null)
+  if (!response.ok || data?.code !== 0 || !data?.data?.access_token) {
+    throw new Error(`Failed to refresh Feishu user token: ${data?.msg || `HTTP ${response.status}`}`)
+  }
+  return {
+    accessToken: data.data.access_token,
+    refreshToken: data.data.refresh_token,
+    expiresIn: data.data.expires_in,
+  }
 }
 
 /** Fetch the current display profile for an OAuth binding using its open_id. */
@@ -215,6 +279,9 @@ export async function exchangeCodeForUser(code: string): Promise<FeishuUserInfo>
       ),
       mobile: profile.mobile,
       email: profile.email,
+      userAccessToken,
+      refreshToken: tokenData.data.refresh_token,
+      expiresIn: tokenData.data.expires_in,
     }
   } catch (error) {
     logError('Failed to exchange Feishu OAuth code:', error)

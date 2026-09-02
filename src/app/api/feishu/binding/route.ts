@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { fetchFeishuProfileByOpenId } from '@/lib/feishu'
+import {
+  fetchFeishuProfileByOpenId,
+  fetchFeishuProfileByUserAccessToken,
+  refreshFeishuUserAccessToken,
+} from '@/lib/feishu'
+import { decrypt, encrypt } from '@/lib/encryption'
 import { logMessage } from '@/lib/logging'
 
 export const runtime = 'nodejs'
@@ -26,6 +31,9 @@ export async function GET(request: NextRequest) {
         openId: true,
         nickname: true,
         avatarUrl: true,
+        userAccessTokenEncrypted: true,
+        refreshTokenEncrypted: true,
+        tokenExpiresAt: true,
         createdAt: true,
       },
     })
@@ -39,7 +47,32 @@ export async function GET(request: NextRequest) {
     let profileSyncError: string | undefined
     if (new URL(request.url).searchParams.get('refresh') === '1') {
       try {
-        const profile = await fetchFeishuProfileByOpenId(binding.openId)
+        let accessToken = binding.userAccessTokenEncrypted
+          ? decrypt(binding.userAccessTokenEncrypted)
+          : null
+        let refreshToken = binding.refreshTokenEncrypted
+          ? decrypt(binding.refreshTokenEncrypted)
+          : null
+        let tokenExpiresAt = binding.tokenExpiresAt
+
+        if ((!accessToken || !tokenExpiresAt || tokenExpiresAt.getTime() <= Date.now() + 60_000) && refreshToken) {
+          const refreshed = await refreshFeishuUserAccessToken(refreshToken)
+          accessToken = refreshed.accessToken
+          refreshToken = refreshed.refreshToken || refreshToken
+          tokenExpiresAt = refreshed.expiresIn ? new Date(Date.now() + refreshed.expiresIn * 1000) : null
+          await prisma.feishuBinding.update({
+            where: { id: binding.id },
+            data: {
+              userAccessTokenEncrypted: encrypt(accessToken),
+              refreshTokenEncrypted: encrypt(refreshToken),
+              tokenExpiresAt,
+            },
+          })
+        }
+
+        const profile = accessToken
+          ? await fetchFeishuProfileByUserAccessToken(accessToken)
+          : await fetchFeishuProfileByOpenId(binding.openId)
         nickname = profile.name || nickname
         avatarUrl = profile.avatarUrl || avatarUrl
         if (nickname !== binding.nickname || avatarUrl !== binding.avatarUrl) {

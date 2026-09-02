@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { exchangeCodeForUser } from '@/lib/feishu'
 import { prisma } from '@/lib/db'
 import { logError, logMessage } from '@/lib/logging'
+import { encrypt } from '@/lib/encryption'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,6 +49,9 @@ export async function GET(request: NextRequest) {
         tenantKey: feishuUser.tenantKey,
         nickname: feishuUser.name,
         avatarUrl: feishuUser.avatarUrl,
+        userAccessTokenEncrypted: feishuUser.userAccessToken ? encrypt(feishuUser.userAccessToken) : null,
+        refreshTokenEncrypted: feishuUser.refreshToken ? encrypt(feishuUser.refreshToken) : null,
+        tokenExpiresAt: feishuUser.expiresIn ? new Date(Date.now() + feishuUser.expiresIn * 1000) : null,
       },
       update: {
         openId: feishuUser.openId,
@@ -55,6 +59,9 @@ export async function GET(request: NextRequest) {
         tenantKey: feishuUser.tenantKey,
         nickname: feishuUser.name,
         avatarUrl: feishuUser.avatarUrl,
+        userAccessTokenEncrypted: feishuUser.userAccessToken ? encrypt(feishuUser.userAccessToken) : undefined,
+        refreshTokenEncrypted: feishuUser.refreshToken ? encrypt(feishuUser.refreshToken) : undefined,
+        tokenExpiresAt: feishuUser.expiresIn ? new Date(Date.now() + feishuUser.expiresIn * 1000) : undefined,
       },
     })
 
