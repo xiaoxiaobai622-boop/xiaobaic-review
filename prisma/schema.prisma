@@ -51,9 +51,6 @@ model WechatIdentity {
   unionId   String?
   nickname  String?
   avatarUrl String?
-  userAccessTokenEncrypted  String?
-  refreshTokenEncrypted     String?
-  tokenExpiresAt            DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
