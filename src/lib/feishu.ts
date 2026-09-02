@@ -134,6 +134,7 @@ export async function fetchFeishuProfileByOpenId(openId: string): Promise<Feishu
   }
 
   const profile = data?.data?.user || data?.data || {}
+  const avatar = profile.avatar || {}
   return {
     name: firstNonEmpty(profile.name, profile.en_name, profile.nickname),
     avatarUrl: firstNonEmpty(
@@ -141,6 +142,11 @@ export async function fetchFeishuProfileByOpenId(openId: string): Promise<Feishu
       profile.avatar_big,
       profile.avatar_middle,
       profile.avatar_thumb,
+      avatar.avatar_origin,
+      avatar.avatar_640,
+      avatar.avatar_240,
+      avatar.avatar_72,
+      avatar.avatar_32,
     ),
   }
 }
@@ -190,12 +196,23 @@ export async function exchangeCodeForUser(code: string): Promise<FeishuUserInfo>
     }
 
     const profile = userInfoData.data || {}
+    const avatar = profile.avatar || {}
     return {
       openId: profile.open_id,
       unionId: profile.union_id,
       tenantKey: profile.tenant_key,
       name: firstNonEmpty(profile.name, profile.en_name, profile.nickname) || '飞书用户',
-      avatarUrl: firstNonEmpty(profile.avatar_url, profile.avatar_big, profile.avatar_middle, profile.avatar_thumb),
+      avatarUrl: firstNonEmpty(
+        profile.avatar_url,
+        profile.avatar_big,
+        profile.avatar_middle,
+        profile.avatar_thumb,
+        avatar.avatar_origin,
+        avatar.avatar_640,
+        avatar.avatar_240,
+        avatar.avatar_72,
+        avatar.avatar_32,
+      ),
       mobile: profile.mobile,
       email: profile.email,
     }

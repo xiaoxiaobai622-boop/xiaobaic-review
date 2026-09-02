@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
 
     let nickname = binding.nickname
     let avatarUrl = binding.avatarUrl
+    let profileSyncError: string | undefined
     if (new URL(request.url).searchParams.get('refresh') === '1') {
       try {
         const profile = await fetchFeishuProfileByOpenId(binding.openId)
@@ -47,8 +48,10 @@ export async function GET(request: NextRequest) {
             data: { nickname, avatarUrl },
           })
         }
-      } catch {
-        // Keep the cached OAuth profile when the optional refresh is unavailable.
+      } catch (error) {
+        profileSyncError = error instanceof Error && /Access denied|99991672/i.test(error.message)
+          ? '飞书应用未开通通讯录读取权限，请重新绑定飞书以更新资料。'
+          : '飞书资料暂时无法同步，请稍后重试。'
       }
     }
 
@@ -56,6 +59,7 @@ export async function GET(request: NextRequest) {
       bound: true,
       nickname,
       avatarUrl,
+      profileSyncError,
       boundAt: binding.createdAt.toISOString(),
     })
   } catch (error) {

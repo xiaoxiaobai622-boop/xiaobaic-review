@@ -41,7 +41,7 @@ function ProfileContent() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' })
-  const [feishuBinding, setFeishuBinding] = useState<{ bound: boolean; nickname?: string | null; avatarUrl?: string | null } | null>(null)
+  const [feishuBinding, setFeishuBinding] = useState<{ bound: boolean; nickname?: string | null; avatarUrl?: string | null; profileSyncError?: string } | null>(null)
   const [feishuLoading, setFeishuLoading] = useState(false)
   const [feishuRefreshing, setFeishuRefreshing] = useState(false)
 
@@ -76,6 +76,7 @@ function ProfileContent() {
             bound: data.bound || false,
             nickname: data.nickname,
             avatarUrl: data.avatarUrl || null,
+            profileSyncError: data.profileSyncError,
           })
         }
       })
@@ -211,8 +212,9 @@ function ProfileContent() {
       const response = await apiFetch('/api/feishu/binding?refresh=1', { cache: 'no-store' })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.bound) throw new Error(data.error || '飞书资料同步失败')
-      setFeishuBinding({ bound: true, nickname: data.nickname || null, avatarUrl: data.avatarUrl || null })
-      setMessage('飞书姓名和头像已同步')
+      setFeishuBinding({ bound: true, nickname: data.nickname || null, avatarUrl: data.avatarUrl || null, profileSyncError: data.profileSyncError })
+      setMessage(data.profileSyncError ? '' : '飞书姓名和头像已同步')
+      if (data.profileSyncError) setError(data.profileSyncError)
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : '飞书资料同步失败')
     } finally {
@@ -349,8 +351,15 @@ function ProfileContent() {
                       </div>
                       <span className="shrink-0 text-sm text-green-600 dark:text-green-400">已绑定</span>
                     </div>
+                    {feishuBinding.profileSyncError && (
+                      <p className="mt-3 text-xs leading-5 text-warning">{feishuBinding.profileSyncError}</p>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" className="gap-2" onClick={() => void bindFeishu()} disabled={feishuRefreshing || feishuLoading}>
+                      <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                      重新绑定并更新资料
+                    </Button>
                     <Button type="button" variant="outline" className="gap-2" onClick={() => void refreshFeishuProfile()} disabled={feishuRefreshing || feishuLoading}>
                       <RefreshCw className={`h-4 w-4 ${feishuRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
                       {feishuRefreshing ? '同步中...' : '同步资料'}
