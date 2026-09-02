@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { cn, getUserColor } from '@/lib/utils'
 
 type AvatarSize = 'xs' | 'sm' | 'md' | 'lg'
@@ -251,6 +252,11 @@ export function InitialsAvatar(props: {
 
   const color = getUserColor(name, isInternal)
   const classes = COLOR_MAP[color.border] || COLOR_MAP['border-gray-500']
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [src])
 
   return (
     <div
@@ -265,12 +271,13 @@ export function InitialsAvatar(props: {
         className
       )}
     >
-      {src ? (
+      {src && !imageFailed ? (
         <img
           src={src}
           alt={name || '头像'}
           className="h-full w-full object-cover"
           loading="lazy"
+          onError={() => setImageFailed(true)}
         />
       ) : (
         initialsFromName(name)

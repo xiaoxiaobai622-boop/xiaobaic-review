@@ -45,6 +45,7 @@ function FeishuAvatar({
   name,
   feishuAvatar,
   avatarUrl,
+  userId,
   size = 'sm',
   title,
   className,
@@ -52,6 +53,7 @@ function FeishuAvatar({
   name?: string | null
   feishuAvatar?: string | null
   avatarUrl?: string | null
+  userId?: string
   size?: 'xs' | 'sm' | 'md' | 'lg'
   title?: string
   className?: string
@@ -59,7 +61,9 @@ function FeishuAvatar({
   return (
     <InitialsAvatar
       name={name || '未知'}
-      src={feishuAvatar || avatarUrl || null}
+      src={feishuAvatar && userId
+        ? `/api/feishu/avatar/${encodeURIComponent(userId)}`
+        : avatarUrl || null}
       size={size}
       title={title || name || '飞书接收人'}
       className={className}
@@ -144,7 +148,7 @@ interface PushPreview {
   pushedComments: number
   unpushedComments: number
   recipient: {
-    userId: string
+    userId?: string
     name: string | null
     avatarUrl?: string | null
     feishuNickname?: string
@@ -490,6 +494,7 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
                     name={preview.recipient.feishuNickname || preview.recipient.name}
                     feishuAvatar={preview.recipient.feishuAvatar}
                     avatarUrl={preview.recipient.avatarUrl}
+                    userId={preview.recipient.userId}
                     size="lg"
                     title={
                       preview.recipient.feishuNickname ||
@@ -531,14 +536,14 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
                     </p>
 
                     <div className="overflow-x-auto rounded-md border border-border/70">
-                      <table className="w-full min-w-[580px] table-fixed text-left text-sm">
+                      <table className="w-full min-w-[640px] table-fixed text-left text-sm">
                         <colgroup>
                           <col className="w-12" />
-                          <col className="w-44" />
+                          <col className="w-[34%]" />
                           <col className="w-20" />
                           <col className="w-24" />
                           <col className="w-24" />
-                          <col className="w-12" />
+                          <col className="w-[26%]" />
                         </colgroup>
                         <thead className="bg-muted/60 text-xs text-muted-foreground">
                           <tr>
@@ -557,7 +562,7 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
                             <th scope="col" className="px-2 py-2 font-medium">批注数</th>
                             <th scope="col" className="px-2 py-2 font-medium">状态</th>
                             <th scope="col" className="px-2 py-2 font-medium">时间</th>
-                            <th scope="col" className="px-1 py-2" aria-label="飞书头像" />
+                            <th scope="col" className="px-3 py-2 font-medium">接收人</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -612,19 +617,25 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
                                   <td className="px-2 py-2.5 tabular-nums text-muted-foreground">
                                     {formatTime(item.lastPushAt)}
                                   </td>
-                                  <td className="px-1 py-2.5">
-                                    <FeishuAvatar
-                                      name={item.uploader.feishuNickname || item.uploader.name}
-                                      feishuAvatar={item.uploader.feishuAvatar}
-                                      avatarUrl={item.uploader.avatarUrl}
-                                      size="sm"
-                                      title={
-                                        item.uploader.isBound
-                                          ? item.uploader.feishuNickname || item.uploader.name || '飞书接收人'
-                                          : '未绑定飞书'
-                                      }
-                                      className="mx-auto"
-                                    />
+                                  <td className="px-3 py-2.5">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <FeishuAvatar
+                                        name={item.uploader.feishuNickname || item.uploader.name}
+                                        feishuAvatar={item.uploader.feishuAvatar}
+                                        avatarUrl={item.uploader.avatarUrl}
+                                        userId={item.uploader.id}
+                                        size="sm"
+                                        title={
+                                          item.uploader.isBound
+                                            ? item.uploader.feishuNickname || item.uploader.name || '飞书接收人'
+                                            : '未绑定飞书'
+                                        }
+                                        className="shrink-0"
+                                      />
+                                      <span className="min-w-0 truncate text-xs" title={item.uploader.feishuNickname || item.uploader.name || '未绑定飞书'}>
+                                        {item.uploader.feishuNickname || item.uploader.name || '未绑定飞书'}
+                                      </span>
+                                    </div>
                                   </td>
                                 </tr>
                               )
