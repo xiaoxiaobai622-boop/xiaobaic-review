@@ -1487,7 +1487,6 @@ export default function VideoPlayer({
               <video
                 key={selectedVideo?.id}
                 ref={videoRef}
-                poster={(selectedVideo as any).thumbnailUrl || undefined}
                 className={`h-full w-full object-contain ${playerSurfaceClassName} ${isDrawingMode ? 'pointer-events-none' : 'cursor-pointer'}`}
                 style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}
                 onTimeUpdate={handleTimeUpdate}
