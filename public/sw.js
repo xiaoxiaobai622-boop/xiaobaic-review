@@ -108,6 +108,10 @@ self.addEventListener('fetch', (event) => {
   if (event.request.url.includes('/api/')) return
 
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request).catch(() => caches.match(event.request).then((cachedResponse) => {
+      // respondWith() must always receive a Response. A cache miss after a
+      // transient network failure is still a valid offline error response.
+      return cachedResponse || Response.error()
+    }))
   )
 })

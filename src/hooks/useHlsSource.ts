@@ -53,6 +53,7 @@ export function useHlsSource({
     let seekLoadTimer: ReturnType<typeof setTimeout> | null = null
     let pendingSeekPosition: number | null = null
     let pendingForceLoad = false
+    let recoveryTimer: ReturnType<typeof setTimeout> | null = null
     let lastLoadRequestPosition: number | null = null
     let lastLoadRequestAt = 0
     let disposed = false
@@ -249,6 +250,15 @@ export function useHlsSource({
         maxBufferLength: 12,
         maxMaxBufferLength: 24,
         maxFragLookUpTolerance: 0.1,
+        // CDN requests can briefly fail while a signed manifest or segment is
+        // being refreshed. Keep the player in HLS recovery for a few seconds
+        // before considering a progressive fallback.
+        manifestLoadingMaxRetry: 4,
+        manifestLoadingRetryDelay: 1000,
+        manifestLoadingMaxRetryTimeout: 8000,
+        fragLoadingMaxRetry: 4,
+        fragLoadingRetryDelay: 1000,
+        fragLoadingMaxRetryTimeout: 8000,
       })
 
       hls.on(Events.MEDIA_ATTACHED, () => {
@@ -257,6 +267,7 @@ export function useHlsSource({
 
       hls.on(Events.MANIFEST_PARSED, () => {
         manifestReady = true
+        networkRecoveryAttempts = 0
         applyPendingSeek()
       })
 
@@ -289,13 +300,19 @@ export function useHlsSource({
       hls.on(Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal || disposed || !hls) return
 
-        if (data.type === ErrorTypes.NETWORK_ERROR && networkRecoveryAttempts < 1) {
+        if (data.type === ErrorTypes.NETWORK_ERROR && networkRecoveryAttempts < 5) {
           networkRecoveryAttempts += 1
-          if (manifestReady && Number.isFinite(video.currentTime)) {
-            scheduleLoadAt(video.currentTime, true)
-          } else {
-            hls.startLoad()
-          }
+          const retryDelay = Math.min(8000, 500 * Math.pow(2, networkRecoveryAttempts - 1))
+          if (recoveryTimer !== null) clearTimeout(recoveryTimer)
+          recoveryTimer = setTimeout(() => {
+            recoveryTimer = null
+            if (disposed || !hls) return
+            if (manifestReady && Number.isFinite(video.currentTime)) {
+              scheduleLoadAt(video.currentTime, true)
+            } else {
+              hls.startLoad()
+            }
+          }, retryDelay)
           return
         }
 
@@ -326,6 +343,7 @@ export function useHlsSource({
       if (handleLoadedMetadata) video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       if (handleDurationChange) video.removeEventListener('durationchange', handleDurationChange)
       if (seekLoadTimer !== null) clearTimeout(seekLoadTimer)
+      if (recoveryTimer !== null) clearTimeout(recoveryTimer)
       pendingForceLoad = false
       hls?.destroy()
       video.pause()
