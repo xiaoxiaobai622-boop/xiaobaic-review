@@ -161,7 +161,7 @@ export default function AdminSharePage() {
   // (server cache key is `video_token_cache:${sessionId}:${videoId}:${quality}`).
   const [sessionId] = useState<string>(() => `admin:${id}`)
   const sessionIdRef = useRef<string>(sessionId)
-  const inFlightTokenRequestsRef = useRef<Map<string, Promise<string>>>(new Map())
+  const inFlightTokenRequestsRef = useRef<Map<string, { promise: Promise<string>; signal?: AbortSignal }>>(new Map())
   const tokenFetchTelemetryRef = useRef({
     firstAttemptFailures: 0,
     retrySuccesses: 0,
@@ -202,10 +202,15 @@ export default function AdminSharePage() {
     await new Promise((resolve) => setTimeout(resolve, exponentialDelay + jitterMs))
   }, [])
 
-  const fetchAdminVideoToken = useCallback(async (videoId: string, quality: string, sessionId: string) => {
+  const fetchAdminVideoToken = useCallback(async (
+    videoId: string,
+    quality: string,
+    sessionId: string,
+    signal?: AbortSignal,
+  ) => {
     const response = await apiFetch(
       `/api/studio/video-token?videoId=${videoId}&projectId=${id}&quality=${quality}&sessionId=${sessionId}`,
-      { cache: 'no-store' }
+      { cache: 'no-store', signal }
     )
 
     if (!response.ok) return ''
@@ -213,16 +218,21 @@ export default function AdminSharePage() {
     return data.token || ''
   }, [id])
 
-  const fetchAdminVideoTokenWithRetry = useCallback(async (videoId: string, quality: string, sessionId: string) => {
+  const fetchAdminVideoTokenWithRetry = useCallback(async (
+    videoId: string,
+    quality: string,
+    sessionId: string,
+    signal?: AbortSignal,
+  ) => {
     const requestKey = `${sessionId}:${videoId}:${quality}`
     const inFlight = inFlightTokenRequestsRef.current.get(requestKey)
-    if (inFlight) {
-      return inFlight
-    }
+    if (inFlight && !inFlight.signal?.aborted) return inFlight.promise
+    if (inFlight) inFlightTokenRequestsRef.current.delete(requestKey)
 
     const requestPromise = (async () => {
       for (let attempt = 1; attempt <= MAX_TOKEN_FETCH_ATTEMPTS; attempt += 1) {
-        const tokenValue = await fetchAdminVideoToken(videoId, quality, sessionId)
+        if (signal?.aborted) return ''
+        const tokenValue = await fetchAdminVideoToken(videoId, quality, sessionId, signal)
         if (tokenValue) {
           if (attempt > 1) {
             emitTokenFetchTelemetry('retry-success', { videoId, quality, attempts: attempt })
@@ -243,10 +253,12 @@ export default function AdminSharePage() {
       })
       return ''
     })().finally(() => {
-      inFlightTokenRequestsRef.current.delete(requestKey)
+      if (inFlightTokenRequestsRef.current.get(requestKey)?.promise === requestPromise) {
+        inFlightTokenRequestsRef.current.delete(requestKey)
+      }
     })
 
-    inFlightTokenRequestsRef.current.set(requestKey, requestPromise)
+    inFlightTokenRequestsRef.current.set(requestKey, { promise: requestPromise, signal })
     return requestPromise
   }, [
     emitTokenFetchTelemetry,
@@ -417,11 +429,16 @@ export default function AdminSharePage() {
     }
   }, [activeVideoName, activeVideosRaw, id, project, supportsHls])
 
-  const fetchTokensForVideos = useCallback(async (videos: any[], concurrency = 2) => {
+  const fetchTokensForVideos = useCallback(async (
+    videos: any[],
+    concurrency = 2,
+    signal?: AbortSignal,
+  ) => {
     const sessionId = sessionIdRef.current
     const tokenizedById = new Map<string, any>()
 
     await mapWithConcurrency(videos, concurrency, async (video: any) => {
+      if (signal?.aborted) return
       // Non-ready assets cannot be played. Avoid spending one or more token
       // requests on them while retaining the raw record for the status UI.
       if (video.status !== 'READY') {
@@ -455,15 +472,28 @@ export default function AdminSharePage() {
 
         // HLS and the preferred progressive rendition are independent. Start
         // both together, then probe lower renditions only when needed.
+        const hasHls = Boolean(video.hlsPath)
+        const hasProgressivePlayback = !hasHls || Boolean(
+          video.preview2160Path ||
+          video.preview1080Path ||
+          video.preview720Path ||
+          video.cleanPreview2160Path ||
+          video.cleanPreview1080Path ||
+          video.cleanPreview720Path,
+        )
         const [tokenHls, preferredToken] = await Promise.all([
-          supportsHls ? fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId) : Promise.resolve(''),
-          fetchAdminVideoTokenWithRetry(video.id, qualityOrder[0], sessionId),
+          supportsHls && hasHls ? fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId, signal) : Promise.resolve(''),
+          hasProgressivePlayback
+            ? fetchAdminVideoTokenWithRetry(video.id, qualityOrder[0], sessionId, signal)
+            : Promise.resolve(''),
         ])
+        if (signal?.aborted) return
         streamTokens[qualityOrder[0]] = preferredToken
 
-        if (!preferredToken) {
+        if (!preferredToken && hasProgressivePlayback) {
           for (const quality of qualityOrder.slice(1)) {
-            const streamToken = await fetchAdminVideoTokenWithRetry(video.id, quality, sessionId)
+            if (signal?.aborted) return
+            const streamToken = await fetchAdminVideoTokenWithRetry(video.id, quality, sessionId, signal)
             streamTokens[quality] = streamToken
             if (streamToken) break
           }
@@ -628,6 +658,7 @@ export default function AdminSharePage() {
   // Tokenize active videos lazily
   useEffect(() => {
     let isMounted = true
+    const controller = new AbortController()
 
     async function loadTokens() {
       if (viewState !== 'player') {
@@ -647,9 +678,9 @@ export default function AdminSharePage() {
       const priorityIndex = Math.max(0, Math.min(initialVideoIndex, activeVideosRaw.length - 1))
       const priorityVideo = activeVideosRaw[priorityIndex]
       const remainingVideos = activeVideosRaw.filter((_, index) => index !== priorityIndex)
-      const priorityTokenized = await fetchTokensForVideos([priorityVideo], 1)
+      const priorityTokenized = await fetchTokensForVideos([priorityVideo], 1, controller.signal)
 
-      if (!isMounted) return
+      if (!isMounted || controller.signal.aborted) return
       const initialVideos = activeVideosRaw.map((video: any) => (
         video.id === priorityVideo.id ? priorityTokenized[0] : video
       ))
@@ -661,17 +692,20 @@ export default function AdminSharePage() {
       // Let the selected video's first media request settle before opening a
       // burst of background token requests for older versions.
       await new Promise((resolve) => window.setTimeout(resolve, 500))
-      if (!isMounted) return
-      const remainingTokenized = await fetchTokensForVideos(remainingVideos, 2)
-      if (!isMounted) return
+      if (!isMounted || controller.signal.aborted) return
+      const remainingTokenized = await fetchTokensForVideos(remainingVideos, 2, controller.signal)
+      if (!isMounted || controller.signal.aborted) return
       const hydratedById = new Map(remainingTokenized.map((video: any) => [video.id, video]))
       setActiveVideos((currentVideos) => currentVideos.map((video: any) => hydratedById.get(video.id) || video))
     }
 
-    loadTokens()
+    loadTokens().catch(() => {
+      // Aborted token requests are expected when a viewer clicks through videos quickly.
+    })
 
     return () => {
       isMounted = false
+      controller.abort()
     }
   }, [activeVideosRaw, fetchTokensForVideos, initialVideoIndex, viewState])
 
@@ -776,6 +810,11 @@ export default function AdminSharePage() {
   const navigateToVideo = useCallback((videoName: string, historyMode: 'push' | 'replace') => {
     setActiveVideoName(videoName)
     setActiveVideosRaw(project.videosByName[videoName])
+    // Remove the old source before the next token arrives. This makes rapid
+    // navigation latest-wins instead of allowing stale HLS errors to update
+    // the newly selected video's player state.
+    setActiveVideos([])
+    setTokensLoading(true)
     setInitialVideoIndex(0)
     setActiveVideoState(null)
     setViewState('player')

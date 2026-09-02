@@ -264,7 +264,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
   const storageKey = token || ''
   const tokenCacheRef = useRef<Map<string, any>>(new Map())
-  const inFlightTokenRequestsRef = useRef<Map<string, Promise<string>>>(new Map())
+  const inFlightTokenRequestsRef = useRef<Map<string, { promise: Promise<string>; signal?: AbortSignal }>>(new Map())
   const commentsRequestRef = useRef<Promise<void> | null>(null)
   const playbackTimesRef = useRef<Map<string, number>>(new Map())
   const activeVideoIdRef = useRef<string | null>(null)
@@ -701,34 +701,47 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   }, [project?.videosByName, activeVideoName, urlVideoName, urlVersion, urlTimestamp, token])
 
   // De-dupes concurrent identical token requests (the thumbnail grid and active-video effects overlap).
-  const fetchVideoToken = useCallback(async (videoId: string, quality: string): Promise<string> => {
+  const fetchVideoToken = useCallback(async (
+    videoId: string,
+    quality: string,
+    signal?: AbortSignal,
+  ): Promise<string> => {
     if (!shareToken) return ''
 
     const requestKey = `${shareToken}:${videoId}:${quality}`
     const inFlight = inFlightTokenRequestsRef.current.get(requestKey)
-    if (inFlight) return inFlight
+    if (inFlight && !inFlight.signal?.aborted) return inFlight.promise
+    if (inFlight) inFlightTokenRequestsRef.current.delete(requestKey)
 
     const requestPromise = (async () => {
       const response = await fetch(`/api/share/${token}/video-token?videoId=${videoId}&quality=${quality}`, {
         cache: 'no-store',
         headers: { Authorization: `Bearer ${shareToken}` },
+        signal,
       })
       if (!response.ok) return ''
       const data = await response.json()
       return data.token || ''
     })().finally(() => {
-      inFlightTokenRequestsRef.current.delete(requestKey)
+      if (inFlightTokenRequestsRef.current.get(requestKey)?.promise === requestPromise) {
+        inFlightTokenRequestsRef.current.delete(requestKey)
+      }
     })
 
-    inFlightTokenRequestsRef.current.set(requestKey, requestPromise)
+    inFlightTokenRequestsRef.current.set(requestKey, { promise: requestPromise, signal })
     return requestPromise
   }, [shareToken, token])
 
-  const fetchTokensForVideos = useCallback(async (videos: any[], concurrency = 2) => {
+  const fetchTokensForVideos = useCallback(async (
+    videos: any[],
+    concurrency = 2,
+    signal?: AbortSignal,
+  ) => {
     if (!shareToken) return videos
 
     const tokenizedById = new Map<string, any>()
     await mapWithConcurrency(videos, concurrency, async (video: any) => {
+      if (signal?.aborted) return
       if (video.status !== 'READY') {
         tokenizedById.set(video.id, video)
         return
@@ -763,9 +776,12 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         // requests. Start them together so the first playable source is not
         // delayed by a serial token round trip.
         const [hlsToken, preferredToken] = await Promise.all([
-          supportsHls ? fetchVideoToken(video.id, 'hls') : Promise.resolve(''),
-          fetchVideoToken(video.id, qualityOrder[0]),
+          supportsHls && video.hasHls ? fetchVideoToken(video.id, 'hls', signal) : Promise.resolve(''),
+          video.hasProgressivePlayback === false
+            ? Promise.resolve('')
+            : fetchVideoToken(video.id, qualityOrder[0], signal),
         ])
+        if (signal?.aborted) return
         streamTokenHls = hlsToken
         if (qualityOrder[0] === '720p') streamToken720p = preferredToken
         if (qualityOrder[0] === '1080p') streamToken1080p = preferredToken
@@ -775,9 +791,10 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         // available. A successful preferred token already gives the player an
         // MP4 fallback, so probing more qualities would add avoidable requests
         // to every first playback.
-        if (!preferredToken) {
+        if (!preferredToken && video.hasProgressivePlayback !== false) {
           for (const quality of qualityOrder.slice(1)) {
-            const streamToken = await fetchVideoToken(video.id, quality)
+            if (signal?.aborted) return
+            const streamToken = await fetchVideoToken(video.id, quality, signal)
             if (quality === '720p') streamToken720p = streamToken
             if (quality === '1080p') streamToken1080p = streamToken
             if (quality === '2160p') streamToken2160p = streamToken
@@ -814,6 +831,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
   useEffect(() => {
     let isMounted = true
+    const controller = new AbortController()
 
     async function loadTokens() {
       if (viewState !== 'player') {
@@ -837,9 +855,9 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       const priorityIndex = Math.max(0, Math.min(initialVideoIndex, activeVideosRaw.length - 1))
       const priorityVideo = activeVideosRaw[priorityIndex]
       const remainingVideos = activeVideosRaw.filter((_, index) => index !== priorityIndex)
-      const priorityTokenized = await fetchTokensForVideos([priorityVideo], 1)
+      const priorityTokenized = await fetchTokensForVideos([priorityVideo], 1, controller.signal)
 
-      if (!isMounted) return
+      if (!isMounted || controller.signal.aborted) return
       const initialVideos = activeVideosRaw.map((video: any) => (
         video.id === priorityVideo.id ? priorityTokenized[0] : video
       ))
@@ -851,17 +869,20 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       // Keep background version hydration from competing with the selected
       // video's initial manifest and first segment.
       await new Promise((resolve) => window.setTimeout(resolve, 500))
-      if (!isMounted) return
-      const remainingTokenized = await fetchTokensForVideos(remainingVideos, 2)
-      if (!isMounted) return
+      if (!isMounted || controller.signal.aborted) return
+      const remainingTokenized = await fetchTokensForVideos(remainingVideos, 2, controller.signal)
+      if (!isMounted || controller.signal.aborted) return
       const hydratedById = new Map(remainingTokenized.map((video: any) => [video.id, video]))
       setActiveVideos((currentVideos) => currentVideos.map((video: any) => hydratedById.get(video.id) || video))
     }
 
-    loadTokens()
+    loadTokens().catch(() => {
+      // Aborted token requests are expected when a viewer clicks through videos quickly.
+    })
 
     return () => {
       isMounted = false
+      controller.abort()
     }
   }, [activeVideosRaw, fetchTokensForVideos, initialVideoIndex, shareToken, viewState])
 
@@ -970,6 +991,11 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     setInitialVideoIndex(0)
     setActiveVideoName(videoName)
     setActiveVideosRaw(project.videosByName[videoName])
+    // Detach the previous media element immediately. Otherwise a fast
+    // next/previous sequence can leave the old HLS request attached while the
+    // new token is still loading, and its late error can blank the new player.
+    setActiveVideos([])
+    setTokensLoading(true)
     setViewState('player')
 
     const params = new URLSearchParams(searchParams?.toString() || '')

@@ -178,6 +178,21 @@ export async function GET(
       reviewStatus: video.reviewStatus,
       thumbnailPath: video.thumbnailPath,
       folderId: video.folderId,
+      // Expose playback capabilities without exposing storage paths. This
+      // prevents the client from requesting an HLS token for MP4-only videos
+      // or using a guaranteed-503 MP4 fallback for MPS HLS-only videos.
+      hasHls: Boolean((video as any).hlsPath),
+      hasProgressivePlayback: Boolean(
+        (video as any).preview2160Path ||
+        (video as any).preview1080Path ||
+        (video as any).preview720Path ||
+        (video as any).cleanPreview2160Path ||
+        (video as any).cleanPreview1080Path ||
+        (video as any).cleanPreview720Path ||
+        // Browser-compatible READY uploads can play the original when no HLS
+        // rendition exists, so keep that path eligible as a fallback.
+        (!(video as any).hlsPath && video.status === 'READY'),
+      ),
       createdAt: video.createdAt instanceof Date ? video.createdAt.toISOString() : video.createdAt ?? null,
       updatedAt: video.updatedAt instanceof Date ? video.updatedAt.toISOString() : video.updatedAt ?? null,
       hasAssets: (video._count?.assets ?? 0) > 0,
@@ -277,6 +292,16 @@ export async function GET(
         thumbnailUrl: video.thumbnailUrl,
         thumbnailPath: video.thumbnailPath,
         folderId: video.folderId,
+        hasHls: Boolean((video as any).hlsPath),
+        hasProgressivePlayback: Boolean(
+          (video as any).preview2160Path ||
+          (video as any).preview1080Path ||
+          (video as any).preview720Path ||
+          (video as any).cleanPreview2160Path ||
+          (video as any).cleanPreview1080Path ||
+          (video as any).cleanPreview720Path ||
+          (!(video as any).hlsPath && video.status === 'READY'),
+        ),
         createdAt: video.createdAt,
         updatedAt: video.updatedAt,
       }))
