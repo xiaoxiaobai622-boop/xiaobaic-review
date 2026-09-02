@@ -109,6 +109,42 @@ interface FeishuUserInfo {
   email?: string
 }
 
+function firstNonEmpty(...values: unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim()
+}
+
+export interface FeishuProfile {
+  name?: string
+  avatarUrl?: string
+}
+
+/** Fetch the current display profile for an OAuth binding using its open_id. */
+export async function fetchFeishuProfileByOpenId(openId: string): Promise<FeishuProfile> {
+  const tenantToken = await getTenantAccessToken()
+  const response = await fetch(
+    `${FEISHU_API_BASE}/contact/v3/users/${encodeURIComponent(openId)}?user_id_type=open_id`,
+    {
+      headers: { Authorization: `Bearer ${tenantToken}` },
+      cache: 'no-store',
+    },
+  )
+  const data = await response.json().catch(() => null)
+  if (!response.ok || data?.code !== 0) {
+    throw new Error(`Failed to fetch Feishu profile: ${data?.msg || `HTTP ${response.status}`}`)
+  }
+
+  const profile = data?.data?.user || data?.data || {}
+  return {
+    name: firstNonEmpty(profile.name, profile.en_name, profile.nickname),
+    avatarUrl: firstNonEmpty(
+      profile.avatar_url,
+      profile.avatar_big,
+      profile.avatar_middle,
+      profile.avatar_thumb,
+    ),
+  }
+}
+
 /**
  * Exchange OAuth code for user access token and fetch user info.
  */
@@ -153,14 +189,15 @@ export async function exchangeCodeForUser(code: string): Promise<FeishuUserInfo>
       throw new Error(`Failed to get user info: ${userInfoData.msg} (code: ${userInfoData.code})`)
     }
 
+    const profile = userInfoData.data || {}
     return {
-      openId: userInfoData.data.open_id,
-      unionId: userInfoData.data.union_id,
-      tenantKey: userInfoData.data.tenant_key,
-      name: userInfoData.data.name,
-      avatarUrl: userInfoData.data.avatar_url,
-      mobile: userInfoData.data.mobile,
-      email: userInfoData.data.email,
+      openId: profile.open_id,
+      unionId: profile.union_id,
+      tenantKey: profile.tenant_key,
+      name: firstNonEmpty(profile.name, profile.en_name, profile.nickname) || '飞书用户',
+      avatarUrl: firstNonEmpty(profile.avatar_url, profile.avatar_big, profile.avatar_middle, profile.avatar_thumb),
+      mobile: profile.mobile,
+      email: profile.email,
     }
   } catch (error) {
     logError('Failed to exchange Feishu OAuth code:', error)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Camera, Check, KeyRound, LogOut, MessageSquare, Save, UserRound } from 'lucide-react'
+import { ArrowLeft, Camera, Check, KeyRound, LogOut, MessageSquare, RefreshCw, Save, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
@@ -41,8 +41,9 @@ function ProfileContent() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' })
-  const [feishuBinding, setFeishuBinding] = useState<{ bound: boolean; nickname?: string } | null>(null)
+  const [feishuBinding, setFeishuBinding] = useState<{ bound: boolean; nickname?: string | null; avatarUrl?: string | null } | null>(null)
   const [feishuLoading, setFeishuLoading] = useState(false)
+  const [feishuRefreshing, setFeishuRefreshing] = useState(false)
 
   useEffect(() => {
     setReturnUrl(safeReviewReturnUrl())
@@ -67,13 +68,14 @@ function ProfileContent() {
     }
 
     // Fetch Feishu binding status
-    apiFetch('/api/feishu/binding', { cache: 'no-store' })
+    apiFetch('/api/feishu/binding?refresh=1', { cache: 'no-store' })
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json()
           setFeishuBinding({
             bound: data.bound || false,
-            nickname: data.feishuNickname,
+            nickname: data.nickname,
+            avatarUrl: data.avatarUrl || null,
           })
         }
       })
@@ -192,12 +194,29 @@ function ProfileContent() {
       if (!response.ok) {
         throw new Error('解绑失败')
       }
-      setFeishuBinding({ bound: false })
+      setFeishuBinding({ bound: false, nickname: null, avatarUrl: null })
       setMessage('已解除飞书绑定')
     } catch (unbindError) {
       setError(unbindError instanceof Error ? unbindError.message : '解绑失败，请稍后重试')
     } finally {
       setFeishuLoading(false)
+    }
+  }
+
+  async function refreshFeishuProfile() {
+    setFeishuRefreshing(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await apiFetch('/api/feishu/binding?refresh=1', { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.bound) throw new Error(data.error || '飞书资料同步失败')
+      setFeishuBinding({ bound: true, nickname: data.nickname || null, avatarUrl: data.avatarUrl || null })
+      setMessage('飞书姓名和头像已同步')
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : '飞书资料同步失败')
+    } finally {
+      setFeishuRefreshing(false)
     }
   }
 
@@ -315,26 +334,31 @@ function ProfileContent() {
               ) : feishuBinding.bound ? (
                 <>
                   <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">当前状态：</span>
-                      <span className="text-green-600 dark:text-green-400">✓ 已绑定</span>
-                    </div>
-                    {feishuBinding.nickname && (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                        <span>飞书账号：</span>
-                        <span>{feishuBinding.nickname}</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <InitialsAvatar
+                          name={feishuBinding.nickname || '飞书用户'}
+                          src={feishuBinding.avatarUrl && user?.id ? `/api/feishu/avatar/${encodeURIComponent(user.id)}` : null}
+                          size="md"
+                          title={feishuBinding.nickname || '飞书用户'}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{feishuBinding.nickname || '飞书用户'}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">飞书姓名与头像</p>
+                        </div>
                       </div>
-                    )}
+                      <span className="shrink-0 text-sm text-green-600 dark:text-green-400">已绑定</span>
+                    </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => void unbindFeishu()}
-                    disabled={feishuLoading}
-                  >
-                    {feishuLoading ? '解绑中...' : '解除绑定'}
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" className="gap-2" onClick={() => void refreshFeishuProfile()} disabled={feishuRefreshing || feishuLoading}>
+                      <RefreshCw className={`h-4 w-4 ${feishuRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                      {feishuRefreshing ? '同步中...' : '同步资料'}
+                    </Button>
+                    <Button type="button" variant="outline" className="gap-2" onClick={() => void unbindFeishu()} disabled={feishuLoading || feishuRefreshing}>
+                      {feishuLoading ? '解绑中...' : '解除绑定'}
+                    </Button>
+                  </div>
                 </>
               ) : (
                 <>

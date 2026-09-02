@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { fetchFeishuProfileByOpenId } from '@/lib/feishu'
 import { logMessage } from '@/lib/logging'
 
 export const runtime = 'nodejs'
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
       where: { userId: user.id },
       select: {
         id: true,
+        openId: true,
         nickname: true,
         avatarUrl: true,
         createdAt: true,
@@ -32,10 +34,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ bound: false })
     }
 
+    let nickname = binding.nickname
+    let avatarUrl = binding.avatarUrl
+    if (new URL(request.url).searchParams.get('refresh') === '1') {
+      try {
+        const profile = await fetchFeishuProfileByOpenId(binding.openId)
+        nickname = profile.name || nickname
+        avatarUrl = profile.avatarUrl || avatarUrl
+        if (nickname !== binding.nickname || avatarUrl !== binding.avatarUrl) {
+          await prisma.feishuBinding.update({
+            where: { id: binding.id },
+            data: { nickname, avatarUrl },
+          })
+        }
+      } catch {
+        // Keep the cached OAuth profile when the optional refresh is unavailable.
+      }
+    }
+
     return NextResponse.json({
       bound: true,
-      nickname: binding.nickname,
-      avatarUrl: binding.avatarUrl,
+      nickname,
+      avatarUrl,
       boundAt: binding.createdAt.toISOString(),
     })
   } catch (error) {

@@ -190,7 +190,7 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
     setShowConfirmDialog(false)
 
     try {
-      const query = videoId ? `?videoId=${videoId}` : ''
+      const query = videoId ? `?videoId=${videoId}&refresh=1` : '?refresh=1'
       const res = await apiFetch(`/api/feishu/push/${projectId}/preview${query}`)
       if (!res.ok) {
         throw new Error(await getApiError(res, '预览失败'))

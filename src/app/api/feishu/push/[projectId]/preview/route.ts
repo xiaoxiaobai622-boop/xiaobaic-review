@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { fetchFeishuProfileByOpenId } from '@/lib/feishu'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,6 +25,22 @@ export async function GET(request: NextRequest) {
     const projectId = pathParts[pathParts.length - 2] // .../push/[projectId]/preview
     const videoId = url.searchParams.get('videoId')
     const scope = videoId ? 'video' : 'project'
+    const shouldRefreshProfiles = url.searchParams.get('refresh') === '1'
+
+    async function refreshBinding(binding: { id: string; openId: string; nickname: string | null; avatarUrl: string | null } | null) {
+      if (!binding || !shouldRefreshProfiles || !binding.openId) return binding
+      try {
+        const profile = await fetchFeishuProfileByOpenId(binding.openId)
+        const nickname = profile.name || binding.nickname
+        const avatarUrl = profile.avatarUrl || binding.avatarUrl
+        if (nickname !== binding.nickname || avatarUrl !== binding.avatarUrl) {
+          await prisma.feishuBinding.update({ where: { id: binding.id }, data: { nickname, avatarUrl } })
+        }
+        return { ...binding, nickname, avatarUrl }
+      } catch {
+        return binding
+      }
+    }
 
     if (!scope || !projectId) {
       return NextResponse.json(
@@ -143,12 +160,13 @@ export async function GET(request: NextRequest) {
         })
       : null
 
-    const uploaderBinding = uploaderUser
+    let uploaderBinding = uploaderUser
       ? await prisma.feishuBinding.findUnique({
           where: { userId: uploaderUser.id },
-          select: { nickname: true, avatarUrl: true },
+          select: { id: true, openId: true, nickname: true, avatarUrl: true },
         })
       : null
+    uploaderBinding = await refreshBinding(uploaderBinding)
 
     const isBound = !!uploaderBinding
 
@@ -214,12 +232,13 @@ export async function GET(request: NextRequest) {
               select: { id: true, name: true, avatarUrl: true },
             })
           : null
-        const videoBinding = uploaderId
+        let videoBinding = uploaderId
           ? await prisma.feishuBinding.findUnique({
               where: { userId: uploaderId },
-              select: { nickname: true, avatarUrl: true },
+              select: { id: true, openId: true, nickname: true, avatarUrl: true },
             })
           : null
+        videoBinding = await refreshBinding(videoBinding)
 
         videoListWithStatus.push({
           video: {
