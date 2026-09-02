@@ -117,13 +117,6 @@ function firstNonEmpty(...values: unknown[]): string | undefined {
   return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim()
 }
 
-/** Feishu may expose an auto-generated directory label instead of the user's preferred name. */
-export function resolveFeishuDisplayName(feishuName: string | null | undefined, fallbackName?: string | null): string | undefined {
-  const name = firstNonEmpty(feishuName)
-  if (name && !/^用户\d+$/.test(name)) return name
-  return firstNonEmpty(fallbackName, name)
-}
-
 export interface FeishuProfile {
   name?: string
   avatarUrl?: string

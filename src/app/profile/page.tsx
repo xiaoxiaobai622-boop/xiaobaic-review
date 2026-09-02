@@ -44,6 +44,30 @@ function ProfileContent() {
   const [feishuBinding, setFeishuBinding] = useState<{ bound: boolean; nickname?: string | null; avatarUrl?: string | null; profileSyncError?: string } | null>(null)
   const [feishuLoading, setFeishuLoading] = useState(false)
   const [feishuRefreshing, setFeishuRefreshing] = useState(false)
+  const [feishuAvatarSrc, setFeishuAvatarSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    const source = feishuBinding?.avatarUrl && user?.id
+      ? `/api/feishu/avatar/${encodeURIComponent(user.id)}`
+      : null
+    if (!source) {
+      setFeishuAvatarSrc(null)
+      return
+    }
+    let objectUrl: string | null = null
+    let active = true
+    void apiFetch(source, { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) return
+        objectUrl = URL.createObjectURL(await response.blob())
+        if (active) setFeishuAvatarSrc(objectUrl)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [feishuBinding?.avatarUrl, user?.id])
 
   useEffect(() => {
     setReturnUrl(safeReviewReturnUrl())
@@ -340,7 +364,7 @@ function ProfileContent() {
                       <div className="flex min-w-0 items-center gap-3">
                         <InitialsAvatar
                           name={feishuBinding.nickname || '飞书用户'}
-                          src={feishuBinding.avatarUrl && user?.id ? `/api/feishu/avatar/${encodeURIComponent(user.id)}` : null}
+                          src={feishuAvatarSrc}
                           size="md"
                           title={feishuBinding.nickname || '飞书用户'}
                         />

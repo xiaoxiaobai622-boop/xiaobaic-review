@@ -58,12 +58,36 @@ function FeishuAvatar({
   title?: string
   className?: string
 }) {
+  const [authenticatedSrc, setAuthenticatedSrc] = useState<string | null>(null)
+  const source = feishuAvatar && userId
+    ? `/api/feishu/avatar/${encodeURIComponent(userId)}`
+    : avatarUrl || null
+
+  useEffect(() => {
+    if (!source || !source.startsWith('/api/feishu/avatar/')) {
+      setAuthenticatedSrc(source)
+      return
+    }
+    let objectUrl: string | null = null
+    let active = true
+    void apiFetch(source, { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) return
+        const blob = await response.blob()
+        objectUrl = URL.createObjectURL(blob)
+        if (active) setAuthenticatedSrc(objectUrl)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [source])
+
   return (
     <InitialsAvatar
       name={name || '未知'}
-      src={feishuAvatar && userId
-        ? `/api/feishu/avatar/${encodeURIComponent(userId)}`
-        : avatarUrl || null}
+      src={authenticatedSrc}
       size={size}
       title={title || name || '飞书接收人'}
       className={className}

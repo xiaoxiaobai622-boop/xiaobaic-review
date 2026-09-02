@@ -5,7 +5,6 @@ import {
   fetchFeishuProfileByOpenId,
   fetchFeishuProfileByUserAccessToken,
   refreshFeishuUserAccessToken,
-  resolveFeishuDisplayName,
 } from '@/lib/feishu'
 import { decrypt, encrypt } from '@/lib/encryption'
 import { logMessage } from '@/lib/logging'
@@ -91,8 +90,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       bound: true,
-      nickname: resolveFeishuDisplayName(nickname, user.name),
-      feishuName: nickname,
+      nickname,
       avatarUrl,
       profileSyncError,
       boundAt: binding.createdAt.toISOString(),
