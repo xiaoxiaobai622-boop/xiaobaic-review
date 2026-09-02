@@ -1,42 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { sendMessageCard } from '@/lib/feishu'
+import { buildReviewCommentCard, sendMessageCard } from '@/lib/feishu'
 import { logError, logMessage } from '@/lib/logging'
 import { buildDeepLink } from '@/lib/deep-link'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-function buildVideoMessageCard({
-  project,
-  video,
-  comments,
-  reviewerName,
-}: {
-  project: { title: string }
-  video: { name: string; versionLabel: string | null }
-  comments: Array<{ timecode: string; content: string }>
-  reviewerName: string
-}) {
-  let content = `**项目：** ${project.title}\n**视频：** ${video.name}\n**版本：** ${video.versionLabel || '—'}\n\n本次新增 **${comments.length}** 条批注意见\n\n━━━━━━━━━━━━━━\n\n`
-
-  content += comments
-    .slice(0, 10)
-    .map((comment) => `**${comment.timecode}**\n${comment.content}`)
-    .join('\n\n')
-
-  if (comments.length > 10) {
-    content += `\n\n...还有 ${comments.length - 10} 条批注意见`
-  }
-
-  content += `\n\n━━━━━━━━━━━━━━\n审阅人：${reviewerName}`
-
-  return {
-    title: '🎬 MLE6 逐帧审阅批注意见',
-    content,
-  }
-}
 
 /**
  * POST /api/feishu/push
@@ -281,9 +251,10 @@ export async function POST(request: NextRequest) {
       notificationIds.push(notification.id)
 
       try {
-        const card = buildVideoMessageCard({
-          project,
-          video: group.video,
+        const card = buildReviewCommentCard({
+          projectTitle: project.title,
+          videoName: group.video.name,
+          versionLabel: group.video.versionLabel,
           comments: group.comments,
           reviewerName: user.name || '管理员',
         })

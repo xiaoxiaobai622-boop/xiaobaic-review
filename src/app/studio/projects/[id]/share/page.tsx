@@ -431,10 +431,15 @@ export default function AdminSharePage() {
 
       const cacheKey = `${sessionId}:${video.id}:${defaultQuality}`
       const cached = tokenCacheRef.current.get(cacheKey)
-      if (cached) {
+      // In S3 mode HLS is the primary playback path. Do not reuse a partial
+      // MP4-only result from a transient HLS token failure, otherwise the
+      // player can silently remain on the progressive fallback for the rest
+      // of the session.
+      if (cached && (!supportsHls || cached.hlsUrl720p)) {
         tokenizedById.set(video.id, cached)
         return
       }
+      if (cached) tokenCacheRef.current.delete(cacheKey)
 
       try {
         const qualityOrder: Array<'720p' | '1080p' | '2160p'> = defaultQuality === '2160p'
@@ -476,7 +481,10 @@ export default function AdminSharePage() {
           thumbnailUrl: null,
         }
 
-        if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
+        const hasCacheablePlayback = supportsHls
+          ? Boolean(tokenized.hlsUrl720p)
+          : Boolean(tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p)
+        if (hasCacheablePlayback) {
           tokenCacheRef.current.set(cacheKey, tokenized)
         }
         tokenizedById.set(video.id, tokenized)

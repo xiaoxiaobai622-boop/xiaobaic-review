@@ -184,6 +184,45 @@ interface SendCardOptions {
   buttons?: MessageCardButton[]
 }
 
+export interface ReviewCommentCardInput {
+  projectTitle: string
+  videoName: string
+  versionLabel?: string | null
+  comments: Array<{ timecode: string; content: string }>
+  reviewerName: string
+}
+
+/**
+ * Build the canonical review-comment card used by every Feishu push entry.
+ * Project-level pushes call this once per video so their message is identical
+ * to the card sent from the review page's "推送本集" action.
+ */
+export function buildReviewCommentCard({
+  projectTitle,
+  videoName,
+  versionLabel,
+  comments,
+  reviewerName,
+}: ReviewCommentCardInput): Pick<SendCardOptions, 'title' | 'content'> {
+  let content = `**项目：** ${projectTitle}\n**视频：** ${videoName}\n**版本：** ${versionLabel || '—'}\n\n本次新增 **${comments.length}** 条批注意见\n\n━━━━━━━━━━━━━━\n\n`
+
+  content += comments
+    .slice(0, 10)
+    .map((comment) => `**${comment.timecode}**\n${comment.content}`)
+    .join('\n\n')
+
+  if (comments.length > 10) {
+    content += `\n\n...还有 ${comments.length - 10} 条批注意见`
+  }
+
+  content += `\n\n━━━━━━━━━━━━━━\n审阅人：${reviewerName}`
+
+  return {
+    title: '🎬 MLE6 逐帧审阅批注意见',
+    content,
+  }
+}
+
 /**
  * Send an interactive message card to a Feishu user (direct message).
  *

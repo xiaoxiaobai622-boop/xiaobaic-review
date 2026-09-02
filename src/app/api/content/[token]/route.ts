@@ -22,7 +22,10 @@ export const dynamic = 'force-dynamic'
 
 const CONTENT_SESSION_WINDOW_SECONDS = 60
 const HLS_MANIFEST_CACHE_TTL_SECONDS = 300
-const HLS_SEGMENT_URL_TTL_SECONDS = 900
+// A VOD playlist is parsed once and hls.js keeps using its segment URLs while
+// playback continues. Match the progressive stream lifetime so a review that
+// lasts longer than 15 minutes does not turn valid later segments into 403s.
+const HLS_SEGMENT_URL_TTL_SECONDS = 4 * 60 * 60
 const HLS_MANIFEST_QUERY_PARAM = 'manifest'
 
 // In filesystem mode every browser seek can result in another authenticated
@@ -545,6 +548,17 @@ export async function GET(
         // Playback is preview-only. Originals are retained exclusively for explicit downloads.
         filePath = getPreferredPreviewPath(video.approved)
         if (!filePath) {
+          // MPS videos have a playable HLS rendition but no local MP4 preview.
+          // Never silently substitute the original here: an HLS networking error
+          // must remain recoverable rather than causing a large original upload
+          // to be streamed as playback.
+          if (hlsPath && requestedQuality !== 'thumbnail') {
+            return NextResponse.json(
+              { error: 'HLS playback is temporarily unavailable', code: 'HLS_PLAYBACK_UNAVAILABLE' },
+              { status: 503, headers: { 'Retry-After': '10' } },
+            )
+          }
+
           // Browser-compatible MP4 uploads can intentionally be READY without a
           // generated preview. In that case the original is the playback source.
           if (video.status === 'READY' && originalPath) {

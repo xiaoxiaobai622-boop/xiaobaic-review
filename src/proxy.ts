@@ -57,6 +57,9 @@ export async function proxy(request: NextRequest) {
   const connectSrc = [
     "'self'",
     'blob:',
+    // hls.js fetches CDN-backed playlist segments through XHR/fetch, which
+    // is governed by connect-src rather than media-src.
+    mediaCdnOrigin,
     s3Origin,
     s3BucketOrigin,
     'https://ko-fi.com',

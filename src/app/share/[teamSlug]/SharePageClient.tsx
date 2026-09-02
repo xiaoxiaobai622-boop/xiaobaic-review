@@ -739,10 +739,14 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       // reused after the project switches to 1080p/2160p.
       const cacheKey = `${shareToken}:${video.id}:${defaultQuality}`
       const cached = tokenCacheRef.current.get(cacheKey)
-      if (cached) {
+      // A progressive token can succeed while the HLS token is temporarily
+      // unavailable. In S3 mode that result must not be cached, or future
+      // mounts will keep playing the fallback instead of retrying HLS.
+      if (cached && (!supportsHls || cached.hlsUrl720p)) {
         tokenizedById.set(video.id, cached)
         return
       }
+      if (cached) tokenCacheRef.current.delete(cacheKey)
 
       try {
         let streamTokenHls = ''
@@ -793,7 +797,10 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
         // Only cache successful tokenization results. Avoid caching empty URLs
         // from transient failures on first load.
-        if (tokenized.hlsUrl720p || tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p) {
+        const hasCacheablePlayback = supportsHls
+          ? Boolean(tokenized.hlsUrl720p)
+          : Boolean(tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p)
+        if (hasCacheablePlayback) {
           tokenCacheRef.current.set(cacheKey, tokenized)
         }
         tokenizedById.set(video.id, tokenized)
