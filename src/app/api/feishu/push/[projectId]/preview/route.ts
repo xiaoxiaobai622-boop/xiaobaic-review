@@ -5,6 +5,7 @@ import {
   fetchFeishuProfileByOpenId,
   fetchFeishuProfileByUserAccessToken,
   refreshFeishuUserAccessToken,
+  resolveFeishuDisplayName,
 } from '@/lib/feishu'
 import { decrypt, encrypt } from '@/lib/encryption'
 
@@ -302,7 +303,7 @@ export async function GET(request: NextRequest) {
           id: videoUploader?.id || video.uploadedBy || '',
           name: videoUploader?.name || video.uploadedByName || null,
             avatarUrl: videoUploader?.avatarUrl || null,
-            feishuNickname: videoBinding?.nickname || undefined,
+            feishuNickname: resolveFeishuDisplayName(videoBinding?.nickname, videoUploader?.name),
             feishuAvatar: videoBinding?.avatarUrl || undefined,
             isBound: !!videoBinding,
           },
@@ -325,7 +326,7 @@ export async function GET(request: NextRequest) {
       recipient: {
         userId: uploaderUser?.id || uploader,
         name: uploaderUser?.name || videos[0]?.uploadedByName || null,
-        feishuNickname: uploaderBinding?.nickname || undefined,
+        feishuNickname: resolveFeishuDisplayName(uploaderBinding?.nickname, uploaderUser?.name),
         avatarUrl: uploaderUser?.avatarUrl || null,
         feishuAvatar: uploaderBinding?.avatarUrl || undefined,
         isBound,
