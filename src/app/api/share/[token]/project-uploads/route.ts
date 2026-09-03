@@ -8,6 +8,8 @@ import { deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { resolveShareMetadata, isShareLinkActive } from '@/lib/share-links'
+import { checkTeamStorageQuota } from '@/lib/platform-access'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
@@ -35,6 +37,7 @@ export async function POST(
     if (resolved.link && (!isShareLinkActive(resolved.link) || resolved.link.type !== 'COLLECT')) return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     const project = resolved.project ? {
       id: resolved.project.id,
+      teamId: resolved.project.teamId,
       sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
       authMode: resolved.link?.authMode || resolved.project.authMode,
       allowReverseShare: resolved.link ? resolved.link.permissions.includes('upload') : resolved.project.allowReverseShare,
@@ -101,6 +104,11 @@ export async function POST(
       )
     }
 
+    const storageCheck = await checkTeamStorageQuota(project.teamId, BigInt(fileSize))
+    if (!storageCheck.allowed) {
+      return NextResponse.json({ error: '当前团队存储空间不足，请联系团队所有者处理' }, { status: 413 })
+    }
+
     if (isSuspiciousFilename(fileName)) {
       return NextResponse.json({ error: 'File type not allowed' }, { status: 400 })
     }
@@ -114,7 +122,7 @@ export async function POST(
     }
 
     const finalFileName = assetValidation.sanitizedFilename || sanitizedFileName
-    const storagePath = `projects/${project.id}/uploads/${Date.now()}-${finalFileName}`
+    const storagePath = teamProjectStorageKey(project.teamId, project.id, 'uploads', `${Date.now()}-${finalFileName}`)
     const category = assetValidation.detectedCategory || 'other'
 
     // Resolve uploader identity from OTP-authenticated recipient if not explicitly provided

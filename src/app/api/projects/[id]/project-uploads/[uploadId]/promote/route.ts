@@ -7,6 +7,7 @@ import { sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
 import { deleteFile, getVideoContentType, moveStorageFile } from '@/lib/storage'
 import { getVideoQueue } from '@/lib/queue'
 import { logError } from '@/lib/logging'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -130,7 +131,9 @@ export async function POST(
     }
 
     const originalFileName = upload.originalFileName || upload.fileName
-    const originalStoragePath = `projects/${projectId}/videos/original-${Date.now()}-${sanitizeFilename(originalFileName)}`
+    const projectRecord = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
+    if (!projectRecord) return NextResponse.json({ error: 'Project not found.' }, { status: 404 })
+    const originalStoragePath = teamProjectStorageKey(projectRecord.teamId, projectId, 'videos', `original-${Date.now()}-${sanitizeFilename(originalFileName)}`)
     sourceStoragePath = upload.storagePath
     movedStoragePath = originalStoragePath
 

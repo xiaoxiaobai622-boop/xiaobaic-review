@@ -10,6 +10,7 @@ import { createReadStream } from 'fs'
 import fs from 'fs'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 import { STREAM_HIGH_WATER_MARK_BYTES, parseBoundedRangeHeader } from '@/lib/transfer-tuning'
 
 export const runtime = 'nodejs'
@@ -229,8 +230,9 @@ export async function DELETE(
 
     // If this asset was the current thumbnail, revert to system-generated thumbnail
     if (isCurrentThumbnail) {
-      // System-generated thumbnail path: projects/{projectId}/videos/{videoId}/thumbnail.jpg
-      const systemThumbnailPath = `projects/${asset.video.projectId}/videos/${videoId}/thumbnail.jpg`
+      const project = await prisma.project.findUnique({ where: { id: asset.video.projectId }, select: { teamId: true } })
+      if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      const systemThumbnailPath = teamProjectStorageKey(project.teamId, asset.video.projectId, 'videos', videoId, 'thumbnail.jpg')
 
       await prisma.video.update({
         where: { id: videoId },

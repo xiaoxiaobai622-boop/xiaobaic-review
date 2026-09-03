@@ -6,6 +6,8 @@ import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { checkTeamStorageQuota } from '@/lib/platform-access'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
@@ -64,6 +66,13 @@ export async function POST(request: NextRequest) {
 
     const sanitizedOriginalFileName = fileValidation.sanitizedFilename || sanitizeFilename(originalFileName || 'upload.mp4')
 
+    const projectForQuota = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
+    if (!projectForQuota) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    const storageCheck = await checkTeamStorageQuota(projectForQuota.teamId, BigInt(originalFileSize))
+    if (!storageCheck.allowed) {
+      return NextResponse.json({ error: '当前团队存储空间不足，请删除旧文件或激活更高配额' }, { status: 413 })
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // Serialize version allocation for this project/name pair. The database
       // unique constraint remains the final guard against duplicate versions.
@@ -97,7 +106,7 @@ export async function POST(request: NextRequest) {
           versionLabel: `v${nextVersion}`,
           originalFileName,
           originalFileSize: BigInt(originalFileSize),
-          originalStoragePath: `projects/${projectId}/videos/original-${Date.now()}-${sanitizedOriginalFileName}`,
+          originalStoragePath: teamProjectStorageKey(projectForQuota.teamId, projectId, 'videos', `original-${Date.now()}-${sanitizedOriginalFileName}`),
           fileType: mimeType || 'video/mp4',
           uploadedBy: authResult.id,
           uploadedByName: authResult.name || authResult.email,

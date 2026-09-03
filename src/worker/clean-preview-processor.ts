@@ -11,6 +11,7 @@ import fs from 'fs'
 import path from 'path'
 import { pipeline } from 'stream/promises'
 import { logError, logMessage } from '../lib/logging'
+import { teamProjectStorageKey } from '../lib/storage-keys'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 
@@ -95,7 +96,7 @@ async function processCleanPreview(job: Job<CleanPreviewJob>): Promise<void> {
     logMessage(`[CLEAN PREVIEW] Generated clean preview: ${(outputStats.size / 1024 / 1024).toFixed(2)} MB`)
 
     // Upload to storage
-    const storagePath = `projects/${projectId}/videos/${videoId}/preview-clean-${resolution}.mp4`
+    const storagePath = teamProjectStorageKey(video.project.teamId, projectId, 'videos', videoId, `preview-clean-${resolution}.mp4`)
 
     debugLog('Uploading to:', storagePath)
 

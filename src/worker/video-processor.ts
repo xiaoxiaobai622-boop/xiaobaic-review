@@ -37,6 +37,8 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
     const videoInfo = await downloadAndValidateVideo(videoId, originalStoragePath, tempFiles)
 
     const settings = await fetchProcessingSettings(projectId, videoId)
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
+    if (!project) throw new Error(`Project ${projectId} not found`)
 
     // New uploads use Tencent MPS for HLS. The existing MP4/FFmpeg path remains
     // the fallback so older deployments and transient MPS failures stay usable.
@@ -44,7 +46,7 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
       try {
         logMessage(`[WORKER] Submitting video ${videoId} to Tencent MPS`)
         await prisma.video.update({ where: { id: videoId }, data: { mpsStatus: 'SUBMITTING', mpsError: null } })
-        const taskId = await submitMpsHls(originalStoragePath, videoId)
+        const taskId = await submitMpsHls(originalStoragePath, videoId, project.teamId, projectId)
         await prisma.video.update({ where: { id: videoId }, data: { mpsTaskId: taskId, mpsStatus: 'PROCESSING' } })
         const result = await waitForMpsHls(taskId)
         await prisma.video.update({
@@ -54,7 +56,7 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
         logMessage(`[WORKER] Tencent MPS HLS ready for video ${videoId}: ${result.hlsPath}`)
 
         // Keep thumbnails and metadata local; only the video rendition moves to MPS.
-        const thumbnailPath = await processThumbnail(videoId, projectId, videoInfo.path, videoInfo.metadata.duration, tempFiles)
+        const thumbnailPath = await processThumbnail(videoId, projectId, project.teamId, videoInfo.path, videoInfo.metadata.duration, tempFiles)
         await prisma.video.update({
           where: { id: videoId },
           data: { thumbnailPath, duration: videoInfo.metadata.duration, width: videoInfo.metadata.width, height: videoInfo.metadata.height, fps: videoInfo.metadata.fps, codec: videoInfo.metadata.codec },
@@ -84,6 +86,7 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
       previewPaths[resolution] = await processPreview(
         videoId,
         projectId,
+        project.teamId,
         videoInfo.path,
         dimensions,
         settings,
@@ -94,9 +97,10 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
     }
 
     const thumbnailPath = await processThumbnail(
-        videoId,
-        projectId,
-        videoInfo.path,
+      videoId,
+      projectId,
+      project.teamId,
+      videoInfo.path,
         videoInfo.metadata.duration,
         tempFiles
       )

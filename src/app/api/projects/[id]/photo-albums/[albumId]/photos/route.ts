@@ -8,6 +8,8 @@ import { generateAlbumAccessToken } from '@/lib/photo-access'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { checkTeamStorageQuota } from '@/lib/platform-access'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
@@ -117,7 +119,7 @@ export async function POST(
 
     const album = await prisma.photoAlbum.findUnique({
       where: { id: albumId },
-      select: { id: true, projectId: true },
+      select: { id: true, projectId: true, project: { select: { teamId: true } } },
     })
 
     if (!album || album.projectId !== projectId) {
@@ -136,6 +138,11 @@ export async function POST(
     }
     const { fileName, fileSize, mimeType } = parsed.data
 
+    const storageCheck = await checkTeamStorageQuota(album.project.teamId, BigInt(fileSize))
+    if (!storageCheck.allowed) {
+      return NextResponse.json({ error: '当前团队存储空间不足，请删除旧文件或激活更高配额' }, { status: 413 })
+    }
+
     const photoValidation = validatePhotoFile(fileName, mimeType || 'application/octet-stream')
     if (!photoValidation.valid) {
       return NextResponse.json(
@@ -146,7 +153,7 @@ export async function POST(
 
     const timestamp = Date.now()
     const sanitizedFileName = photoValidation.sanitizedFilename || fileName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 255)
-    const storagePath = `projects/${projectId}/photos/${albumId}/photo-${timestamp}-${sanitizedFileName}`
+    const storagePath = teamProjectStorageKey(album.project.teamId, projectId, 'photos', albumId, `photo-${timestamp}-${sanitizedFileName}`)
 
     const photo = await prisma.photo.create({
       data: {

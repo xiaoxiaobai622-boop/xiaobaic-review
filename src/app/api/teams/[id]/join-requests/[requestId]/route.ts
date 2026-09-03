@@ -41,7 +41,7 @@ export async function PATCH(
         getTeamQuota(id),
         getTeamUsage(id),
       ])
-      if (usage.members >= quota.maxMembers) {
+      if (quota.maxMembers > 0 && usage.members >= quota.maxMembers) {
         return NextResponse.json({ error: '当前团队的成员数量已达到配额上限' }, { status: 403 })
       }
     }

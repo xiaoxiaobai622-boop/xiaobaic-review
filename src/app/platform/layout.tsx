@@ -21,6 +21,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
               </Link>
               <nav className="flex items-center gap-4 text-sm">
                 <Link href="/platform/teams" className="text-muted-foreground hover:text-foreground">团队管理</Link>
+                <Link href="/platform/cards" className="text-muted-foreground hover:text-foreground">卡密管理</Link>
                 <Link href="/platform/users" className="text-muted-foreground hover:text-foreground">平台成员</Link>
                 <Link href="/platform/settings" className="text-muted-foreground hover:text-foreground">平台设置</Link>
                 <Link href="/platform/security" className="text-muted-foreground hover:text-foreground">安全</Link>

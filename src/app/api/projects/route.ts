@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     getTeamQuota(activeMembership.teamId),
     getTeamUsage(activeMembership.teamId),
   ])
-  if (usage.projects >= quota.maxProjects) {
+  if (quota.maxProjects > 0 && usage.projects >= quota.maxProjects) {
     return NextResponse.json({ error: '当前团队的项目数量已达到配额上限' }, { status: 403 })
   }
 

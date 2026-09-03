@@ -17,6 +17,7 @@ type TeamItem = {
     name: string
     slug: string
     avatarUrl: string | null
+    status?: string
     createdBy?: { id: string; name: string | null; email: string }
     _count?: { members: number; projects: number }
   }
@@ -164,6 +165,7 @@ export default function TeamSwitcher() {
                     <span className="block truncate text-xs text-muted-foreground">
                       {ROLE_LABELS[item.role]}
                       {item.team._count ? ` · ${item.team._count.members} 人` : ''}
+                      {item.team.status === 'DISABLED' ? ' · 已停用' : ''}
                     </span>
                   </span>
                   {item.team.id === activeTeamId && <Check className="h-4 w-4 text-primary" />}

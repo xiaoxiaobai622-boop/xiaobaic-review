@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { randomBytes } from 'crypto'
+import { TRIAL_PLAN, UNACTIVATED_PLAN, TRIAL_QUOTA } from '@/lib/platform-access'
 import {
   checkWechatText,
   CONTENT_SECURITY_ERROR,
@@ -28,7 +29,6 @@ export async function GET(request: NextRequest) {
   const memberships = await prisma.teamMember.findMany({
     where: {
       userId: authResult.id,
-      team: { status: 'ACTIVE' },
     },
     orderBy: { createdAt: 'asc' },
     include: {
@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
           name: true,
           slug: true,
           avatarUrl: true,
+          status: true,
           createdAt: true,
           createdBy: {
             select: { id: true, name: true, email: true },
@@ -89,12 +90,18 @@ export async function POST(request: NextRequest) {
   }
 
   const team = await prisma.$transaction(async (tx) => {
+    const existingTeamCount = await tx.team.count({ where: { createdById: authResult.id } })
+    const isFirstTeam = existingTeamCount === 0
+    const now = new Date()
     const created = await tx.team.create({
       data: {
         name,
         slug,
         shareKey: `tm_${randomBytes(5).toString('hex')}`,
         createdById: authResult.id,
+        subscriptionPlan: isFirstTeam ? TRIAL_PLAN : UNACTIVATED_PLAN,
+        subscriptionStartedAt: now,
+        subscriptionExpiresAt: isFirstTeam ? new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) : null,
       },
     })
 
@@ -103,6 +110,13 @@ export async function POST(request: NextRequest) {
         teamId: created.id,
         userId: authResult.id,
         role: 'OWNER',
+      },
+    })
+
+    await tx.teamQuota.create({
+      data: {
+        teamId: created.id,
+        ...TRIAL_QUOTA,
       },
     })
 

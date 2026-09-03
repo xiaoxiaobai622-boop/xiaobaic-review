@@ -1,5 +1,3 @@
-import { ensureDefaultAdmin } from './lib/seed'
-import { initializeSecuritySettings } from './lib/settings'
 import { logError, logMessage } from './lib/logging'
 
 // Ensure the instrumentation hook only builds/runs in the Node.js runtime.
@@ -20,6 +18,13 @@ export async function register() {
     logMessage('[INIT] Running server initialization...')
 
     try {
+      // Load Node-only initialization modules lazily so the development
+      // instrumentation bundle does not try to resolve their built-ins as
+      // browser dependencies.
+      const [{ ensureDefaultAdmin }, { initializeSecuritySettings }] = await Promise.all([
+        import('./lib/seed'),
+        import('./lib/settings')
+      ])
       await ensureDefaultAdmin()
 
       // Initialize security settings from environment variables

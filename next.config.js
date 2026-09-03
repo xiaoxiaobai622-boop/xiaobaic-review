@@ -4,6 +4,10 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  // Keep Node-only dependencies out of the client/instrumentation bundle.
+  // This is required when running with Webpack on environments without the
+  // native Turbopack SWC bindings.
+  serverExternalPackages: ['ioredis'],
   // Increase body size limit for TUS chunked uploads
   // TUS uploads can send chunks larger than 10MB (default Next.js limit)
   // Set to 100MB to handle large video chunks safely

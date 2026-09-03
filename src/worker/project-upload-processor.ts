@@ -9,6 +9,7 @@ import { pipeline } from 'stream/promises'
 import { TEMP_DIR } from './cleanup'
 import { logError, logMessage } from '../lib/logging'
 import type { ProjectUploadProcessingJob } from '../lib/queue'
+import { teamProjectStorageKey } from '../lib/storage-keys'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 
@@ -23,6 +24,7 @@ const THUMBNAIL_QUALITY = 75
 async function generateUploadThumbnail(
   uploadId: string,
   projectId: string,
+  teamId: string,
   tempFilePath: string,
   mimeType: string
 ): Promise<string | null> {
@@ -57,7 +59,7 @@ async function generateUploadThumbnail(
       return null
     }
 
-    const thumbnailPath = `projects/${projectId}/uploads/thumbs/${uploadId}.webp`
+    const thumbnailPath = teamProjectStorageKey(teamId, projectId, 'uploads', 'thumbs', `${uploadId}.webp`)
     await uploadFile(thumbnailPath, thumbnailBuffer, thumbnailBuffer.length, 'image/webp')
     return thumbnailPath
   } catch (error) {
@@ -129,7 +131,9 @@ export async function processProjectUpload(job: Job<ProjectUploadProcessingJob>)
     }
 
     // Generate preview thumbnail for image/video uploads (best-effort)
-    const thumbnailPath = await generateUploadThumbnail(uploadId, projectId, tempFilePath, detectedMimeType)
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
+    if (!project) throw new Error(`Project not found: ${projectId}`)
+    const thumbnailPath = await generateUploadThumbnail(uploadId, projectId, project.teamId, tempFilePath, detectedMimeType)
 
     // Update project upload with detected MIME type + thumbnail
     await prisma.projectUpload.update({

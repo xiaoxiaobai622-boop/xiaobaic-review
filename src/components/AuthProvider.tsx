@@ -19,7 +19,7 @@ interface User {
   projectAccessScope?: string
   teamRole?: 'OWNER' | 'ADMIN' | 'MEMBER'
   isPlatformAdmin?: boolean
-  teams?: Array<{ role: 'OWNER' | 'ADMIN' | 'MEMBER'; team: { id: string; name: string; slug: string; avatarUrl: string | null } }>
+  teams?: Array<{ role: 'OWNER' | 'ADMIN' | 'MEMBER'; team: { id: string; name: string; slug: string; avatarUrl: string | null; status?: string } }>
 }
 
 interface AuthContextType {

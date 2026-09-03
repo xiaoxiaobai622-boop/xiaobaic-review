@@ -9,6 +9,7 @@ import path from 'path'
 import { pipeline } from 'stream/promises'
 import { TEMP_DIR } from './cleanup'
 import { logError, logMessage } from '../lib/logging'
+import { teamProjectStorageKey } from '../lib/storage-keys'
 
 const THUMBNAIL_SIZE = 512 // longest edge in pixels
 const THUMBNAIL_QUALITY = 75
@@ -67,7 +68,9 @@ export async function processPhoto(job: Job<PhotoProcessingJob>) {
       .webp({ quality: THUMBNAIL_QUALITY })
       .toBuffer()
 
-    const thumbnailPath = `projects/${photo.album.projectId}/photos/${photo.album.id}/thumbs/${photoId}.webp`
+    const project = await prisma.project.findUnique({ where: { id: photo.album.projectId }, select: { teamId: true } })
+    if (!project) throw new Error(`Project not found: ${photo.album.projectId}`)
+    const thumbnailPath = teamProjectStorageKey(project.teamId, photo.album.projectId, 'photos', photo.album.id, 'thumbs', `${photoId}.webp`)
     await uploadFile(thumbnailPath, thumbnailBuffer, thumbnailBuffer.length, 'image/webp')
 
     // Web-sized preview for the lightbox — large originals (25-90 MB PNGs)
@@ -78,7 +81,7 @@ export async function processPhoto(job: Job<PhotoProcessingJob>) {
       .webp({ quality: PREVIEW_QUALITY })
       .toBuffer()
 
-    const previewPath = `projects/${photo.album.projectId}/photos/${photo.album.id}/previews/${photoId}.webp`
+    const previewPath = teamProjectStorageKey(project.teamId, photo.album.projectId, 'photos', photo.album.id, 'previews', `${photoId}.webp`)
     await uploadFile(previewPath, previewBuffer, previewBuffer.length, 'image/webp')
 
     // EXIF orientation 5-8 swaps width/height for display

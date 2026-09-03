@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiUser } from '@/lib/auth'
+import { getCurrentUserFromRequest, requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import {
   checkWechatText,
@@ -15,8 +15,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await params
 
   const membership = await getTeamMember(id, authResult.id)
@@ -31,8 +31,12 @@ export async function GET(
       name: true,
       slug: true,
       avatarUrl: true,
+      status: true,
       createdAt: true,
       createdById: true,
+      subscriptionPlan: true,
+      subscriptionStartedAt: true,
+      subscriptionExpiresAt: true,
       members: {
         orderBy: { createdAt: 'asc' },
         select: {

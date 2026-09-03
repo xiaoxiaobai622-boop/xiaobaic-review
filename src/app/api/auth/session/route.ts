@@ -61,13 +61,12 @@ export async function GET(request: NextRequest) {
           where: {
             userId: user.id,
             status: 'ACTIVE',
-            team: { status: 'ACTIVE' },
           },
           orderBy: { createdAt: 'asc' },
           select: {
             role: true,
             team: {
-              select: { id: true, name: true, slug: true, avatarUrl: true },
+              select: { id: true, name: true, slug: true, avatarUrl: true, status: true },
             },
           },
         }),

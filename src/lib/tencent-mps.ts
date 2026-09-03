@@ -94,9 +94,12 @@ async function callApi(action: string, payload: Record<string, unknown>): Promis
   return data.Response
 }
 
-export async function submitMpsHls(inputObject: string, videoId: string): Promise<string> {
+export async function submitMpsHls(inputObject: string, videoId: string, teamId?: string, projectId?: string): Promise<string> {
   const cfg = config()
   const bucket = required('S3_BUCKET')
+  const outputDir = teamId && projectId
+    ? `teams/${teamId}/projects/${projectId}/derived/mps`
+    : cfg.outputDir
   const response = await callApi('ProcessMedia', {
     InputInfo: {
       Type: 'COS',
@@ -109,7 +112,7 @@ export async function submitMpsHls(inputObject: string, videoId: string): Promis
     MediaProcessTask: {
       TranscodeTaskSet: [{
         Definition: cfg.templateId,
-        OutputObjectPath: `/${cfg.outputDir}/${videoId}/{inputName}_{definition}.{format}`,
+      OutputObjectPath: `/${outputDir}/${videoId}/{inputName}_{definition}.{format}`,
       }],
     },
   })

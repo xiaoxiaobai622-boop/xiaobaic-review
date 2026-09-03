@@ -5,6 +5,7 @@ import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
@@ -59,8 +60,9 @@ export async function POST(
 
     // If action is 'remove', revert to system-generated thumbnail
     if (action === 'remove') {
-      // System-generated thumbnail path: projects/{projectId}/videos/{videoId}/thumbnail.jpg
-      const systemThumbnailPath = `projects/${video.projectId}/videos/${videoId}/thumbnail.jpg`
+      const project = await prisma.project.findUnique({ where: { id: video.projectId }, select: { teamId: true } })
+      if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      const systemThumbnailPath = teamProjectStorageKey(project.teamId, video.projectId, 'videos', videoId, 'thumbnail.jpg')
 
       await prisma.video.update({
         where: { id: videoId },

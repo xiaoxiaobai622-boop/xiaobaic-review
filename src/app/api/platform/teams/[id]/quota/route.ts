@@ -29,7 +29,9 @@ export async function PATCH(
 
   const data: Record<string, number> = {}
   for (const key of ['maxMembers', 'maxProjects', 'maxVideos', 'maxStorageGB']) {
-    if (typeof body?.[key] === 'number' && body[key] >= 1) data[key] = Math.floor(body[key])
+    const value = body?.[key]
+    if (typeof value === 'number' && (key === 'maxProjects' || key === 'maxVideos') && value >= 0) data[key] = Math.floor(value)
+    else if (typeof value === 'number' && value >= 1) data[key] = Math.floor(value)
   }
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
 

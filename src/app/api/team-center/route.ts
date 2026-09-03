@@ -15,7 +15,6 @@ export async function GET(request: NextRequest) {
       where: {
         userId: authResult.id,
         status: 'ACTIVE',
-        team: { status: 'ACTIVE' },
       },
       orderBy: { createdAt: 'asc' },
       select: {
@@ -27,6 +26,7 @@ export async function GET(request: NextRequest) {
             name: true,
             slug: true,
             avatarUrl: true,
+            status: true,
             createdBy: {
               select: { id: true, name: true, email: true },
             },
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
   const activeTeamId =
     (requestedTeamId && memberships.some((item) => item.team.id === requestedTeamId)
       ? requestedTeamId
-      : memberships[0]?.team.id) || null
+      : memberships.find((item) => item.team.status === 'ACTIVE')?.team.id || memberships[0]?.team.id) || null
 
   return NextResponse.json({
     teams,

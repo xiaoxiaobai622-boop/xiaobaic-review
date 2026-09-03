@@ -107,6 +107,9 @@ model Team {
   avatarUrl   String?
   status      String   @default("ACTIVE")
   createdById String
+  subscriptionPlan       String   @default("TRIAL")
+  subscriptionStartedAt  DateTime @default(now())
+  subscriptionExpiresAt  DateTime?
   createdBy   User     @relation("TeamCreator", fields: [createdById], references: [id], onDelete: Restrict)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -162,6 +165,27 @@ model TeamQuota {
   updatedAt    DateTime @updatedAt
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+}
+
+model TeamActivationCard {
+  id                String    @id @default(cuid())
+  codeHash          String    @unique
+  codeLast4         String
+  planKey           String    @default("MONTHLY")
+  durationDays      Int       @default(30)
+  maxMembers        Int       @default(10)
+  maxStorageGB      Int       @default(50)
+  maxProjects       Int       @default(0)
+  maxVideos         Int       @default(0)
+  status            String    @default("AVAILABLE")
+  redeemedAt        DateTime?
+  redeemedByTeamId  String?
+  redeemedByUserId  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([redeemedByTeamId])
 }
 
 model TeamSettings {

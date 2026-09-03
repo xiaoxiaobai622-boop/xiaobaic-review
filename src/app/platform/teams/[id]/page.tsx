@@ -147,17 +147,20 @@ export default function PlatformTeamDetailPage() {
           <div className="grid gap-3 sm:grid-cols-4">
             {([
               ['maxMembers', '最大成员数'],
-              ['maxProjects', '最大项目数'],
-              ['maxVideos', '最大视频数'],
+              ['maxProjects', '最大项目数（0=不限）'],
+              ['maxVideos', '最大视频数（0=不限）'],
               ['maxStorageGB', '存储上限 GB'],
             ] as const).map(([key, label]) => (
               <label key={key} className="space-y-1">
                 <span className="text-xs text-muted-foreground">{label}</span>
                 <input
                   type="number"
-                  min={1}
+                  min={key === 'maxProjects' || key === 'maxVideos' ? 0 : 1}
                   value={quota[key]}
-                  onChange={(event) => setQuota({ ...quota, [key]: Number(event.target.value) || 1 })}
+                  onChange={(event) => {
+                    const value = Number(event.target.value)
+                    setQuota({ ...quota, [key]: Number.isFinite(value) ? value : 0 })
+                  }}
                   className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               </label>

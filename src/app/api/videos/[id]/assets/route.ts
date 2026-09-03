@@ -7,6 +7,8 @@ import { validateAssetFile } from '@/lib/file-validation'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { checkTeamStorageQuota } from '@/lib/platform-access'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
@@ -202,6 +204,11 @@ export async function POST(
       )
     }
 
+    const storageCheck = await checkTeamStorageQuota(video.project.teamId, BigInt(fileSize))
+    if (!storageCheck.allowed) {
+      return NextResponse.json({ error: '当前团队存储空间不足，请删除旧文件或激活更高配额' }, { status: 413 })
+    }
+
     // Validate asset file
     const assetValidation = validateAssetFile(fileName, mimeType || 'application/octet-stream', normalizedCategory)
 
@@ -215,7 +222,7 @@ export async function POST(
     // Create storage path (use sanitized filename from validation)
     const timestamp = Date.now()
     const sanitizedFileName = assetValidation.sanitizedFilename || fileName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 255)
-    const storagePath = `projects/${video.projectId}/videos/assets/${videoId}/asset-${timestamp}-${sanitizedFileName}`
+    const storagePath = teamProjectStorageKey(video.project.teamId, video.projectId, 'videos', 'assets', videoId, `asset-${timestamp}-${sanitizedFileName}`)
 
     // Use detected category if not provided
     const finalCategory = normalizedCategory || assetValidation.detectedCategory || 'other'

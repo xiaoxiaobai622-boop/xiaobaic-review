@@ -6,6 +6,7 @@ import path from 'path'
 import { pipeline } from 'stream/promises'
 import { TEMP_DIR } from './cleanup'
 import { logError, logMessage } from '../lib/logging'
+import { teamProjectStorageKey } from '../lib/storage-keys'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 
@@ -267,6 +268,7 @@ export function calculateOutputDimensions(
 export async function processPreview(
   videoId: string,
   projectId: string,
+  teamId: string,
   inputPath: string,
   dimensions: OutputDimensions,
   settings: ProcessingSettings,
@@ -322,7 +324,7 @@ export async function processPreview(
   const transcodeStats = fs.statSync(tempPreviewPath)
   debugLog('Transcoded file size:', (transcodeStats.size / 1024 / 1024).toFixed(2) + ' MB')
 
-  const previewPath = `projects/${projectId}/videos/${videoId}/preview-${resolution}.mp4`
+  const previewPath = teamProjectStorageKey(teamId, projectId, 'videos', videoId, `preview-${resolution}.mp4`)
 
   debugLog('Uploading preview to:', previewPath)
 
@@ -347,6 +349,7 @@ export async function processPreview(
 export async function processThumbnail(
   videoId: string,
   projectId: string,
+  teamId: string,
   inputPath: string,
   duration: number,
   tempFiles: TempFiles
@@ -369,7 +372,7 @@ export async function processThumbnail(
 
   logMessage(`[WORKER] Generated thumbnail for video ${videoId} in ${(thumbTime / 1000).toFixed(2)}s`)
 
-  const thumbnailPath = `projects/${projectId}/videos/${videoId}/thumbnail.jpg`
+  const thumbnailPath = teamProjectStorageKey(teamId, projectId, 'videos', videoId, 'thumbnail.jpg')
   const statsThumbnail = fs.statSync(tempThumbnailPath)
 
   debugLog('Uploading thumbnail to:', thumbnailPath)

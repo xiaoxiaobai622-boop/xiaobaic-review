@@ -7,7 +7,7 @@ import { apiFetch } from '@/lib/api-client'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 
 type OverviewData = {
-  team: { name: string; avatarUrl: string | null; createdAt: string }
+  team: { name: string; avatarUrl: string | null; createdAt: string; subscriptionPlan: string; subscriptionExpiresAt: string | null }
   quota: { maxMembers: number; maxProjects: number; maxVideos: number; maxStorageGB: number }
   usage: { members: number; projects: number; videos: number; usedBytes: string; recycleBinBytes: string }
   projects: Array<{
@@ -31,6 +31,14 @@ function formatBytes(value: string | number) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
+}
+
+function formatSubscription(team: OverviewData['team']) {
+  if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
+  if (!team.subscriptionExpiresAt) return '长期有效'
+  const remaining = new Date(team.subscriptionExpiresAt).getTime() - Date.now()
+  if (remaining <= 0) return '已到期'
+  return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
 }
 
 const WORKFLOW_STEPS = ['待审阅', '审阅中', '意见汇总完毕', '通过']
@@ -96,7 +104,7 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
   const usedPercent = capacityBytes > 0 ? Math.min(100, (usedBytes / capacityBytes) * 100) : 0
   const stats = data
     ? [
-        { label: '团队席位', value: `${data.usage.members} / ${data.quota.maxMembers}`, icon: Users },
+        { label: '团队席位', value: `${data.usage.members} / ${data.quota.maxMembers <= 0 ? '不限' : data.quota.maxMembers}`, icon: Users },
         { label: '团队容量', value: `${formatBytes(usedBytes)} / ${data.quota.maxStorageGB} GB`, icon: HardDrive },
         { label: '团队项目', value: `${data.usage.projects} 个`, icon: FolderKanban },
         { label: '视频数量', value: `${data.usage.videos} 个`, icon: Activity },
@@ -129,7 +137,7 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
         <>
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base">团队信息</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-[minmax(220px,1.15fr)_repeat(4,minmax(120px,1fr))] sm:items-center">
+            <CardContent className="grid gap-4 sm:grid-cols-[minmax(220px,1.15fr)_repeat(5,minmax(120px,1fr))] sm:items-center">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-primary text-2xl font-semibold text-primary-foreground">
                   <InitialsAvatar name={data.team.name} src={data.team.avatarUrl} size="lg" isInternal />
@@ -142,6 +150,10 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
                   <p className="mt-1 text-lg font-medium tabular-nums">{value}</p>
                 </div>
               ))}
+              <div className="border-l border-border pl-4">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />团队有效期</div>
+                <p className={`mt-1 text-lg font-medium ${data.team.subscriptionPlan === 'UNACTIVATED' || formatSubscription(data.team) === '已到期' ? 'text-destructive' : 'text-primary'}`}>{formatSubscription(data.team)}</p>
+              </div>
             </CardContent>
           </Card>
 

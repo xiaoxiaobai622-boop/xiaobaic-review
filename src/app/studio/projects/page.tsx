@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { FolderKanban, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle } from 'lucide-react'
+import { Building2, FolderKanban, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
@@ -22,6 +23,7 @@ import { ClientSelector } from '@/components/ClientSelector'
 import { generateSecurePassword } from '@/lib/password-utils'
 import type { ViewMode } from '@/components/ViewModeToggle'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { getActiveTeamId } from '@/lib/team-store'
 import {
   applyProjectsQuery,
   clientLabelFor,
@@ -74,6 +76,9 @@ export default function AdminPage() {
   const router = useRouter()
   const { user } = useAuth()
   const pathname = usePathname()
+  const activeTeamId = getActiveTeamId()
+  const activeTeam = user?.teams?.find((item) => item.team.id === activeTeamId) || user?.teams?.[0]
+  const teamDisabled = activeTeam?.team.status === 'DISABLED'
 
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -484,6 +489,34 @@ export default function AdminPage() {
   }
 
   const totalProjects = projects?.length ?? 0
+
+  if (teamDisabled) {
+    return (
+      <div className="flex-1 min-h-0 bg-background">
+        <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
+          <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+                <FolderKanban className="w-7 h-7 sm:w-8 sm:h-8" />
+                {t('dashboard')}
+              </h1>
+              <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('dashboardDescription')}</p>
+            </div>
+          </div>
+          <Card>
+            <div className="py-12 text-center">
+              <Building2 className="mx-auto h-10 w-10 text-amber-600" />
+              <p className="mt-3 text-sm font-medium">团队已停用</p>
+              <p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p>
+              <Button asChild variant="outline" className="mt-4">
+                <Link href="/studio/team?tab=team">查看团队激活</Link>
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   if (totalProjects === 0 && user?.role === 'ADMIN') {
     return (

@@ -6,6 +6,8 @@ import { validateAssetFile, sanitizeFilename, isSuspiciousFilename } from '@/lib
 import { initStorage, deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { checkTeamStorageQuota } from '@/lib/platform-access'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
@@ -86,6 +88,11 @@ export async function POST(
       return NextResponse.json({ error: videosMessages.validFileSizeRequired || 'Valid fileSize is required' }, { status: 400 })
     }
 
+    const storageCheck = await checkTeamStorageQuota(project.teamId, BigInt(fileSize))
+    if (!storageCheck.allowed) {
+      return NextResponse.json({ error: '当前团队存储空间不足，请联系团队所有者处理' }, { status: 413 })
+    }
+
     // Enforce global maxUploadSizeGB limit
     const settings = await prisma.settings.findUnique({
       where: { id: 'default' },
@@ -124,7 +131,7 @@ export async function POST(
     // Generate storage path
     const timestamp = Date.now()
     const finalFileName = assetValidation.sanitizedFilename || sanitizedFileName
-    const storagePath = `projects/${project.id}/videos/assets/${videoId}/client-${timestamp}-${finalFileName}`
+    const storagePath = teamProjectStorageKey(project.teamId, project.id, 'videos', 'assets', videoId, `client-${timestamp}-${finalFileName}`)
     const category = assetValidation.detectedCategory || 'other'
 
     // Create database record (file will be uploaded via TUS)

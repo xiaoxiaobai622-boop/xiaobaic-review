@@ -27,6 +27,7 @@ export type ResolvedShare = {
 // Keep this select explicit so media/storage fields never enter the hot path.
 const SHARE_PROJECT_METADATA_SELECT = {
   id: true,
+  teamId: true,
   title: true,
   slug: true,
   status: true,
