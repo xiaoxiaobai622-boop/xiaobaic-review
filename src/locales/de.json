@@ -67,13 +67,13 @@
     "noResults": "Keine Ergebnisse gefunden",
     "confirmDelete": "Bist du sicher? Diese Aktion kann nicht rückgängig gemacht werden.",
     "unsavedChanges": "Du hast ungespeicherte Änderungen",
-    "poweredBy": "Powered by ViTransfer",
+    "poweredBy": "Powered by FrameReview",
     "pageOf": "Seite {page} von {pages}",
     "select": "Auswählen",
     "selectAll": "Alle auswählen",
     "deselectAll": "Alle abwählen",
     "today": "Heute",
-    "viTransfer": "ViTransfer",
+    "viTransfer": "FrameReview",
     "videoReviewTagline": "Video Review, Feedback & Lieferung",
     "changing": "Wird geändert..."
   },
@@ -213,14 +213,14 @@
     "users": "Benutzer",
     "settings": "Einstellungen",
     "security": "Sicherheit",
-    "aboutViTransfer": "Über ViTransfer",
+    "aboutViTransfer": "Über FrameReview",
     "about": "Über",
     "aboutDescription": "Open-Source-Plattform für Video-Review und Freigabe für kreative Profis.",
     "website": "mle6.cn",
     "githubRepo": "GitHub Repository",
     "reportIssue": "Problem melden",
     "dockerHub": "Docker Hub",
-    "supportViTransfer": "ViTransfer unterstützen"
+    "supportViTransfer": "FrameReview unterstützen"
   },
 
   "projects": {
@@ -1545,7 +1545,7 @@
       "changingNotificationProviderNotSupported": "Benachrichtigungsanbieter kann nicht geändert werden. Stattdessen ein neues Ziel erstellen.",
       "failedToUpdateNotificationDestination": "Benachrichtigungsziel konnte nicht aktualisiert werden",
       "failedToDeleteNotificationDestination": "Benachrichtigungsziel konnte nicht gelöscht werden",
-      "testNotificationTitle": "ViTransfer Test-Benachrichtigung",
+      "testNotificationTitle": "FrameReview Test-Benachrichtigung",
       "testNotificationBody": "Falls du dies erhalten hast, ist dein externes Benachrichtigungsziel korrekt konfiguriert.",
       "failedToQueueTestNotification": "Test-Benachrichtigung konnte nicht in die Warteschlange gestellt werden",
       "failedToFetchNotificationLogs": "Benachrichtigungsprotokolle konnten nicht abgerufen werden",
@@ -1999,7 +1999,7 @@
 
   "device": {
     "authorizeTitle": "Workflow-Integration autorisieren",
-    "authorizeDescription": "Workflow-Integration mit ViTransfer verbinden",
+    "authorizeDescription": "Workflow-Integration mit FrameReview verbinden",
     "signInTitle": "Anmelden",
     "signInDescription": "Authentifizieren, um die Workflow-Integration zu autorisieren",
     "authorizeDevice": "Gerät autorisieren",

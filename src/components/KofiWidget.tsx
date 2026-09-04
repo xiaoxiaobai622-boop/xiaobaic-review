@@ -48,7 +48,7 @@ export default function KofiWidget() {
               borderRadius: '8px'
             }}
             height='712' 
-            title='Support ViTransfer on Ko-fi'
+            title='Support FrameReview on Ko-fi'
             loading="lazy"
           />
         </div>

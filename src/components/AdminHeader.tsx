@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
-import { Bug, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, User, UserRound, Users } from 'lucide-react'
+import { Bug, CircleHelp, Coffee, Container, ExternalLink, FolderKanban, LogOut, User, UserRound, Users, Clock3 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -10,6 +10,42 @@ import TeamSwitcher from '@/components/TeamSwitcher'
 import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useTranslations } from 'next-intl'
+import { apiFetch } from '@/lib/api-client'
+
+function TeamExpiryBadge() {
+  const [label, setLabel] = useState<string | null>(null)
+  const [danger, setDanger] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch('/api/team-center').then(async (response) => {
+      if (!response.ok) return
+      const data = await response.json()
+      const team = (data.teams || []).find((item: any) => item.team.id === data.activeTeamId) || data.teams?.[0]
+      if (!team || cancelled) return
+      const current = team.team
+      let next = '长期有效'
+      let isDanger = false
+      if (current.status === 'DISABLED') { next = '已停用'; isDanger = true }
+      else if (current.subscriptionPlan === 'UNACTIVATED') { next = '等待激活'; isDanger = true }
+      else if (current.subscriptionExpiresAt) {
+        const remaining = new Date(current.subscriptionExpiresAt).getTime() - Date.now()
+        if (remaining <= 0) { next = '已到期'; isDanger = true }
+        else {
+          const days = Math.ceil(remaining / (24 * 60 * 60 * 1000))
+          next = `${days} 天后到期`
+          isDanger = days <= 3
+        }
+      }
+      setLabel(next)
+      setDanger(isDanger)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  if (!label) return null
+  return <Link href="/studio/team?tab=team" className={`hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium sm:inline-flex ${danger ? 'border-destructive/30 bg-destructive-visible text-destructive' : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'}`} title="查看团队有效期"><Clock3 className="h-3.5 w-3.5" />团队 {label}</Link>
+}
 
 // GitHub mark — lucide 1.x removed brand icons, so it's inlined here.
 function GithubIcon({ className }: { className?: string }) {
@@ -91,6 +127,7 @@ export default function AdminHeader() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <TeamExpiryBadge />
             <ThemeToggle className="h-11 w-11 shrink-0 rounded-lg shadow-sm" />
             <Dialog>
               <DialogTrigger asChild>

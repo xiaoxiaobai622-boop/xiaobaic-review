@@ -697,7 +697,7 @@ export async function sendEmail({
     const transporter = await createTransporter()
 
     const fromAddress = settings.smtpFromAddress || settings.smtpUsername || 'noreply@mle6.cn'
-    const companyName = sanitizeEmailHeader(settings.companyName || 'ViTransfer')
+    const companyName = sanitizeEmailHeader(settings.companyName || 'FrameReview')
 
     const info = await transporter.sendMail({
       from: `"${companyName}" <${fromAddress}>`,
@@ -737,7 +737,7 @@ export async function sendNewVersionEmail({
   locale?: string
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -826,7 +826,7 @@ export async function sendProjectApprovedEmail({
   locale?: string
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -944,7 +944,7 @@ export async function sendCommentNotificationEmail({
   locale?: string
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -1039,7 +1039,7 @@ export async function sendAdminCommentNotificationEmail({
   attachmentNames?: string[]
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -1127,7 +1127,7 @@ export async function sendAdminProjectApprovedEmail({
   isApproval?: boolean
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const appDomain = settings.appDomain
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
@@ -1232,7 +1232,7 @@ export async function sendProjectGeneralNotificationEmail({
   locale?: string
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -1321,7 +1321,7 @@ export async function sendPasswordEmail({
   locale?: string
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -1381,7 +1381,7 @@ export async function sendPasswordResetEmail({
   resetUrl: string
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -1437,7 +1437,7 @@ export async function sendDueDateReminderEmail({
   reminderType: string
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)
 
@@ -1508,7 +1508,7 @@ export async function testEmailConnection(testEmail: string, customConfig?: any)
     await transporter.verify()
 
     const html = renderEmailShell({
-      companyName: settings.companyName || 'ViTransfer',
+      companyName: settings.companyName || 'FrameReview',
       title: smtpTestMessages.title || 'SMTP Test Succeeded',
       subtitle: smtpTestMessages.subtitle || 'Email sending is working',
       preheader: smtpTestMessages.preheader || 'SMTP configuration is working',
@@ -1572,7 +1572,7 @@ export async function sendAdminClientUploadEmail({
   fileNames: string[]
 }) {
   const settings = await getEmailSettings()
-  const companyName = settings.companyName || 'ViTransfer'
+  const companyName = settings.companyName || 'FrameReview'
   const appDomain = settings.appDomain
   const brand = getEmailBrand(settings.accentColor)
   const brandingLogoUrl = buildBrandingLogoUrl(settings)

@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
             slug: true,
             avatarUrl: true,
             status: true,
+            subscriptionPlan: true,
+            subscriptionExpiresAt: true,
             createdBy: {
               select: { id: true, name: true, email: true },
             },

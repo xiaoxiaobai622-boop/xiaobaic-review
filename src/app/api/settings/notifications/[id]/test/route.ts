@@ -33,7 +33,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     const body = await request.json().catch(() => ({}))
 
-  const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : (notificationsMessages.testNotificationTitle || 'ViTransfer Test Notification')
+  const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : (notificationsMessages.testNotificationTitle || 'FrameReview Test Notification')
     const message =
       typeof body.message === 'string' && body.message.trim()
         ? body.message.trim()
@@ -52,4 +52,3 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     return NextResponse.json({ error: notificationsMessages.failedToQueueTestNotification || 'Failed to queue test notification' }, { status: 500 })
   }
 }
-

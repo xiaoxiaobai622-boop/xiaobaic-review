@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Ban, CheckCircle2, LogOut, Search, ShieldCheck, Users } from 'lucide-react'
+import { Ban, CheckCircle2, Clock3, LogOut, Search, ShieldCheck, Users } from 'lucide-react'
 import { usePlatformAuth } from '@/components/PlatformAuthProvider'
 import { getPlatformAccessToken } from '@/lib/platform-token-store'
 
@@ -12,8 +12,20 @@ type Team = {
   slug: string
   status: string
   createdAt: string
+  subscriptionPlan: string
+  subscriptionExpiresAt: string | null
+  expiryLabel: string
   createdBy: { name: string | null; email: string }
   _count: { members: number; projects: number }
+}
+
+function formatExpiry(team: Pick<Team, 'status' | 'subscriptionPlan' | 'subscriptionExpiresAt'>, now: number) {
+  if (team.status === 'DISABLED') return '已停用'
+  if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
+  if (!team.subscriptionExpiresAt) return '长期有效'
+  const remaining = new Date(team.subscriptionExpiresAt).getTime() - now
+  if (remaining <= 0) return '已到期'
+  return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
 }
 
 export default function PlatformTeamsPage() {
@@ -31,7 +43,11 @@ export default function PlatformTeamsPage() {
       const response = await fetch('/api/platform/teams', { headers })
       if (!response.ok) throw new Error('无法加载团队列表')
       const data = await response.json()
-      setTeams(data.teams || [])
+      const now = Date.now()
+      setTeams((data.teams || []).map((team: Omit<Team, 'expiryLabel'>) => ({
+        ...team,
+        expiryLabel: formatExpiry(team, now),
+      })))
     } catch (err) {
       setError(err instanceof Error ? err.message : '无法加载团队列表')
     } finally {
@@ -139,7 +155,7 @@ export default function PlatformTeamsPage() {
                 </span>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-muted-foreground">创建人</p>
                   <p className="mt-1 truncate">{team.createdBy.name || team.createdBy.email}</p>
@@ -148,6 +164,14 @@ export default function PlatformTeamsPage() {
                   <p className="text-xs text-muted-foreground">成员 / 项目</p>
                   <p className="mt-1">{team._count.members} / {team._count.projects}</p>
                 </div>
+            </div>
+
+              <div className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-sm">
+                <Clock3 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">团队有效期</span>
+                <span className={`font-medium ${team.status === 'ACTIVE' && team.subscriptionPlan !== 'UNACTIVATED' && team.expiryLabel !== '已到期' ? 'text-primary' : 'text-destructive'}`}>
+                  {team.expiryLabel}
+                </span>
               </div>
 
               <div className="mt-4 flex items-center gap-2 border-t border-border pt-3">

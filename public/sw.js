@@ -27,7 +27,7 @@ self.addEventListener('push', (event) => {
     payload = event.data.json()
   } catch {
     payload = {
-      title: 'ViTransfer',
+      title: 'FrameReview',
       body: event.data.text() || 'You have a new notification',
     }
   }
@@ -46,7 +46,7 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'ViTransfer', options)
+    self.registration.showNotification(payload.title || 'FrameReview', options)
   )
 })
 

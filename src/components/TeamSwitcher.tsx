@@ -18,6 +18,8 @@ type TeamItem = {
     slug: string
     avatarUrl: string | null
     status?: string
+    subscriptionPlan?: string
+    subscriptionExpiresAt?: string | null
     createdBy?: { id: string; name: string | null; email: string }
     _count?: { members: number; projects: number }
   }
@@ -35,6 +37,15 @@ const ROLE_LABELS: Record<'OWNER' | 'ADMIN' | 'MEMBER', string> = {
   OWNER: '创建人',
   ADMIN: '管理员',
   MEMBER: '成员',
+}
+
+function formatTeamExpiry(team: TeamItem['team']) {
+  if (team.status === 'DISABLED') return '已停用'
+  if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
+  if (!team.subscriptionExpiresAt) return '长期有效'
+  const remaining = new Date(team.subscriptionExpiresAt).getTime() - Date.now()
+  if (remaining <= 0) return '已到期'
+  return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
 }
 
 export default function TeamSwitcher() {
@@ -165,7 +176,7 @@ export default function TeamSwitcher() {
                     <span className="block truncate text-xs text-muted-foreground">
                       {ROLE_LABELS[item.role]}
                       {item.team._count ? ` · ${item.team._count.members} 人` : ''}
-                      {item.team.status === 'DISABLED' ? ' · 已停用' : ''}
+                      {` · ${formatTeamExpiry(item.team)}`}
                     </span>
                   </span>
                   {item.team.id === activeTeamId && <Check className="h-4 w-4 text-primary" />}

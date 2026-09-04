@@ -18,6 +18,9 @@ export async function GET(request: NextRequest) {
       shareKey: true,
       status: true,
       createdAt: true,
+      subscriptionPlan: true,
+      subscriptionStartedAt: true,
+      subscriptionExpiresAt: true,
       createdBy: { select: { id: true, name: true, email: true } },
       _count: { select: { members: true, projects: true } },
       members: {

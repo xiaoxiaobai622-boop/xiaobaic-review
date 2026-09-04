@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Building2, Check, CheckCircle2, Copy, KeyRound, Pencil, Plus, UserRound } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, Copy, KeyRound, Pencil, Plus, UserRound } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { appPrompt } from '@/components/AppDialogProvider'
 import TeamOverview from '@/components/TeamOverview'
@@ -151,7 +151,6 @@ export default function TeamPage() {
     <div className="flex items-center justify-between gap-3">{tab === 'overview' ? <div><h1 className="text-2xl font-semibold tracking-normal">团队概览</h1><p className="mt-1 text-sm text-muted-foreground">{team?.name || '选择一个团队'}</p></div> : <span aria-hidden="true" />}<Button variant="outline" onClick={createTeam}><Plus className="h-4 w-4" />新建团队</Button></div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}
     {team?.status !== 'ACTIVE' && <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">该团队当前已停用，项目和团队接口暂不可用。请联系平台运营启用团队，或由团队所有者在“团队信息”中输入卡密激活。</div>}
-    {teams.length > 1 && <Card><CardContent className="flex flex-wrap gap-2 p-3">{teams.map((item) => <button key={item.team.id} type="button" onClick={() => { setActiveTeamId(item.team.id); setActiveTeamIdState(item.team.id) }} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${item.team.id === activeTeamId ? 'border-primary bg-primary-visible text-primary' : 'border-border text-muted-foreground hover:bg-accent'}`}><Building2 className="h-4 w-4" />{item.team.name}{item.team.id === activeTeamId && <Check className="h-3.5 w-3.5" />}</button>)}</CardContent></Card>}
     {!team ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">还没有团队，先创建一个团队开始管理。</p><Button className="mt-4" onClick={createTeam}><Plus className="h-4 w-4" />创建团队</Button></CardContent></Card> : tab === 'team' ? <TeamInfoPanel team={team} role={activeRole} /> : tab === 'personal' ? <PersonalInfoPanel /> : team.status !== 'ACTIVE' ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-amber-600" /><p className="mt-3 text-sm font-medium">团队已停用</p><p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p><Button className="mt-4" variant="outline" onClick={() => { window.history.replaceState(null, '', '/studio/team?tab=team'); window.dispatchEvent(new PopStateEvent('popstate')) }}>查看团队激活</Button></CardContent></Card> : <TeamOverview teamId={team.id} showHeading={false} />}
   </div>
 }

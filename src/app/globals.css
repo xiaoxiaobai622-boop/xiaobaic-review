@@ -170,6 +170,30 @@
     scroll-padding-top: var(--admin-header-height);
   }
 
+  html.team-admin-scroll-lock,
+  html.team-admin-scroll-lock body {
+    height: 100dvh;
+    overflow: hidden;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  html.team-admin-scroll-lock::-webkit-scrollbar,
+  html.team-admin-scroll-lock body::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Team management owns the viewport scroll; suppress any nested native scrollbar chrome. */
+  html.team-admin-scroll-lock * {
+    scrollbar-width: none;
+  }
+
+  html.team-admin-scroll-lock *::-webkit-scrollbar {
+    display: none;
+  }
+
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
@@ -625,6 +649,16 @@
 }
 
 @layer utilities {
+  /* Keep scroll gestures while removing the native scrollbar chrome on focused surfaces. */
+  .scrollbar-hidden {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Elevation shadow utilities */
   .shadow-elevation-sm {
     box-shadow: var(--shadow-sm);

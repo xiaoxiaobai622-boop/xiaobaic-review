@@ -1,5 +1,6 @@
 'use client'
 
+import { useLayoutEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { FolderKanban, GitBranch, HardDrive, LayoutDashboard, Settings2, Users, type LucideIcon } from 'lucide-react'
@@ -65,8 +66,13 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
           : []
   const activeTab = searchParams?.get('tab') || tabs[0]?.value
 
+  useLayoutEffect(() => {
+    document.documentElement.classList.add('team-admin-scroll-lock')
+    return () => document.documentElement.classList.remove('team-admin-scroll-lock')
+  }, [])
+
   return (
-    <div className="flex min-h-0 flex-1 bg-background">
+    <div className="scrollbar-hidden flex min-h-0 flex-1 overflow-y-auto bg-background">
       <div className="flex w-full min-w-0 flex-1 flex-col lg:flex-row">
         <aside className="shrink-0 border-b border-border bg-card lg:min-h-full lg:w-56 lg:border-b-0 lg:border-r">
           <div className="px-4 py-4 lg:px-5 lg:py-6">
