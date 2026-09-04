@@ -95,6 +95,7 @@ function resolvePlaybackSource(
 }
 
 const POSITION_EVENT_INTERVAL_MS = 200
+const SEEK_RESUME_DEBOUNCE_MS = 180
 const BUFFER_TAIL_TOLERANCE_SECONDS = 0.15
 const MEDIA_END_EPSILON_SECONDS = 0.15
 
@@ -280,6 +281,8 @@ export default function VideoPlayer({
   const playRequestRef = useRef<Promise<void> | null>(null)
   const playRequestIdRef = useRef(0)
   const pendingSeekRef = useRef<PendingSeek | null>(null)
+  const seekResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seekResumePendingRef = useRef(false)
 
   // Keep the UI responsive while a media element is waiting for its first
   // segment. The media events below remain the source of truth once playback
@@ -288,6 +291,11 @@ export default function VideoPlayer({
     const video = videoRef.current
     if (!video) return
 
+    if (seekResumeTimerRef.current !== null) {
+      clearTimeout(seekResumeTimerRef.current)
+      seekResumeTimerRef.current = null
+    }
+    seekResumePendingRef.current = false
     playIntentRef.current = true
     setIsBuffering(video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)
 
@@ -365,6 +373,11 @@ export default function VideoPlayer({
   }, [])
 
   const pausePlayback = useCallback(() => {
+    if (seekResumeTimerRef.current !== null) {
+      clearTimeout(seekResumeTimerRef.current)
+      seekResumeTimerRef.current = null
+    }
+    seekResumePendingRef.current = false
     playIntentRef.current = false
     pendingSeekRef.current = null
     playRequestIdRef.current += 1
@@ -721,6 +734,8 @@ export default function VideoPlayer({
     const shouldResume = resume === true
 
     if (shouldResume) {
+      if (seekResumeTimerRef.current !== null) clearTimeout(seekResumeTimerRef.current)
+      seekResumePendingRef.current = true
       playIntentRef.current = true
     } else {
       pausePlayback()
@@ -750,9 +765,16 @@ export default function VideoPlayer({
       detail: { time: target, videoId: selectedVideoIdRef.current }
     }))
 
-    // Calling play immediately also kicks off native HLS loading. If the
-    // target is not buffered yet, the media events retry once data arrives.
-    if (shouldResume) requestPlay()
+    // Wait for a short quiet period before resuming. Rapid clicks otherwise
+    // create a play/pause request for every intermediate timestamp and abort
+    // the HLS fragment that was just requested. Only the final seek resumes.
+    if (shouldResume) {
+      seekResumeTimerRef.current = setTimeout(() => {
+        seekResumeTimerRef.current = null
+        seekResumePendingRef.current = false
+        if (playIntentRef.current) requestPlay()
+      }, SEEK_RESUME_DEBOUNCE_MS)
+    }
   }, [pausePlayback, requestPlay])
 
   useEffect(() => {
@@ -1201,7 +1223,9 @@ export default function VideoPlayer({
         pendingSeekRef.current = null
         setIsSeeking(false)
         setIsBuffering(false)
-        if (pendingSeek.resume && video.paused && playIntentRef.current) requestPlay()
+        if (pendingSeek.resume && video.paused && playIntentRef.current && !seekResumePendingRef.current) {
+          requestPlay()
+        }
       } else {
         // `seeked` only means the media element accepted the timestamp. HLS
         // may still be fetching the corresponding fragment, so keep the
@@ -1247,7 +1271,7 @@ export default function VideoPlayer({
           return
         }
 
-        if (pendingSeek.resume && playIntentRef.current && video.paused) {
+        if (pendingSeek.resume && playIntentRef.current && video.paused && !seekResumePendingRef.current) {
           requestPlay()
           return
         }
@@ -1257,7 +1281,7 @@ export default function VideoPlayer({
         setIsBuffering(false)
         return
       }
-      if (playIntentRef.current && video.paused && !playRequestRef.current) {
+      if (playIntentRef.current && video.paused && !playRequestRef.current && !seekResumePendingRef.current) {
         // A transient play() rejection leaves the media paused but no request
         // in flight. Retry when the browser reports that data is available.
         requestPlay()

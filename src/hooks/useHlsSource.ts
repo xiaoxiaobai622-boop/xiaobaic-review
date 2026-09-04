@@ -17,6 +17,9 @@ interface UseHlsSourceResult {
   isUsingHls: boolean
 }
 
+const SEEK_LOAD_DEBOUNCE_MS = 180
+const SEEK_LOAD_RESTART_COOLDOWN_MS = 750
+
 export function useHlsSource({
   videoRef,
   hlsUrl,
@@ -56,6 +59,7 @@ export function useHlsSource({
     let recoveryTimer: ReturnType<typeof setTimeout> | null = null
     let lastLoadRequestPosition: number | null = null
     let lastLoadRequestAt = 0
+    let lastScheduledPosition: number | null = null
     let disposed = false
 
     const isBufferedAt = (position: number): boolean => {
@@ -81,6 +85,18 @@ export function useHlsSource({
       if (disposed || !hls || !Number.isFinite(position)) return
 
       const target = Math.max(0, position)
+      const isNewTarget = lastScheduledPosition === null || Math.abs(lastScheduledPosition - target) >= 0.25
+      if (isNewTarget) {
+        // A new user seek supersedes recovery work for the previous fragment.
+        // Do not let intentionally aborted requests consume the retry budget
+        // for the final position in a rapid click sequence.
+        networkRecoveryAttempts = 0
+        lastScheduledPosition = target
+        if (recoveryTimer !== null) {
+          clearTimeout(recoveryTimer)
+          recoveryTimer = null
+        }
+      }
       pendingSeekPosition = target
       pendingForceLoad = pendingForceLoad || force
 
@@ -108,21 +124,15 @@ export function useHlsSource({
         }
 
         const now = Date.now()
-        const sameTarget = lastLoadRequestPosition !== null &&
-          Math.abs(lastLoadRequestPosition - currentTarget) < 0.25
-        if (
-          !forceLoad &&
-          sameTarget &&
-          // While a loader is active, another startLoad would abort the
-          // fragment that is already fetching. A short cooldown coalesces the
-          // media element's duplicate seeking/waiting events while still
-          // allowing a later retry when a request has genuinely stalled.
-          now - lastLoadRequestAt < 2000
-        ) {
+        const elapsedSinceLastLoad = now - lastLoadRequestAt
+        const sameTarget = lastLoadRequestPosition !== null && Math.abs(lastLoadRequestPosition - currentTarget) < 0.25
+        const cooldown = sameTarget ? 2000 : SEEK_LOAD_RESTART_COOLDOWN_MS
+        if (!forceLoad && lastLoadRequestAt > 0 && elapsedSinceLastLoad < cooldown) {
           // Keep the target alive. A seek can emit `waiting` only once, so
-          // dropping it here can leave a paused player stuck forever when the
-          // original fragment request stalls. Retry after the cooldown.
-          const retryDelay = Math.max(50, 2000 - (now - lastLoadRequestAt) + 25)
+          // dropping it here can leave a paused player stuck forever. The
+          // cooldown also prevents different rapid targets from repeatedly
+          // aborting the active fragment request.
+          const retryDelay = Math.max(50, cooldown - elapsedSinceLastLoad + 25)
           seekLoadTimer = setTimeout(() => {
             seekLoadTimer = null
             if (pendingSeekPosition !== null) {
@@ -145,7 +155,7 @@ export function useHlsSource({
         } catch {
           // Retain the target and let a later waiting/stalled event retry.
         }
-      }, 0)
+      }, force ? 0 : SEEK_LOAD_DEBOUNCE_MS)
     }
 
     const applyPendingSeek = () => {
@@ -269,6 +279,12 @@ export function useHlsSource({
         manifestReady = true
         networkRecoveryAttempts = 0
         applyPendingSeek()
+      })
+
+      hls.on(Events.FRAG_LOADED, () => {
+        // A completed fragment proves the current source is healthy. Network
+        // failures from earlier seek targets must not carry into later seeks.
+        networkRecoveryAttempts = 0
       })
 
       // Keep seeks made before the manifest/metadata is ready. hls.js cannot

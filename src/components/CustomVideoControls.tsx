@@ -45,6 +45,8 @@ interface CustomVideoControlsProps {
   surfaceClassName?: string
 }
 
+const TIMELINE_SEEK_DEBOUNCE_MS = 140
+
 // Color map for marker backgrounds - IDENTICAL to InitialsAvatar component
 const COLOR_MAP: Record<string, { bg: string; ring: string; text: string }> = {
   'border-gray-500': {
@@ -645,7 +647,9 @@ function CustomVideoControls({
   const timelineRef = useRef<HTMLDivElement>(null)
   const suppressTimelineClickRef = useRef(false)
   const dragSeekTimeRef = useRef<number | null>(null)
-  const wasPlayingBeforeSeekRef = useRef(false)
+  const timelineSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingTimelineSeekRef = useRef<number | null>(null)
+  const resumeAfterTimelineSeekRef = useRef(false)
   const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const touchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -753,10 +757,26 @@ function CustomVideoControls({
     if (video && (isPlaying || !video.paused)) onPlayPause()
   }, [isPlaying, onPlayPause, videoRef])
 
+  const queueTimelineSeek = useCallback((time: number, resume: boolean) => {
+    pendingTimelineSeekRef.current = time
+    resumeAfterTimelineSeekRef.current = resumeAfterTimelineSeekRef.current || resume
+    setDragPreviewTime(time)
+    if (timelineSeekTimerRef.current !== null) clearTimeout(timelineSeekTimerRef.current)
+    timelineSeekTimerRef.current = setTimeout(() => {
+      timelineSeekTimerRef.current = null
+      const target = pendingTimelineSeekRef.current
+      const shouldResume = resumeAfterTimelineSeekRef.current
+      pendingTimelineSeekRef.current = null
+      resumeAfterTimelineSeekRef.current = false
+      setDragPreviewTime(null)
+      if (target !== null) onSeek(target, shouldResume)
+    }, TIMELINE_SEEK_DEBOUNCE_MS)
+  }, [onSeek])
+
   const seekFromClientX = useCallback((clientX: number, resume?: boolean) => {
     const time = getTimeFromClientX(clientX)
-    if (time !== null) onSeek(time, resume ?? !videoRef.current?.paused)
-  }, [getTimeFromClientX, onSeek, videoRef])
+    if (time !== null) queueTimelineSeek(time, resume ?? !videoRef.current?.paused)
+  }, [getTimeFromClientX, queueTimelineSeek, videoRef])
 
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (suppressTimelineClickRef.current) return
@@ -767,8 +787,10 @@ function CustomVideoControls({
     if ((e.target as HTMLElement).closest('button, input, a')) return
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    wasPlayingBeforeSeekRef.current = isPlaying || !videoRef.current?.paused
-    if (isPlaying || !videoRef.current?.paused) pauseBeforeSeek()
+    const resumeAlreadyQueued = resumeAfterTimelineSeekRef.current
+    const shouldResume = isPlaying || !videoRef.current?.paused || resumeAlreadyQueued
+    resumeAfterTimelineSeekRef.current = shouldResume
+    if (!resumeAlreadyQueued && (isPlaying || !videoRef.current?.paused)) pauseBeforeSeek()
     document.body.style.userSelect = 'none'
     suppressTimelineClickRef.current = true
     const time = getTimeFromClientX(e.clientX)
@@ -799,12 +821,11 @@ function CustomVideoControls({
     document.body.style.userSelect = ''
     const targetTime = dragSeekTimeRef.current
     dragSeekTimeRef.current = null
-    setDragPreviewTime(null)
     setIsDragging(false)
-    if (targetTime !== null) onSeek(targetTime, wasPlayingBeforeSeekRef.current)
-    wasPlayingBeforeSeekRef.current = false
+    if (targetTime !== null) queueTimelineSeek(targetTime, resumeAfterTimelineSeekRef.current)
+    else setDragPreviewTime(null)
     window.setTimeout(() => { suppressTimelineClickRef.current = false }, 0)
-  }, [onSeek])
+  }, [queueTimelineSeek])
 
   const handleTimelinePointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -814,9 +835,18 @@ function CustomVideoControls({
     dragSeekTimeRef.current = null
     setDragPreviewTime(null)
     setIsDragging(false)
-    wasPlayingBeforeSeekRef.current = false
+    resumeAfterTimelineSeekRef.current = false
     window.setTimeout(() => { suppressTimelineClickRef.current = false }, 0)
   }, [])
+
+  useEffect(() => {
+    return () => {
+      if (timelineSeekTimerRef.current !== null) clearTimeout(timelineSeekTimerRef.current)
+      timelineSeekTimerRef.current = null
+      pendingTimelineSeekRef.current = null
+      resumeAfterTimelineSeekRef.current = false
+    }
+  }, [videoId])
 
   useEffect(() => {
     const video = videoRef.current

@@ -85,7 +85,9 @@ export async function getTenantAccessToken(): Promise<string> {
 
 /**
  * Generate Feishu OAuth authorization URL.
- * User clicks this URL to authorize the app.
+ * User clicks this URL to authorize the app. Basic profile fields are
+ * returned by authen/v1/user_info, so binding does not require the tenant-wide
+ * contact:user.base:readonly permission.
  */
 export function getFeishuAuthUrl(state: string): string {
   if (!FEISHU_APP_ID) throw new Error('FEISHU_APP_ID is not configured')
@@ -95,7 +97,6 @@ export function getFeishuAuthUrl(state: string): string {
     app_id: FEISHU_APP_ID,
     redirect_uri: FEISHU_OAUTH_REDIRECT_URI,
     state,
-    scope: 'contact:user.base:readonly',
   })
   return `https://open.feishu.cn/open-apis/authen/v1/authorize?${params.toString()}`
 }

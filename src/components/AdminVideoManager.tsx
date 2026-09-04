@@ -140,6 +140,7 @@ export default function AdminVideoManager({
   const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
   const [comparisonComments, setComparisonComments] = useState<VideoComparisonComment[]>([])
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
+  const [actionMenuPosition, setActionMenuPosition] = useState<{ left: number; top: number; submenuSide: 'left' | 'right' } | null>(null)
   const [shareTypeMenuGroup, setShareTypeMenuGroup] = useState<string | null>(null)
   const [versionSourceMenuGroup, setVersionSourceMenuGroup] = useState<string | null>(null)
   const [reviewStatusMenuGroup, setReviewStatusMenuGroup] = useState<string | null>(null)
@@ -157,6 +158,10 @@ export default function AdminVideoManager({
   const [selectionLinkCopied, setSelectionLinkCopied] = useState(false)
   const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
   const cardClickTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  useEffect(() => {
+    if (!actionMenuGroup) setActionMenuPosition(null)
+  }, [actionMenuGroup])
 
   const videoTokenUrl = useCallback((videoId: string, quality: string) => {
     const params = new URLSearchParams({ videoId, projectId, quality, sessionId })
@@ -973,14 +978,27 @@ export default function AdminVideoManager({
                           setShareTypeMenuGroup(null)
                           setVersionSourceMenuGroup(null)
                           setReviewStatusMenuGroup(null)
-                          setActionMenuGroup(current => current === groupName ? null : groupName)
+                          if (actionMenuGroup === groupName) {
+                            setActionMenuGroup(null)
+                            return
+                          }
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const menuWidth = 208
+                          const menuHeight = 520
+                          const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))
+                          const top = rect.bottom + menuHeight <= window.innerHeight - 8
+                            ? rect.bottom + 6
+                            : Math.max(8, rect.top - menuHeight - 6)
+                          const submenuSide = left + menuWidth + 160 <= window.innerWidth - 8 ? 'right' : 'left'
+                          setActionMenuPosition({ left, top, submenuSide })
+                          setActionMenuGroup(groupName)
                         }}
                         aria-label={t('videoActions')}
                         title={t('videoActions')}
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {actionMenuGroup === groupName && (
+                      {actionMenuGroup === groupName && actionMenuPosition && typeof document !== 'undefined' && createPortal(
                         <>
                           <button
                             type="button"
@@ -989,17 +1007,18 @@ export default function AdminVideoManager({
                             onClick={(e) => {
                               e.stopPropagation()
                               setActionMenuGroup(null)
+                              setActionMenuPosition(null)
                               setShareTypeMenuGroup(null)
                               setVersionSourceMenuGroup(null)
                               setReviewStatusMenuGroup(null)
                             }}
                           />
-                          <div className="absolute right-0 top-8 z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                          <div className="fixed z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: actionMenuPosition.left, top: actionMenuPosition.top }} onClick={(event) => event.stopPropagation()}>
                             <div className="relative" onMouseEnter={() => { setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); setShareTypeMenuGroup(groupName) }} onMouseLeave={() => setShareTypeMenuGroup(null)}>
                               <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName}>
                                 <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
                               </button>
-                              {shareTypeMenuGroup === groupName && <div role="menu" aria-label={`${groupName} 分享类型`} className="absolute left-full top-0 z-[60] -ml-px w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                              {shareTypeMenuGroup === groupName && <div role="menu" aria-label={`${groupName} 分享类型`} className={cn('absolute top-0 z-[60] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')}>
                                 <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
                                 <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
                               </div>}
@@ -1054,7 +1073,7 @@ export default function AdminVideoManager({
                                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
                               </button>
                               {reviewStatusMenuGroup === groupName && (
-                                <div className="absolute left-full top-0 z-[60] -ml-px w-44 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" role="menu">
+                                <div className={cn('absolute top-0 z-[60] w-44 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
                                   {VIDEO_REVIEW_STATUS_OPTIONS.map(option => {
                                     const isCurrent = getEffectiveVideoReviewStatus(displayLatestVideo) === option.value
                                     return (
@@ -1118,7 +1137,7 @@ export default function AdminVideoManager({
                                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 </button>
                                 {versionSourceMenuGroup === groupName && (
-                                  <div className="absolute left-full top-0 z-[60] -ml-px w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" role="menu">
+                                  <div className={cn('absolute top-0 z-[60] w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
                                     <button type="button" onClick={(e) => openLocalVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                                       <Upload className="h-4 w-4" />{t('localUpload')}
                                     </button>
@@ -1149,7 +1168,8 @@ export default function AdminVideoManager({
                               </>
                             )}
                           </div>
-                        </>
+                        </>,
+                        document.body
                       )}
                     </div>
                   )

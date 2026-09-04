@@ -679,7 +679,7 @@ export default function ProjectPage() {
           </div>
         </div>
 
-        <div className="min-h-[calc(100dvh-var(--admin-header-height)-5rem)] border-y border-border lg:grid lg:grid-cols-[168px_minmax(0,1fr)_288px]">
+        <div className="min-h-[calc(100dvh-var(--admin-header-height)-5rem)] border-y border-border lg:h-[calc(100dvh-var(--admin-header-height)-5rem)] lg:grid lg:grid-cols-[168px_minmax(0,1fr)_288px]">
           <nav className="flex gap-1 overflow-x-auto border-b border-border p-2 lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r lg:py-4">
             {([
               { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
@@ -711,7 +711,7 @@ export default function ProjectPage() {
             })}
           </nav>
 
-          <main id="review-workspace" className="relative min-w-0 p-3 sm:p-4" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) }}>
+          <main id="review-workspace" className="relative min-w-0 p-3 sm:p-4 lg:min-h-0 lg:overflow-y-auto" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) }}>
             {contextMenu && (
               <div className="fixed z-[100] w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260) }} onClick={(event) => event.stopPropagation()}>
                 <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
