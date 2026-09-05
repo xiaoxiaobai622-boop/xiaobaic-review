@@ -119,6 +119,28 @@ jobs:
       GHCR_PROXY_SUBSCRIPTION: ${{ secrets.GHCR_PROXY_SUBSCRIPTION }}
       TENCENT_MPS_TEMPLATE_ID: ${{ secrets.TENCENT_MPS_TEMPLATE_ID }}
     steps:
+      - name: Validate deployment SSH secret
+        env:
+          DEPLOY_HOST: ${{ secrets.SERVER_HOST }}
+          DEPLOY_USER: ${{ secrets.SERVER_USER }}
+          DEPLOY_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$DEPLOY_HOST" = "111.229.35.33" ] || { echo "SERVER_HOST must be 111.229.35.33"; exit 1; }
+          [ "$DEPLOY_USER" = "root" ] || { echo "SERVER_USER must be root"; exit 1; }
+          key_file="$RUNNER_TEMP/deploy-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          public_key=$(ssh-keygen -y -f "$key_file")
+          fingerprint=$(printf '%s\n' "$public_key" | ssh-keygen -lf - | awk '{print $2}')
+          echo "SSH key format: valid"
+          echo "SSH key fingerprint: $fingerprint"
+          if [ "$fingerprint" != "SHA256:Xq+fgduRGim2Ca3n17FIsWdFyzStzg5jeN+oJQRqhK8" ]; then
+            echo "SERVER_SSH_KEY is not the production deployment key (vitransfer_codex)"
+            exit 1
+          fi
+
       - name: Pull through Germany proxy and deploy with rollback
         uses: appleboy/ssh-action@v1.2.2
         with:
