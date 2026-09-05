@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Building2, Check, MailPlus, MoreVertical, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
+import { Building2, Check, Copy, MailPlus, MoreVertical, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { appConfirm } from '@/components/AppDialogProvider'
 import { useAuth } from '@/components/AuthProvider'
@@ -13,7 +13,7 @@ import { apiDelete, apiFetch, apiPatch, apiPost } from '@/lib/api-client'
 type Role = 'OWNER' | 'ADMIN' | 'MEMBER'
 type Member = { id: string; role: Role; status: string; createdAt: string; updatedAt?: string; user: { id: string; name: string | null; email: string; phone: string | null; updatedAt?: string } }
 type RequestItem = { id: string; status: string; message: string | null; createdAt: string; user: { id: string; name: string | null; email: string; phone: string | null } }
-type Invite = { id: string; phone: string | null; email: string | null; role: Role; status: string; createdAt: string; expiresAt: string }
+type Invite = { id: string; phone: string | null; email: string | null; role: Role; status: string; createdAt: string; expiresAt: string; token?: string }
 
 const roleLabel: Record<Role, string> = { OWNER: '负责人', ADMIN: '管理员', MEMBER: '成员' }
 const roleTone: Record<Role, string> = { OWNER: 'bg-amber-500/10 text-amber-700 dark:text-amber-300', ADMIN: 'bg-primary-visible text-primary', MEMBER: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' }
@@ -34,6 +34,7 @@ export default function TeamMembersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [inviteLink, setInviteLink] = useState('')
 
   const load = async (id: string) => {
     const [memberRes, requestRes, inviteRes] = await Promise.all([apiFetch(`/api/teams/${id}/members`), apiFetch(`/api/teams/${id}/join-requests`), apiFetch(`/api/teams/${id}/invitations`)] )
@@ -51,7 +52,21 @@ export default function TeamMembersPage() {
   const activeMembers = members.filter((member) => member.status === 'ACTIVE')
 
   const refresh = async () => { if (!teamId) return; await load(teamId); setSelected([]) }
-  const invite = async () => { if (!teamId || !/^1\d{10}$/.test(phone)) { setError('请输入有效的 11 位手机号'); return }; try { await apiPost(`/api/teams/${teamId}/invitations`, { phone, email: null, role: inviteRole }); setPhone(''); setNotice('邀请已创建'); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : '邀请失败') } }
+  const invite = async () => {
+    if (!teamId || !/^1\d{10}$/.test(phone)) { setError('请输入有效的 11 位手机号'); return }
+    try {
+      const result = await apiPost<{ invite: { token: string; expiresAt: string } }>(`/api/teams/${teamId}/invitations`, { phone, email: null, role: inviteRole })
+      setPhone('')
+      setNotice('邀请已创建，请把邀请链接发给对方')
+      setInviteLink(`${window.location.origin}/studio/team/invite/${encodeURIComponent(result.invite.token)}`)
+      await refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '邀请失败') }
+  }
+  const copyInviteLink = async () => {
+    if (!inviteLink) return
+    await navigator.clipboard.writeText(inviteLink)
+    setNotice('邀请链接已复制')
+  }
   const remove = async (id: string) => { if (!teamId || !await appConfirm('确认移除该成员？')) return; try { await apiDelete(`/api/teams/${teamId}/members/${id}`); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : '移除失败') } }
   const bulkRemove = async () => { if (!selected.length || !await appConfirm(`确认移除选中的 ${selected.length} 名成员？`)) return; try { await Promise.all(selected.map((id) => apiDelete(`/api/teams/${teamId}/members/${id}`))); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : '批量移除失败') } }
   const changeRole = async (userId: string, role: 'ADMIN' | 'MEMBER') => { if (!teamId) return; try { await apiPatch(`/api/teams/${teamId}/members/${userId}`, { role }); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : '修改角色失败') } }
@@ -63,7 +78,7 @@ export default function TeamMembersPage() {
   return <div className="space-y-5">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-2xl font-semibold tracking-normal">成员管理</h1><p className="mt-1 text-sm text-muted-foreground">管理团队成员、组织结构和项目成员。</p></div>{tab === 'seats' && <Button onClick={invite} disabled={!canManage}><UserPlus className="h-4 w-4" />邀请成员</Button>}</div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}
-    {notice && <div role="status" className="rounded-md border border-success/30 bg-success-visible p-3 text-sm text-success">{notice}</div>}
+    {notice && <div role="status" className="rounded-md border border-success/30 bg-success-visible p-3 text-sm text-success">{notice}{inviteLink && <div className="mt-2 flex max-w-xl items-center gap-2"><code className="min-w-0 flex-1 truncate rounded bg-background/70 px-2 py-1 text-xs text-foreground">{inviteLink}</code><Button type="button" size="sm" variant="outline" onClick={() => void copyInviteLink()}><Copy className="h-3.5 w-3.5" />复制链接</Button></div>}</div>}
 
     {tab === 'seats' && <>
       <Card><CardHeader className="pb-3"><CardTitle className="text-base">席位使用</CardTitle></CardHeader><CardContent><div className="flex items-end justify-between gap-4"><div><span className="text-2xl font-semibold">{activeMembers.length}</span><span className="ml-1 text-sm text-muted-foreground">位成员</span></div><span className="text-sm text-muted-foreground">包含负责人和管理员</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, activeMembers.length / 10 * 100)}%` }} /></div></CardContent></Card>

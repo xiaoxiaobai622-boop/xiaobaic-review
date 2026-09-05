@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Building2, Check, ChevronDown, LogIn, Plus, Users, UserCog } from 'lucide-react'
+import { Building2, Check, ChevronDown, ExternalLink, LogIn, Plus, Users, UserCog } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -31,6 +31,7 @@ type InviteItem = {
   role: 'OWNER' | 'ADMIN' | 'MEMBER'
   token: string
   team: { id: string; name: string; slug: string; avatarUrl: string | null }
+  expiresAt: string
 }
 
 const ROLE_LABELS: Record<'OWNER' | 'ADMIN' | 'MEMBER', string> = {
@@ -156,6 +157,32 @@ export default function TeamSwitcher() {
           </div>
 
           <div className="max-h-64 overflow-y-auto p-1">
+            {invitations.length > 0 && (
+              <div className="mb-1 rounded-md border border-primary/20 bg-primary-visible/40 p-2">
+                <p className="px-1 pb-1 text-xs font-medium text-primary">待处理邀请</p>
+                <div className="space-y-1">
+                  {invitations.map((invite) => (
+                    <Link
+                      key={invite.id}
+                      href={`/studio/team/invite/${encodeURIComponent(invite.token)}`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
+                        {invite.team.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{invite.team.name}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {ROLE_LABELS[invite.role]} · 点击查看并加入
+                        </span>
+                      </span>
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
             {teams.length > 0 ? (
               teams.map((item) => (
                 <button

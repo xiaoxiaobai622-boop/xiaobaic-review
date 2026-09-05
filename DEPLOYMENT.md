@@ -207,7 +207,7 @@ GitHub Actions 使用 SSH 连接服务器，然后执行：
 5. 生成临时 sing-box 配置并执行配置校验；
 6. 将代理限制在服务器本机 `127.0.0.1:17890`；
 7. 检查德国代理能否连接 `https://ghcr.io/v2/`；
-8. 使用 `/usr/local/bin/ghcr-pull` 拉取指定提交的镜像；
+8. 使用临时 GHCR 凭证目录和代理直接调用 `/usr/local/bin/crane pull` 拉取指定提交的镜像；
 9. 使用 `docker load` 导入镜像；
 10. 保存旧镜像回滚标签；
 11. 将新镜像标记为 `vitransfer-mps:fast`；

@@ -12,14 +12,23 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '')
+/**
+ * Team slugs are also used by the join link. Keep existing slugs working,
+ * while assigning new teams a short, human-friendly numeric identifier.
+ */
+async function getNextTeamIdentifier() {
+  const teams = await prisma.team.findMany({ select: { slug: true } })
+  const maxIdentifier = teams.reduce((max, team) => {
+    if (!/^\d+$/.test(team.slug)) return max
+    const value = Number(team.slug)
+    return Number.isSafeInteger(value) && value >= 10000 ? Math.max(max, value) : max
+  }, 9999)
+
+  let candidate = maxIdentifier + 1
+  while (await prisma.team.findUnique({ where: { slug: String(candidate) }, select: { id: true } })) {
+    candidate += 1
+  }
+  return String(candidate)
 }
 
 export async function GET(request: NextRequest) {
@@ -81,13 +90,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const baseSlug = slugify(name) || `team-${randomBytes(3).toString('hex')}`
-  let slug = baseSlug
-  let counter = 1
-  while (await prisma.team.findUnique({ where: { slug }, select: { id: true } })) {
-    slug = `${baseSlug}-${counter}`
-    counter += 1
-  }
+  const slug = await getNextTeamIdentifier()
 
   const team = await prisma.$transaction(async (tx) => {
     const existingTeamCount = await tx.team.count({ where: { createdById: authResult.id } })
