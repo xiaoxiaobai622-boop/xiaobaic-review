@@ -177,36 +177,49 @@ jobs:
             proxy_subscription=$(mktemp)
             proxy_decoded=$(mktemp)
             proxy_config_candidate=$(mktemp)
-            trap 'sudo rm -f "$proxy_subscription" "$proxy_decoded" "$proxy_config_candidate" "$image_tar"; sudo rm -rf "$auth_dir"; sudo rm -f "$env_backup"' EXIT
-            curl --fail --silent --show-error "$GHCR_PROXY_SUBSCRIPTION" -o "$proxy_subscription"
+            proxy_candidates=$(mktemp)
+            trap 'sudo rm -f "$proxy_subscription" "$proxy_decoded" "$proxy_config_candidate" "$proxy_candidates" "$image_tar"; sudo rm -rf "$auth_dir"; sudo rm -f "$env_backup"' EXIT
+            curl --fail --silent --show-error --connect-timeout 15 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors "$GHCR_PROXY_SUBSCRIPTION" -o "$proxy_subscription"
             base64 -d "$proxy_subscription" > "$proxy_decoded"
-            # The subscription labels are percent-encoded; its first VLESS entry is Germany optimized 01.
-            germany_uri=$(grep -m1 '^vless://' "$proxy_decoded" || true)
-            if [ -z "$germany_uri" ]; then
-              echo "No Germany VLESS node found in subscription"
+            # The subscription labels are percent-encoded, so use the first few VLESS entries
+            # as Germany candidates and rotate when a provider node resets the connection.
+            sed -n '/^vless:\/\//p' "$proxy_decoded" | head -n 8 > "$proxy_candidates"
+            if [ ! -s "$proxy_candidates" ]; then
+              echo "No VLESS node found in subscription"
               exit 1
             fi
-            germany_uri="${germany_uri%%#*}"
-            germany_authority="${germany_uri#vless://}"
-            germany_uuid="${germany_authority%%@*}"
-            germany_endpoint="${germany_authority#*@}"
-            germany_hostport="${germany_endpoint%%\?*}"
-            germany_server="${germany_hostport%%:*}"
-            germany_port="${germany_hostport##*:}"
-            germany_query="${germany_uri#*\?}"
+
             get_query_value() {
               printf '%s\n' "$germany_query" | tr '&' '\n' | sed -n "s/^$1=//p" | head -n 1
             }
-            germany_sni=$(get_query_value sni)
-            germany_public_key=$(get_query_value pbk)
-            germany_short_id=$(get_query_value sid)
-            germany_flow=$(get_query_value flow)
-            germany_fingerprint=$(get_query_value fp)
-            if [ -z "$germany_server" ] || [ -z "$germany_uuid" ] || [ -z "$germany_sni" ] || [ -z "$germany_public_key" ]; then
-              echo "Germany VLESS node is missing required Reality fields"
-              exit 1
-            fi
-            tee "$proxy_config_candidate" >/dev/null <<EOF
+
+            proxy_ready=0
+            candidate_number=0
+            while IFS= read -r germany_uri; do
+              candidate_number=$((candidate_number + 1))
+              germany_uri="${germany_uri%%#*}"
+              germany_authority="${germany_uri#vless://}"
+              germany_uuid="${germany_authority%%@*}"
+              germany_endpoint="${germany_authority#*@}"
+              germany_hostport="${germany_endpoint%%\?*}"
+              germany_server="${germany_hostport%%:*}"
+              germany_port="${germany_hostport##*:}"
+              germany_query="${germany_uri#*\?}"
+              germany_sni=$(get_query_value sni)
+              germany_public_key=$(get_query_value pbk)
+              germany_short_id=$(get_query_value sid)
+              germany_flow=$(get_query_value flow)
+              germany_fingerprint=$(get_query_value fp)
+              germany_fingerprint=${germany_fingerprint:-chrome}
+              case "$germany_port" in
+                ''|*[!0-9]*) germany_port='' ;;
+              esac
+              if [ -z "$germany_server" ] || [ -z "$germany_uuid" ] || [ -z "$germany_port" ] || [ -z "$germany_sni" ] || [ -z "$germany_public_key" ]; then
+                echo "Skipping invalid Germany proxy candidate $candidate_number"
+                continue
+              fi
+
+              tee "$proxy_config_candidate" >/dev/null <<EOF
             {
               "log": {"level": "warn"},
               "inbounds": [{"type": "mixed", "listen": "127.0.0.1", "listen_port": 17890}],
@@ -230,17 +243,21 @@ jobs:
               "route": {"final": "germany"}
             }
             EOF
-            sudo /usr/local/bin/sing-box check -c "$proxy_config_candidate"
-            sudo install -m 600 "$proxy_config_candidate" "$proxy_config"
-            sudo systemctl restart sing-box-ghcr
-            proxy_ready=0
-            for proxy_attempt in $(seq 1 12); do
-              proxy_status=$(curl --proxy http://127.0.0.1:17890 --silent --show-error --output /tmp/ghcr-proxy-check-$DEPLOY_SHA.txt --write-out '%{http_code}' https://ghcr.io/v2/ 2>/tmp/ghcr-proxy-error-$DEPLOY_SHA.txt || true)
-              if [ "$proxy_status" = 200 ] || [ "$proxy_status" = 401 ]; then
-                proxy_ready=1
-                break
+              if ! sudo /usr/local/bin/sing-box check -c "$proxy_config_candidate"; then
+                echo "Skipping invalid Germany proxy candidate $candidate_number"
+                continue
               fi
-              sleep 2
+              sudo install -m 600 "$proxy_config_candidate" "$proxy_config"
+              sudo systemctl restart sing-box-ghcr
+              for proxy_attempt in $(seq 1 12); do
+                proxy_status=$(curl --proxy http://127.0.0.1:17890 --silent --show-error --connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors --output /tmp/ghcr-proxy-check-$DEPLOY_SHA.txt --write-out '%{http_code}' https://ghcr.io/v2/ 2>/tmp/ghcr-proxy-error-$DEPLOY_SHA.txt || true)
+                if [ "$proxy_status" = 200 ] || [ "$proxy_status" = 401 ]; then
+                  proxy_ready=1
+                  break 2
+                fi
+                sleep 2
+              done
+              echo "Germany proxy candidate $candidate_number could not reach GHCR; trying another node"
             done
             if [ "$proxy_ready" -ne 1 ]; then
               echo "GHCR proxy did not become ready"
