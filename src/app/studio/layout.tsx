@@ -19,6 +19,7 @@ export default function AdminLayout({
   const headerRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
   const hideHeader = pathname?.match(/^\/studio\/projects\/[^/]+\/share/)
+  const isProjectWorkspace = Boolean(pathname?.match(/^\/studio\/projects\/[^/]+$/))
 
   // Prevent caching of admin pages
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function AdminLayout({
             <AdminHeader />
           </div>
         )}
-        <main id="main-content" tabIndex={-1} className="flex-1 min-h-0 flex flex-col outline-none">
+        <main id="main-content" tabIndex={-1} className={`flex-1 min-h-0 flex flex-col outline-none ${isProjectWorkspace ? 'lg:overflow-hidden' : ''}`}>
           {children}
         </main>
         <SessionMonitor />

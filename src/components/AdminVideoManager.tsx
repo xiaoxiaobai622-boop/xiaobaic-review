@@ -2,7 +2,7 @@
 
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
@@ -141,6 +141,8 @@ export default function AdminVideoManager({
   const [comparisonComments, setComparisonComments] = useState<VideoComparisonComment[]>([])
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
   const [actionMenuPosition, setActionMenuPosition] = useState<{ left: number; top: number; submenuSide: 'left' | 'right' } | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
+  const actionMenuAnchorRef = useRef<{ top: number; bottom: number } | null>(null)
   const [shareTypeMenuGroup, setShareTypeMenuGroup] = useState<string | null>(null)
   const [versionSourceMenuGroup, setVersionSourceMenuGroup] = useState<string | null>(null)
   const [reviewStatusMenuGroup, setReviewStatusMenuGroup] = useState<string | null>(null)
@@ -162,6 +164,23 @@ export default function AdminVideoManager({
   useEffect(() => {
     if (!actionMenuGroup) setActionMenuPosition(null)
   }, [actionMenuGroup])
+
+  // Reposition against the rendered menu height so bottom-row actions stay
+  // directly above the trigger instead of floating far away due to a stale
+  // height estimate.
+  useLayoutEffect(() => {
+    if (!actionMenuGroup || !actionMenuPosition || !actionMenuRef.current || !actionMenuAnchorRef.current) return
+
+    const menuHeight = Math.min(actionMenuRef.current.offsetHeight, window.innerHeight - 16)
+    const anchor = actionMenuAnchorRef.current
+    const nextTop = anchor.bottom + menuHeight <= window.innerHeight - 8
+      ? anchor.bottom + 6
+      : Math.max(8, anchor.top - menuHeight - 6)
+
+    if (Math.abs(nextTop - actionMenuPosition.top) > 1) {
+      setActionMenuPosition((current) => current ? { ...current, top: nextTop } : current)
+    }
+  }, [actionMenuGroup, actionMenuPosition])
 
   const videoTokenUrl = useCallback((videoId: string, quality: string) => {
     const params = new URLSearchParams({ videoId, projectId, quality, sessionId })
@@ -983,6 +1002,7 @@ export default function AdminVideoManager({
                             return
                           }
                           const rect = e.currentTarget.getBoundingClientRect()
+                          actionMenuAnchorRef.current = { top: rect.top, bottom: rect.bottom }
                           const menuWidth = 208
                           const menuHeight = 520
                           const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))
@@ -1013,7 +1033,7 @@ export default function AdminVideoManager({
                               setReviewStatusMenuGroup(null)
                             }}
                           />
-                          <div className="fixed z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: actionMenuPosition.left, top: actionMenuPosition.top }} onClick={(event) => event.stopPropagation()}>
+                          <div ref={actionMenuRef} className="fixed z-50 max-h-[calc(100dvh-1rem)] w-52 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: actionMenuPosition.left, top: actionMenuPosition.top }} onClick={(event) => event.stopPropagation()}>
                             <div className="relative" onMouseEnter={() => { setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); setShareTypeMenuGroup(groupName) }} onMouseLeave={() => setShareTypeMenuGroup(null)}>
                               <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName}>
                                 <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
