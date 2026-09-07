@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Loader2, MessageCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { apiFetch } from '@/lib/api-client'
 import { setTokens } from '@/lib/token-store'
 
 interface WechatMiniQrLoginSuccess {
@@ -133,7 +134,7 @@ export function WechatMiniQrLogin({
     } catch {
       timerRef.current = setTimeout(pollStatus, 2500)
     }
-  }, [close, inline, onSuccess, returnUrl])
+  }, [close, inline, onBound, onSuccess, returnUrl])
 
   const start = useCallback(async () => {
     cancelledRef.current = false
@@ -142,7 +143,7 @@ export function WechatMiniQrLogin({
     setMessage('正在生成微信小程序码...')
 
     try {
-      const response = await fetch('/api/auth/wechat/mini/qr', {
+      const response = await apiFetch('/api/auth/wechat/mini/qr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ returnUrl, mode }),
@@ -164,7 +165,7 @@ export function WechatMiniQrLogin({
       setPhase('error')
       setMessage(error instanceof Error ? error.message : '生成小程序码失败')
     }
-  }, [pollStatus, returnUrl])
+  }, [mode, pollStatus, returnUrl])
 
   useEffect(() => {
     if (inline && !inlineStartedRef.current) {
