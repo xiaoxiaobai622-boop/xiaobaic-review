@@ -219,6 +219,10 @@ model TeamMember {
   userId    String
   role      TeamRole         @default(MEMBER)
   status    TeamMemberStatus @default(ACTIVE)
+  teamNickname   String?
+  teamProfession String?
+  department     String?
+  bio            String?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 

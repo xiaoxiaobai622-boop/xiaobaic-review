@@ -124,7 +124,7 @@ export async function GET(
 
     const sanitizedComments = includeComments
       ? (project as any).comments.map((comment: any) =>
-          sanitizeComment(comment, true, true, fallbackName)
+          sanitizeComment(comment, true, true, fallbackName, null, project.companyName)
         )
       : []
 

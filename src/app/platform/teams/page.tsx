@@ -40,7 +40,7 @@ export default function PlatformTeamsPage() {
     const headers: Record<string, string> = {}
     if (token) headers.Authorization = `Bearer ${token}`
     try {
-      const response = await fetch('/api/platform/teams', { headers })
+      const response = await fetch('/api/platform/teams', { headers, cache: 'no-store' })
       if (!response.ok) throw new Error('无法加载团队列表')
       const data = await response.json()
       const now = Date.now()

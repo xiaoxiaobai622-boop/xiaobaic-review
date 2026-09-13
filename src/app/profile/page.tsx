@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Camera, Check, KeyRound, LogOut, MessageSquare, RefreshCw, Save, UserRound } from 'lucide-react'
+import { ArrowLeft, Camera, Check, KeyRound, LogOut, MessageCircle, MessageSquare, RefreshCw, Save, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/ui/password-input'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { clearTokens } from '@/lib/token-store'
 
@@ -41,6 +42,183 @@ function ProfileContent() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' })
+  const [phoneDialogOpen, setPhoneDialogOpen] = useState(false)
+  const [phoneStep, setPhoneStep] = useState<'method' | 'verify' | 'new' | 'confirm'>('method')
+  const [phoneMethod, setPhoneMethod] = useState<'password' | 'sms' | null>(null)
+  const [phoneCredential, setPhoneCredential] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [newPhoneCode, setNewPhoneCode] = useState('')
+  const [phoneGrantToken, setPhoneGrantToken] = useState('')
+  const [phoneSubmitting, setPhoneSubmitting] = useState(false)
+  const [phoneCodeCooldown, setPhoneCodeCooldown] = useState(0)
+  const [newPhoneCodeCooldown, setNewPhoneCodeCooldown] = useState(0)
+
+  useEffect(() => {
+    if (phoneCodeCooldown <= 0) return
+    const timer = window.setInterval(() => setPhoneCodeCooldown(value => Math.max(0, value - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [phoneCodeCooldown])
+
+  useEffect(() => {
+    if (newPhoneCodeCooldown <= 0) return
+    const timer = window.setInterval(() => setNewPhoneCodeCooldown(value => Math.max(0, value - 1)), 1000)
+    return () => window.clearInterval(timer)
+  }, [newPhoneCodeCooldown])
+
+  function resetPhoneDialog() {
+    setPhoneStep('method')
+    setPhoneMethod(null)
+    setPhoneCredential('')
+    setNewPhone('')
+    setNewPhoneCode('')
+    setPhoneGrantToken('')
+    setPhoneSubmitting(false)
+    setPhoneCodeCooldown(0)
+    setNewPhoneCodeCooldown(0)
+  }
+
+  function changePhone() {
+    setError('')
+    setMessage('')
+    setPhoneDialogOpen(true)
+    resetPhoneDialog()
+  }
+
+  async function selectPhoneMethod(method: 'password' | 'sms') {
+    setPhoneMethod(method)
+    setPhoneCredential('')
+    setError('')
+    setPhoneStep('verify')
+    if (method !== 'sms') return
+
+    setPhoneSubmitting(true)
+    try {
+      const response = await apiFetch('/api/account/phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send-old' }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || '验证码发送失败')
+      setPhoneCodeCooldown(60)
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : '验证码发送失败')
+      setPhoneStep('method')
+    } finally {
+      setPhoneSubmitting(false)
+    }
+  }
+
+  async function verifyCurrentPhone(event: React.FormEvent) {
+    event.preventDefault()
+    if (!phoneMethod) return
+    if (phoneMethod === 'password' && !phoneCredential) {
+      setError('请输入当前登录密码')
+      return
+    }
+    if (phoneMethod === 'sms' && !/^\d{6}$/.test(phoneCredential)) {
+      setError('请输入 6 位验证码')
+      return
+    }
+
+    setPhoneSubmitting(true)
+    setError('')
+    try {
+      const response = await apiFetch('/api/account/phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify',
+          method: phoneMethod,
+          ...(phoneMethod === 'password' ? { password: phoneCredential } : { code: phoneCredential }),
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.token) throw new Error(data.error || '验证失败，请重试')
+      setPhoneGrantToken(data.token)
+      setPhoneCredential('')
+      setPhoneStep('new')
+    } catch (verifyError) {
+      setError(verifyError instanceof Error ? verifyError.message : '验证失败，请重试')
+    } finally {
+      setPhoneSubmitting(false)
+    }
+  }
+
+  async function sendNewPhone(event: React.FormEvent) {
+    event.preventDefault()
+    if (!/^1[3-9]\d{9}$/.test(newPhone)) {
+      setError('请输入有效的 11 位手机号')
+      return
+    }
+
+    setPhoneSubmitting(true)
+    setError('')
+    try {
+      const response = await apiFetch('/api/account/phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send-new', token: phoneGrantToken, phone: newPhone }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || '验证码发送失败')
+      setNewPhoneCode('')
+      setNewPhoneCodeCooldown(60)
+      setPhoneStep('confirm')
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : '验证码发送失败')
+    } finally {
+      setPhoneSubmitting(false)
+    }
+  }
+
+  async function resendNewPhoneCode() {
+    if (newPhoneCodeCooldown > 0 || phoneSubmitting) return
+    setPhoneSubmitting(true)
+    setError('')
+    try {
+      const response = await apiFetch('/api/account/phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send-new', token: phoneGrantToken, phone: newPhone }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || '验证码发送失败')
+      setNewPhoneCodeCooldown(60)
+    } catch (resendError) {
+      setError(resendError instanceof Error ? resendError.message : '验证码发送失败')
+    } finally {
+      setPhoneSubmitting(false)
+    }
+  }
+
+  async function confirmNewPhone(event: React.FormEvent) {
+    event.preventDefault()
+    if (!/^\d{6}$/.test(newPhoneCode)) {
+      setError('请输入 6 位验证码')
+      return
+    }
+
+    setPhoneSubmitting(true)
+    setError('')
+    try {
+      const response = await apiFetch('/api/account/phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm', token: phoneGrantToken, phone: newPhone, code: newPhoneCode }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || '手机号更换失败')
+      setForm(current => ({ ...current, phone: data.phone || newPhone }))
+      setPhoneDialogOpen(false)
+      resetPhoneDialog()
+      setMessage('手机号更换成功')
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : '手机号更换失败')
+    } finally {
+      setPhoneSubmitting(false)
+    }
+  }
   const [feishuBinding, setFeishuBinding] = useState<{ bound: boolean; nickname?: string | null; avatarUrl?: string | null; profileSyncError?: string } | null>(null)
   const [feishuLoading, setFeishuLoading] = useState(false)
   const [feishuRefreshing, setFeishuRefreshing] = useState(false)
@@ -295,11 +473,16 @@ function ProfileContent() {
         </div>
       </header>
 
-      <main className="mx-auto grid w-full max-w-5xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:py-12">
-        <aside className="flex items-center gap-4 self-start lg:flex-col lg:items-start">
+      <main className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-8 lg:py-16">
+        <div className="mb-12">
+          <div className="mb-2 text-sm font-medium text-primary">账户</div><h1 className="text-4xl font-semibold tracking-tight">个人中心</h1><p className="mt-3 text-base text-muted-foreground">管理你的个人资料、账号绑定和通知设置</p>
+        </div>
+        <div className="grid gap-12 lg:grid-cols-[180px_minmax(0,1fr)]">
+        <aside className="self-start lg:sticky lg:top-8">
+          <div className="flex items-center gap-4 border-b border-border pb-6 lg:flex-col lg:items-start">
           <div className="relative">
             <InitialsAvatar name={displayName} src={avatarUrl} size="lg" isInternal={user?.role === 'ADMIN'} />
-            <label className="absolute bottom-0 right-0 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">
+            <label className="absolute bottom-0 right-0 flex h-6 w-6 translate-x-1/3 translate-y-1/3 cursor-pointer items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">
               <Camera className="h-3 w-3" />
               <input
                 type="file"
@@ -314,10 +497,16 @@ function ProfileContent() {
             <h1 className="truncate text-xl font-semibold">{displayName}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{user?.role === 'ADMIN' ? '管理员' : '团队成员'}</p>
           </div>
+          </div>
+          <nav className="mt-6 hidden space-y-1 lg:block" aria-label="个人中心导航">
+            <a href="#profile-title" className="block rounded-md bg-primary/10 px-3 py-2 text-sm font-medium text-primary">个人资料</a>
+            <a href="#wechat-title" className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">账号连接</a>
+            <a href="#password-title" className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">安全设置</a>
+          </nav>
         </aside>
 
-        <div className="min-w-0 space-y-10">
-          <section aria-labelledby="profile-title">
+        <div className="min-w-0 space-y-14">
+          <section aria-labelledby="profile-title" className="scroll-mt-8">
             <div className="mb-5 flex items-center gap-2">
               <UserRound className="h-5 w-5 text-primary" />
               <h2 id="profile-title" className="text-lg font-semibold">个人资料</h2>
@@ -327,7 +516,7 @@ function ProfileContent() {
                 进入团队后台前需要先绑定手机号。
               </div>
             )}
-            <form onSubmit={saveProfile} className="max-w-xl space-y-4">
+            <form onSubmit={saveProfile} className="max-w-2xl space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="profile-name">显示名称</Label>
                 <Input id="profile-name" value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} placeholder="你的姓名或昵称" />
@@ -335,18 +524,28 @@ function ProfileContent() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="profile-phone">手机号</Label>
-                  <Input id="profile-phone" type="tel" inputMode="numeric" maxLength={11} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value.replace(/\D/g, '') }))} placeholder="用于加入或创建团队" />
+                  <div className="flex gap-2">
+                    <Input id="profile-phone" type="tel" value={form.phone} readOnly aria-describedby="phone-help" className="bg-muted/40" placeholder="尚未绑定手机号" />
+                    <Button type="button" variant="outline" onClick={() => void changePhone()}>更换手机号</Button>
+                  </div>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">看片、上传、批注和修改头像无需手机号；加入或创建团队前需要绑定手机号。</p>
+              <p id="phone-help" className="text-xs text-muted-foreground">更换手机号需要先验证当前手机号验证码或登录密码，再验证新手机号。</p>
               <div className="flex items-center gap-3">
                 <Button type="submit" disabled={saving} className="gap-2"><Save className="h-4 w-4" />{saving ? '正在保存...' : '保存资料'}</Button>
-                <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>
-                  绑定微信
-                </WechatMiniQrLogin>
-
               </div>
             </form>
+          </section>
+
+          <section aria-labelledby="wechat-title" className="scroll-mt-8 border-t border-border pt-8">
+            <div className="mb-4 flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-[#07c160]" />
+              <div><h2 id="wechat-title" className="text-lg font-semibold">微信账号</h2><p className="mt-1 text-sm text-muted-foreground">绑定后可使用微信快速登录。</p></div>
+            </div>
+            <div className="flex max-w-2xl items-center justify-between gap-4 rounded-md border border-border px-4 py-3.5">
+              <div><p className="text-sm font-medium">尚未绑定微信</p><p className="mt-1 text-xs text-muted-foreground">使用微信扫一扫完成绑定</p></div>
+              <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>立即绑定</WechatMiniQrLogin>
+            </div>
           </section>
 
           <section aria-labelledby="feishu-title" className="border-t border-border pt-8">
@@ -354,7 +553,7 @@ function ProfileContent() {
               <MessageSquare className="h-5 w-5" />
               <h2 id="feishu-title" className="text-lg font-semibold">飞书通知</h2>
             </div>
-            <div className="max-w-xl space-y-4">
+            <div className="max-w-2xl space-y-4">
               {feishuBinding === null ? (
                 <p className="text-sm text-muted-foreground">加载中...</p>
               ) : feishuBinding.bound ? (
@@ -418,12 +617,12 @@ function ProfileContent() {
             </div>
           </section>
 
-          <section aria-labelledby="password-title" className="border-t border-border pt-8">
+          <section aria-labelledby="password-title" className="scroll-mt-8 border-t border-border pt-8">
             <div className="mb-5 flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-primary" />
               <h2 id="password-title" className="text-lg font-semibold">修改密码</h2>
             </div>
-            <form onSubmit={changePassword} className="max-w-xl space-y-4">
+            <form onSubmit={changePassword} className="max-w-2xl space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="current-password">当前密码</Label>
                 <PasswordInput id="current-password" value={passwordForm.current} onChange={event => setPasswordForm(current => ({ ...current, current: event.target.value }))} required />
@@ -443,11 +642,113 @@ function ProfileContent() {
             </form>
           </section>
 
+          <Dialog
+            open={phoneDialogOpen}
+            onOpenChange={(open) => {
+              setPhoneDialogOpen(open)
+              if (!open) resetPhoneDialog()
+            }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>更换手机号</DialogTitle>
+                <DialogDescription>
+                  {phoneStep === 'method' && '先验证当前账号，再绑定新的手机号。'}
+                  {phoneStep === 'verify' && (phoneMethod === 'sms' ? '验证码已发送到当前手机号。' : '请输入当前登录密码完成验证。')}
+                  {phoneStep === 'new' && '输入新的手机号，我们会发送验证码。'}
+                  {phoneStep === 'confirm' && `验证码已发送到 ${newPhone}。`}
+                </DialogDescription>
+              </DialogHeader>
+
+              {phoneStep === 'method' && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Button type="button" variant="outline" className="h-auto min-h-20 justify-start px-4 py-3 text-left" onClick={() => void selectPhoneMethod('password')}>
+                    <span>
+                      <span className="block font-medium">使用登录密码</span>
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">立即验证，无需等待短信</span>
+                    </span>
+                  </Button>
+                  <Button type="button" variant="outline" className="h-auto min-h-20 justify-start px-4 py-3 text-left" onClick={() => void selectPhoneMethod('sms')} disabled={!form.phone || phoneSubmitting}>
+                    <span>
+                      <span className="block font-medium">使用短信验证码</span>
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">发送到当前手机号</span>
+                    </span>
+                  </Button>
+                </div>
+              )}
+
+              {phoneStep === 'verify' && (
+                <form onSubmit={verifyCurrentPhone} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone-current-credential">{phoneMethod === 'password' ? '当前登录密码' : '当前手机号验证码'}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="phone-current-credential"
+                        type={phoneMethod === 'password' ? 'password' : 'text'}
+                        inputMode={phoneMethod === 'sms' ? 'numeric' : undefined}
+                        maxLength={phoneMethod === 'sms' ? 6 : undefined}
+                        autoComplete={phoneMethod === 'password' ? 'current-password' : 'one-time-code'}
+                        value={phoneCredential}
+                        onChange={(event) => setPhoneCredential(phoneMethod === 'sms' ? event.target.value.replace(/\D/g, '') : event.target.value)}
+                        placeholder={phoneMethod === 'sms' ? '请输入 6 位验证码' : '请输入当前登录密码'}
+                        autoFocus
+                      />
+                      {phoneMethod === 'sms' && (
+                        <Button type="button" variant="outline" className="shrink-0" onClick={() => void selectPhoneMethod('sms')} disabled={phoneSubmitting || phoneCodeCooldown > 0}>
+                          {phoneCodeCooldown > 0 ? `${phoneCodeCooldown}s 后重发` : '重新发送'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('method'); setPhoneMethod(null); setPhoneCredential(''); setError('') }} disabled={phoneSubmitting}>返回</Button>
+                    <Button type="submit" disabled={phoneSubmitting}>{phoneSubmitting ? '验证中...' : '下一步'}</Button>
+                  </DialogFooter>
+                </form>
+              )}
+
+              {phoneStep === 'new' && (
+                <form onSubmit={sendNewPhone} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone-new-number">新手机号</Label>
+                    <Input id="phone-new-number" type="tel" inputMode="numeric" maxLength={11} autoComplete="tel" value={newPhone} onChange={(event) => setNewPhone(event.target.value.replace(/\D/g, ''))} placeholder="请输入新的 11 位手机号" autoFocus />
+                  </div>
+                  {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('verify'); setError('') }} disabled={phoneSubmitting}>返回</Button>
+                    <Button type="submit" disabled={phoneSubmitting}>{phoneSubmitting ? '发送中...' : '获取验证码'}</Button>
+                  </DialogFooter>
+                </form>
+              )}
+
+              {phoneStep === 'confirm' && (
+                <form onSubmit={confirmNewPhone} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone-new-code">新手机号验证码</Label>
+                    <div className="flex gap-2">
+                      <Input id="phone-new-code" type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code" value={newPhoneCode} onChange={(event) => setNewPhoneCode(event.target.value.replace(/\D/g, ''))} placeholder="请输入 6 位验证码" autoFocus />
+                      <Button type="button" variant="outline" className="shrink-0" onClick={() => void resendNewPhoneCode()} disabled={phoneSubmitting || newPhoneCodeCooldown > 0}>
+                        {newPhoneCodeCooldown > 0 ? `${newPhoneCodeCooldown}s 后重发` : '重新发送'}
+                      </Button>
+                    </div>
+                  </div>
+                  {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('new'); setNewPhoneCode(''); setError('') }} disabled={phoneSubmitting}>返回</Button>
+                    <Button type="submit" disabled={phoneSubmitting}>{phoneSubmitting ? '确认中...' : '确认更换'}</Button>
+                  </DialogFooter>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
+
           {(error || message) && (
             <div className={`max-w-xl rounded-md px-3 py-2 text-sm ${error ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success'}`} role="status">
               {error || message}
             </div>
           )}
+        </div>
         </div>
       </main>
     </div>

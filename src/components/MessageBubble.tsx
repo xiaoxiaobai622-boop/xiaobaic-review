@@ -72,10 +72,14 @@ function MessageBubble({
 
   // Get effective author name for color generation
   // For internal comments without authorName, fall back to user.name or user.email
-  const effectiveAuthorName = comment.authorName ||
-    (comment.isInternal && (comment as any).user ?
-      ((comment as any).user.name || (comment as any).user.email) :
-      null)
+  const authorUser = (comment as any).user
+  const authorProfile = authorUser?.teamNickname || authorUser?.teamProfession || authorUser?.department
+    ? authorUser
+    : null
+  const effectiveAuthorName = authorProfile?.teamNickname || comment.authorName ||
+    (comment.isInternal && authorUser ? (authorUser.name || authorUser.email) : null)
+  const authorDetails = [authorProfile?.teamProfession, authorProfile?.department].filter(Boolean).join(' · ')
+  const teamLabel = (comment as any).teamName as string | null | undefined
 
   const handleTimestampClick = () => {
     if (comment.timecode && onSeekToTimecode) {
@@ -120,13 +124,35 @@ function MessageBubble({
 
         <div className="grid grid-cols-[32px_1fr] items-start gap-x-2.5 gap-y-4">
           <div className="flex justify-center">
-            <InitialsAvatar name={effectiveAuthorName} size="sm" isInternal={comment.isInternal ?? false} />
+            <div className="group relative">
+              <InitialsAvatar
+                name={effectiveAuthorName}
+                src={authorUser?.avatarUrl}
+                size="sm"
+                isInternal={comment.isInternal ?? false}
+                title={effectiveAuthorName || undefined}
+                className={authorDetails ? 'cursor-help' : undefined}
+              />
+              {authorDetails && (
+                <span
+                  role="tooltip"
+                  className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 w-max max-w-48 -translate-y-1/2 rounded-md bg-popover px-2 py-1 text-[11px] font-medium text-popover-foreground opacity-0 shadow-md ring-1 ring-border/70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  {authorDetails}
+                </span>
+              )}
+            </div>
           </div>
           <div className="min-w-0">
             <div className="mb-1 flex min-w-0 items-center gap-2 pr-8">
               <span className="truncate text-sm font-semibold text-foreground">
                 {effectiveAuthorName || t('anonymous')}
               </span>
+              {teamLabel && comment.isInternal && (
+                <span className="shrink-0 text-sm font-semibold text-amber-500 dark:text-amber-400">
+                  @{teamLabel}
+                </span>
+              )}
               {!isReply && category && (
                 <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${category.chipClass}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${category.dotClass}`} />
@@ -134,7 +160,6 @@ function MessageBubble({
                 </span>
               )}
             </div>
-
             {!isReply && onToggleResolved && (
               <button
                 type="button"
@@ -229,21 +254,33 @@ function MessageBubble({
           </div>
 
           {threadReplies.map((reply) => {
-            const replyEffectiveName = reply.authorName ||
-              (reply.isInternal && (reply as any).user ?
-                ((reply as any).user.name || (reply as any).user.email) :
-                null)
+            const replyUser = (reply as any).user
+            const replyProfile = replyUser?.teamNickname || replyUser?.teamProfession || replyUser?.department ? replyUser : null
+            const replyEffectiveName = replyProfile?.teamNickname || reply.authorName ||
+              (reply.isInternal && replyUser ? (replyUser.name || replyUser.email) : null)
+            const replyDetails = [replyProfile?.teamProfession, replyProfile?.department].filter(Boolean).join(' · ')
+            const replyTeamLabel = (reply as any).teamName as string | null | undefined
 
             return (
               <div key={reply.id} className="contents">
                 <div className="flex justify-center">
-                  <InitialsAvatar name={replyEffectiveName} size="sm" isInternal={reply.isInternal ?? false} />
+                    <div className="group relative">
+                      <InitialsAvatar name={replyEffectiveName} src={replyUser?.avatarUrl} size="sm" isInternal={reply.isInternal ?? false} title={replyEffectiveName || undefined} className={replyDetails ? 'cursor-help' : undefined} />
+                      {replyDetails && (
+                        <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 w-max max-w-48 -translate-y-1/2 rounded-md bg-popover px-2 py-1 text-[11px] font-medium text-popover-foreground opacity-0 shadow-md ring-1 ring-border/70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                          {replyDetails}
+                        </span>
+                      )}
+                    </div>
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-2 min-w-0">
                     <span className="truncate text-sm font-semibold text-foreground">
                       {replyEffectiveName || t('anonymous')}
                     </span>
+                    {replyTeamLabel && reply.isInternal && (
+                      <span className="shrink-0 text-sm font-semibold text-amber-500 dark:text-amber-400">@{replyTeamLabel}</span>
+                    )}
                     <span className="flex-shrink-0 text-xs text-muted-foreground">
                       {formatMessageTime(reply.createdAt)}
                     </span>

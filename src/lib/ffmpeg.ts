@@ -15,6 +15,23 @@ const DEBUG = process.env.DEBUG_WORKER === 'true'
 const ffmpegPath = 'ffmpeg'
 const ffprobePath = 'ffprobe'
 
+/**
+ * Resolve the optional preview LUT across Docker and local development.
+ * Production images copy the LUT to /usr/share/ffmpeg, while local macOS
+ * development uses the repository root copy. A missing LUT must not make an
+ * otherwise valid transcode fail, so callers can safely skip it.
+ */
+function resolvePreviewLutPath(): string | null {
+  const candidates = [
+    process.env.PREVIEW_LUT_PATH,
+    '/usr/share/ffmpeg/previewlut.cube',
+    path.resolve(process.cwd(), 'previewlut.cube'),
+    path.resolve(__dirname, '../../previewlut.cube'),
+  ].filter((candidate): candidate is string => Boolean(candidate))
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null
+}
+
 // 'faster' is the speed/size sweet spot for CRF-based review proxies; FFMPEG_PRESET overrides
 const VALID_PRESETS = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow']
 const FFMPEG_PRESET = VALID_PRESETS.includes(process.env.FFMPEG_PRESET ?? '') ? process.env.FFMPEG_PRESET! : 'faster'
@@ -315,7 +332,15 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
   // Then apply the LUT to those normalised values as the very last step.
   if (options.applyLut !== false) {
     filters.push('format=yuv420p')
-    filters.push('lut3d=/usr/share/ffmpeg/previewlut.cube')
+    const lutPath = resolvePreviewLutPath()
+    if (lutPath) {
+      // FFmpeg filter syntax treats ':' as a separator; escape it for paths
+      // such as Windows drive letters while leaving normal Unix paths intact.
+      const escapedLutPath = lutPath.replace(/\\/g, '\\\\').replace(/:/g, '\\:')
+      filters.push(`lut3d=${escapedLutPath}`)
+    } else {
+      logMessage('[FFMPEG] previewlut.cube not found; skipping preview LUT')
+    }
   }
 
   const filterComplex = filters.join(',')

@@ -77,7 +77,7 @@ export default function TeamSwitcher() {
     let cancelled = false
     ;(async () => {
       try {
-        const response = await apiFetch('/api/team-center')
+        const response = await apiFetch('/api/team-center', { cache: 'no-store' })
         if (!response.ok || cancelled) return
         const data = await response.json()
         setTeams(data.teams || [])

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
+import { InitialsAvatar } from '@/components/InitialsAvatar'
 
 type TeamRole = 'OWNER' | 'ADMIN' | 'MEMBER'
 type TeamCenterItem = {
@@ -24,6 +25,18 @@ type TeamData = TeamCenterItem['team'] & {
   subscriptionStartedAt: string
   subscriptionExpiresAt: string | null
   status: string
+  members: TeamMemberProfile[]
+}
+type TeamMemberProfile = {
+  id: string
+  userId: string
+  role: TeamRole
+  status: string
+  teamNickname: string | null
+  teamProfession: string | null
+  department: string | null
+  bio: string | null
+  user: { id: string; name: string | null; email: string; phone: string | null; avatarUrl: string | null }
 }
 
 function formatTeamExpiry(team: Pick<TeamData, 'status' | 'subscriptionPlan' | 'subscriptionExpiresAt'>) {
@@ -41,6 +54,7 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedId, setCopiedId] = useState(false)
   const [cardCode, setCardCode] = useState('')
   const [activating, setActivating] = useState(false)
   const [activationMessage, setActivationMessage] = useState('')
@@ -62,6 +76,12 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
     window.setTimeout(() => setCopied(false), 1600)
   }
 
+  const copyTeamId = async () => {
+    await navigator.clipboard.writeText(team.id)
+    setCopiedId(true)
+    window.setTimeout(() => setCopiedId(false), 1600)
+  }
+
   const activate = async () => {
     if (!cardCode.trim() || activating || role !== 'OWNER') return
     setActivating(true)
@@ -80,6 +100,7 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
   return <div className="space-y-5">
     <Card><CardHeader><CardTitle className="text-base">基本资料</CardTitle></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">
       <div><p className="text-xs text-muted-foreground">团队名称</p>{editing ? <div className="mt-2 flex gap-2"><input autoFocus value={name} onChange={(event) => setName(event.target.value)} className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" /><Button size="sm" onClick={save} disabled={saving}>保存</Button><Button size="sm" variant="outline" onClick={() => { setName(team.name); setEditing(false) }}>取消</Button></div> : <div className="mt-2 flex items-center gap-2"><p className="text-base font-medium">{team.name}</p>{role === 'OWNER' && <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-accent" aria-label="修改团队名称" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" /></button>}</div>}</div>
+      <div><p className="text-xs text-muted-foreground">团队 ID</p><div className="mt-2 flex items-center gap-2"><code className="min-w-0 truncate font-mono text-sm">{team.id}</code><Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={() => void copyTeamId()}>{copiedId ? '已复制' : '复制'}</Button></div><p className="mt-1 text-xs text-muted-foreground">用于接口、邀请和跨页面定位团队</p></div>
       <div><p className="text-xs text-muted-foreground">团队标识</p><p className="mt-2 font-mono text-sm">{team.slug}</p></div>
       <div className="sm:col-span-2"><p className="text-xs text-muted-foreground">团队加入链接</p><div className="mt-2 flex max-w-xl items-center gap-2"><code className="min-w-0 flex-1 truncate rounded-md bg-muted px-3 py-2 text-xs">{window.location.origin}/studio/team/join?q={team.slug}</code><Button variant="outline" size="sm" onClick={copyLink}><Copy className="h-3.5 w-3.5" />{copied ? '已复制' : '复制链接'}</Button></div></div>
     </CardContent></Card>
@@ -88,9 +109,60 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
   </div>
 }
 
-function PersonalInfoPanel() {
+function PersonalInfoPanel({ team }: { team: TeamData }) {
   const { user } = useAuth()
-  return <div className="space-y-5"><Card><CardHeader><CardTitle className="text-base">个人资料</CardTitle></CardHeader><CardContent><div className="flex items-center gap-4"><div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-visible text-xl font-semibold text-primary">{user?.name?.slice(0, 1) || user?.email?.slice(0, 1).toUpperCase() || '我'}</div><div><p className="font-medium">{user?.name || '未设置姓名'}</p><p className="mt-1 text-sm text-muted-foreground">{user?.phone || user?.email}</p></div></div><Button asChild className="mt-5" variant="outline"><Link href="/profile"><UserRound className="h-4 w-4" />编辑个人信息<ArrowRight className="h-4 w-4" /></Link></Button></CardContent></Card></div>
+  const member = team.members.find((item) => item.userId === user?.id)
+  const [teamNickname, setTeamNickname] = useState(member?.teamNickname || '')
+  const [teamProfession, setTeamProfession] = useState(member?.teamProfession || '')
+  const [department, setDepartment] = useState(member?.department || '')
+  const [bio, setBio] = useState(member?.bio || '')
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setTeamNickname(member?.teamNickname || '')
+    setTeamProfession(member?.teamProfession || '')
+    setDepartment(member?.department || '')
+    setBio(member?.bio || '')
+  }, [member?.id, member?.teamNickname, member?.teamProfession, member?.department, member?.bio])
+
+  const save = async () => {
+    if (!member || saving) return
+    setSaving(true)
+    setMessage('')
+    setError('')
+    try {
+      await apiPatch(`/api/teams/${team.id}/members/${member.userId}`, {
+        teamNickname: teamNickname.trim() || null,
+        teamProfession: teamProfession.trim() || null,
+        department: department.trim() || null,
+        bio: bio.trim() || null,
+      })
+      setMessage('团队个人资料已保存，新的批注会使用这些信息。')
+      window.setTimeout(() => window.location.reload(), 500)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '保存失败，请稍后重试')
+    } finally { setSaving(false) }
+  }
+
+  return <div className="space-y-5">
+    <Card><CardHeader><CardTitle className="text-base">账号资料</CardTitle></CardHeader><CardContent>
+      <div className="flex items-center gap-4"><InitialsAvatar name={user?.name || user?.email || '我'} src={user?.avatarUrl} size="lg" isInternal /><div className="min-w-0"><p className="font-medium">{user?.name || '未设置姓名'}</p><p className="mt-1 truncate text-sm text-muted-foreground">{user?.phone || user?.email}</p></div></div>
+      <Button asChild className="mt-5" variant="outline"><Link href="/profile"><UserRound className="h-4 w-4" />编辑账号姓名与头像<ArrowRight className="h-4 w-4" /></Link></Button>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle className="text-base">团队个人资料</CardTitle><p className="text-sm text-muted-foreground">这些信息只属于当前团队，用于批注作者识别，不会覆盖账号全局姓名。</p></CardHeader><CardContent className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="space-y-1.5"><span className="text-sm font-medium">团队昵称</span><input value={teamNickname} onChange={(event) => setTeamNickname(event.target.value)} maxLength={80} placeholder={user?.name || '例如：小白'} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" /></label>
+        <label className="space-y-1.5"><span className="text-sm font-medium">团队职业</span><input value={teamProfession} onChange={(event) => setTeamProfession(event.target.value)} maxLength={80} placeholder="例如：剪辑师、制片人" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" /></label>
+        <label className="space-y-1.5"><span className="text-sm font-medium">部门</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={80} placeholder="例如：后期部" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" /></label>
+      </div>
+      <label className="block space-y-1.5"><span className="text-sm font-medium">个人简介</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={240} rows={4} placeholder="介绍你的职责或擅长领域，方便团队协作" className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary" /><span className="block text-right text-xs text-muted-foreground">{bio.length}/240</span></label>
+      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+      {message && <p className="text-sm text-primary" role="status">{message}</p>}
+      <Button onClick={() => void save()} disabled={!member || saving}>{saving ? '保存中...' : '保存团队资料'}</Button>
+    </CardContent></Card>
+  </div>
 }
 
 export default function TeamPage() {
@@ -107,7 +179,7 @@ export default function TeamPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const response = await apiFetch('/api/team-center')
+        const response = await apiFetch('/api/team-center', { cache: 'no-store' })
         if (!response.ok) throw new Error('无法加载团队')
         const data = await response.json()
         if (cancelled) return
@@ -125,7 +197,7 @@ export default function TeamPage() {
 
   useEffect(() => {
     if (!activeTeamId) return
-    apiFetch(`/api/teams/${activeTeamId}`).then(async (response) => {
+    apiFetch(`/api/teams/${activeTeamId}`, { cache: 'no-store' }).then(async (response) => {
       if (!response.ok) throw new Error('无法加载团队信息')
       const data = await response.json()
       setTeam(data.team)
@@ -150,7 +222,7 @@ export default function TeamPage() {
   return <div className="space-y-6">
     <div className="flex items-center justify-between gap-3">{tab === 'overview' ? <div><h1 className="text-2xl font-semibold tracking-normal">团队概览</h1><p className="mt-1 text-sm text-muted-foreground">{team?.name || '选择一个团队'}</p></div> : <span aria-hidden="true" />}<Button variant="outline" onClick={createTeam}><Plus className="h-4 w-4" />新建团队</Button></div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}
-    {team?.status !== 'ACTIVE' && <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">该团队当前已停用，项目和团队接口暂不可用。请联系平台运营启用团队，或由团队所有者在“团队信息”中输入卡密激活。</div>}
-    {!team ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">还没有团队，先创建一个团队开始管理。</p><Button className="mt-4" onClick={createTeam}><Plus className="h-4 w-4" />创建团队</Button></CardContent></Card> : tab === 'team' ? <TeamInfoPanel team={team} role={activeRole} /> : tab === 'personal' ? <PersonalInfoPanel /> : team.status !== 'ACTIVE' ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-amber-600" /><p className="mt-3 text-sm font-medium">团队已停用</p><p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p><Button className="mt-4" variant="outline" onClick={() => { window.history.replaceState(null, '', '/studio/team?tab=team'); window.dispatchEvent(new PopStateEvent('popstate')) }}>查看团队激活</Button></CardContent></Card> : <TeamOverview teamId={team.id} showHeading={false} />}
+    {team && team.status !== 'ACTIVE' && <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">该团队当前已停用，项目和团队接口暂不可用。请联系平台运营启用团队，或由团队所有者在“团队信息”中输入卡密激活。</div>}
+    {!team ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">还没有团队，先创建一个团队开始管理。</p><Button className="mt-4" onClick={createTeam}><Plus className="h-4 w-4" />创建团队</Button></CardContent></Card> : tab === 'team' ? <TeamInfoPanel team={team} role={activeRole} /> : tab === 'personal' ? <PersonalInfoPanel team={team} /> : team.status !== 'ACTIVE' ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-amber-600" /><p className="mt-3 text-sm font-medium">团队已停用</p><p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p><Button className="mt-4" variant="outline" onClick={() => { window.history.replaceState(null, '', '/studio/team?tab=team'); window.dispatchEvent(new PopStateEvent('popstate')) }}>查看团队激活</Button></CardContent></Card> : <TeamOverview teamId={team.id} showHeading={false} />}
   </div>
 }

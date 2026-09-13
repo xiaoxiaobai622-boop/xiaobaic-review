@@ -37,7 +37,7 @@ export default function TeamMembersPage() {
   const [inviteLink, setInviteLink] = useState('')
 
   const load = async (id: string) => {
-    const [memberRes, requestRes, inviteRes] = await Promise.all([apiFetch(`/api/teams/${id}/members`), apiFetch(`/api/teams/${id}/join-requests`), apiFetch(`/api/teams/${id}/invitations`)] )
+    const [memberRes, requestRes, inviteRes] = await Promise.all([apiFetch(`/api/teams/${id}/members`, { cache: 'no-store' }), apiFetch(`/api/teams/${id}/join-requests`, { cache: 'no-store' }), apiFetch(`/api/teams/${id}/invitations`, { cache: 'no-store' })] )
     if (!memberRes.ok) throw new Error('无法加载成员')
     setMembers((await memberRes.json()).members || [])
     setRequests(requestRes.ok ? ((await requestRes.json()).requests || []) : [])
@@ -45,7 +45,7 @@ export default function TeamMembersPage() {
   }
 
   useEffect(() => {
-    ;(async () => { try { const response = await apiFetch('/api/team-center'); const data = await response.json(); const id = data.activeTeamId || data.teams?.[0]?.team.id; if (!id) return; setTeamId(id); await load(id) } catch (reason) { setError(reason instanceof Error ? reason.message : '成员数据加载失败') } finally { setLoading(false) } })()
+    ;(async () => { try { const response = await apiFetch('/api/team-center', { cache: 'no-store' }); const data = await response.json(); const id = data.activeTeamId || data.teams?.[0]?.team.id; if (!id) return; setTeamId(id); await load(id) } catch (reason) { setError(reason instanceof Error ? reason.message : '成员数据加载失败') } finally { setLoading(false) } })()
   }, [])
 
   const canManage = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'

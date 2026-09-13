@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
         sharePassword: true,
         authMode: true,
         companyName: true,
+        teamId: true,
         hideFeedback: true,
         guestMode: true,
       }
@@ -108,6 +109,10 @@ export async function GET(request: NextRequest) {
             username: true,
             email: true,
             avatarUrl: true,
+            teamMemberships: {
+              where: { teamId: project.teamId, status: 'ACTIVE' },
+              select: { teamNickname: true, teamProfession: true, department: true, bio: true },
+            },
           }
         },
         assets: assetSelect,
@@ -120,6 +125,10 @@ export async function GET(request: NextRequest) {
                 username: true,
                 email: true,
                 avatarUrl: true,
+                teamMemberships: {
+                  where: { teamId: project.teamId, status: 'ACTIVE' },
+                  select: { teamNickname: true, teamProfession: true, department: true, bio: true },
+                },
               }
             },
             assets: assetSelect,
@@ -138,6 +147,7 @@ export async function GET(request: NextRequest) {
         isAuthenticated,
         fallbackName,
         viewerUserId,
+        project.companyName,
       )
     )
 
@@ -246,6 +256,7 @@ export async function POST(request: NextRequest) {
         id: true,
         sharePassword: true,
         authMode: true,
+        companyName: true,
       }
     })
 
@@ -408,7 +419,7 @@ export async function POST(request: NextRequest) {
     const allComments = await fetchProjectComments(projectId)
 
     const sanitizedComments = allComments.map((comment: any) =>
-      sanitizeComment(comment, isAdmin, isAuthenticated, fallbackName, authContext.user?.id)
+      sanitizeComment(comment, isAdmin, isAuthenticated, fallbackName, authContext.user?.id, project.companyName)
     )
 
     return NextResponse.json(sanitizedComments)

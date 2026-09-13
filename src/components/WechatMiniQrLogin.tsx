@@ -185,7 +185,7 @@ export function WechatMiniQrLogin({
     <>
       {!inline && (
         <h2 id="wechat-qr-login-title" className="text-xl font-semibold text-foreground">
-          微信扫码登录
+          {mode === 'bind' ? '绑定微信' : '微信扫码登录'}
         </h2>
       )}
       <p className="mt-2 min-h-10 text-sm leading-6 text-muted-foreground">{message}</p>

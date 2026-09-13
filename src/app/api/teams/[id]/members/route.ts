@@ -18,19 +18,49 @@ export async function GET(
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  const members = await prisma.teamMember.findMany({
-    where: { teamId: id },
-    orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
-    select: {
+  let members: any[]
+  try {
+    members = await prisma.teamMember.findMany({
+      where: { teamId: id },
+      orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+      select: {
       id: true,
       role: true,
       status: true,
       createdAt: true,
       user: {
-        select: { id: true, name: true, email: true, phone: true },
+        select: { id: true, name: true, email: true, phone: true, avatarUrl: true },
       },
-    },
-  })
+      teamNickname: true,
+      teamProfession: true,
+      department: true,
+      bio: true,
+      },
+    })
+  } catch {
+    const legacyMembers = await prisma.teamMember.findMany({
+      where: { teamId: id },
+      orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        user: { select: { id: true, name: true, email: true, phone: true, avatarUrl: true } },
+      },
+    })
+    members = legacyMembers.map((member) => ({
+      ...member,
+      teamNickname: null,
+      teamProfession: null,
+      department: null,
+      bio: null,
+    }))
+  }
 
-  return NextResponse.json({ members })
+  const response = NextResponse.json({ members })
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  response.headers.set('Pragma', 'no-cache')
+  response.headers.set('Expires', '0')
+  return response
 }

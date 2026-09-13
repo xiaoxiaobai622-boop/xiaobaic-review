@@ -366,6 +366,8 @@ export async function cancelCommentNotification(commentId: string): Promise<void
  * Returns top-level comments with nested replies
  */
 export async function fetchProjectComments(projectId: string) {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
+  const teamId = project?.teamId
   const assetSelect = {
     select: {
       id: true,
@@ -389,6 +391,8 @@ export async function fetchProjectComments(projectId: string) {
           name: true,
           username: true,
           email: true,
+          avatarUrl: true,
+          ...(teamId ? { teamMemberships: { where: { teamId, status: 'ACTIVE' }, select: { teamNickname: true, teamProfession: true, department: true, bio: true } } } : {}),
         }
       },
       assets: assetSelect,
@@ -400,6 +404,8 @@ export async function fetchProjectComments(projectId: string) {
               name: true,
               username: true,
               email: true,
+              avatarUrl: true,
+              ...(teamId ? { teamMemberships: { where: { teamId, status: 'ACTIVE' }, select: { teamNickname: true, teamProfession: true, department: true, bio: true } } } : {}),
             }
           },
           assets: assetSelect,

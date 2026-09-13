@@ -49,6 +49,7 @@ export async function GET(
     if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
     const project = resolved.project ? {
       id: resolved.project.id,
+      teamId: resolved.project.teamId,
       sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
       authMode: resolved.link?.authMode || resolved.project.authMode,
       companyName: resolved.project.companyName,
@@ -108,6 +109,11 @@ export async function GET(
             name: true,
             username: true,
             email: true,
+            avatarUrl: true,
+            teamMemberships: {
+              where: { teamId: project.teamId, status: 'ACTIVE' },
+              select: { teamNickname: true, teamProfession: true, department: true, bio: true },
+            },
           }
         },
         assets: assetSelect,
@@ -118,7 +124,12 @@ export async function GET(
                 id: true,
                 name: true,
                 username: true,
-                email: true,
+            email: true,
+            avatarUrl: true,
+            teamMemberships: {
+              where: { teamId: project.teamId, status: 'ACTIVE' },
+              select: { teamNickname: true, teamProfession: true, department: true, bio: true },
+            },
               }
             },
             assets: assetSelect,
@@ -136,6 +147,7 @@ export async function GET(
       isAuthenticated,
       fallbackName,
       viewer?.id,
+      project.companyName,
     ))
 
     return NextResponse.json(sanitizedComments)

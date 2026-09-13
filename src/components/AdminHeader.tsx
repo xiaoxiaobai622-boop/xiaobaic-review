@@ -16,7 +16,7 @@ function TeamExpiryBadge() {
 
   useEffect(() => {
     let cancelled = false
-    apiFetch('/api/team-center').then(async (response) => {
+    apiFetch('/api/team-center', { cache: 'no-store' }).then(async (response) => {
       if (!response.ok) return
       const data = await response.json()
       const team = (data.teams || []).find((item: any) => item.team.id === data.activeTeamId) || data.teams?.[0]

@@ -20,13 +20,18 @@ export async function GET(
   const { id } = await params
 
   const membership = await getTeamMember(id, authResult.id)
+  // Keep team details available while a team is disabled so the owner can
+  // view the status and redeem an activation card. Project and other team
+  // operations still enforce the team's ACTIVE status separately.
   if (!membership || membership.status !== 'ACTIVE') {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  const team = await prisma.team.findUnique({
-    where: { id },
-    select: {
+  let team: any
+  try {
+    team = await prisma.team.findUnique({
+      where: { id },
+      select: {
       id: true,
       name: true,
       slug: true,
@@ -43,19 +48,71 @@ export async function GET(
           id: true,
           role: true,
           status: true,
+          teamNickname: true,
+          teamProfession: true,
+          department: true,
+          bio: true,
             createdAt: true,
             updatedAt: true,
             user: {
-            select: { id: true, name: true, email: true, phone: true, updatedAt: true },
+            select: { id: true, name: true, email: true, phone: true, avatarUrl: true, updatedAt: true },
           },
         },
       },
       _count: { select: { projects: true, members: true } },
-    },
-  })
+      },
+    })
+  } catch {
+    // During rolling deployments the application image can be newer than the
+    // database migration. Keep the team page usable until the migration is
+    // applied, with empty team-profile fields as a safe fallback.
+    const legacyTeam = await prisma.team.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        avatarUrl: true,
+        status: true,
+        createdAt: true,
+        createdById: true,
+        subscriptionPlan: true,
+        subscriptionStartedAt: true,
+        subscriptionExpiresAt: true,
+        members: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            role: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            user: { select: { id: true, name: true, email: true, phone: true, avatarUrl: true, updatedAt: true } },
+          },
+        },
+        _count: { select: { projects: true, members: true } },
+      },
+    })
+    team = legacyTeam
+      ? {
+          ...legacyTeam,
+          members: legacyTeam.members.map((member) => ({
+            ...member,
+            teamNickname: null,
+            teamProfession: null,
+            department: null,
+            bio: null,
+          })),
+        }
+      : null
+  }
 
   if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
-  return NextResponse.json({ team, currentRole: membership.role })
+  const response = NextResponse.json({ team, currentRole: membership.role })
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  response.headers.set('Pragma', 'no-cache')
+  response.headers.set('Expires', '0')
+  return response
 }
 
 export async function PATCH(

@@ -35,6 +35,7 @@ export function sanitizeComment(
   isAuthenticated: boolean,
   clientName?: string,
   viewerUserId?: string | null,
+  teamName?: string | null,
 ) {
   const normalizedTimecode = normalizeTimecode(comment)
   const accountAuthorName = comment.user?.name || comment.user?.email || null
@@ -56,6 +57,9 @@ export function sanitizeComment(
     parentId: comment.parentId,
     // This is intentionally a boolean rather than exposing another user's ID.
     canDelete: Boolean(viewerUserId && comment.userId === viewerUserId),
+    // The project/team label is only shown to external viewers. Team members
+    // already know the workspace context and should not see the public marker.
+    teamName: isAdmin ? null : (teamName || null),
   }
 
   // NEVER expose real names or emails to non-admins
@@ -67,11 +71,18 @@ export function sanitizeComment(
     sanitized.userId = comment.userId
     sanitized.canDelete = true
     if (comment.user) {
+      const teamProfile = Array.isArray(comment.user.teamMemberships)
+        ? comment.user.teamMemberships[0]
+        : null
       sanitized.user = {
         id: comment.user.id,
         name: comment.user.name,
         email: comment.user.email,
         avatarUrl: comment.user.avatarUrl || null,
+        teamNickname: teamProfile?.teamNickname || null,
+        teamProfession: teamProfile?.teamProfession || null,
+        department: teamProfile?.department || null,
+        bio: teamProfile?.bio || null,
       }
     }
   } else if (isAuthenticated) {
@@ -82,6 +93,22 @@ export function sanitizeComment(
   } else {
     // Guests/public: generic labels only, no PII
     sanitized.authorName = comment.isInternal ? 'Admin' : 'Client'
+  }
+
+  // Internal author presentation is safe to expose on share pages: only the
+  // configured team nickname, avatar and role metadata are returned (never
+  // account identifiers or email addresses).
+  if (!isAdmin && comment.isInternal && comment.user) {
+    const teamProfile = Array.isArray(comment.user.teamMemberships)
+      ? comment.user.teamMemberships[0]
+      : null
+    sanitized.user = {
+      avatarUrl: comment.user.avatarUrl || null,
+      teamNickname: teamProfile?.teamNickname || null,
+      teamProfession: teamProfile?.teamProfession || null,
+      department: teamProfile?.department || null,
+      bio: teamProfile?.bio || null,
+    }
   }
 
   // Pass through assets (safe subset already selected by Prisma query)
@@ -98,7 +125,7 @@ export function sanitizeComment(
 
   if (comment.replies && Array.isArray(comment.replies)) {
     sanitized.replies = comment.replies.map((reply: any) =>
-      sanitizeComment(reply, isAdmin, isAuthenticated, clientName, viewerUserId)
+      sanitizeComment(reply, isAdmin, isAuthenticated, clientName, viewerUserId, teamName)
     )
   }
 
