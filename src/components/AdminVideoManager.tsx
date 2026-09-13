@@ -437,6 +437,14 @@ export default function AdminVideoManager({
       }
       await onRefresh?.()
     } catch (error) {
+      // Roll back optimistic badges when one of the requests fails. Keeping
+      // the override here can make the menu appear to have succeeded even
+      // though the server rejected the update.
+      setReviewStatusOverrides(current => {
+        const next = { ...current }
+        selectedVideos.forEach(video => delete next[video.id])
+        return next
+      })
       await onRefresh?.()
       appAlert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
     } finally {
@@ -478,6 +486,11 @@ export default function AdminVideoManager({
       }
       await onRefresh?.()
     } catch (error) {
+      setReviewStatusOverrides(current => {
+        const next = { ...current }
+        delete next[video.id]
+        return next
+      })
       await onRefresh?.()
       appAlert(error instanceof Error ? error.message : t('failedToUpdateReviewStatus'))
     } finally {
@@ -609,7 +622,7 @@ export default function AdminVideoManager({
 
       setCollectionTargetGroup(null)
       setSelectedCollectionUploadId(null)
-      onRefresh?.()
+      await onRefresh?.()
       router.refresh()
     } catch (error) {
       appAlert(error instanceof Error ? error.message : t('collectionReplaceFailed'))
@@ -1033,7 +1046,11 @@ export default function AdminVideoManager({
                               setReviewStatusMenuGroup(null)
                             }}
                           />
-                          <div ref={actionMenuRef} className="fixed z-50 max-h-[calc(100dvh-1rem)] w-52 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: actionMenuPosition.left, top: actionMenuPosition.top }} onClick={(event) => event.stopPropagation()}>
+                          {/* Keep overflow visible so the side submenus are not
+                              clipped by the scroll container. The menu is
+                              repositioned above/below its trigger by the
+                              layout effect when it is near a viewport edge. */}
+                          <div ref={actionMenuRef} className="fixed z-50 w-52 overflow-visible rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: actionMenuPosition.left, top: actionMenuPosition.top }} onClick={(event) => event.stopPropagation()}>
                             <div className="relative" onMouseEnter={() => { setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); setShareTypeMenuGroup(groupName) }} onMouseLeave={() => setShareTypeMenuGroup(null)}>
                               <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName}>
                                 <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -1081,7 +1098,6 @@ export default function AdminVideoManager({
                                 setVersionSourceMenuGroup(null)
                                 setReviewStatusMenuGroup(groupName)
                               }}
-                              onMouseLeave={() => setReviewStatusMenuGroup(null)}
                             >
                               <button
                                 type="button"
@@ -1145,7 +1161,6 @@ export default function AdminVideoManager({
                                   setReviewStatusMenuGroup(null)
                                   setVersionSourceMenuGroup(groupName)
                                 }}
-                                onMouseLeave={() => setVersionSourceMenuGroup(null)}
                               >
                                 <button
                                   type="button"

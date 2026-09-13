@@ -66,8 +66,16 @@ export async function GET(
       return NextResponse.json([])
     }
 
-    // Get primary recipient for author name
-    const primaryRecipient = await getPrimaryRecipient(project.id)
+    // Resolve the recipient label and the owning team label independently.
+    // `companyName` identifies the client/project, while the public marker
+    // shown beside internal authors must identify the review team.
+    const [primaryRecipient, team] = await Promise.all([
+      getPrimaryRecipient(project.id),
+      prisma.team.findUnique({
+        where: { id: project.teamId },
+        select: { name: true },
+      }),
+    ])
     // Priority: companyName → primary recipient → 'Client'
     const fallbackName = project.companyName || primaryRecipient?.name || 'Client'
 
@@ -147,7 +155,7 @@ export async function GET(
       isAuthenticated,
       fallbackName,
       viewer?.id,
-      project.companyName,
+      team?.name,
     ))
 
     return NextResponse.json(sanitizedComments)
