@@ -387,8 +387,12 @@ export async function GET(
 
     const responseBody: any = projectData
 
-    // If no share token present, issue a short-lived viewer token (view-only) for this project
-    if (!shareContext && !isAdmin) {
+    // Issue a short-lived viewer token whenever this request has none. Team
+    // accounts reach this route with only a session cookie, and verifyProjectAccess
+    // reports them as isAdmin, so gating on that left them with no token to mint
+    // streams with and the player waiting forever. The link's own permissions
+    // still cap what the issued token can do.
+    if (!shareContext) {
       // CRITICAL: For NONE authMode, use deterministic sessionId based on IP
       // This must match the sessionId used in SharePageAccess tracking
       let sessionId = accessCheck.shareTokenSessionId || `share:${project.id}:${token}`
