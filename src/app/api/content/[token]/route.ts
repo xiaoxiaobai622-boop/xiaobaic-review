@@ -143,6 +143,18 @@ function hlsManifestResponse(manifest: string): NextResponse {
   return new NextResponse(manifest, { headers: hlsManifestHeaders })
 }
 
+// A refusal the player cannot read is indistinguishable from a dead network:
+// without this header the browser reports status 0 to a CORS-mode request, so
+// hls.js never learns it was a 403 and the reviewer is told to check their
+// connection when the real cause is an expired viewing token. The body is only
+// "access denied", and the success path already allows any origin.
+function contentRefusal(status: number, error: string, headers?: Record<string, string>): NextResponse {
+  return NextResponse.json({ error }, {
+    status,
+    headers: { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store', ...headers },
+  })
+}
+
 function normalizeHlsObjectKey(candidate: string): string | null {
   const segments: string[] = []
   for (const segment of candidate.split('/')) {
@@ -353,6 +365,7 @@ export async function GET(
         wasBlocked: true
       })
 
+      ipRateLimitResult.headers.set('Access-Control-Allow-Origin', '*')
       return ipRateLimitResult
     }
 
@@ -361,7 +374,7 @@ export async function GET(
     const rawTokenData = await redis.get(tokenKey)
 
     if (!rawTokenData) {
-  return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+  return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
     }
 
     const preliminaryTokenData = JSON.parse(rawTokenData)
@@ -369,12 +382,12 @@ export async function GET(
     const sessionId = preliminaryTokenData.sessionId
 
     if (!sessionId) {
-  return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 401 })
+  return contentRefusal(401, shareMessages.accessDenied || 'Access denied')
     }
 
     const verifiedToken = await verifyVideoAccessToken(token, request, sessionId, rawTokenData)
     if (!verifiedToken) {
-      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+      return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
     }
     const isAdminRequest = verifiedToken.isAdmin === true
 
@@ -412,9 +425,9 @@ export async function GET(
           wasBlocked: true
         })
 
-        return NextResponse.json({
-          error: shareMessages.videoStreamingRateLimitExceeded || 'Video streaming rate limit exceeded. Please wait a moment.'
-        }, { status: 429, headers: { 'Retry-After': String(CONTENT_SESSION_WINDOW_SECONDS) } })
+        return contentRefusal(429,
+          shareMessages.videoStreamingRateLimitExceeded || 'Video streaming rate limit exceeded. Please wait a moment.',
+          { 'Retry-After': String(CONTENT_SESSION_WINDOW_SECONDS) })
       }
     }
 
@@ -439,16 +452,14 @@ export async function GET(
           wasBlocked: true
         })
         
-        return NextResponse.json({
-          error: shareMessages.accessDenied || 'Access denied'
-        }, { status: 403 })
+        return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
       }
     }
 
     const video = await getVideoMetadata(verifiedToken.videoId, verifiedToken.projectId)
 
     if (!video) {
-  return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 404 })
+  return contentRefusal(404, shareMessages.accessDenied || 'Access denied')
     }
 
     const originalPath = video.originalStoragePath

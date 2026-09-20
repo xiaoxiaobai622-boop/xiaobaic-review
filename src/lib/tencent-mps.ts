@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'crypto'
+import { callTencentApi } from './tencent-tc3'
 
 const SERVICE = 'mps'
 const VERSION = '2019-06-12'
@@ -46,52 +46,18 @@ export function isMpsEnabled(): boolean {
   return process.env.TENCENT_MPS_ENABLED === 'true'
 }
 
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex')
-}
-
-function hmac(key: Buffer | string, value: string): Buffer {
-  return createHmac('sha256', key).update(value).digest()
-}
-
 async function callApi(action: string, payload: Record<string, unknown>): Promise<any> {
   const cfg = config()
-  const body = JSON.stringify(payload)
-  const timestamp = Math.floor(Date.now() / 1000)
-  const date = new Date(timestamp * 1000).toISOString().slice(0, 10)
-  const contentType = 'application/json; charset=utf-8'
-  const canonicalHeaders = `content-type:${contentType}\nhost:${HOST}\n`
-  const signedHeaders = 'content-type;host'
-  const canonicalRequest = `POST\n/\n\n${canonicalHeaders}\n${signedHeaders}\n${sha256(body)}`
-  // Tencent TC3 scope is date/service/tc3_request. Region is sent as a
-  // request header and is intentionally not a scope component.
-  const credentialScope = `${date}/${SERVICE}/tc3_request`
-  const stringToSign = `TC3-HMAC-SHA256\n${timestamp}\n${credentialScope}\n${sha256(canonicalRequest)}`
-  const secretDate = hmac(`TC3${cfg.secretKey}`, date)
-  const secretService = hmac(secretDate, SERVICE)
-  const signingKey = hmac(secretService, 'tc3_request')
-  const signature = createHmac('sha256', signingKey).update(stringToSign).digest('hex')
-  const authorization = `TC3-HMAC-SHA256 Credential=${cfg.secretId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
-
-  const response = await fetch(`https://${HOST}`, {
-    method: 'POST',
-    headers: {
-      Authorization: authorization,
-      'Content-Type': contentType,
-      Host: HOST,
-      'X-TC-Action': action,
-      'X-TC-Version': VERSION,
-      'X-TC-Timestamp': String(timestamp),
-      'X-TC-Region': cfg.region,
-    },
-    body,
+  return callTencentApi({
+    service: SERVICE,
+    host: HOST,
+    version: VERSION,
+    region: cfg.region,
+    secretId: cfg.secretId,
+    secretKey: cfg.secretKey,
+    action,
+    payload,
   })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok || data?.Response?.Error) {
-    const err = data?.Response?.Error
-    throw new Error(`Tencent MPS ${action} failed: ${err?.Code || response.status} ${err?.Message || response.statusText}`)
-  }
-  return data.Response
 }
 
 export async function submitMpsHls(inputObject: string, videoId: string, teamId?: string, projectId?: string): Promise<string> {

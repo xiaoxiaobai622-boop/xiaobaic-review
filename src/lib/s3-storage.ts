@@ -115,16 +115,23 @@ function isS3NotFoundError(err: unknown): boolean {
   return e?.$metadata?.httpStatusCode === 404
 }
 
+export function getCdnObjectUrl(key: string): string {
+  const baseUrl = process.env.MEDIA_CDN_BASE_URL?.trim().replace(/\/$/, '')
+  if (!baseUrl) {
+    throw new Error('MEDIA_CDN_BASE_URL and MEDIA_CDN_AUTH_KEY are required when MEDIA_CDN_ENABLED=true')
+  }
+  return `${baseUrl}/${key.split('/').map(encodeURIComponent).join('/')}`
+}
+
 function getCdnStreamUrl(key: string, expirySeconds: number): string | null {
   if (process.env.MEDIA_CDN_ENABLED !== 'true') return null
 
-  const baseUrl = process.env.MEDIA_CDN_BASE_URL?.trim().replace(/\/$/, '')
   const authKey = process.env.MEDIA_CDN_AUTH_KEY?.trim()
-  if (!baseUrl || !authKey) {
+  const encodedPath = `/${key.split('/').map(encodeURIComponent).join('/')}`
+  if (!authKey) {
     throw new Error('MEDIA_CDN_BASE_URL and MEDIA_CDN_AUTH_KEY are required when MEDIA_CDN_ENABLED=true')
   }
 
-  const encodedPath = `/${key.split('/').map(encodeURIComponent).join('/')}`
   const now = Math.floor(Date.now() / 1000)
   const cacheKey = `${encodedPath}:${expirySeconds}`
   const cached = cdnUrlCache.get(cacheKey)
@@ -139,7 +146,7 @@ function getCdnStreamUrl(key: string, expirySeconds: number): string | null {
     .update(`${encodedPath}-${timestamp}-${rand}-${uid}-${authKey}`)
     .digest('hex')
 
-  const url = `${baseUrl}${encodedPath}?auth_key=${timestamp}-${rand}-${uid}-${digest}`
+  const url = `${getCdnObjectUrl(key)}?auth_key=${timestamp}-${rand}-${uid}-${digest}`
   cdnUrlCache.set(cacheKey, { url, expiresAt: timestamp })
   return url
 }

@@ -2,6 +2,7 @@ import { Job } from 'bullmq'
 import { VideoProcessingJob } from '../lib/queue'
 import { logMessage } from '../lib/logging'
 import { isMpsEnabled, submitMpsHls, waitForMpsHls } from '../lib/tencent-mps'
+import { isCdnPrefetchEnabled, prefetchHlsRendition } from '../lib/tencent-cdn'
 import { prisma } from '../lib/db'
 import {
   TempFiles,
@@ -54,6 +55,19 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
           data: { mpsStatus: 'READY', hlsPath: result.hlsPath, mpsError: null, status: 'READY', processingProgress: 100 },
         })
         logMessage(`[WORKER] Tencent MPS HLS ready for video ${videoId}: ${result.hlsPath}`)
+
+        // A prefetch rejection says nothing about the transcode, so it is contained
+        // here rather than allowed to reach the catch below — that would mark the
+        // video ERROR and re-run it through the local FFmpeg path.
+        if (isCdnPrefetchEnabled()) {
+          try {
+            const prefetched = await prefetchHlsRendition(result.hlsPath)
+            logMessage(`[WORKER] CDN prefetch for ${videoId}: ${prefetched.submitted} urls submitted`
+              + `${prefetched.skipped ? `, ${prefetched.skipped} left for the next day` : ''}`)
+          } catch (error) {
+            logMessage(`[WORKER] CDN prefetch skipped for ${videoId}: ${error instanceof Error ? error.message : String(error)}`)
+          }
+        }
 
         // Keep thumbnails and metadata local; only the video rendition moves to MPS.
         const thumbnailPath = await processThumbnail(videoId, projectId, project.teamId, videoInfo.path, videoInfo.metadata.duration, tempFiles)
