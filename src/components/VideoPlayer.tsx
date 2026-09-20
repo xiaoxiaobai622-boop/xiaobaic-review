@@ -183,6 +183,7 @@ interface VideoPlayerProps {
   clientCanApprove?: boolean // Allow clients to approve videos (false = admin only)
   shareToken?: string | null
   onDownloadToken?: (videoId: string) => Promise<string | null>
+  onStreamAuthExpired?: (videoId: string) => Promise<boolean> // Re-mint a lapsed stream URL, true = caller replaced it
   hideDownloadButton?: boolean // Hide download button completely (for admin share view)
   comments?: CommentWithReplies[] // Comments for timeline markers
   timestampDisplayMode?: 'TIMECODE' | 'AUTO' // Timestamp display format (default: TIMECODE)
@@ -229,6 +230,7 @@ export default function VideoPlayer({
   clientCanApprove = true, // Default to true (clients can approve)
   shareToken = null,
   onDownloadToken,
+  onStreamAuthExpired,
   hideDownloadButton = false, // Default to false (show download button)
   comments = [], // Default to empty array
   timestampDisplayMode = 'TIMECODE', // Default to TIMECODE format
@@ -263,6 +265,7 @@ export default function VideoPlayer({
   const [videoCrossOrigin, setVideoCrossOrigin] = useState<'anonymous' | null>('anonymous')
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [videoLoadFailure, setVideoLoadFailure] = useState<PlaybackFailureInfo | null>(null)
+  const streamAuthRetryForRef = useRef<string | null>(null)
   const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<'720p' | '1080p' | '2160p'>(defaultQuality)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const [videoDuration, setVideoDuration] = useState(0)
@@ -287,6 +290,8 @@ export default function VideoPlayer({
   const lastTimeUpdateRef = useRef(0) // Throttle cross-component position events
   const previousVideoNameRef = useRef<string | null>(null)
   const currentTimeRef = useRef(0)
+  const presentedTimeRef = useRef<number | null>(null)
+  const drawingEntryPendingRef = useRef(false)
   const playIntentRef = useRef(false)
   const playRequestRef = useRef<Promise<void> | null>(null)
   const playRequestIdRef = useRef(0)
@@ -498,9 +503,22 @@ export default function VideoPlayer({
       setVideoCrossOrigin(null)
       return
     }
+    // A lapsed stream URL is recoverable without asking the viewer to reload:
+    // the page can sign a fresh one for this video alone. Try that once per
+    // video so a token that keeps coming back refused cannot loop here.
+    if (info.cause === 'auth' && onStreamAuthExpired && selectedVideo?.id &&
+        streamAuthRetryForRef.current !== selectedVideo.id) {
+      streamAuthRetryForRef.current = selectedVideo.id
+      onStreamAuthExpired(selectedVideo.id).then((recovered) => {
+        if (recovered) return
+        setVideoLoadFailure(info)
+        setVideoLoadFailed(true)
+      })
+      return
+    }
     setVideoLoadFailure(info)
     setVideoLoadFailed(true)
-  }, [videoCrossOrigin])
+  }, [onStreamAuthExpired, selectedVideo?.id, videoCrossOrigin])
 
   const { isUsingHls } = useHlsSource({
     videoRef,
@@ -544,6 +562,40 @@ export default function VideoPlayer({
     previousAnnotationVideoIdRef.current = currentVideoId
   }, [selectedVideo?.id, resetAnnotationDrawing])
 
+  // A reviewer annotates the frame they can see. requestVideoFrameCallback
+  // reports the media time of exactly that frame, while currentTime runs up to a
+  // full frame ahead during playback and timeupdate only fires ~4 times a second.
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    let active = true
+    const onSeeked = () => {
+      presentedTimeRef.current = video.currentTime
+    }
+    const onPresented = (_now: number, meta: { mediaTime: number }) => {
+      if (!active) return
+      presentedTimeRef.current = meta.mediaTime
+      video.requestVideoFrameCallback(onPresented)
+    }
+    video.addEventListener('seeked', onSeeked)
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      video.requestVideoFrameCallback(onPresented)
+    }
+    return () => {
+      active = false
+      video.removeEventListener('seeked', onSeeked)
+    }
+  }, [activeVideoUrl, activeHlsUrl])
+
+  const visibleFrameTime = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return currentTimeRef.current
+    // A seek in flight has not presented its target frame yet, but currentTime
+    // already holds that target.
+    if (video.seeking || presentedTimeRef.current === null) return video.currentTime
+    return presentedTimeRef.current
+  }, [])
+
   useEffect(() => {
     const handleEnterDrawing = (event: Event) => {
       const detail = (event as CustomEvent<{ tool?: DrawingTool; timecodeEnd?: string | null }>).detail
@@ -553,18 +605,37 @@ export default function VideoPlayer({
         annotationDrawing.setActiveTool(requestedTool)
       }
 
-      if (isDrawingMode) return
+      if (isDrawingMode || drawingEntryPendingRef.current) return
 
       const fps = selectedVideo?.fps || 24
-      const timecodeStart = secondsToTimecode(currentTimeRef.current, fps)
-      setDrawingTimecodeStart(timecodeStart)
-      setDrawingTimecodeEnd(detail?.timecodeEnd || null)
-      setIsDrawingMode(true)
-      setPendingAnnotation(null)
+      const video = videoRef.current
+      const begin = (seconds: number) => {
+        drawingEntryPendingRef.current = false
+        setDrawingTimecodeStart(secondsToTimecode(seconds, fps))
+        setDrawingTimecodeEnd(detail?.timecodeEnd || null)
+        setIsDrawingMode(true)
+        setPendingAnnotation(null)
+        annotationDrawing.reset()
+      }
 
-      annotationDrawing.reset()
-
+      // Freeze first: pausing can still leave one more frame on screen, and the
+      // reviewer annotates whatever the drawing surface ends up showing.
       pausePlayback()
+      drawingEntryPendingRef.current = true
+
+      if (video && typeof video.requestVideoFrameCallback === 'function') {
+        const timer = window.setTimeout(() => {
+          if (drawingEntryPendingRef.current) begin(presentedTimeRef.current ?? video.currentTime)
+        }, 150)
+        video.requestVideoFrameCallback((_now, meta) => {
+          window.clearTimeout(timer)
+          if (!drawingEntryPendingRef.current) return
+          begin(meta.mediaTime)
+        })
+        return
+      }
+
+      begin(video?.currentTime ?? currentTimeRef.current)
     }
 
     window.addEventListener('enterDrawingMode', handleEnterDrawing)
@@ -726,6 +797,7 @@ export default function VideoPlayer({
   // position across a same-video HLS/MP4 source fallback.
   useEffect(() => {
     hasInitiallySeenRef.current = false
+    streamAuthRetryForRef.current = null
   }, [activeVideoName, selectedVideo?.id])
 
   // Safety check: ensure selectedVideo exists before accessing properties
@@ -826,10 +898,8 @@ export default function VideoPlayer({
   useEffect(() => {
     const handleGetCurrentTime = (e: CustomEvent) => {
       if (e.detail.callback) {
-        // Read the media element directly so sending a comment never uses the
-        // throttled display value from the timeline.
-        const exactTime = videoRef.current?.currentTime ?? currentTimeRef.current
-        e.detail.callback(exactTime, selectedVideoIdRef.current)
+        // The frame on screen, not the throttled timeline display value.
+        e.detail.callback(visibleFrameTime(), selectedVideoIdRef.current)
       }
     }
 
@@ -837,7 +907,7 @@ export default function VideoPlayer({
     return () => {
       window.removeEventListener('getCurrentTime' as any, handleGetCurrentTime as EventListener)
     }
-  }, [])
+  }, [visibleFrameTime])
 
   useEffect(() => {
     const handleGetSelectedVideoId = (e: CustomEvent) => {

@@ -68,7 +68,11 @@ export function secondsToTimecode(seconds: number, fps: number = 24): string {
 
   const useDropFrame = isDropFrame(fps)
   const roundedFps = Math.round(fps)
-  const totalFrames = Math.round(seconds * fps)
+  // A media time belongs to the frame that started at or before it, which is the
+  // frame the decoder actually has on screen. Rounding to the nearest frame would
+  // claim the following frame whenever the time falls in the second half of the
+  // visible one. The epsilon absorbs float noise on frame-aligned inputs.
+  const totalFrames = Math.floor(seconds * fps + 1e-6)
 
   if (useDropFrame) {
     // Drop-frame: convert actual frame count back to display frame number
@@ -185,16 +189,17 @@ export function parseTimecodeInput(input: string, fps: number = 24): string {
 }
 
 /**
- * Convert timecode string to seconds with a half-frame offset for seeking.
- * Landing in the middle of the target frame prevents browser seek imprecision
- * from snapping to the previous frame.
+ * Convert timecode string to seconds with a seek offset that lands inside the target frame.
+ * The offset is a quarter frame: large enough that imprecise seeks cannot snap back to the
+ * previous frame, small enough to stay clear of the following frame's boundary, so the frame
+ * the decoder shows is unambiguously the target one.
  * @param timecode - HH:MM:SS:FF or HH:MM:SS;FF format
  * @param fps - Frames per second of the video
- * @returns Total seconds targeting the center of the frame
+ * @returns Total seconds inside the target frame
  */
 export function timecodeToSeekSeconds(timecode: string, fps: number = 24): number {
-  const halfFrame = 1 / (fps * 2)
-  return timecodeToSeconds(timecode, fps) + halfFrame
+  const quarterFrame = 1 / (fps * 4)
+  return timecodeToSeconds(timecode, fps) + quarterFrame
 }
 
 /**

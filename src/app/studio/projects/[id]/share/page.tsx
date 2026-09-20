@@ -890,6 +890,7 @@ export default function AdminSharePage() {
   })()
 
   const showCommentPanel = !project.hideFeedback
+  const timestampDisplayMode = project.timestampDisplay === 'AUTO' ? 'AUTO' : 'TIMECODE'
   const canManageApproval = canUserManageApproval(adminUser, project)
   const isAdmin = adminUser?.role === 'ADMIN' || adminUser?.role === 'SUPER_ADMIN'
   const orderedVideoNames = Object.keys(project.videosByName).sort((a, b) =>
@@ -1036,7 +1037,7 @@ export default function AdminSharePage() {
                 hasPreviousVideo={Boolean(previousVideoName)}
                 hasNextVideo={Boolean(nextVideoName)}
                 comments={!project.hideFeedback ? filteredComments : []}
-                timestampDisplayMode="AUTO"
+                timestampDisplayMode={timestampDisplayMode}
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 fillContainer={true}
                 playerSurfaceClassName="bg-card"
@@ -1068,7 +1069,7 @@ export default function AdminSharePage() {
                   recipients={project.recipients || []}
                   shareToken={null}
                   showShortcutsButton={true}
-                  timestampDisplayMode="AUTO"
+                  timestampDisplayMode={timestampDisplayMode}
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}
                   onToggleVisibility={() => setHideComments(!hideComments)}

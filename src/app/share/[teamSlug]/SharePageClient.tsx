@@ -856,6 +856,46 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     return videos.map((video: any) => tokenizedById.get(video.id) || video)
   }, [defaultQuality, fetchVideoToken, shareToken, supportsHls])
 
+  // A stream URL the server has already let lapse is not something the viewer
+  // can fix by reloading: drop this video's cached mint and sign a fresh one so
+  // the player remounts on its own. Returning false hands the refusal back to
+  // the player, which then says so.
+  const recoverStreamAuth = useCallback(async (videoId: string) => {
+    tokenCacheRef.current.delete(`${shareToken}:${videoId}:${defaultQuality}`)
+    const video = activeVideosRawRef.current.find((item: any) => item.id === videoId)
+    if (!video) return false
+
+    const [refreshed] = await fetchTokensForVideos([video], 1)
+    if (!refreshed || refreshed === video) return false
+    if (!refreshed.hlsUrl720p && !refreshed.streamUrl720p &&
+        !refreshed.streamUrl1080p && !refreshed.streamUrl2160p) return false
+
+    setActiveVideos((current: any[]) => current.map((item: any) => (
+      item.id === videoId ? refreshed : item
+    )))
+    return true
+  }, [defaultQuality, fetchTokensForVideos, shareToken])
+
+  // Choosing another version is handled inside the player, which points straight
+  // at the URL minted when the page loaded. After the tab has sat idle past the
+  // media session timeout that URL is already refused, so the viewer gets a
+  // failure on a click that should simply work. Re-sign it as the selection
+  // lands, one round trip ahead of the player's own manifest request.
+  useEffect(() => {
+    if (!shareToken) return
+    const ensureSelectedStreamFresh = (event: Event) => {
+      const videoId = (event as CustomEvent<{ videoId?: string }>).detail?.videoId
+      if (!videoId) return
+      const cached = tokenCacheRef.current.get(`${shareToken}:${videoId}:${defaultQuality}`)
+      if (!cached || Date.now() - cached.mintedAt < STREAM_TOKEN_MAX_AGE_MS) return
+      void recoverStreamAuth(videoId)
+    }
+    window.addEventListener('reviewVersionChanged', ensureSelectedStreamFresh as EventListener)
+    return () => {
+      window.removeEventListener('reviewVersionChanged', ensureSelectedStreamFresh as EventListener)
+    }
+  }, [defaultQuality, recoverStreamAuth, shareToken])
+
   useEffect(() => {
     let isMounted = true
     const controller = new AbortController()
@@ -1457,6 +1497,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
   // Whether to show comment panel
   const showCommentPanel = !project.hideFeedback && canComment
+  const timestampDisplayMode = project.timestampDisplay === 'AUTO' ? 'AUTO' : 'TIMECODE'
 
   return (
     <div className="flex min-h-screen flex-col bg-background lg:fixed lg:inset-0 lg:overflow-hidden">
@@ -1518,10 +1559,11 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 allowAssetDownload={canDownload}
                 clientCanApprove={project.clientCanApprove}
                 shareToken={shareToken}
+                onStreamAuthExpired={recoverStreamAuth}
                 hideDownloadButton={!canDownload}
                 allowComparison={false}
                 comments={!project.hideFeedback && canComment ? filteredComments : []}
-                timestampDisplayMode="AUTO"
+                timestampDisplayMode={timestampDisplayMode}
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
                 fillContainer={true}
@@ -1547,7 +1589,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   recipients={project.recipients || []}
                   shareToken={shareToken}
                   showShortcutsButton={true}
-                  timestampDisplayMode="AUTO"
+                  timestampDisplayMode={timestampDisplayMode}
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}
                   authenticatedEmail={authenticatedEmail}

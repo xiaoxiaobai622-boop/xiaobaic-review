@@ -11,6 +11,8 @@
  * - Timecode format (e.g., t=00:02:05:00)
  */
 
+import { timecodeToSeekSeconds } from '@/lib/timecode'
+
 export interface DeepLinkParams {
   projectId: string
   videoId?: string
@@ -19,6 +21,8 @@ export interface DeepLinkParams {
   /** Optional version number used to select the exact uploaded version. */
   version?: number
   timecode?: string // In seconds or timecode format
+  /** Frames per second of the linked video; required to keep frame precision. */
+  fps?: number
 }
 
 /**
@@ -38,9 +42,7 @@ export function buildDeepLink(params: DeepLinkParams): string {
     }
 
     if (params.timecode) {
-      // Convert timecode to seconds if needed
-      const seconds = parseTimecodeToSeconds(params.timecode)
-      url += `&t=${seconds}`
+      url += `&t=${encodeURIComponent(String(secondsForDeepLink(params.timecode, params.fps)))}`
     }
 
     return url
@@ -48,6 +50,19 @@ export function buildDeepLink(params: DeepLinkParams): string {
 
   // Project overview link
   return `${base}/studio/projects/${params.projectId}/share`
+}
+
+/**
+ * Resolve a link timestamp to the seek seconds that land the player on the
+ * exact frame. Without a known fps the frame component cannot be interpreted,
+ * so the value degrades to whole seconds instead of guessing a rate.
+ */
+function secondsForDeepLink(timecode: string, fps?: number): number {
+  const normalized = typeof fps === 'number' && Number.isFinite(fps) && fps > 0 ? fps : undefined
+  if (normalized && /^[\d:;]+$/.test(timecode) && timecode.includes(':')) {
+    return timecodeToSeekSeconds(timecode, normalized)
+  }
+  return parseTimecodeToSeconds(timecode)
 }
 
 /**
