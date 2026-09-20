@@ -16,7 +16,7 @@ import { AnnotationData, type DrawingTool } from '@/types/annotations'
 import { secondsToTimecode } from '@/lib/timecode'
 import { logError } from '@/lib/logging'
 import { filterCommentsForVideo } from '@/lib/video-comment-filter'
-import { useHlsSource } from '@/hooks/useHlsSource'
+import { useHlsSource, type PlaybackFailureCause, type PlaybackFailureInfo } from '@/hooks/useHlsSource'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 
 type CommentWithReplies = Comment & {
@@ -151,6 +151,15 @@ function hasReachedPendingSeek(
     (!requireBuffered || isTimeBuffered(video, target))
 }
 
+// The player cannot tell a viewer "refresh" from "your access lapsed" unless it
+// says which one happened, so each failure cause gets its own sentence.
+const PLAYBACK_FAILURE_MESSAGES: Record<PlaybackFailureCause, string> = {
+  auth: '播放授权已过期，请刷新页面重新打开。',
+  decode: '当前浏览器无法解码该视频，请刷新页面或更换清晰度。',
+  unsupported: '该视频的格式当前浏览器不支持播放，请刷新页面重试。',
+  network: '视频加载失败，请刷新页面或检查网络后重试。',
+}
+
 interface VideoPlayerProps {
   videos: Video[]
   projectId: string
@@ -253,6 +262,7 @@ export default function VideoPlayer({
   const [hlsUrl, setHlsUrl] = useState<string>('')
   const [videoCrossOrigin, setVideoCrossOrigin] = useState<'anonymous' | null>('anonymous')
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
+  const [videoLoadFailure, setVideoLoadFailure] = useState<PlaybackFailureInfo | null>(null)
   const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<'720p' | '1080p' | '2160p'>(defaultQuality)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const [videoDuration, setVideoDuration] = useState(0)
@@ -474,17 +484,22 @@ export default function VideoPlayer({
     [comments, selectedVideo?.id],
   )
 
-  const handlePlaybackError = useCallback(() => {
+  const handlePlaybackError = useCallback((info: PlaybackFailureInfo) => {
     playIntentRef.current = false
     pendingSeekRef.current = null
     setIsPlaying(false)
     setIsBuffering(false)
     setIsSeeking(false)
-    if (videoCrossOrigin === 'anonymous') {
+    // Disabling crossOrigin only addresses a cross-origin refusal. A token the
+    // server rejected, a codec that cannot be decoded and a source that never
+    // arrived all fail identically on the second try, so report those at once
+    // instead of costing the viewer a silent reload before the message.
+    if (info.cause === 'network' && videoCrossOrigin === 'anonymous') {
       setVideoCrossOrigin(null)
-    } else {
-      setVideoLoadFailed(true)
+      return
     }
+    setVideoLoadFailure(info)
+    setVideoLoadFailed(true)
   }, [videoCrossOrigin])
 
   const { isUsingHls } = useHlsSource({
@@ -721,6 +736,7 @@ export default function VideoPlayer({
     setResolvedPlaybackQuality(playbackSource.quality)
     setVideoCrossOrigin('anonymous')
     setVideoLoadFailed(false)
+    setVideoLoadFailure(null)
     setVideoUrl(playbackSource.url)
     setHlsUrl(playbackSource.hlsUrl)
     setSourceVideoId(playbackSource.videoId)
@@ -1542,7 +1558,7 @@ export default function VideoPlayer({
 
               {videoLoadFailed && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-4 text-center text-sm text-muted-foreground">
-                  视频加载失败，请刷新页面或检查网络后重试。
+                  {PLAYBACK_FAILURE_MESSAGES[videoLoadFailure?.cause ?? 'network']}
                 </div>
               )}
 

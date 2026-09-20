@@ -10,7 +10,32 @@ interface UseHlsSourceOptions {
   enabled?: boolean
   attachmentKey?: string | number
   playIntentRef?: { current: boolean }
-  onPlaybackError?: () => void
+  onPlaybackError?: (info: PlaybackFailureInfo) => void
+}
+
+/**
+ * Why playback stopped. A refused media URL, an unsupported codec and an
+ * unreachable network look identical to the viewer unless the cause is carried
+ * out of the player.
+ */
+export type PlaybackFailureCause = 'auth' | 'decode' | 'unsupported' | 'network'
+
+export interface PlaybackFailureInfo {
+  cause: PlaybackFailureCause
+  /** HTTP status of the last failed manifest/fragment request, if any. */
+  httpStatus?: number
+  /** `HTMLMediaElement.error.code`: 3 = decode, 4 = unsupported source. */
+  mediaErrorCode?: number
+}
+
+const classifyPlaybackFailure = (
+  httpStatus?: number,
+  mediaErrorCode?: number,
+): PlaybackFailureCause => {
+  if (httpStatus === 401 || httpStatus === 403) return 'auth'
+  if (mediaErrorCode === 3) return 'decode'
+  if (mediaErrorCode === 4) return 'unsupported'
+  return 'network'
 }
 
 interface UseHlsSourceResult {
@@ -61,6 +86,7 @@ export function useHlsSource({
     let lastLoadRequestAt = 0
     let lastScheduledPosition: number | null = null
     let disposed = false
+    let lastNetworkStatus: number | undefined
 
     const isBufferedAt = (position: number): boolean => {
       if (!Number.isFinite(position)) return false
@@ -91,6 +117,7 @@ export function useHlsSource({
         // Do not let intentionally aborted requests consume the retry budget
         // for the final position in a rapid click sequence.
         networkRecoveryAttempts = 0
+        lastNetworkStatus = undefined
         lastScheduledPosition = target
         if (recoveryTimer !== null) {
           clearTimeout(recoveryTimer)
@@ -231,7 +258,10 @@ export function useHlsSource({
       } else {
         sourceType = 'none'
         setIsUsingHls(false)
-        onPlaybackErrorRef.current?.()
+        onPlaybackErrorRef.current?.({
+          cause: classifyPlaybackFailure(lastNetworkStatus),
+          httpStatus: lastNetworkStatus,
+        })
       }
     }
 
@@ -239,7 +269,12 @@ export function useHlsSource({
       if (sourceType === 'hls') {
         activateFallback()
       } else if (sourceType === 'fallback') {
-        onPlaybackErrorRef.current?.()
+        const mediaErrorCode = video.error?.code
+        onPlaybackErrorRef.current?.({
+          cause: classifyPlaybackFailure(lastNetworkStatus, mediaErrorCode),
+          httpStatus: lastNetworkStatus,
+          mediaErrorCode,
+        })
       }
     }
 
@@ -278,6 +313,7 @@ export function useHlsSource({
       hls.on(Events.MANIFEST_PARSED, () => {
         manifestReady = true
         networkRecoveryAttempts = 0
+        lastNetworkStatus = undefined
         applyPendingSeek()
       })
 
@@ -285,6 +321,7 @@ export function useHlsSource({
         // A completed fragment proves the current source is healthy. Network
         // failures from earlier seek targets must not carry into later seeks.
         networkRecoveryAttempts = 0
+        lastNetworkStatus = undefined
       })
 
       // Keep seeks made before the manifest/metadata is ready. hls.js cannot
@@ -316,6 +353,18 @@ export function useHlsSource({
       hls.on(Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal || disposed || !hls) return
 
+        if (data.type === ErrorTypes.NETWORK_ERROR) {
+          const status = data.response?.code
+          if (status) lastNetworkStatus = status
+          // A 401/403 means the media URL itself was refused, so every retry is
+          // guaranteed to fail. Falling through keeps the failure honest and
+          // immediate instead of burning the backoff budget on a dead token.
+          if (status === 401 || status === 403) {
+            activateFallback()
+            return
+          }
+        }
+
         if (data.type === ErrorTypes.NETWORK_ERROR && networkRecoveryAttempts < 5) {
           networkRecoveryAttempts += 1
           const retryDelay = Math.min(8000, 500 * Math.pow(2, networkRecoveryAttempts - 1))
@@ -345,7 +394,9 @@ export function useHlsSource({
     } else if (fallbackUrl) {
       setVideoSource(fallbackUrl, 'fallback')
     } else {
-      onPlaybackErrorRef.current?.()
+      // An HLS-only source in a browser that supports neither native nor
+      // MSE playback has no way to play it, whatever the network does.
+      onPlaybackErrorRef.current?.({ cause: 'unsupported' })
     }
 
     return () => {

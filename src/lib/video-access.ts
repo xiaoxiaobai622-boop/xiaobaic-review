@@ -33,6 +33,10 @@ const securitySettingsCache: CachedValue<SecuritySettingsResult> = {
 }
 
 const TOKEN_CACHE_TTL_MS = 10_000
+// A minted content token is renewed while it keeps being used, but never past
+// this absolute deadline, so a long review cannot outlive the mint. It matches
+// the CDN stream URL lifetime handed out by /api/content.
+const TOKEN_MAX_LIFETIME_SECONDS = 4 * 60 * 60
 const TOKEN_CACHE_MAX_ENTRIES = 500
 type CachedTokenEntry = CachedValue<VideoAccessToken>
 const tokenVerificationCache = new Map<string, CachedTokenEntry>()
@@ -192,11 +196,40 @@ export async function verifyVideoAccessToken(
     version: revVersion
   })
 
+  // Keep the in-process verification cache as the rate limiter for these
+  // writes: at most one renewal per token per TOKEN_CACHE_TTL_MS.
+  await renewVideoAccessToken(token, tokenData)
+
   if (tokenVerificationCache.size > TOKEN_CACHE_MAX_ENTRIES) {
     tokenVerificationCache.clear()
   }
 
   return tokenData
+}
+
+/**
+ * Renew a content token that is still in active use. Without this the 15 minute
+ * session TTL kills a URL the player legitimately holds, and /api/content starts
+ * answering 403 for a viewer who is simply still watching.
+ */
+async function renewVideoAccessToken(
+  token: string,
+  tokenData: VideoAccessToken
+): Promise<void> {
+  const redis = getRedis()
+  const secondsUsed = Math.floor((Date.now() - tokenData.createdAt) / 1000)
+  const remaining = TOKEN_MAX_LIFETIME_SECONDS - secondsUsed
+
+  if (remaining <= 0) return
+
+  const lifetime = Math.min(await getClientSessionTimeoutSeconds(), remaining)
+
+  // EXPIRE on a deleted key is a no-op, so a revoked session is never revived.
+  await redis.expire(`video_access:${token}`, lifetime)
+  await redis.expire(
+    `video_token_cache:${tokenData.sessionId}:${tokenData.videoId}:${tokenData.quality}`,
+    lifetime
+  )
 }
 
 /**

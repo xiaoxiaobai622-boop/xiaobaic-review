@@ -39,6 +39,10 @@ const THUMBNAIL_TOKEN_CACHE_PREFIX = 'share-thumb-token:'
 const THUMBNAIL_URL_CACHE_PREFIX = 'share-thumb-url:'
 const VIDEO_SEEK_CACHE_PREFIX = 'share-video-seek:'
 const COMMENT_REFRESH_INTERVAL_MS = 30_000
+// A minted stream token is only alive server-side for the client session
+// timeout, and that clock keeps sliding solely while the URL is being fetched.
+// Treat a cached one as stale before it can lapse into a 403 on the player.
+const STREAM_TOKEN_MAX_AGE_MS = 10 * 60_000
 
 function getVideoCatalogSignature(projectData: any): string {
   const videos = Array.isArray(projectData?.videos) ? projectData.videos : []
@@ -263,7 +267,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   }, [pathname, router, searchParams])
 
   const storageKey = token || ''
-  const tokenCacheRef = useRef<Map<string, any>>(new Map())
+  const tokenCacheRef = useRef<Map<string, { video: any; mintedAt: number }>>(new Map())
   const inFlightTokenRequestsRef = useRef<Map<string, { promise: Promise<string>; signal?: AbortSignal }>>(new Map())
   const commentsRequestRef = useRef<Promise<void> | null>(null)
   const playbackTimesRef = useRef<Map<string, number>>(new Map())
@@ -271,6 +275,11 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const projectVideoCatalogRef = useRef('')
   const activeVideosRawRef = useRef<any[]>([])
   const activeVideosRef = useRef<any[]>([])
+  const shareTokenRef = useRef<string | null>(shareToken)
+
+  useEffect(() => {
+    shareTokenRef.current = shareToken
+  }, [shareToken])
 
   useEffect(() => {
     activeVideosRawRef.current = activeVideosRaw
@@ -706,9 +715,12 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     quality: string,
     signal?: AbortSignal,
   ): Promise<string> => {
-    if (!shareToken) return ''
+    // Read the token at call time: it is rotated whenever the project refreshes,
+    // and a mint holding the previous one is rejected long before its TTL ends.
+    const authToken = shareTokenRef.current
+    if (!authToken) return ''
 
-    const requestKey = `${shareToken}:${videoId}:${quality}`
+    const requestKey = `${authToken}:${videoId}:${quality}`
     const inFlight = inFlightTokenRequestsRef.current.get(requestKey)
     if (inFlight && !inFlight.signal?.aborted) return inFlight.promise
     if (inFlight) inFlightTokenRequestsRef.current.delete(requestKey)
@@ -716,9 +728,20 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     const requestPromise = (async () => {
       const response = await fetch(`/api/share/${token}/video-token?videoId=${videoId}&quality=${quality}`, {
         cache: 'no-store',
-        headers: { Authorization: `Bearer ${shareToken}` },
+        headers: { Authorization: `Bearer ${authToken}` },
         signal,
       })
+      if (response.status === 401) {
+        // Only an unverifiable bearer gets this answer. Drop the stored token so
+        // the share auth effect claims a fresh one, which re-runs every mint.
+        // A reply for a superseded token must not clear the replacement it
+        // already displaced.
+        if (shareTokenRef.current === authToken) {
+          saveShareToken(storageKey, null)
+          setShareToken(null)
+        }
+        return ''
+      }
       if (!response.ok) return ''
       const data = await response.json()
       return data.token || ''
@@ -730,7 +753,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
     inFlightTokenRequestsRef.current.set(requestKey, { promise: requestPromise, signal })
     return requestPromise
-  }, [shareToken, token])
+  }, [storageKey, token])
 
   const fetchTokensForVideos = useCallback(async (
     videos: any[],
@@ -752,14 +775,18 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       // reused after the project switches to 1080p/2160p.
       const cacheKey = `${shareToken}:${video.id}:${defaultQuality}`
       const cached = tokenCacheRef.current.get(cacheKey)
-      // A progressive token can succeed while the HLS token is temporarily
-      // unavailable. In S3 mode that result must not be cached, or future
-      // mounts will keep playing the fallback instead of retrying HLS.
-      if (cached && (!supportsHls || cached.hlsUrl720p)) {
-        tokenizedById.set(video.id, cached)
-        return
+      if (cached && Date.now() - cached.mintedAt >= STREAM_TOKEN_MAX_AGE_MS) {
+        tokenCacheRef.current.delete(cacheKey)
+      } else if (cached) {
+        // A progressive token can succeed while the HLS token is temporarily
+        // unavailable. In S3 mode that result must not be cached, or future
+        // mounts will keep playing the fallback instead of retrying HLS.
+        if (!supportsHls || cached.video.hlsUrl720p) {
+          tokenizedById.set(video.id, cached.video)
+          return
+        }
+        tokenCacheRef.current.delete(cacheKey)
       }
-      if (cached) tokenCacheRef.current.delete(cacheKey)
 
       try {
         let streamTokenHls = ''
@@ -818,7 +845,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           ? Boolean(tokenized.hlsUrl720p)
           : Boolean(tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p)
         if (hasCacheablePlayback) {
-          tokenCacheRef.current.set(cacheKey, tokenized)
+          tokenCacheRef.current.set(cacheKey, { video: tokenized, mintedAt: Date.now() })
         }
         tokenizedById.set(video.id, tokenized)
       } catch {
