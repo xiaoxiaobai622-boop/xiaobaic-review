@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAuth } from '@/lib/auth'
-import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
+import { getTeamQuota, getTeamUsage, TRIAL_QUOTA } from '@/lib/platform-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,7 +37,9 @@ export async function PATCH(
 
   const quota = await prisma.teamQuota.upsert({
     where: { teamId: id },
-    create: { teamId: id, ...data },
+    // A partial edit must not mint the rest of the row from schema defaults (20 GB etc.);
+    // an omitted key means "whatever the team's baseline is", not "50 videos".
+    create: { teamId: id, ...TRIAL_QUOTA, ...data },
     update: data,
   })
 

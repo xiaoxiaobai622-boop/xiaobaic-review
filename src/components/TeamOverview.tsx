@@ -9,7 +9,10 @@ import { InitialsAvatar } from '@/components/InitialsAvatar'
 type OverviewData = {
   team: { name: string; avatarUrl: string | null; createdAt: string; subscriptionPlan: string; subscriptionExpiresAt: string | null }
   quota: { maxMembers: number; maxProjects: number; maxVideos: number; maxStorageGB: number }
-  usage: { members: number; projects: number; videos: number; usedBytes: string; recycleBinBytes: string }
+  usage: {
+    members: number; projects: number; videos: number; usedBytes: string; recycleBinBytes: string
+    bySource: { videos: string; assets: string; uploads: string; photos: string }
+  }
   projects: Array<{
     id: string
     title: string
@@ -99,7 +102,11 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
     }
   }, [teamId])
 
-  const usedBytes = data ? Number(data.usage.usedBytes) : 0
+  const liveBytes = data ? Number(data.usage.usedBytes) : 0
+  const recycleBinBytes = data ? Number(data.usage.recycleBinBytes) : 0
+  // The upload gate charges for recycle-bin contents too — those files are still in
+  // the bucket for 7 days — so the ring has to include them or it contradicts a 413.
+  const usedBytes = liveBytes + recycleBinBytes
   const capacityBytes = data ? data.quota.maxStorageGB * 1024 ** 3 : 0
   const usedPercent = capacityBytes > 0 ? Math.min(100, (usedBytes / capacityBytes) * 100) : 0
   const stats = data
@@ -112,9 +119,9 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
     : []
 
   const legend = useMemo(() => (data ? [
-    ['项目占用', formatBytes(usedBytes), 'bg-primary'],
-    ['回收站占用', formatBytes(data.usage.recycleBinBytes), 'bg-muted-foreground'],
-  ] : []), [data, usedBytes])
+    ['使用中', formatBytes(liveBytes), 'bg-primary'],
+    ['回收站（7 天内可恢复）', formatBytes(recycleBinBytes), 'bg-muted-foreground'],
+  ] : []), [data, liveBytes, recycleBinBytes])
 
   return (
     <section aria-labelledby="team-overview-heading" className="space-y-4">
@@ -163,6 +170,7 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
               <CardContent>
                 <div className="flex items-center gap-5"><DonutChart percent={usedPercent} /><div><p className="text-2xl font-semibold tabular-nums">{formatBytes(usedBytes)}</p><p className="mt-1 text-sm text-muted-foreground">剩余 {formatBytes(Math.max(0, capacityBytes - usedBytes))}</p></div></div>
                 <div className="mt-5 space-y-2.5 text-sm">{legend.map(([label, value, color]) => <div key={label} className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-muted-foreground"><span className={`h-2.5 w-2.5 rounded-sm ${color}`} />{label}</span><span className="tabular-nums">{value}</span></div>)}</div>
+                <p className="mt-3 text-xs text-muted-foreground">按已上传的素材文件计算，转码切片与封面不占额度，所以对象存储的实际占用会更高。</p>
               </CardContent>
             </Card>
 

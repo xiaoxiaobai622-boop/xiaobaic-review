@@ -1,4 +1,4 @@
-import { prisma, INCLUDE_DELETED } from '@/lib/db'
+import { prisma } from '@/lib/db'
 
 export const TRIAL_PLAN = 'TRIAL'
 export const MONTHLY_PLAN = 'MONTHLY'
@@ -46,7 +46,11 @@ export async function isTeamFeatureEnabled(teamId: string, featureKey: string) {
 export async function getTeamQuota(teamId: string) {
   return prisma.teamQuota.upsert({
     where: { teamId },
-    create: { teamId },
+    // Without an explicit create the row materializes from the schema defaults
+    // (10 seats / 5 projects / 50 videos / 20 GB), which is more generous than the
+    // trial a team gets from POST /api/teams — a team that predates that write would
+    // quietly gain 19 GB the first time anything read its quota.
+    create: { teamId, ...TRIAL_QUOTA },
     update: {},
   })
 }
@@ -60,17 +64,92 @@ export async function getTeamUsage(teamId: string) {
   return { members, projects, videos }
 }
 
-export async function getTeamStorageUsage(teamId: string) {
-  const [videoBytes, assetBytes, uploadBytes, photoBytes] = await Promise.all([
-    // Recycle bin contents are still occupying COS, so quota counts them.
-    prisma.video.aggregate({ where: { project: { teamId }, deletedAt: INCLUDE_DELETED }, _sum: { originalFileSize: true } }),
-    prisma.videoAsset.aggregate({ where: { video: { project: { teamId } }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
-    prisma.projectUpload.aggregate({ where: { project: { teamId }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
-    prisma.photo.aggregate({ where: { album: { project: { teamId } }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
-  ])
-  return [videoBytes._sum.originalFileSize, assetBytes._sum.fileSize, uploadBytes._sum.fileSize, photoBytes._sum.fileSize]
-    .reduce<bigint>((total, value) => total + (value ?? BigInt(0)), BigInt(0))
+/**
+ * One place decides what a team's storage actually is. Two rows can name the same
+ * object (a rolled-back version keeps its file through a 收录 copy, and promote
+ * moves the collected file onto the video row), so summing per-row sizes charges
+ * the team twice for one object — the meter therefore dedupes by path and keeps the
+ * largest declaration. Tombstones are grouped separately rather than dropped: the
+ * recycle bin really does still occupy the bucket for 7 days, and the upload gate
+ * must count what it cannot reclaim, while the UI needs to show it as its own line.
+ * "rank" only breaks size ties so a shared object always reports under the same
+ * source — without it Postgres picks arbitrarily and the per-source split flips
+ * between two identical requests.
+ */
+type TeamStorageUsageRow = { projectId: string; source: string; inBin: boolean; bytes: bigint }
+
+function teamStorageUsageRows(teamId: string) {
+  return prisma.$queryRaw<TeamStorageUsageRow[]>`
+    WITH named AS (
+      SELECT v."projectId" AS "projectId", v."originalStoragePath" AS path, v."originalFileSize" AS bytes,
+             (v."deletedAt" IS NOT NULL) AS "inBin", 'video' AS source, 1 AS rank
+      FROM "Video" v JOIN "Project" p ON p.id = v."projectId"
+      WHERE p."teamId" = ${teamId} AND v."originalFileSize" > 0
+      UNION ALL
+      SELECT v."projectId", a."storagePath", a."fileSize", (v."deletedAt" IS NOT NULL), 'asset', 2
+      FROM "VideoAsset" a JOIN "Video" v ON v.id = a."videoId" JOIN "Project" p ON p.id = v."projectId"
+      WHERE p."teamId" = ${teamId} AND a."uploadCompletedAt" IS NOT NULL AND a."fileSize" > 0
+      UNION ALL
+      SELECT u."projectId", u."storagePath", u."fileSize", false, 'upload', 3
+      FROM "ProjectUpload" u JOIN "Project" p ON p.id = u."projectId"
+      WHERE p."teamId" = ${teamId} AND u."uploadCompletedAt" IS NOT NULL AND u."fileSize" > 0
+      UNION ALL
+      SELECT al."projectId", ph."storagePath", ph."fileSize", false, 'photo', 4
+      FROM "Photo" ph JOIN "PhotoAlbum" al ON al.id = ph."albumId" JOIN "Project" p ON p.id = al."projectId"
+      WHERE p."teamId" = ${teamId} AND ph."uploadCompletedAt" IS NOT NULL AND ph."fileSize" > 0
+    ), deduped AS (
+      SELECT DISTINCT ON (path) "projectId", bytes, "inBin", source
+      FROM named ORDER BY path, "inBin" ASC, bytes DESC, rank ASC
+    )
+    SELECT "projectId", source, "inBin", sum(bytes)::bigint AS bytes
+    FROM deduped GROUP BY "projectId", source, "inBin"
+  `
 }
+
+export type TeamStorageBreakdown = {
+  /** Objects named by rows that are not in the recycle bin. */
+  liveBytes: bigint
+  /** Objects only the recycle bin still names — recoverable, but not free. */
+  recycleBinBytes: bigint
+  totalBytes: bigint
+  bySource: Record<'video' | 'asset' | 'upload' | 'photo', bigint>
+  byProject: Map<string, { liveBytes: bigint; recycleBinBytes: bigint }>
+}
+
+const ZERO = BigInt(0)
+
+export async function getTeamStorageBreakdown(teamId: string): Promise<TeamStorageBreakdown> {
+  const rows = await teamStorageUsageRows(teamId)
+  const breakdown: TeamStorageBreakdown = {
+    liveBytes: ZERO,
+    recycleBinBytes: ZERO,
+    totalBytes: ZERO,
+    bySource: { video: ZERO, asset: ZERO, upload: ZERO, photo: ZERO },
+    byProject: new Map(),
+  }
+  for (const row of rows) {
+    const bytes = row.bytes ?? ZERO
+    const project = breakdown.byProject.get(row.projectId) ?? { liveBytes: ZERO, recycleBinBytes: ZERO }
+    if (row.inBin) {
+      breakdown.recycleBinBytes += bytes
+      project.recycleBinBytes += bytes
+    } else {
+      breakdown.liveBytes += bytes
+      project.liveBytes += bytes
+    }
+    if (row.source === 'video' || row.source === 'asset' || row.source === 'upload' || row.source === 'photo') {
+      breakdown.bySource[row.source] += bytes
+    }
+    breakdown.byProject.set(row.projectId, project)
+  }
+  breakdown.totalBytes = breakdown.liveBytes + breakdown.recycleBinBytes
+  return breakdown
+}
+
+export async function getTeamStorageUsage(teamId: string): Promise<bigint> {
+  return (await getTeamStorageBreakdown(teamId)).totalBytes
+}
+
 
 export async function checkTeamStorageQuota(teamId: string, incomingBytes: number | bigint) {
   const quota = await getTeamQuota(teamId)

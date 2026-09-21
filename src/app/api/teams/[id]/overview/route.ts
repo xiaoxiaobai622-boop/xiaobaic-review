@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, LIVE_VIDEO, INCLUDE_DELETED } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
-import { getTeamQuota } from '@/lib/platform-access'
+import { getTeamQuota, getTeamStorageBreakdown } from '@/lib/platform-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const ZERO = BigInt(0)
+
 function serializeBytes(value: bigint | null | undefined) {
   return value?.toString() ?? '0'
-}
-
-function sumBytes(values: Array<bigint | null | undefined>) {
-  return values.reduce<bigint>((total, value) => value == null ? total : total + value, BigInt(0))
 }
 
 export async function GET(
@@ -28,7 +26,7 @@ export async function GET(
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  const [team, quota, videoBytes, assetBytes, uploadBytes, photoBytes, projects] = await Promise.all([
+  const [team, quota, storage, videos, projects] = await Promise.all([
     prisma.team.findUnique({
       where: { id },
       select: {
@@ -40,27 +38,13 @@ export async function GET(
         subscriptionPlan: true,
         subscriptionStartedAt: true,
         subscriptionExpiresAt: true,
-        _count: { select: { members: true, projects: true } },
+        // The seat gate counts ACTIVE members only; the panel has to show the same number.
+        _count: { select: { members: { where: { status: 'ACTIVE' } }, projects: true } },
       },
     }),
     getTeamQuota(id),
-    prisma.video.aggregate({
-      where: { project: { teamId: id } },
-      _sum: { originalFileSize: true },
-      _count: { _all: true },
-    }),
-    prisma.videoAsset.aggregate({
-      where: { video: { project: { teamId: id } }, uploadCompletedAt: { not: null } },
-      _sum: { fileSize: true },
-    }),
-    prisma.projectUpload.aggregate({
-      where: { project: { teamId: id }, uploadCompletedAt: { not: null } },
-      _sum: { fileSize: true },
-    }),
-    prisma.photo.aggregate({
-      where: { album: { project: { teamId: id } }, uploadCompletedAt: { not: null } },
-      _sum: { fileSize: true },
-    }),
+    getTeamStorageBreakdown(id),
+    prisma.video.count({ where: { project: { teamId: id } } }),
     prisma.project.findMany({
       where: { teamId: id, status: { not: 'ARCHIVED' } },
       orderBy: { updatedAt: 'desc' },
@@ -78,22 +62,12 @@ export async function GET(
 
   if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
 
-  const projectSummaries = await Promise.all(projects.map(async (project) => {
-    const [videos, assets, uploads] = await Promise.all([
-      prisma.video.aggregate({ where: { projectId: project.id, deletedAt: INCLUDE_DELETED }, _sum: { originalFileSize: true } }),
-      prisma.videoAsset.aggregate({ where: { video: { projectId: project.id }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
-      prisma.projectUpload.aggregate({ where: { projectId: project.id, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
-    ])
-    const sizeBytes = sumBytes([videos._sum.originalFileSize, assets._sum.fileSize, uploads._sum.fileSize])
-    return { ...project, sizeBytes: serializeBytes(sizeBytes) }
-  }))
-
-  const usedBytes = sumBytes([
-    videoBytes._sum.originalFileSize,
-    assetBytes._sum.fileSize,
-    uploadBytes._sum.fileSize,
-    photoBytes._sum.fileSize,
-  ])
+  const projectSummaries = projects.map((project) => {
+    const usage = storage.byProject.get(project.id) ?? { liveBytes: ZERO, recycleBinBytes: ZERO }
+    // Everything the team is charged for this project, recycle bin included, so the
+    // project rows add back up to the team figure.
+    return { ...project, sizeBytes: serializeBytes(usage.liveBytes + usage.recycleBinBytes) }
+  })
 
   return NextResponse.json({
     team,
@@ -107,9 +81,15 @@ export async function GET(
     usage: {
       members: team._count.members,
       projects: team._count.projects,
-      videos: videoBytes._count._all,
-      usedBytes: serializeBytes(usedBytes),
-      recycleBinBytes: '0',
+      videos,
+      usedBytes: serializeBytes(storage.liveBytes),
+      recycleBinBytes: serializeBytes(storage.recycleBinBytes),
+      bySource: {
+        videos: serializeBytes(storage.bySource.video),
+        assets: serializeBytes(storage.bySource.asset),
+        uploads: serializeBytes(storage.bySource.upload),
+        photos: serializeBytes(storage.bySource.photo),
+      },
     },
     projects: projectSummaries,
   })
