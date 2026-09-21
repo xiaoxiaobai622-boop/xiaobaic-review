@@ -57,7 +57,7 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
     return (
       <div
         className="grid content-start gap-3"
-        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 320px))' }}
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}
       >
         {projects.map((project) => {
           const totalVideos = project.videos.length

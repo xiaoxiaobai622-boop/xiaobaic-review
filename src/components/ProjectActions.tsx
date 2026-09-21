@@ -233,7 +233,7 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
             </span>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pb-2">
           {/* Due Date */}
           {(project as any).dueDate && (() => {
             const due = new Date((project as any).dueDate)
