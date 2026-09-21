@@ -213,6 +213,13 @@ export async function DELETE(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
+    if (asset.video.deletedAt) {
+      return NextResponse.json(
+        { error: 'This video is in the recycle bin. Restore it before deleting its attachments.' },
+        { status: 409 },
+      )
+    }
+
     // Check if this asset is being used as the video's thumbnail
     const isCurrentThumbnail = asset.video.thumbnailPath === asset.storagePath
 

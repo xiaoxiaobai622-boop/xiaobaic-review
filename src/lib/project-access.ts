@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest, getShareContext } from '@/lib/auth'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { getClientIpAddress } from '@/lib/utils'
 import type { AuthUser } from '@/lib/auth'
 import type { Prisma, PrismaClient } from '@prisma/client'
@@ -161,6 +161,21 @@ export async function nextProjectCode(db: DbClient, teamId: string) {
   throw new Error('PROJECT_CODE_LIMIT_REACHED')
 }
 
+function insufficientPermissionResponse(
+  permissions: string[],
+  options?: { requiredPermission?: string; requiredAnyPermission?: string[] },
+): NextResponse | null {
+  const required = options?.requiredPermission
+  if (required && !permissions.includes(required)) {
+    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+  const anyOf = options?.requiredAnyPermission
+  if (anyOf && anyOf.length > 0 && !anyOf.some(permission => permissions.includes(permission))) {
+    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+  return null
+}
+
 /**
  * Verify project access using dual authentication pattern
  *
@@ -195,8 +210,6 @@ export async function verifyProjectAccess(
   errorResponse?: NextResponse
 }> {
   const allowGuest = options?.allowGuest ?? true
-  const requiredPermission = options?.requiredPermission
-  const requiredAnyPermission = options?.requiredAnyPermission
 
   // Check if user is admin (admins bypass password protection)
   const currentUser = await getCurrentUserFromRequest(request)
@@ -222,12 +235,27 @@ export async function verifyProjectAccess(
   const isUnauthenticated = authMode === 'NONE'
   if (isUnauthenticated && !shareContext) {
     const sessionId = `none:${projectId}:${getClientIpAddress(request)}`
+    // authMode NONE only removes the gate for *entering* the project. It is not
+    // a grant for commenting, downloading or approving, so the caller's
+    // requiredPermission still has to be satisfied by this baseline.
+    const permissions = ['view']
+    const denied = insufficientPermissionResponse(permissions, options)
+    if (denied) {
+      return {
+        authorized: false,
+        isAdmin: false,
+        isAuthenticated: true,
+        isGuest: false,
+        permissions,
+        errorResponse: denied,
+      }
+    }
     return {
       authorized: true,
       isAdmin: false,
       isAuthenticated: true,
       isGuest: false,
-      permissions: ['view', 'comment', 'download', 'approve'],
+      permissions,
       shareTokenSessionId: sessionId,
     }
   }
@@ -273,35 +301,15 @@ export async function verifyProjectAccess(
     }
   }
 
-  if (requiredPermission && !permissions.includes(requiredPermission)) {
+  const permissionDenied = insufficientPermissionResponse(permissions, options)
+  if (permissionDenied) {
     return {
       authorized: false,
       isAdmin: false,
       isAuthenticated: true,
       isGuest,
       permissions,
-      errorResponse: NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
-      )
-    }
-  }
-
-  if (
-    requiredAnyPermission &&
-    requiredAnyPermission.length > 0 &&
-    !requiredAnyPermission.some(permission => permissions.includes(permission))
-  ) {
-    return {
-      authorized: false,
-      isAdmin: false,
-      isAuthenticated: true,
-      isGuest,
-      permissions,
-      errorResponse: NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
-      )
+      errorResponse: permissionDenied,
     }
   }
 
@@ -406,6 +414,7 @@ export async function fetchProjectWithVideos(
         ...projectSelect,
         videos: {
           where: {
+            ...LIVE_VIDEO,
             id: { in: latestVideoIds },
             status: 'READY',
           },
@@ -421,7 +430,7 @@ export async function fetchProjectWithVideos(
     select: {
       ...projectSelect,
       videos: {
-        where: { status: 'READY' as const },
+        where: { ...LIVE_VIDEO, status: 'READY' as const },
         orderBy: { version: 'desc' },
         select: videoSelect,
       },

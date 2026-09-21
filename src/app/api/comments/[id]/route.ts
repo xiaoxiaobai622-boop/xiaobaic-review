@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_COMMENT } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { verifyProjectAccess } from '@/lib/project-access'
@@ -10,42 +10,99 @@ export const runtime = 'nodejs'
 // Prevent static generation for this route
 export const dynamic = 'force-dynamic'
 
+async function loadCommentProject(projectId: string) {
+  return prisma.project.findUnique({
+    where: { id: projectId },
+    select: { id: true, teamId: true, sharePassword: true, authMode: true },
+  })
+}
+
+/**
+ * A share token with `comment` permission only proves the holder may take part
+ * in the discussion, not that they own the row, so every mutation has to be
+ * traced back to an account: the author or somebody on the owning team.
+ */
+async function getCommentActor(
+  request: NextRequest,
+  teamId: string,
+  authorUserId: string | null,
+): Promise<{ isAuthor: boolean; teamRole: string | null }> {
+  const viewer = await getCurrentUserFromRequest(request)
+  if (!viewer) return { isAuthor: false, teamRole: null }
+
+  const membership = await prisma.teamMember.findUnique({
+    where: { teamId_userId: { teamId, userId: viewer.id } },
+    select: { role: true, status: true, team: { select: { status: true } } },
+  })
+  const teamRole =
+    membership?.status === 'ACTIVE' && membership.team.status === 'ACTIVE'
+      ? membership.role
+      : null
+
+  return { isAuthor: Boolean(authorUserId && viewer.id === authorUserId), teamRole }
+}
+
 // PATCH /api/comments/[id] - Mark a comment complete/incomplete.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const locale = await getConfiguredLocale().catch(() => 'en')
+  const messages = await loadLocaleMessages(locale).catch(() => null)
+  const commentsMessages = messages?.comments || {}
+  const shareMessages = messages?.share || {}
+
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 60,
-    message: '操作过于频繁，请稍后再试。',
+    message: shareMessages.tooManyRequestsGeneric || 'Too many requests. Please slow down.',
   }, 'comments-resolve')
   if (rateLimitResult) return rateLimitResult
+
+  // A comment that exists but may not be touched, and one that does not exist,
+  // answer identically so the endpoint cannot be used to enumerate comment ids.
+  const notAvailable = () => NextResponse.json(
+    { error: commentsMessages.commentNotFound || 'Comment not found' },
+    { status: 404 },
+  )
 
   try {
     const { id } = await params
     const body = await request.json().catch(() => null)
     if (!body || typeof body.resolved !== 'boolean') {
-      return NextResponse.json({ error: 'resolved 必须是布尔值' }, { status: 400 })
+      return NextResponse.json(
+        { error: commentsMessages.resolvedMustBeBoolean || 'resolved must be a boolean' },
+        { status: 400 },
+      )
     }
 
     const comment = await prisma.comment.findUnique({
-      where: { id },
-      select: {
-        projectId: true,
-        project: { select: { sharePassword: true, authMode: true } },
-      },
+      where: { id, ...LIVE_COMMENT },
+      select: { projectId: true, userId: true },
     })
-    if (!comment) return NextResponse.json({ error: '批注不存在' }, { status: 404 })
+    if (!comment) return notAvailable()
+
+    const project = await loadCommentProject(comment.projectId)
+    if (!project) return notAvailable()
 
     const access = await verifyProjectAccess(
       request,
-      comment.projectId,
-      comment.project.sharePassword,
-      comment.project.authMode,
+      project.id,
+      project.sharePassword,
+      project.authMode,
       { allowGuest: false, requiredPermission: 'comment' }
     )
-    if (!access.authorized) return access.errorResponse!
+    if (!access.authorized) return notAvailable()
+
+    const actor = await getCommentActor(request, project.teamId, comment.userId)
+    // Resolving is a workflow status, so any member of the owning team may flip
+    // it; deleting stays limited to the author and the team admins.
+    if (!actor.isAuthor && !actor.teamRole) {
+      return NextResponse.json(
+        { error: commentsMessages.onlyTeamMemberCanResolve || 'Only the author or a team member can change the status of this comment' },
+        { status: 403 },
+      )
+    }
 
     const updated = await prisma.comment.update({
       where: { id },
@@ -54,7 +111,10 @@ export async function PATCH(
     })
     return NextResponse.json(updated)
   } catch {
-    return NextResponse.json({ error: '批注状态更新失败' }, { status: 500 })
+    return NextResponse.json(
+      { error: commentsMessages.failedToUpdateComment || 'Failed to update comment' },
+      { status: 500 },
+    )
   }
 }
 
@@ -84,7 +144,7 @@ export async function DELETE(
 
     // Get the comment to find its project
     const existingComment = await prisma.comment.findUnique({
-      where: { id },
+      where: { id, ...LIVE_COMMENT },
       select: {
         projectId: true,
         userId: true,
@@ -92,13 +152,8 @@ export async function DELETE(
           select: {
             id: true,
             teamId: true,
-            recipients: {
-              where: { isPrimary: true },
-              take: 1,
-              select: {
-                name: true,
-              }
-            }
+            sharePassword: true,
+            authMode: true,
           }
         }
       }
@@ -111,30 +166,28 @@ export async function DELETE(
       )
     }
 
-    const viewer = await getCurrentUserFromRequest(request)
     const access = await verifyProjectAccess(
       request,
       existingComment.projectId,
-      null,
-      'NONE',
+      existingComment.project.sharePassword,
+      existingComment.project.authMode,
       { allowGuest: false, requiredPermission: 'comment' },
     )
-    if (!access.authorized) return access.errorResponse!
+    // Same uniform denial as PATCH: a caller without comment access cannot tell
+    // an existing id from a fabricated one.
+    if (!access.authorized) {
+      return NextResponse.json(
+        { error: commentsMessages.commentNotFound || 'Comment not found' },
+        { status: 404 },
+      )
+    }
 
-    const membership = viewer
-      ? await prisma.teamMember.findUnique({
-          where: { teamId_userId: { teamId: existingComment.project.teamId, userId: viewer.id } },
-          select: { role: true, status: true, team: { select: { status: true } } },
-        })
-      : null
-    const isTeamAdmin = Boolean(
-      membership?.status === 'ACTIVE' &&
-      membership.team.status === 'ACTIVE' &&
-      ['OWNER', 'ADMIN'].includes(membership.role),
-    )
-    const isAuthor = Boolean(viewer && existingComment.userId === viewer.id)
-    if (!isTeamAdmin && !isAuthor) {
-      return NextResponse.json({ error: '只能删除自己发出的批注' }, { status: 403 })
+    const actor = await getCommentActor(request, existingComment.project.teamId, existingComment.userId)
+    if (!actor.isAuthor && !['OWNER', 'ADMIN'].includes(actor.teamRole ?? '')) {
+      return NextResponse.json(
+        { error: commentsMessages.onlyAuthorOrAdminCanDelete || 'Only the author or a team admin can delete this comment' },
+        { status: 403 },
+      )
     }
 
     // Cancel any pending notifications for this comment

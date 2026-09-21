@@ -70,10 +70,19 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
         }
 
         // Keep thumbnails and metadata local; only the video rendition moves to MPS.
+        // processThumbnail never throws, so a cover the extractor cannot produce
+        // degrades to "no new thumbnail" instead of being mistaken for an MPS failure.
         const thumbnailPath = await processThumbnail(videoId, projectId, project.teamId, videoInfo.path, videoInfo.metadata.duration, tempFiles)
         await prisma.video.update({
           where: { id: videoId },
-          data: { thumbnailPath, duration: videoInfo.metadata.duration, width: videoInfo.metadata.width, height: videoInfo.metadata.height, fps: videoInfo.metadata.fps, codec: videoInfo.metadata.codec },
+          data: {
+            ...(thumbnailPath ? { thumbnailPath } : {}),
+            duration: videoInfo.metadata.duration,
+            width: videoInfo.metadata.width,
+            height: videoInfo.metadata.height,
+            fps: videoInfo.metadata.fps,
+            codec: videoInfo.metadata.codec,
+          },
         })
         return
       } catch (error) {

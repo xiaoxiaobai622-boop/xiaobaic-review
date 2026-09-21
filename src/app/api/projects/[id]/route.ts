@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getInvalidWatermarkCharacters } from '@/lib/watermark'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO, LIVE_COMMENT } from '@/lib/db'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
 import { canAccessProject, canAdministerProject } from '@/lib/project-access'
 import { encrypt, decrypt } from '@/lib/encryption'
@@ -14,6 +14,7 @@ import { syncCompanyToDirectory } from '@/lib/client-directory-sync'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 import {
   checkWechatText,
   CONTENT_SECURITY_ERROR,
@@ -67,7 +68,7 @@ export async function GET(
       where: { id },
       include: {
         videos: {
-          where: { status: { not: 'ROLLED_BACK' } },
+          where: { ...LIVE_VIDEO, status: { not: 'ROLLED_BACK' } },
           orderBy: { version: 'desc' },
           include: {
             sourceUpload: {
@@ -77,7 +78,7 @@ export async function GET(
         },
         ...(includeComments ? {
           comments: {
-            where: { parentId: null },
+            where: { parentId: null, ...LIVE_COMMENT },
             include: {
               user: {
                 select: {
@@ -114,7 +115,7 @@ export async function GET(
         },
         folders: {
           orderBy: { name: 'asc' },
-          include: { _count: { select: { videos: true } } },
+          include: { _count: { select: { videos: { where: LIVE_VIDEO } } } },
         },
       },
     })
@@ -154,6 +155,10 @@ export async function GET(
       comments: sanitizedComments,
       sharePassword: decryptedPassword,
       hasSharePassword,
+      // PATCH requires canAdministerProject, so the settings form needs to know
+      // whether saving is possible at all. Without it a plain member sees an
+      // empty password box and a 保存 button that can only ever answer 403.
+      canAdminister,
       smtpConfigured,
     }
 
@@ -532,7 +537,15 @@ export async function PATCH(
       })
     }
 
-    return NextResponse.json(project)
+    // Never answer with the stored ciphertext: PATCH has to describe the project
+    // the same way GET does, so the caller sees the clear-text password it is
+    // allowed to see plus the `hasSharePassword` flag the settings form reads.
+    const { sharePassword: storedSharePassword, ...updatedProject } = project
+    return NextResponse.json({
+      ...updatedProject,
+      sharePassword: storedSharePassword ? decrypt(storedSharePassword) : null,
+      hasSharePassword: Boolean(storedSharePassword),
+    })
   } catch (error) {
     return NextResponse.json(
       { error: projectMessages.operationFailed || 'Operation failed' },
@@ -570,6 +583,8 @@ export async function DELETE(
     const project = await prisma.project.findUnique({
       where: { id },
       include: {
+        // Tombstones included: a video still sitting in the recycle bin belongs to
+        // this project, so its files have to be reclaimed with everything else.
         videos: { include: { assets: true } },
         projectUploads: true,
       },
@@ -613,7 +628,10 @@ export async function DELETE(
     const task = await prisma.$transaction(async (tx) => {
       const durableTask = await recordDurableTask(tx, 'DELETE_STORAGE', `delete-project-storage:${id}`, {
         paths: [...new Set(filePaths.filter((path): path is string => Boolean(path)))],
-        directories: [`projects/${id}`],
+        // Storage keys are team-scoped; a bare `projects/<id>` prefix matches nothing,
+        // which used to leave the whole project tree — including the MPS segment
+        // directories that no row names — behind in COS forever.
+        directories: [teamProjectStorageKey(project.teamId, id)],
       })
       await tx.project.delete({ where: { id } })
       return durableTask

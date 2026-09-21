@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { videoNameSlotTaken } from '@/lib/video-versions'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -60,8 +61,11 @@ export async function PATCH(request: NextRequest) {
 
     const targetVideos = await prisma.video.findMany({
       where: { id: { in: videoIds } },
-      select: { projectId: true },
+      select: { id: true, projectId: true, version: true },
     })
+    if (targetVideos.length === 0) {
+      return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
+    }
     const projectIds = [...new Set(targetVideos.map((video) => video.projectId))]
     for (const projectId of projectIds) {
       if (!(await canAccessProject(prisma, authResult, projectId))) {
@@ -69,16 +73,51 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // Update all videos in a single query
-    const result = await prisma.video.updateMany({
-      where: { id: { in: videoIds } },
-      data: { name: name.trim() }
-    })
+    const newName = name.trim()
+    // (projectId, name, version) is unique, and a video sitting in the recycle bin
+    // still holds its slot, so renaming onto an occupied pair has to be refused here
+    // rather than surfacing as a database error. Check and write share one transaction
+    // so a group is never left half-renamed; the unique index still decides under
+    // concurrency, which is why the violation below is answered the same way.
+    const conflict = () => NextResponse.json(
+      {
+        error: videoMessages.videoNameVersionTaken || 'That video already has a version with this name.',
+        code: 'VIDEO_NAME_VERSION_TAKEN',
+      },
+      { status: 409 }
+    )
 
-    return NextResponse.json({
-      success: true,
-      updated: result.count
-    })
+    try {
+      const renamed = await prisma.$transaction(async (tx) => {
+        const taken = await videoNameSlotTaken(
+          tx,
+          newName,
+          targetVideos.map((video) => ({
+            projectId: video.projectId,
+            version: video.version,
+            videoId: video.id,
+          })),
+        )
+        if (taken) return null
+        // Only the videos that were found *and* access-checked above, so a caller
+        // cannot slip in ids of rows the live-reading lookup did not return.
+        const result = await tx.video.updateMany({
+          where: { id: { in: targetVideos.map((video) => video.id) } },
+          data: { name: newName }
+        })
+        return result.count
+      })
+
+      if (renamed === null) return conflict()
+
+      return NextResponse.json({
+        success: true,
+        updated: renamed
+      })
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'P2002') return conflict()
+      throw error
+    }
   } catch (error) {
     logError('Error batch updating videos:', error)
     return NextResponse.json(

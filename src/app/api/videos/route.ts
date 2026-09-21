@@ -8,6 +8,7 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { checkTeamStorageQuota } from '@/lib/platform-access'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
+import { latestAllocatedVideoVersion } from '@/lib/video-versions'
 
 export const runtime = 'nodejs'
 
@@ -84,20 +85,16 @@ export async function POST(request: NextRequest) {
       })
       if (!project) return { kind: 'missing' as const }
 
-      const [existingVersionCount, latest] = await Promise.all([
+      const [existingVersionCount, latestVersion] = await Promise.all([
         tx.video.count({ where: { projectId, name: videoName, status: { not: 'ROLLED_BACK' } } }),
-        tx.video.findFirst({
-          where: { projectId, name: videoName },
-          orderBy: { version: 'desc' },
-          select: { version: true },
-        }),
+        latestAllocatedVideoVersion(tx, projectId, videoName),
       ])
 
       if (project.enableRevisions && project.maxRevisions > 0 && existingVersionCount >= project.maxRevisions) {
         return { kind: 'limit' as const, maxRevisions: project.maxRevisions }
       }
 
-      const nextVersion = (latest?.version ?? 0) + 1
+      const nextVersion = latestVersion + 1
       const video = await tx.video.create({
         data: {
           projectId,

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { createRecycleBinItem } from '@/lib/recycle-bin'
+import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
@@ -116,7 +117,10 @@ export async function DELETE(
   try {
     const album = await prisma.photoAlbum.findUnique({
       where: { id: albumId },
-      select: { id: true, projectId: true, name: true },
+      select: {
+        id: true, projectId: true, name: true,
+        project: { select: { teamId: true } },
+      },
     })
 
     if (!album || album.projectId !== projectId) {
@@ -128,7 +132,11 @@ export async function DELETE(
         itemType: 'PHOTO_ALBUM',
         itemName: album.name,
         metadata: { albumId: album.id },
-        directories: [`projects/${projectId}/photos/${albumId}`],
+        // Storage keys are team-scoped, and every object of this album — originals,
+        // thumbs and previews — lives under this prefix. A bare
+        // `projects/<projectId>/photos/<albumId>` matches nothing, which left the
+        // album's files in COS forever.
+        directories: [teamProjectStorageKey(album.project.teamId, projectId, 'photos', albumId)],
       })
       await tx.photoAlbum.delete({ where: { id: albumId } })
     })

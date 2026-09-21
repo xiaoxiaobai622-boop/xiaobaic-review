@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { getVideoQueue } from '@/lib/queue'
@@ -64,7 +64,7 @@ export async function POST(
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       include: {
-        videos: true,
+        videos: { where: LIVE_VIDEO },
       },
     })
 

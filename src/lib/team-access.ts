@@ -24,23 +24,39 @@ export function getRequestedTeamId(request: NextRequest): string | null {
   return request.headers.get(TEAM_HEADER)?.trim() || null
 }
 
-export async function resolveActiveTeamId(user: AuthUser, requestedTeamId?: string | null) {
+/**
+ * The one place that decides which team a request acts on. Routes must not re-resolve
+ * this themselves: a looser query can silently pick a team the caller was never
+ * authorized for (e.g. a DISABLED one), so writes land outside the team the UI is showing.
+ */
+export async function getActiveTeamMembership(user: AuthUser, requestedTeamId?: string | null) {
   if (requestedTeamId) {
     const membership = await getTeamMember(requestedTeamId, user.id)
-    if (membership && membership.status === 'ACTIVE' && membership.team?.status === 'ACTIVE') return requestedTeamId
-    return null
+    if (!membership || membership.status !== 'ACTIVE' || membership.team?.status !== 'ACTIVE') return null
+    return membership
   }
 
-  const firstMembership = await prisma.teamMember.findFirst({
+  return prisma.teamMember.findFirst({
     where: {
       userId: user.id,
       status: 'ACTIVE',
       team: { status: 'ACTIVE' },
     },
     orderBy: { createdAt: 'asc' },
-    select: { teamId: true },
+    select: {
+      id: true,
+      role: true,
+      status: true,
+      teamId: true,
+      userId: true,
+      team: { select: { status: true } },
+    },
   })
-  return firstMembership?.teamId || null
+}
+
+export async function resolveActiveTeamId(user: AuthUser, requestedTeamId?: string | null) {
+  const membership = await getActiveTeamMembership(user, requestedTeamId)
+  return membership?.teamId || null
 }
 
 export async function requireTeamRole(
@@ -48,30 +64,9 @@ export async function requireTeamRole(
   user: AuthUser,
   roles: TeamRoleName[],
 ): Promise<{ teamId: string; role: TeamRoleName } | NextResponse> {
-  const requestedTeamId = getRequestedTeamId(request)
-  const membership = requestedTeamId
-    ? await getTeamMember(requestedTeamId, user.id)
-    : await prisma.teamMember.findFirst({
-        where: {
-          userId: user.id,
-          status: 'ACTIVE',
-          team: { status: 'ACTIVE' },
-        },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          role: true,
-          status: true,
-          teamId: true,
-          team: { select: { status: true } },
-        },
-      })
+  const membership = await getActiveTeamMembership(user, getRequestedTeamId(request))
 
-  if (
-    !membership ||
-    membership.status !== 'ACTIVE' ||
-    (membership.team && membership.team.status !== 'ACTIVE')
-  ) {
+  if (!membership) {
     return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
   }
 

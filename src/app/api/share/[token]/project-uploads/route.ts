@@ -34,13 +34,18 @@ export async function POST(
     const { token: shareToken } = await params
 
     const resolved = await resolveShareMetadata(shareToken)
-    if (resolved.link && (!isShareLinkActive(resolved.link) || resolved.link.type !== 'COLLECT')) return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    const deniedByLink = resolved.link !== null && resolved.link.type !== 'COLLECT'
+    if ((resolved.policy && !isShareLinkActive(resolved.policy)) || deniedByLink) {
+      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    }
     const project = resolved.project ? {
       id: resolved.project.id,
       teamId: resolved.project.teamId,
-      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
-      authMode: resolved.link?.authMode || resolved.project.authMode,
-      allowReverseShare: resolved.link ? resolved.link.permissions.includes('upload') : resolved.project.allowReverseShare,
+      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
+      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
+      allowReverseShare: resolved.policy?.isProjectMaster
+        ? resolved.project.allowReverseShare
+        : Boolean(resolved.policy?.permissions.includes('upload')),
     } : null
 
     if (!project) {
@@ -191,12 +196,17 @@ export async function DELETE(
     const uploadId = searchParams.get('uploadId') ?? ''
 
     const resolved = await resolveShareMetadata(shareToken)
-    if (resolved.link && (!isShareLinkActive(resolved.link) || resolved.link.type !== 'COLLECT')) return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    const deniedByLink = resolved.link !== null && resolved.link.type !== 'COLLECT'
+    if ((resolved.policy && !isShareLinkActive(resolved.policy)) || deniedByLink) {
+      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    }
     const project = resolved.project ? {
       id: resolved.project.id,
-      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
-      authMode: resolved.link?.authMode || resolved.project.authMode,
-      allowReverseShare: resolved.link ? resolved.link.permissions.includes('upload') : resolved.project.allowReverseShare,
+      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
+      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
+      allowReverseShare: resolved.policy?.isProjectMaster
+        ? resolved.project.allowReverseShare
+        : Boolean(resolved.policy?.permissions.includes('upload')),
     } : null
 
     if (!project || !project.allowReverseShare) {

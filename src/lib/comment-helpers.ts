@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_COMMENT } from '@/lib/db'
 import { getPrimaryRecipient } from '@/lib/recipients'
 import { isSmtpConfigured } from '@/lib/settings'
 import { getRedis } from '@/lib/redis'
@@ -383,6 +383,7 @@ export async function fetchProjectComments(projectId: string) {
     where: {
       projectId,
       parentId: null, // Only get top-level comments
+      ...LIVE_COMMENT, // an annotation on a video in the recycle bin is not listable
     },
     include: {
       user: {

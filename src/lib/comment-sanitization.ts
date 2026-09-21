@@ -1,5 +1,19 @@
 import { secondsToTimecode, parseTimecodeInput, isValidTimecode } from './timecode'
 
+/**
+ * `authorName` doubles as an account identifier: routes store
+ * `name || phone || email` so the studio can always tell who wrote what.
+ * An external viewer must never be shown another person's account identifier,
+ * so anything that reads as an email address or a bare phone number is dropped
+ * in favour of the generic label.
+ */
+function isAccountIdentifier(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const trimmed = value.trim()
+  if (!trimmed) return true
+  return trimmed.includes('@') || /^\+?[\d\s-]{7,}$/.test(trimmed)
+}
+
 // Fallback for legacy comments that still have a numeric timestamp column
 const normalizeTimecode = (comment: any): string => {
   if (comment.timecode && typeof comment.timecode === 'string') {
@@ -38,7 +52,11 @@ export function sanitizeComment(
   teamName?: string | null,
 ) {
   const normalizedTimecode = normalizeTimecode(comment)
-  const accountAuthorName = comment.user?.name || comment.user?.email || null
+  const accountName = comment.user?.name?.trim() || null
+  // First non-empty *display* name. Account identifiers are filtered out so an email
+  // or phone number stored for the studio can never surface on a client-facing page.
+  const publicAuthorName = [accountName, comment.authorName]
+    .find((value): value is string => typeof value === 'string' && !isAccountIdentifier(value)) || null
 
   const sanitized: any = {
     id: comment.id,
@@ -66,7 +84,7 @@ export function sanitizeComment(
   // Use generic labels only
   if (isAdmin) {
     // Admins get real data for management purposes only
-    sanitized.authorName = accountAuthorName || comment.authorName
+    sanitized.authorName = accountName || comment.user?.email || comment.authorName
     sanitized.authorEmail = comment.authorEmail
     sanitized.userId = comment.userId
     sanitized.canDelete = true
@@ -86,18 +104,16 @@ export function sanitizeComment(
       }
     }
   } else if (isAuthenticated) {
-    // Authenticated share users see author names but never emails
-    sanitized.authorName = comment.isInternal
-      ? (accountAuthorName || comment.authorName || 'Admin')
-      : (accountAuthorName || comment.authorName || clientName || 'Client')
+    // Authenticated share users see author display names but never account identifiers
+    sanitized.authorName = publicAuthorName || (comment.isInternal ? 'Admin' : (clientName || 'Client'))
   } else {
     // Guests/public: generic labels only, no PII
     sanitized.authorName = comment.isInternal ? 'Admin' : 'Client'
   }
 
-  // Internal author presentation is safe to expose on share pages: only the
-  // configured team nickname, avatar and role metadata are returned (never
-  // account identifiers or email addresses).
+  // Internal author presentation is safe to expose on share pages: only the avatar and
+  // the member's own public signature (nickname + role) are returned. Department and
+  // bio are internal org data and stay admin-only, same rule as the project detail route.
   if (!isAdmin && comment.isInternal && comment.user) {
     const teamProfile = Array.isArray(comment.user.teamMemberships)
       ? comment.user.teamMemberships[0]
@@ -106,8 +122,6 @@ export function sanitizeComment(
       avatarUrl: comment.user.avatarUrl || null,
       teamNickname: teamProfile?.teamNickname || null,
       teamProfession: teamProfile?.teamProfession || null,
-      department: teamProfile?.department || null,
-      bio: teamProfile?.bio || null,
     }
   }
 

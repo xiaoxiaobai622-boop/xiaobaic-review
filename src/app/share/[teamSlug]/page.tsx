@@ -15,7 +15,7 @@ export default async function SharePage({ params }: SharePageProps) {
 
   // Show not-found for non-existent or archived projects
   // Archived projects appear as if they don't exist (security)
-  if (!project || project.status === 'ARCHIVED' || (resolved.link && !isShareLinkActive(resolved.link))) {
+  if (!project || project.status === 'ARCHIVED' || !isShareLinkActive(resolved.policy)) {
     notFound()
   }
 

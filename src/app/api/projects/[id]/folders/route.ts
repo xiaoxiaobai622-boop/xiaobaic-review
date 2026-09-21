@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, INCLUDE_DELETED, LIVE_VIDEO } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { createRecycleBinItem } from '@/lib/recycle-bin'
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
   const auth = await authorize(request, id)
   if (auth instanceof Response) return auth
-  const folders = await prisma.projectFolder.findMany({ where: { projectId: id }, orderBy: { name: 'asc' }, include: { _count: { select: { videos: true } } } })
+  const folders = await prisma.projectFolder.findMany({ where: { projectId: id }, orderBy: { name: 'asc' }, include: { _count: { select: { videos: { where: LIVE_VIDEO } } } } })
   return NextResponse.json({ folders })
 }
 
@@ -63,7 +63,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!folderId) return NextResponse.json({ error: 'folderId is required' }, { status: 400 })
   const folder = await prisma.projectFolder.findFirst({
     where: { id: folderId, projectId: id },
-    include: { videos: { include: { assets: true } } },
+    include: { videos: { where: LIVE_VIDEO, include: { assets: true } } },
   })
   if (!folder) return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
 
@@ -86,6 +86,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const [sharedVideos, sharedAssets] = await Promise.all([
       prisma.video.count({ where: {
         ...(videoIds.length > 0 ? { id: { notIn: videoIds } } : {}),
+        // A folder delete destroys its videos for good, but a video in the
+        // recycle bin can still be restored and needs its files intact.
+        deletedAt: INCLUDE_DELETED,
         OR: [
           { originalStoragePath: path },
           { preview2160Path: path },

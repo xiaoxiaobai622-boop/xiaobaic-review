@@ -21,6 +21,7 @@ import {
   storeUploadMetadata,
   clearUploadMetadata,
 } from '@/lib/tus-context'
+import { checkVideoContainer, isVideoCandidate, VIDEO_INPUT_ACCEPT } from '@/lib/video-file-signature'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 import { useS3MultipartUpload } from '@/hooks/useS3MultipartUpload'
 
@@ -89,36 +90,11 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
     }
 
     try {
-      const headerBytes = await new Promise<Uint8Array>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          if (e.target?.result) {
-            resolve(new Uint8Array(e.target.result as ArrayBuffer))
-          } else {
-            reject(new Error('Failed to read file'))
-          }
-        }
-        reader.onerror = () => reject(new Error('Failed to read file'))
-        reader.readAsArrayBuffer(file.slice(0, 12))
-      })
-
-      if (headerBytes.length < 12) {
-        return { valid: false, error: t('fileTooSmall') }
-      }
-
-      const ftypSignature = String.fromCharCode(...headerBytes.subarray(4, 8))
-      if (ftypSignature === 'ftyp') return { valid: true }
-
-      const mdatSignature = String.fromCharCode(...headerBytes.subarray(4, 8))
-      if (mdatSignature === 'mdat') return { valid: true }
-
-      const validAtoms = ['wide', 'free', 'moov']
-      const atomType = String.fromCharCode(...headerBytes.subarray(4, 8))
-      if (validAtoms.includes(atomType)) return { valid: true }
-
+      const container = await checkVideoContainer(file)
+      if (container === 'valid') return { valid: true }
       return {
         valid: false,
-        error: t('invalidVideoShort')
+        error: container === 'too-small' ? t('fileTooSmall') : t('invalidVideoShort')
       }
     } catch {
       return { valid: false, error: t('failedToRead') }
@@ -142,12 +118,12 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
     e.stopPropagation()
     setIsDragging(false)
 
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('video/'))
+    const files = Array.from(e.dataTransfer.files).filter(isVideoCandidate)
     addFiles(files)
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('video/'))
+    const files = Array.from(e.target.files || []).filter(isVideoCandidate)
     addFiles(files)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -581,7 +557,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
           <input
             ref={fileInputRef}
             type="file"
-            accept="video/*"
+            accept={VIDEO_INPUT_ACCEPT}
             multiple
             onChange={handleFileSelect}
             className="hidden"

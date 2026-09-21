@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
-import { getRequestedTeamId, getTeamMember } from '@/lib/team-access'
+import { getActiveTeamMembership, getRequestedTeamId } from '@/lib/team-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,15 +10,8 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const requestedTeamId = getRequestedTeamId(request)
-  const membership = requestedTeamId
-    ? await getTeamMember(requestedTeamId, user.id)
-    : await prisma.teamMember.findFirst({
-        where: { userId: user.id, status: 'ACTIVE' },
-        orderBy: { createdAt: 'asc' },
-      })
-
-  if (!membership || membership.status !== 'ACTIVE') {
+  const membership = await getActiveTeamMembership(user, getRequestedTeamId(request))
+  if (!membership) {
     return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
   }
 
@@ -35,15 +28,8 @@ export async function PATCH(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const requestedTeamId = getRequestedTeamId(request)
-  const membership = requestedTeamId
-    ? await getTeamMember(requestedTeamId, user.id)
-    : await prisma.teamMember.findFirst({
-        where: { userId: user.id, status: 'ACTIVE' },
-        orderBy: { createdAt: 'asc' },
-      })
-
-  if (!membership || membership.status !== 'ACTIVE') {
+  const membership = await getActiveTeamMembership(user, getRequestedTeamId(request))
+  if (!membership) {
     return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
   }
   if (!['OWNER', 'ADMIN'].includes(membership.role)) {

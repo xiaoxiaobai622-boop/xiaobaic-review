@@ -155,9 +155,9 @@ export async function POST(
     const project = resolved.project ? {
       id: resolved.project.id,
       title: resolved.project.title,
-      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
+      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
     } : null
-    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
 
     if (!project) {
       return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
@@ -248,7 +248,7 @@ export async function POST(
     const shareToken = signShareToken({
       shareId: token,
       projectId: project.id,
-      permissions: linkPermissions(resolved.link, project),
+      permissions: linkPermissions(resolved.policy),
       guest: false,
       ttlSeconds: shareTokenTtl,
     })

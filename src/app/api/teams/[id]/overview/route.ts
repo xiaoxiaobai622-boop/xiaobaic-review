@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO, INCLUDE_DELETED } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import { getTeamQuota } from '@/lib/platform-access'
@@ -71,7 +71,7 @@ export async function GET(
         status: true,
         createdAt: true,
         updatedAt: true,
-        _count: { select: { videos: true, members: true } },
+        _count: { select: { videos: { where: LIVE_VIDEO }, members: true } },
       },
     }),
   ])
@@ -80,7 +80,7 @@ export async function GET(
 
   const projectSummaries = await Promise.all(projects.map(async (project) => {
     const [videos, assets, uploads] = await Promise.all([
-      prisma.video.aggregate({ where: { projectId: project.id }, _sum: { originalFileSize: true } }),
+      prisma.video.aggregate({ where: { projectId: project.id, deletedAt: INCLUDE_DELETED }, _sum: { originalFileSize: true } }),
       prisma.videoAsset.aggregate({ where: { video: { projectId: project.id }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
       prisma.projectUpload.aggregate({ where: { projectId: project.id, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
     ])

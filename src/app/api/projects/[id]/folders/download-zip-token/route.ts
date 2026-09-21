@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { getRedis } from '@/lib/redis'
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const folder = await prisma.projectFolder.findFirst({
     where: { id: folderId, projectId },
-    include: { videos: { orderBy: [{ name: 'asc' }, { version: 'desc' }] } },
+    include: { videos: { where: LIVE_VIDEO, orderBy: [{ name: 'asc' }, { version: 'desc' }] } },
   })
   if (!folder) return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
   if (folder.videos.length === 0) return NextResponse.json({ error: '文件夹中没有可下载的视频' }, { status: 404 })

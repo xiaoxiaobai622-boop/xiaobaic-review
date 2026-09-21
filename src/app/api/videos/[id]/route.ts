@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
-import { getAutoApproveProject } from '@/lib/settings'
+import { recomputeProjectApprovalStatus } from '@/lib/project-approval'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
 import { canAccessProject, canManageProjectApproval } from '@/lib/project-access'
 import { createRecycleBinItem } from '@/lib/recycle-bin'
+import { parentDirectory, referencedStoragePaths } from '@/lib/video-storage-paths'
 import { rollbackLatestVideoVersion } from '@/lib/video-version-rollback'
+import { videoNameSlotTaken } from '@/lib/video-versions'
 
 export const runtime = 'nodejs'
 
@@ -85,54 +87,6 @@ export async function GET(
   }
 }
 
-async function checkAllVideosApproved(projectId: string): Promise<boolean> {
-  const allVideos = await prisma.video.findMany({
-    where: { projectId },
-    select: { approved: true, name: true }
-  })
-
-  const videosByName = allVideos.reduce((acc: Record<string, any[]>, video) => {
-    if (!acc[video.name]) acc[video.name] = []
-    acc[video.name].push(video)
-    return acc
-  }, {})
-
-  return Object.values(videosByName).every((versions: any[]) =>
-    versions.some(v => v.approved)
-  )
-}
-
-async function updateProjectStatus(
-  projectId: string,
-  videoId: string,
-  approved: boolean,
-  currentStatus: string
-): Promise<void> {
-  const allApproved = await checkAllVideosApproved(projectId)
-
-  const autoApprove = await getAutoApproveProject()
-
-  if (allApproved && approved && autoApprove) {
-    await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        status: 'APPROVED',
-        approvedAt: new Date(),
-        approvedVideoId: videoId
-      }
-    })
-  } else if (!approved && currentStatus === 'APPROVED') {
-    await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        status: 'IN_REVIEW',
-        approvedAt: null,
-        approvedVideoId: null
-      }
-    })
-  }
-}
-
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -152,6 +106,16 @@ export async function PATCH(
     message: videoMessages.tooManyVideoUpdateRequests || 'Too many video update requests. Please slow down.',
   }, 'video-update')
   if (rateLimitResult) return rateLimitResult
+
+  // Renaming can collide with the unique (projectId, name, version) index; both the
+  // pre-check and the violation itself answer the same way as /api/videos/batch.
+  const nameVersionTaken = () => NextResponse.json(
+    {
+      error: videoMessages.videoNameVersionTaken || 'That video already has a version with this name.',
+      code: 'VIDEO_NAME_VERSION_TAKEN',
+    },
+    { status: 409 }
+  )
 
   try {
     const { id } = await params
@@ -195,8 +159,7 @@ export async function PATCH(
     }
 
     const video = await prisma.video.findUnique({
-      where: { id },
-      include: { project: true }
+      where: { id }
     })
 
     if (!video) {
@@ -259,6 +222,12 @@ export async function PATCH(
         data: { folderId: folderId || null },
       })
     } else {
+      if (updateData.name !== undefined && updateData.name !== video.name) {
+        const taken = await videoNameSlotTaken(prisma, updateData.name, [
+          { projectId: video.projectId, version: video.version, videoId: video.id },
+        ])
+        if (taken) return nameVersionTaken()
+      }
       await prisma.video.update({
         where: { id },
         data: updateData
@@ -267,7 +236,7 @@ export async function PATCH(
 
     if (approved !== undefined) {
       logMessage(`[VIDEO-APPROVAL] Admin toggled approval for video ${id} to ${approved}`)
-      await updateProjectStatus(video.projectId, id, approved, video.project.status)
+      await recomputeProjectApprovalStatus(video.projectId)
 
       // Admin-toggled approvals don't send email notifications (only client-initiated ones do)
       logMessage('[VIDEO-APPROVAL] Admin approval - emails NOT sent (by design)')
@@ -275,6 +244,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if ((error as { code?: string })?.code === 'P2002') return nameVersionTaken()
     return NextResponse.json(
       { error: videoMessages.failedToUpdateVideoApproval || 'Failed to update video approval' },
       { status: 500 }
@@ -313,7 +283,6 @@ export async function DELETE(
         assets: true,
       }
     })
-
     if (!video) {
       return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
@@ -322,73 +291,31 @@ export async function DELETE(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    const candidatePaths = [
-      video.originalStoragePath,
-      video.preview2160Path,
-      video.preview1080Path,
-      video.preview720Path,
-      (video as any).hlsPath,
-      video.cleanPreview2160Path,
-      video.cleanPreview1080Path,
-      video.cleanPreview720Path,
-    ].filter((path): path is string => Boolean(path))
-    const paths: string[] = []
-    for (const path of candidatePaths) {
-      const [sharedVideos, sharedAssets] = await Promise.all([
-        prisma.video.count({ where: { id: { not: id }, OR: [
-          { originalStoragePath: path },
-          { preview2160Path: path },
-          { preview1080Path: path },
-          { preview720Path: path },
-          { hlsPath: path },
-          { cleanPreview2160Path: path },
-          { cleanPreview1080Path: path },
-          { cleanPreview720Path: path },
-          { thumbnailPath: path },
-        ] } }),
-        prisma.videoAsset.count({ where: { storagePath: path, videoId: { not: id } } }),
-      ])
-      if (sharedVideos === 0 && sharedAssets === 0) paths.push(path)
-    }
-
-    for (const asset of video.assets) {
-      const sharedCount = await prisma.videoAsset.count({
-        where: { storagePath: asset.storagePath, id: { not: asset.id } },
-      })
-      if (sharedCount === 0) paths.push(asset.storagePath)
-    }
-
-    if (video.thumbnailPath) {
-      const [thumbnailSharedAssets, thumbnailSharedVideos] = await Promise.all([
-        prisma.videoAsset.count({ where: { storagePath: video.thumbnailPath, videoId: { not: id } } }),
-        prisma.video.count({ where: { thumbnailPath: video.thumbnailPath, id: { not: id } } }),
-      ])
-      if (thumbnailSharedAssets === 0 && thumbnailSharedVideos === 0) paths.push(video.thumbnailPath)
-    }
+    // Everything this row names, co-owners included. Whether an object may go is
+    // decided when the record is purged, not here: another version, a video still
+    // sitting in the bin, or the collected upload this original came from can all
+    // point at the same file.
+    const paths = referencedStoragePaths(video, video.assets)
+    const mpsDirectory = parentDirectory(video.hlsPath)
 
     await prisma.$transaction(async (tx) => {
       await createRecycleBinItem(tx, video.project.id, {
         itemType: 'VIDEO',
         itemName: `${video.name} ${video.versionLabel}`,
-        metadata: { videoId: video.id, originalFileName: video.originalFileName, version: video.version },
-        paths: [...new Set(paths)],
+        metadata: { videoId: video.id, originalFileName: video.originalFileName, name: video.name, version: video.version },
+        paths,
+        directories: mpsDirectory ? [mpsDirectory] : [],
       })
-      await tx.video.delete({ where: { id } })
-
-      // Keep version numbers contiguous after removing a version (e.g. v1, v2, v3 -> v1, v2).
-      const laterVersions = await tx.video.findMany({
-        where: { projectId: video.project.id, name: video.name, version: { gt: video.version } },
-        orderBy: { version: 'asc' },
-        select: { id: true, version: true },
-      })
-      for (const remaining of laterVersions) {
-        const nextVersion = remaining.version - 1
-        await tx.video.update({
-          where: { id: remaining.id },
-          data: { version: nextVersion, versionLabel: `v${nextVersion}` },
-        })
-      }
+      // The row survives so restore can bring back the comments/analytics that a
+      // hard delete cascades away. Versions are deliberately not renumbered: the
+      // tombstone still owns its (projectId, name, version) slot, and shifting the
+      // later versions down would make that slot impossible to restore into.
+      await tx.video.update({ where: { id }, data: { deletedAt: new Date() } })
     })
+
+    // Losing a version can remove the only approved cut of its group, which makes
+    // the project's APPROVED badge a lie until this runs.
+    await recomputeProjectApprovalStatus(video.project.id)
 
     return NextResponse.json({
       success: true,

@@ -697,8 +697,10 @@ export default function AdminVideoManager({
         onRefresh?.()
         router.refresh()
       })
-      .catch(() => {
-        appAlert(t('failedToUpdateName'))
+      .catch((error: unknown) => {
+        // The batch route localizes its rejection (a name clash is 409), so prefer
+        // the server's wording over the generic fallback.
+        appAlert(error instanceof Error && error.message ? error.message : t('failedToUpdateName'))
       })
       .finally(() => {
         setSavingGroupName(null)

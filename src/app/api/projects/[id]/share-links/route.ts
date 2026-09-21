@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAdministerProject } from '@/lib/project-access'
 import { encrypt } from '@/lib/encryption'
-import { getAppUrl } from '@/lib/url'
+import { getAppUrl, generateShareUrl } from '@/lib/url'
+import { projectMasterPolicy } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const MASTER_LINK_SELECT = {
+  slug: true,
+  shareSlug: true,
+  status: true,
+  authMode: true,
+  sharePassword: true,
+  hideFeedback: true,
+  allowAssetDownload: true,
+  team: { select: { shareKey: true, slug: true } },
+} as const
 
 function cleanScopeType(value: unknown) {
   return ['PROJECT', 'FOLDER', 'VIDEO', 'VIDEO_VERSION'].includes(String(value)) ? String(value) : null
@@ -51,14 +64,36 @@ function serialize(link: any, baseUrl: string) {
   }
 }
 
+/**
+ * The project's own address (`/share/<teamKey>/<shareSlug>`, the one every
+ * notification email carries) has no ShareLink row, so it is shown from the
+ * project settings the share policy is built from.
+ */
+async function serializeMasterLink(project: Prisma.ProjectGetPayload<{ select: typeof MASTER_LINK_SELECT }>) {
+  const policy = projectMasterPolicy(project)
+  return {
+    url: await generateShareUrl(project),
+    authMode: policy.authMode,
+    hasPassword: Boolean(project.sharePassword),
+    permissions: policy.permissions,
+    status: policy.status,
+  }
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireApiAdmin(request)
   if (user instanceof Response) return user
   const { id } = await params
   if (!(await canAdministerProject(prisma, user, id))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  const links = await prisma.shareLink.findMany({ where: { projectId: id }, orderBy: { createdAt: 'desc' } })
+  const [links, project] = await Promise.all([
+    prisma.shareLink.findMany({ where: { projectId: id }, orderBy: { createdAt: 'desc' } }),
+    prisma.project.findUnique({ where: { id }, select: MASTER_LINK_SELECT }),
+  ])
   const baseUrl = await getAppUrl(request)
-  return NextResponse.json({ shareLinks: links.map(link => serialize(link, baseUrl)) })
+  return NextResponse.json({
+    shareLinks: links.map(link => serialize(link, baseUrl)),
+    masterLink: project ? await serializeMasterLink(project) : null,
+  })
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

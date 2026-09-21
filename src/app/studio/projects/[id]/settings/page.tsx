@@ -38,7 +38,8 @@ interface Project {
   hideFeedback: boolean
   timestampDisplay: string
   sharePassword: string | null
-  sharePasswordDecrypted: string | null
+  hasSharePassword: boolean
+  canAdminister: boolean
   authMode: string
   guestMode: boolean
   guestLatestOnly: boolean
@@ -250,7 +251,13 @@ export default function ProjectSettingsPage() {
     }
   }, [authMode, initialLoadComplete])
 
+  // PATCH /api/projects/[id] requires project-admin rights; a plain team member
+  // could open this page and press 保存 into a bare 403, with the withheld share
+  // password looking like "this project has no password".
+  const canSave = project?.canAdminister !== false
+
   async function handleSave() {
+    if (!canSave) return
     setSaving(true)
     setError('')
     setSuccess(false)
@@ -458,12 +465,18 @@ export default function ProjectSettingsPage() {
               </div>
             </div>
 
-            <Button onClick={handleSave} variant="default" disabled={saving} size="lg" className="h-11 w-full sm:w-auto">
+            <Button onClick={handleSave} variant="default" disabled={saving || !canSave} size="lg" className="h-11 w-full sm:w-auto">
               <Save className="w-4 h-4 mr-2" />
               {saving ? tc('saving') : tc('saveChanges')}
             </Button>
           </div>
         </div>
+
+        {!canSave && (
+          <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-muted border-2 border-border rounded-lg">
+            <p className="text-xs sm:text-sm text-muted-foreground">{t('settingsReadOnlyForMembers')}</p>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-destructive-visible border-2 border-destructive-visible rounded-lg">

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { handleApprovalNotification } from '@/lib/notifications'
 import { getAutoApproveProject, isSmtpConfigured } from '@/lib/settings'
 import { canManageProjectApproval } from '@/lib/project-access'
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       include: {
-        videos: { where: { status: { not: 'ROLLED_BACK' } } },
+        videos: { where: { ...LIVE_VIDEO, status: { not: 'ROLLED_BACK' } } },
       },
     })
 

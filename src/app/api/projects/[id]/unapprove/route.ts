@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canManageProjectApproval } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -60,6 +60,7 @@ export async function POST(
       where: { id: projectId },
       include: {
         videos: {
+          where: LIVE_VIDEO,
           select: { id: true, approved: true }
         }
       }

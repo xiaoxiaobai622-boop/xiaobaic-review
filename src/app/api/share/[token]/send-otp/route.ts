@@ -82,11 +82,11 @@ export async function POST(
     }
 
     const resolved = await resolveShareMetadata(token)
-    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
     const project = resolved.project ? {
       id: resolved.project.id,
       title: resolved.project.title,
-      authMode: resolved.link?.authMode || resolved.project.authMode,
+      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
     } : null
 
     if (!project) {

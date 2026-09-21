@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, INCLUDE_DELETED } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -30,14 +30,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const project = await tx.project.findUnique({ where: { id: source.projectId }, select: { status: true, enableRevisions: true, maxRevisions: true } })
       if (!project) throw new Error('PROJECT_NOT_FOUND')
       if (project.status === 'APPROVED') throw new Error('PROJECT_APPROVED')
+      // Both groups are read with the recycle bin in view: version numbers may not
+      // reuse a slot a tombstone still occupies, and a binned version has to travel
+      // with its group so restoring it lands back in the same place.
       const [existing, sourceVersions] = await Promise.all([
-        tx.video.findMany({ where: { projectId: source.projectId, name: targetName }, orderBy: { version: 'desc' }, select: { version: true, status: true, folderId: true } }),
-        tx.video.findMany({ where: { projectId: source.projectId, name: source.name }, orderBy: { version: 'asc' }, select: { id: true } }),
+        tx.video.findMany({ where: { projectId: source.projectId, name: targetName, deletedAt: INCLUDE_DELETED }, orderBy: { version: 'desc' }, select: { version: true, status: true, folderId: true, deletedAt: true } }),
+        tx.video.findMany({ where: { projectId: source.projectId, name: source.name, deletedAt: INCLUDE_DELETED }, orderBy: { version: 'asc' }, select: { id: true, status: true, deletedAt: true } }),
       ])
-      const activeCount = existing.filter((video) => video.status !== 'ROLLED_BACK').length
-      const sourceActiveCount = sourceVersions.length
-      if (project.enableRevisions && project.maxRevisions > 0 && activeCount + sourceActiveCount > project.maxRevisions) throw new Error('MAX_REVISIONS')
-      const targetFolderId = existing[0]?.folderId || null
+      const liveVersions = sourceVersions.filter((video) => !video.deletedAt && video.status !== 'ROLLED_BACK')
+      const activeCount = existing.filter((video) => !video.deletedAt && video.status !== 'ROLLED_BACK').length
+      if (project.enableRevisions && project.maxRevisions > 0 && activeCount + liveVersions.length > project.maxRevisions) throw new Error('MAX_REVISIONS')
+      const targetFolderId = existing.find((video) => !video.deletedAt)?.folderId || null
       const temporaryName = `__moving_${sourceId}_${Date.now()}`
       await tx.video.updateMany({ where: { projectId: source.projectId, name: source.name }, data: { name: temporaryName } })
       let version = existing[0]?.version || 0
@@ -48,7 +51,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           data: { name: targetName, version, versionLabel: `v${version}`, folderId: targetFolderId, approved: false, approvedAt: null, reviewStatus: null },
         })
       }
-      return { count: sourceVersions.length, version, latestId: sourceVersions[sourceVersions.length - 1]?.id }
+      return { count: liveVersions.length, version, latestId: liveVersions[liveVersions.length - 1]?.id }
     })
     return NextResponse.json({ videoId: moved.latestId, movedCount: moved.count, version: moved.version, versionLabel: `v${moved.version}` })
   } catch (error) {

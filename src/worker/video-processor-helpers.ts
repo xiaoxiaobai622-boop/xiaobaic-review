@@ -344,7 +344,12 @@ export async function processPreview(
 }
 
 /**
- * Generate thumbnail and upload
+ * Generate thumbnail and upload.
+ *
+ * Returns null when the frame cannot be extracted: sources like screen recordings
+ * report `fps=0`/VFR and FFmpeg refuses to seek them. That is cosmetic, so it must
+ * not cost an already-transcoded video its READY status, and in the MPS path a throw
+ * here would even be read as "the transcode failed".
  */
 export async function processThumbnail(
   videoId: string,
@@ -353,7 +358,7 @@ export async function processThumbnail(
   inputPath: string,
   duration: number,
   tempFiles: TempFiles
-): Promise<string> {
+): Promise<string | null> {
   // Calculate thumbnail timestamp using constants
   const timestamp = Math.min(
     Math.max(duration * THUMBNAIL_CONFIG.percentage, THUMBNAIL_CONFIG.min),
@@ -366,30 +371,35 @@ export async function processThumbnail(
   debugLog('Generating thumbnail...')
   debugLog('Thumbnail timestamp:', timestamp + ' s')
 
-  const thumbStart = Date.now()
-  await generateThumbnail(inputPath, tempThumbnailPath, timestamp)
-  const thumbTime = Date.now() - thumbStart
+  try {
+    const thumbStart = Date.now()
+    await generateThumbnail(inputPath, tempThumbnailPath, timestamp)
+    const thumbTime = Date.now() - thumbStart
 
-  logMessage(`[WORKER] Generated thumbnail for video ${videoId} in ${(thumbTime / 1000).toFixed(2)}s`)
+    logMessage(`[WORKER] Generated thumbnail for video ${videoId} in ${(thumbTime / 1000).toFixed(2)}s`)
 
-  const thumbnailPath = teamProjectStorageKey(teamId, projectId, 'videos', videoId, 'thumbnail.jpg')
-  const statsThumbnail = fs.statSync(tempThumbnailPath)
+    const thumbnailPath = teamProjectStorageKey(teamId, projectId, 'videos', videoId, 'thumbnail.jpg')
+    const statsThumbnail = fs.statSync(tempThumbnailPath)
 
-  debugLog('Uploading thumbnail to:', thumbnailPath)
-  debugLog('Thumbnail file size:', (statsThumbnail.size / 1024).toFixed(2) + ' KB')
+    debugLog('Uploading thumbnail to:', thumbnailPath)
+    debugLog('Thumbnail file size:', (statsThumbnail.size / 1024).toFixed(2) + ' KB')
 
-  const uploadStart = Date.now()
-  await uploadFile(
-    thumbnailPath,
-    fs.createReadStream(tempThumbnailPath),
-    statsThumbnail.size,
-    'image/jpeg'
-  )
-  const uploadTime = Date.now() - uploadStart
+    const uploadStart = Date.now()
+    await uploadFile(
+      thumbnailPath,
+      fs.createReadStream(tempThumbnailPath),
+      statsThumbnail.size,
+      'image/jpeg'
+    )
+    const uploadTime = Date.now() - uploadStart
 
-  debugLog('Thumbnail uploaded in:', (uploadTime / 1000).toFixed(2) + ' s')
+    debugLog('Thumbnail uploaded in:', (uploadTime / 1000).toFixed(2) + ' s')
 
-  return thumbnailPath
+    return thumbnailPath
+  } catch (error) {
+    logError(`[WORKER] Thumbnail generation failed for video ${videoId} (non-fatal)`, error)
+    return null
+  }
 }
 
 /**
@@ -398,7 +408,7 @@ export async function processThumbnail(
 export async function finalizeVideo(
   videoId: string,
   previewPaths: Partial<Record<'720p' | '1080p', string>>,
-  thumbnailPath: string,
+  thumbnailPath: string | null,
   metadata: VideoMetadata
 ): Promise<void> {
   // Preserve user-supplied thumbnails (assets) when reprocessing so we don't overwrite them
@@ -420,14 +430,16 @@ export async function finalizeVideo(
   const updateData: any = {
     status: 'READY',
     processingProgress: 100,
-    // Keep custom thumbnails; only overwrite system-generated ones
-    thumbnailPath: hasCustomThumbnail ? existingThumbnail?.thumbnailPath : thumbnailPath,
     duration: metadata.duration,
     width: metadata.width,
     height: metadata.height,
     fps: metadata.fps,
     codec: metadata.codec,
   }
+
+  // Keep custom thumbnails; only overwrite system-generated ones. A failed
+  // extraction keeps whatever cover the video already had.
+  if (thumbnailPath && !hasCustomThumbnail) updateData.thumbnailPath = thumbnailPath
 
   if (previewPaths['720p']) updateData.preview720Path = previewPaths['720p']
   if (previewPaths['1080p']) updateData.preview1080Path = previewPaths['1080p']

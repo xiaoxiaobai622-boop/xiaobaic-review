@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_COMMENT } from '@/lib/db'
 import { getAuthContext } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createCommentSchema, safeParseBody } from '@/lib/validation'
@@ -100,6 +100,7 @@ export async function GET(request: NextRequest) {
       where: {
         projectId,
         parentId: null, // Only get top-level comments
+        ...LIVE_COMMENT,
       },
       include: {
         user: {
@@ -237,9 +238,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // "Internal" means the comment was written in the studio, not on a share page.
+    // The share token is the only trustworthy marker: it is signed with a different
+    // secret and a different `type` claim than account tokens, so a studio request
+    // can never be mistaken for a share request. The client must not get to choose
+    // this — it drives the client->team Apprise push and the ADMIN_REPLY/CLIENT_COMMENT
+    // queue type, so a self-declared `true` silenced every client comment forever.
+    const isInternal = !authContext.shareContext
+
     const permissionCheck = await validateCommentPermissions({
       projectId,
-      isInternal: true,
+      isInternal,
       currentUser: authContext.user
     })
 
@@ -343,7 +352,7 @@ export async function POST(request: NextRequest) {
         authorName: contentValidation.sanitizedAuthorName,
         authorEmail: finalAuthorEmail,
         category: category || null,
-        isInternal: true,
+        isInternal,
         parentId: parentId || null,
         userId: authContext.user?.id || null,
         annotations: annotations || undefined,

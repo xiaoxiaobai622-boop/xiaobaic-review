@@ -121,8 +121,8 @@ export async function POST(
     }
 
     const resolved = await resolveShareMetadata(token)
-    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
-    const project = resolved.project ? { id: resolved.project.id, title: resolved.project.title, authMode: resolved.link?.authMode || resolved.project.authMode } : null
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    const project = resolved.project ? { id: resolved.project.id, title: resolved.project.title, authMode: resolved.policy?.authMode ?? resolved.project.authMode } : null
 
     if (!project) {
       return NextResponse.json(
@@ -237,7 +237,7 @@ export async function POST(
     const shareToken = signShareToken({
       shareId: token,
       projectId: project.id,
-      permissions: linkPermissions(resolved.link, project),
+      permissions: linkPermissions(resolved.policy),
       guest: false,
       recipientId: recipient?.id,
       ttlSeconds: shareTokenTtl,

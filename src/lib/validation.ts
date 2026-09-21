@@ -416,7 +416,6 @@ export const createCommentSchema = z.object({
   category: z.enum(['PICTURE', 'AUDIO', 'SUBTITLE', 'EDITING', 'OTHER']).optional().nullable(),
   recipientId: cuidSchema.optional().nullable(),
   parentId: cuidSchema.optional(),
-  isInternal: z.boolean().optional(),
   assetIds: z.array(z.string()).max(50).optional(),
   annotations: annotationDataSchema.optional().nullable(),
 })

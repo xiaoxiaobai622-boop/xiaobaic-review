@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_COMMENT } from '@/lib/db'
 import { getPrimaryRecipient } from '@/lib/recipients'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
@@ -46,12 +46,12 @@ export async function GET(
 
     // Fetch project by token (not by ID - more secure)
     const resolved = await resolveShareMetadata(token)
-    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
     const project = resolved.project ? {
       id: resolved.project.id,
       teamId: resolved.project.teamId,
-      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
-      authMode: resolved.link?.authMode || resolved.project.authMode,
+      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
+      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
       companyName: resolved.project.companyName,
       hideFeedback: resolved.project.hideFeedback,
       guestMode: resolved.project.guestMode,
@@ -103,11 +103,12 @@ export async function GET(
     }
 
     // Fetch comments with nested replies
-    const scopedIds = resolved.link ? await getShareScopeVideoIds(resolved.link, project.id) : null
+    const scopedIds = await getShareScopeVideoIds(resolved.policy, project.id)
     const comments = await prisma.comment.findMany({
       where: {
         projectId: project.id,
         parentId: null,
+        ...LIVE_COMMENT,
         ...(scopedIds ? { videoId: { in: Array.from(scopedIds) } } : {}),
       },
       include: {

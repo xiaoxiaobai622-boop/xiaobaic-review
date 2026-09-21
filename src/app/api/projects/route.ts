@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { generateUniqueSlug, generateUniqueTeamShareSlug } from '@/lib/utils'
+import { prisma, LIVE_VIDEO, LIVE_COMMENT } from '@/lib/db'
+import { generateUniqueProjectSlugs } from '@/lib/share-tokens'
 import { getProjectDefaults } from '@/lib/settings'
 import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         maxRevisions: true,
         enableRevisions: true,
         videos: {
-          where: { status: { not: 'ROLLED_BACK' } },
+          where: { ...LIVE_VIDEO, status: { not: 'ROLLED_BACK' } },
           select: {
             id: true,
             status: true,
@@ -96,8 +96,8 @@ export async function GET(request: NextRequest) {
         },
         _count: {
           select: {
-            videos: { where: { status: { not: 'ROLLED_BACK' } } },
-            comments: true,
+            videos: { where: { ...LIVE_VIDEO, status: { not: 'ROLLED_BACK' } } },
+            comments: { where: LIVE_COMMENT },
           },
         },
       },
@@ -133,24 +133,17 @@ export async function POST(request: NextRequest) {
   }
   const admin = authResult
 
-  const requestedTeamId = getRequestedTeamId(request)
-  const activeMembership = requestedTeamId
-    ? await prisma.teamMember.findUnique({
-        where: { teamId_userId: { teamId: requestedTeamId, userId: admin.id } },
-        select: { teamId: true, status: true },
-      })
-    : await prisma.teamMember.findFirst({
-        where: { userId: admin.id, status: 'ACTIVE' },
-        orderBy: { createdAt: 'asc' },
-        select: { teamId: true, status: true },
-      })
-  if (!activeMembership || activeMembership.status !== 'ACTIVE') {
+  // `requireApiAdmin` has already picked and validated the acting team, and the project
+  // list reads through the same value. Resolving it a second time here let a create land
+  // in a different team than the one the caller is working in.
+  const teamId = admin.authorizedTeamId
+  if (!teamId) {
     return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
   }
 
   const [quota, usage] = await Promise.all([
-    getTeamQuota(activeMembership.teamId),
-    getTeamUsage(activeMembership.teamId),
+    getTeamQuota(teamId),
+    getTeamUsage(teamId),
   ])
   if (quota.maxProjects > 0 && usage.projects >= quota.maxProjects) {
     return NextResponse.json({ error: '当前团队的项目数量已达到配额上限' }, { status: 403 })
@@ -229,18 +222,16 @@ export async function POST(request: NextRequest) {
       ? null
       : (trimmedPassword || null)
 
-    const settings = await getProjectDefaults(activeMembership.teamId)
+    const settings = await getProjectDefaults(teamId)
 
-    // Generate unique slug from title
-    const slug = await generateUniqueSlug(title, prisma)
-    const shareSlug = await generateUniqueTeamShareSlug(title, activeMembership.teamId, prisma)
+    const { slug, shareSlug } = await generateUniqueProjectSlugs(prisma, teamId)
 
     // Encrypt share password if provided (so we can decrypt it later for email notifications)
     const encryptedSharePassword = passwordForStorage ? encrypt(passwordForStorage) : null
 
     // Use transaction to ensure atomicity: if recipient creation fails, project creation is rolled back
     const project = await prisma.$transaction(async (tx) => {
-      const projectCode = await nextProjectCode(tx, activeMembership.teamId)
+      const projectCode = await nextProjectCode(tx, teamId)
       const newProject = await tx.project.create({
         data: {
           projectCode,
@@ -276,7 +267,7 @@ export async function POST(request: NextRequest) {
           dueDate: dueDate ? new Date(dueDate) : null,
           dueReminder: dueReminder || null,
           createdById: admin.id,
-          teamId: activeMembership.teamId,
+          teamId,
         },
       })
 

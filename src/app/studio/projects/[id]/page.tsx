@@ -20,6 +20,7 @@ import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
 import { cn } from '@/lib/utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { isVideoCandidate, VIDEO_INPUT_ACCEPT } from '@/lib/video-file-signature'
 import { useAuth } from '@/components/AuthProvider'
 import FolderInteraction from '@/components/ui/folder-interaction'
 import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
@@ -585,7 +586,7 @@ export default function ProjectPage() {
     event.preventDefault()
     event.stopPropagation()
     setFolderDropTargetId(undefined)
-    const droppedFiles = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv|wmv|flv)$/i.test(file.name))
+    const droppedFiles = Array.from(event.dataTransfer.files || []).filter(isVideoCandidate)
     if (droppedFiles.length > 0) {
       if (project.status === 'APPROVED') return
       setUploadRequestFolderId(folderId)
@@ -606,7 +607,7 @@ export default function ProjectPage() {
   const openFolderUpload = () => folderUploadInputRef.current?.click()
 
   const handleFolderUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith('video/'))
+    const files = Array.from(event.target.files || []).filter(isVideoCandidate)
     event.target.value = ''
     if (!files.length) return
     setUploadRequestFolderId(null)
@@ -895,7 +896,7 @@ export default function ProjectPage() {
                   document.body
                 )
               })()}
-              <input ref={folderUploadInputRef} type="file" multiple accept="video/*" className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
+              <input ref={folderUploadInputRef} type="file" multiple accept={VIDEO_INPUT_ACCEPT} className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
               <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} uploadRequestFiles={uploadRequestFiles} uploadRequestFolderId={uploadRequestFolderId} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={(group) => setSelectedVideoGroupName(group.name)} onCreateShare={(preset, target) => openObjectShare(preset, target)} />
             </section>
 
@@ -937,7 +938,7 @@ export default function ProjectPage() {
                 {t('recycleBin')}
                 {recycleBinCount !== null && <span className={countBadgeClassName}>{recycleBinCount}</span>}
               </h2>
-              <RecycleBinBlock key={recycleBinRefreshKey} projectId={project.id} onCountChange={setRecycleBinCount} />
+              <RecycleBinBlock key={recycleBinRefreshKey} projectId={project.id} onCountChange={setRecycleBinCount} onRestored={fetchProject} />
             </section>
 
             <section className={activeWorkspace === 'shares' ? undefined : 'hidden'}>

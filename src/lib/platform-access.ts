@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db'
+import { prisma, INCLUDE_DELETED } from '@/lib/db'
 
 export const TRIAL_PLAN = 'TRIAL'
 export const MONTHLY_PLAN = 'MONTHLY'
@@ -62,7 +62,8 @@ export async function getTeamUsage(teamId: string) {
 
 export async function getTeamStorageUsage(teamId: string) {
   const [videoBytes, assetBytes, uploadBytes, photoBytes] = await Promise.all([
-    prisma.video.aggregate({ where: { project: { teamId } }, _sum: { originalFileSize: true } }),
+    // Recycle bin contents are still occupying COS, so quota counts them.
+    prisma.video.aggregate({ where: { project: { teamId }, deletedAt: INCLUDE_DELETED }, _sum: { originalFileSize: true } }),
     prisma.videoAsset.aggregate({ where: { video: { project: { teamId } }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
     prisma.projectUpload.aggregate({ where: { project: { teamId }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),
     prisma.photo.aggregate({ where: { album: { project: { teamId } }, uploadCompletedAt: { not: null } }, _sum: { fileSize: true } }),

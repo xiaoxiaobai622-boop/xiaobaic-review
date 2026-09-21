@@ -42,16 +42,19 @@ export async function GET(
     const resolved = await resolveShareMetadata(token)
     const resolvedProject = resolved.project
     const shareLink = resolved.link
-    if (shareLink && !isShareLinkActive(shareLink)) {
+    const policy = resolved.policy
+    if (policy && !isShareLinkActive(policy)) {
       return NextResponse.json({ error: 'This share link is no longer active' }, { status: 410 })
     }
-    const projectMeta = resolvedProject ? {
+    const projectMeta = resolvedProject && policy ? {
       id: resolvedProject.id,
-      guestMode: shareLink ? false : resolvedProject.guestMode,
+      // Guest entry is a project-level gate. An explicit share link carries its
+      // own permissions, so it must not additionally inherit guest limits.
+      guestMode: policy.isProjectMaster ? resolvedProject.guestMode : false,
       guestLatestOnly: resolvedProject.guestLatestOnly,
       guestShowPhotos: resolvedProject.guestShowPhotos,
-      sharePassword: shareLink?.sharePassword || resolvedProject.sharePassword,
-      authMode: shareLink?.authMode || resolvedProject.authMode,
+      sharePassword: policy.sharePassword || resolvedProject.sharePassword,
+      authMode: policy.authMode || resolvedProject.authMode,
     } : null
 
     if (!projectMeta) {
@@ -101,10 +104,8 @@ export async function GET(
       return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
     }
 
-    if (shareLink) {
-      const scopedIds = scopeVideoIds(shareLink, project.videos)
-      if (scopedIds) project.videos = project.videos.filter((video: any) => scopedIds.has(video.id))
-    }
+    const scopedIds = scopeVideoIds(policy, project.videos)
+    if (scopedIds) project.videos = project.videos.filter((video: any) => scopedIds.has(video.id))
 
     const accessCheck = await verifyProjectAccess(request, projectMeta.id, projectMeta.sharePassword, projectMeta.authMode)
 
@@ -372,7 +373,7 @@ export async function GET(
         privacyDisclosureText: globalSettings?.privacyDisclosureText || null,
       },
       shareType: shareLink?.type || 'REVIEW',
-      sharePermissions: linkPermissions(shareLink, project),
+      sharePermissions: linkPermissions(policy),
     }
 
     if (shareLink?.type === 'COLLECT') {
@@ -404,7 +405,7 @@ export async function GET(
       const shareToken = signShareToken({
         shareId: token,
         projectId: project.id,
-        permissions: linkPermissions(shareLink, project),
+        permissions: linkPermissions(policy),
         guest: false,
         sessionId,
         authMode: projectMeta.authMode,

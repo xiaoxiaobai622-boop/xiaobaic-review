@@ -466,7 +466,7 @@ export function useCommentManagement({
         : (authenticatedName || authorName),
       authorEmail: isInternalComment ? adminUser?.email || null : null,
       category: selectedCategory,
-      isInternal: true,
+      isInternal: isInternalComment,
       createdAt: new Date(),
       updatedAt: new Date(),
       resolved: false,
@@ -507,7 +507,6 @@ export function useCommentManagement({
         timecode: commentTimecode,
         content: commentContent,
         category: selectedCategory,
-        isInternal: true,
       }
 
       if (annotationForComment) {

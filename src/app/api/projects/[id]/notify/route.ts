@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { sendNewVersionEmail, sendProjectGeneralNotificationEmail, sendPasswordEmail, getRecipientLocale } from '@/lib/email'
 import { generateProjectShareUrlById } from '@/lib/url'
 import { requireApiAdmin } from '@/lib/auth'
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         slug: true,
         sharePassword: true,
         videos: {
-          where: { status: 'READY' },
+          where: { ...LIVE_VIDEO, status: 'READY' },
           select: {
             id: true,
             name: true,

@@ -21,6 +21,7 @@ import {
   storeUploadMetadata,
   clearUploadMetadata,
 } from '@/lib/tus-context'
+import { checkVideoContainer, isVideoCandidate, VIDEO_INPUT_ACCEPT } from '@/lib/video-file-signature'
 import { useS3MultipartUpload } from '@/hooks/useS3MultipartUpload'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 
@@ -82,52 +83,14 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
       return { valid: false, error: t('fileEmpty') }
     }
 
-    // Read first 12 bytes to check for MP4/MOV signature
     try {
-      const headerBytes = await new Promise<Uint8Array>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          if (e.target?.result) {
-            resolve(new Uint8Array(e.target.result as ArrayBuffer))
-          } else {
-            reject(new Error('Failed to read file'))
-          }
-        }
-        reader.onerror = () => reject(new Error('Failed to read file'))
-        reader.readAsArrayBuffer(file.slice(0, 12))
-      })
-
-      // Check for valid MP4/MOV file signature
-      // MP4 files start with: 00 00 00 XX 66 74 79 70 (ftyp atom)
-      // where XX is the size of the atom (typically 18-20 bytes)
-      if (headerBytes.length < 12) {
-        return { valid: false, error: t('fileTooSmall') }
-      }
-
-      // Check for ftyp atom at position 4-8
-      const ftypSignature = String.fromCharCode(...headerBytes.subarray(4, 8))
-
-      if (ftypSignature === 'ftyp') {
-        return { valid: true }
-      }
-
-      // Also check for mdat atom (some MP4s start with this)
-      const mdatSignature = String.fromCharCode(...headerBytes.subarray(4, 8))
-      if (mdatSignature === 'mdat') {
-        return { valid: true }
-      }
-
-      const validAtoms = ['wide', 'free', 'moov']
-      const atomType = String.fromCharCode(...headerBytes.subarray(4, 8))
-      if (validAtoms.includes(atomType)) {
-        return { valid: true }
-      }
-
+      const container = await checkVideoContainer(file)
+      if (container === 'valid') return { valid: true }
       return {
         valid: false,
-        error: t('invalidVideo')
+        error: container === 'too-small' ? t('fileTooSmall') : t('invalidVideo')
       }
-    } catch (err) {
+    } catch {
       return { valid: false, error: t('failedToRead') }
     }
   }
@@ -438,7 +401,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
 
     if (!uploading && e.dataTransfer.files.length > 0) {
       const droppedFile = e.dataTransfer.files[0]
-      if (droppedFile.type.startsWith('video/')) {
+      if (isVideoCandidate(droppedFile)) {
         setFile(droppedFile)
       } else {
         setError(t('dropVideoHere'))
@@ -527,7 +490,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
             ref={fileInputRef}
             id="file"
             type="file"
-            accept="video/*"
+            accept={VIDEO_INPUT_ACCEPT}
             onChange={(e) => setFile(e.target.files?.[0] || null)}
             disabled={uploading}
             className="hidden"

@@ -28,11 +28,11 @@ export async function GET(
     if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
     const resolved = await resolveShareMetadata(token)
-    if (resolved.link && !isShareLinkActive(resolved.link)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
     const project = resolved.project ? {
       id: resolved.project.id,
-      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
-      authMode: resolved.link?.authMode || resolved.project.authMode,
+      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
+      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
     } : null
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
@@ -46,7 +46,7 @@ export async function GET(
       select: { id: true, name: true, folderId: true },
     })
     if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 })
-    if (resolved.link && !(await isVideoInShareScope(resolved.link, project.id, video))) {
+    if (!(await isVideoInShareScope(resolved.policy, project.id, video))) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 

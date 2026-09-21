@@ -33,14 +33,14 @@ export async function POST(
 
   try {
     const resolved = await resolveShareMetadata(slug)
-    if (resolved.link && !isShareLinkActive(resolved.link)) {
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) {
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 410 })
     }
     const project = resolved.project ? {
       id: resolved.project.id,
-      sharePassword: resolved.link?.sharePassword || resolved.project.sharePassword,
-      authMode: resolved.link?.authMode || resolved.project.authMode,
-      allowAssetDownload: resolved.link ? resolved.link.permissions.includes('download') : resolved.project.allowAssetDownload,
+      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
+      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
+      allowAssetDownload: resolved.policy ? resolved.policy.permissions.includes('download') : false,
       title: resolved.project.title,
     } : null
 
@@ -89,7 +89,7 @@ export async function POST(
       orderBy: { createdAt: 'desc' },
     })
 
-    const scopedIds = resolved.link ? await getShareScopeVideoIds(resolved.link, project.id) : null
+    const scopedIds = await getShareScopeVideoIds(resolved.policy, project.id)
     const scopedApprovedVideos = scopedIds
       ? approvedVideos.filter(video => scopedIds.has(video.id))
       : approvedVideos

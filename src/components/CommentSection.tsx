@@ -579,7 +579,9 @@ export default function CommentSection({
                       timecodeEndLabel={timecodeEndLabel}
                       hasAnnotation={hasAnnotation}
                       shareToken={shareToken}
-                      onToggleResolved={(resolved) => handleToggleResolved(comment.id, resolved)}
+                      onToggleResolved={isAdminView || (comment as any).canDelete
+                        ? (resolved) => handleToggleResolved(comment.id, resolved)
+                        : undefined}
                     />
                   </div>
                 )

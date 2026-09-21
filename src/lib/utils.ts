@@ -111,68 +111,6 @@ export function formatDateTime(date: Date | string): string {
   return `${dateStr} ${timeStr}`
 }
 
-function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/\s+/g, '-') // Replace spaces with hyphens
-    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
-    .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
-}
-
-export async function generateUniqueSlug(
-  title: string,
-  prisma: any,
-  excludeId?: string
-): Promise<string> {
-  let slug = generateSlug(title)
-  let counter = 1
-
-  while (true) {
-    const existing = await prisma.project.findUnique({
-      where: { slug },
-    })
-
-    if (!existing || existing.id === excludeId) {
-      break
-    }
-
-    slug = `${generateSlug(title)}-${counter}`
-    counter++
-  }
-
-  return slug
-}
-
-export async function generateUniqueTeamShareSlug(
-  title: string,
-  teamId: string,
-  prisma: any,
-  excludeId?: string,
-): Promise<string> {
-  const baseSlug = generateSlug(title) || `project-${Date.now().toString(36)}`
-  let slug = baseSlug
-  let counter = 1
-
-  while (true) {
-    const existing = await prisma.project.findFirst({
-      where: {
-        teamId,
-        shareSlug: slug,
-        ...(excludeId ? { NOT: { id: excludeId } } : {}),
-      },
-      select: { id: true },
-    })
-
-    if (!existing) break
-    slug = `${baseSlug}-${counter}`
-    counter += 1
-  }
-
-  return slug
-}
-
 export function getClientIpAddress(request: NextRequest): string {
   // Header-derived and client-settable — only trustworthy when the origin is reachable
   // solely via the proxy/CDN (a directly-exposed origin lets clients spoof IPs).

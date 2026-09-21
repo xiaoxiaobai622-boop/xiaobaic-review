@@ -8,6 +8,7 @@ import { deleteFile, getVideoContentType, moveStorageFile } from '@/lib/storage'
 import { getVideoQueue } from '@/lib/queue'
 import { logError } from '@/lib/logging'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
+import { latestAllocatedVideoVersion } from '@/lib/video-versions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -85,21 +86,17 @@ export async function POST(
           tx.video.count({
             where: { projectId, name: videoName, status: { not: 'ROLLED_BACK' } },
           }),
-          tx.video.findFirst({
-            where: { projectId, name: videoName },
-            orderBy: { version: 'desc' },
-            select: { version: true },
-          }),
+          latestAllocatedVideoVersion(tx, projectId, videoName),
         ])
         if (project.enableRevisions && project.maxRevisions > 0 && activeVersionCount >= project.maxRevisions) {
           throw new Error('MAX_REVISIONS')
         }
 
         const canKeepVersionNumber = sourceVideo.name === videoName
-          && sourceVideo.version === (latestAllocatedVersion?.version ?? sourceVideo.version)
+          && sourceVideo.version === (latestAllocatedVersion || sourceVideo.version)
         const restoredVersion = canKeepVersionNumber
           ? sourceVideo.version
-          : (latestAllocatedVersion?.version ?? 0) + 1
+          : latestAllocatedVersion + 1
 
         const video = await tx.video.update({
           where: { id: sourceVideo.id },
@@ -153,18 +150,22 @@ export async function POST(
       // this lock, concurrent promotions can both calculate the same version.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${projectId}:${videoName}`}))`
 
-      const project = await tx.project.findUnique({
-        where: { id: projectId },
-        include: { videos: { where: { name: videoName }, orderBy: { version: 'desc' } } },
-      })
+      const [project, activeVersionCount, latestVersion] = await Promise.all([
+        tx.project.findUnique({
+          where: { id: projectId },
+          select: { status: true, enableRevisions: true, maxRevisions: true },
+        }),
+        tx.video.count({
+          where: { projectId, name: videoName, status: { not: 'ROLLED_BACK' } },
+        }),
+        latestAllocatedVideoVersion(tx, projectId, videoName),
+      ])
       if (!project) throw new Error('PROJECT_NOT_FOUND')
       if (project.status === 'APPROVED') throw new Error('PROJECT_APPROVED')
-      const activeVersionCount = project.videos.filter((video) => video.status !== 'ROLLED_BACK').length
       if (project.enableRevisions && project.maxRevisions > 0 && activeVersionCount >= project.maxRevisions) {
         throw new Error('MAX_REVISIONS')
       }
 
-      const latestVersion = project.videos[0]?.version || 0
       const nextVersion = latestVersion + 1
       const video = await tx.video.create({
         data: {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { projectAccessWhere } from '@/lib/project-access'
 import { getRequestedTeamId } from '@/lib/team-access'
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       where: projectAccessWhere(authResult, getRequestedTeamId(request)),
       include: {
         videos: {
-          where: { status: 'READY' },
+          where: { ...LIVE_VIDEO, status: 'READY' },
         },
         recipients: {
           where: { isPrimary: true },

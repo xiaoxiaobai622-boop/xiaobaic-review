@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma, INCLUDE_DELETED } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -137,7 +137,7 @@ export async function DELETE(
       if (video.thumbnailPath) {
         const [sharedAssetCount, sharedVideoCount, sharedUploadCount] = await Promise.all([
           prisma.videoAsset.count({ where: { storagePath: video.thumbnailPath, videoId: { not: video.id } } }),
-          prisma.video.count({ where: { thumbnailPath: video.thumbnailPath, id: { not: video.id } } }),
+          prisma.video.count({ where: { thumbnailPath: video.thumbnailPath, id: { not: video.id }, deletedAt: INCLUDE_DELETED } }),
           prisma.projectUpload.count({ where: { thumbnailPath: video.thumbnailPath, id: { not: upload.id } } }),
         ])
         if (sharedAssetCount === 0 && sharedVideoCount === 0 && sharedUploadCount === 0) {
@@ -159,7 +159,8 @@ export async function DELETE(
     }
 
     const referencedVideoCount = await prisma.video.count({
-      where: { originalStoragePath: upload.storagePath },
+      // A binned version counts: it can be restored, and its original is this file.
+      where: { originalStoragePath: upload.storagePath, deletedAt: INCLUDE_DELETED },
     })
     if (referencedVideoCount > 0) {
       return NextResponse.json(
