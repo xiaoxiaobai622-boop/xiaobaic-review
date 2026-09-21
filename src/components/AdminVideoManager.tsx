@@ -6,7 +6,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff } from 'lucide-react'
+import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff, Download } from 'lucide-react'
 import VideoUpload from './VideoUpload'
 import VideoList from './VideoList'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -157,6 +157,7 @@ export default function AdminVideoManager({
   const [reviewStatusUpdatingVideoId, setReviewStatusUpdatingVideoId] = useState<string | null>(null)
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, VideoReviewStatus | null>>({})
   const [selectionLinkCopied, setSelectionLinkCopied] = useState(false)
+  const [downloadingSelection, setDownloadingSelection] = useState(false)
   const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
   const cardClickTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
@@ -735,6 +736,40 @@ export default function AdminVideoManager({
     ? selectedStatuses[0]
     : null
   const selectionMode = selectedGroups.size > 0
+  const handleDownloadSelection = async () => {
+    const targets = selectedLatestVideos
+    setDownloadingSelection(true)
+    try {
+      const response = targets.length === 1
+        ? await apiFetch(`/api/videos/${targets[0].id}/download-token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        : await apiFetch(`/api/projects/${projectId}/videos/download-zip-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoIds: targets.map((video: any) => video.id) }),
+        })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.url) {
+        appAlert(data.error || t('failedToGenerateDownload'))
+        return
+      }
+      const link = document.createElement('a')
+      link.href = data.url
+      link.download = ''
+      link.rel = 'noopener'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      // The archive itself cannot say which videos were missing, so the count
+      // reported when the token was issued is surfaced here instead.
+      if (typeof data.skipped === 'number' && data.skipped > 0) {
+        appAlert(t('downloadSkippedFiles', { count: data.skipped }))
+      }
+    } catch {
+      appAlert(tc('errorTryAgain'))
+    } finally {
+      setDownloadingSelection(false)
+    }
+  }
   const selectionToolbar = selectedGroups.size > 0 ? (
     <div className="flex w-full flex-wrap items-center gap-2">
       <Button
@@ -767,6 +802,18 @@ export default function AdminVideoManager({
         onValueChange={handleBulkReviewStatus}
         className="bg-background"
       />
+      <Button
+        type="button"
+        size="sm"
+        className="h-8"
+        onClick={handleDownloadSelection}
+        disabled={downloadingSelection || selectedLatestVideos.length === 0}
+      >
+        {downloadingSelection
+          ? <Loader2 className="h-4 w-4 animate-spin" />
+          : <Download className="h-4 w-4" />}
+        {tc('download')}
+      </Button>
       <Button
         type="button"
         size="sm"
@@ -835,7 +882,7 @@ export default function AdminVideoManager({
 
       <div
         className={viewMode === 'grid' ? 'grid content-start gap-3' : 'space-y-4'}
-        style={viewMode === 'grid' ? { gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 280px))' } : undefined}
+        style={viewMode === 'grid' ? { gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' } : undefined}
       >
       {sortedGroupNames.map((groupName) => {
         const groupVideos = videoGroups[groupName]

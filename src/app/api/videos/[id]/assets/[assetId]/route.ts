@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAdministerProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
-import { getFilePath, deleteFile, sanitizeFilenameForHeader, isS3Mode, createWebReadableStream } from '@/lib/storage'
+import { getFilePath, deleteFile, isS3Mode, createWebReadableStream } from '@/lib/storage'
+import { contentDispositionAttachment } from '@/lib/download-names'
 import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { createReadStream } from 'fs'
@@ -88,8 +89,6 @@ export async function GET(
       }
     }
 
-    const sanitizedFilename = sanitizeFilenameForHeader(asset.fileName)
-
     // ── S3 mode: redirect directly to presigned URL ──────────────────────────
     if (isS3Mode()) {
       const exists = await s3FileExists(asset.storagePath)
@@ -99,7 +98,7 @@ export async function GET(
       const presignedUrl = await s3GetPresignedDownloadUrl(
         asset.storagePath,
         3600,
-        sanitizedFilename,
+        asset.fileName,
         asset.fileType
       )
       return NextResponse.redirect(presignedUrl, {
@@ -135,7 +134,7 @@ export async function GET(
         status: 206,
         headers: {
           'Content-Type': asset.fileType,
-          'Content-Disposition': `attachment; filename="${sanitizedFilename}"`,
+          'Content-Disposition': contentDispositionAttachment(asset.fileName),
           'Content-Length': chunkSize.toString(),
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Accept-Ranges': 'bytes',
@@ -151,7 +150,7 @@ export async function GET(
     return new NextResponse(readableStream, {
       headers: {
         'Content-Type': asset.fileType,
-        'Content-Disposition': `attachment; filename="${sanitizedFilename}"`,
+        'Content-Disposition': contentDispositionAttachment(asset.fileName),
         'Content-Length': stat.size.toString(),
         'Accept-Ranges': 'bytes',
         'X-Content-Type-Options': 'nosniff',

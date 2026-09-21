@@ -17,6 +17,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createHash } from 'crypto'
 import { Readable } from 'stream'
+import { contentDispositionAttachment } from './download-names'
 
 let _s3Client: S3Client | null = null
 
@@ -566,7 +567,10 @@ export async function s3AbortIncompleteMultipartUploadsOlderThan(cutoffDate: Dat
 
 // ─── Presigned GET URLs ───────────────────────────────────────────────────────
 
-/** Presigned download URL. Adds Content-Disposition when filename is provided. */
+/**
+ * Presigned download URL. Adds Content-Disposition when filename is provided —
+ * pass the raw name, the helper writes both the ASCII fallback and the UTF-8 form.
+ */
 export async function s3GetPresignedDownloadUrl(
   key: string,
   expirySeconds: number = 3600,
@@ -579,8 +583,7 @@ export async function s3GetPresignedDownloadUrl(
       Bucket: getS3Bucket(),
       Key: key,
       ...(filename && {
-        ResponseContentDisposition:
-          `attachment; filename="${filename.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        ResponseContentDisposition: contentDispositionAttachment(filename),
       }),
     }),
     { expiresIn: expirySeconds }

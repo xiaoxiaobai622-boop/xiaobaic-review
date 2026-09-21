@@ -763,6 +763,7 @@
     "failedToUnapproveVideo": "取消视频通过失败，请重试",
     "videoNotApproved": "当前视频版本尚未通过",
     "failedToGenerateDownload": "无法生成下载链接",
+    "downloadSkippedFiles": "有 {count} 个视频的文件已丢失，未包含在压缩包中",
     "deleteVideo": "放入回收站",
     "deleteVideoVersion": "放入回收站",
     "deleteVersionConfirm": "确定将 {version} 放入回收站吗？",

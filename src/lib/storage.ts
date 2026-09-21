@@ -4,7 +4,7 @@ import { Readable } from 'stream'
 import { ReadStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { mkdir } from 'fs/promises'
-import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl } from './s3-storage'
+import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl, s3FileExists } from './s3-storage'
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || '/app/uploads'
 
@@ -187,6 +187,22 @@ export async function downloadFile(filePath: string): Promise<Readable> {
   return fs.createReadStream(fullPath)
 }
 
+/**
+ * Existence check that works in both storage modes. A path that fails local
+ * validation reports "missing" instead of throwing; real storage errors from
+ * S3 still propagate so callers can tell "gone" apart from "cannot tell".
+ */
+export async function fileExists(filePath: string): Promise<boolean> {
+  if (isS3Mode()) {
+    return s3FileExists(filePath)
+  }
+  try {
+    return fs.existsSync(validatePath(filePath))
+  } catch {
+    return false
+  }
+}
+
 export async function deleteFile(filePath: string): Promise<void> {
   if (isS3Mode()) {
     await s3DeleteFile(filePath)
@@ -277,16 +293,4 @@ export function createWebReadableStream(fileStream: ReadStream): ReadableStream 
       fileStream.destroy()
     },
   })
-}
-
-/** Strip characters unsafe in Content-Disposition headers (CRLF injection, non-ASCII). */
-export function sanitizeFilenameForHeader(filename: string): string {
-  if (!filename) return 'download.mp4'
-
-  return filename
-    .replace(/["\\]/g, '')         // Remove quotes and backslashes
-    .replace(/[\r\n]/g, '')        // Remove CRLF (header injection)
-    .replace(/[^\x20-\x7E]/g, '_') // Replace non-ASCII with underscore
-    .substring(0, 255)             // Limit length to 255 characters
-    .trim() || 'download.mp4'      // Fallback if empty after sanitization
 }

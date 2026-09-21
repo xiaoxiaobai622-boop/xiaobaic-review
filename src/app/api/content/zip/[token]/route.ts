@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { downloadFile, sanitizeFilenameForHeader } from '@/lib/storage'
+import { downloadFile } from '@/lib/storage'
+import { contentDispositionAttachment } from '@/lib/download-names'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis, consumeTokenAtomically } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
@@ -167,16 +168,13 @@ export async function GET(
 
     const readableStream = Readable.toWeb(archive as any) as ReadableStream
 
-    const sanitizedVideoName = video.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const suffix = includeVideo ? 'complete' : 'assets'
-    const zipFilename = sanitizeFilenameForHeader(
-      `${sanitizedVideoName}_${video.versionLabel}_${suffix}.zip`
-    )
+    const zipName = `${video.name}_${video.versionLabel}_${suffix}.zip`
 
     return new NextResponse(readableStream, {
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${zipFilename}"`,
+        'Content-Disposition': contentDispositionAttachment(zipName),
         'Cache-Control': 'private, no-cache',
         'X-Content-Type-Options': 'nosniff',
       },

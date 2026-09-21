@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getFilePath, sanitizeFilenameForHeader, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
+import { getFilePath, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
+import { contentDispositionAttachment } from '@/lib/download-names'
 import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -80,7 +81,6 @@ export async function GET(
 
     // Use the original filename from the database, guard against missing values
     const originalFilename = video.originalFileName || 'video.mp4'
-    const safeFilename = sanitizeFilenameForHeader(originalFilename)
     const contentType = getVideoContentType(originalFilename)
 
     // ── S3 mode: redirect directly to MinIO ────────────────────────────────────
@@ -89,7 +89,7 @@ export async function GET(
       if (!exists) {
         return NextResponse.json({ error: videoMessages.fileNotFound || 'File not found' }, { status: 404 })
       }
-      const presignedUrl = await s3GetPresignedDownloadUrl(filePath, 3600, safeFilename, contentType)
+      const presignedUrl = await s3GetPresignedDownloadUrl(filePath, 3600, originalFilename, contentType)
       return NextResponse.redirect(presignedUrl, {
         status: 302,
         headers: {
@@ -132,7 +132,7 @@ export async function GET(
         status: 206,
         headers: {
           'Content-Type': contentType,
-          'Content-Disposition': `attachment; filename="${safeFilename}"`,
+          'Content-Disposition': contentDispositionAttachment(originalFilename),
           'Content-Length': chunkSize.toString(),
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Accept-Ranges': 'bytes',
@@ -148,7 +148,7 @@ export async function GET(
     return new NextResponse(readableStream, {
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${safeFilename}"`,
+        'Content-Disposition': contentDispositionAttachment(originalFilename),
         'Content-Length': stat.size.toString(),
         'Accept-Ranges': 'bytes',
         // Security headers

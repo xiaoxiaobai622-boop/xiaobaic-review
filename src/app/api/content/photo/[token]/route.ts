@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { downloadFile, sanitizeFilenameForHeader } from '@/lib/storage'
+import { downloadFile } from '@/lib/storage'
+import { contentDispositionAttachment } from '@/lib/download-names'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyAlbumAccessToken, trackPhotoDownload } from '@/lib/photo-access'
 import { getSecuritySettings } from '@/lib/video-access'
@@ -123,7 +124,7 @@ export async function GET(
     }
 
     if (isDownload) {
-      headers['Content-Disposition'] = `attachment; filename="${sanitizeFilenameForHeader(photo.fileName)}"`
+      headers['Content-Disposition'] = contentDispositionAttachment(photo.fileName)
     } else {
       headers['Content-Disposition'] = 'inline'
     }

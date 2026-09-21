@@ -4,6 +4,7 @@ import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { getRedis } from '@/lib/redis'
+import { getLatestVideo } from '@/lib/video-comment-counts'
 
 export const runtime = 'nodejs'
 
@@ -19,12 +20,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const folder = await prisma.projectFolder.findFirst({
     where: { id: folderId, projectId },
-    include: { videos: { where: LIVE_VIDEO, orderBy: [{ name: 'asc' }, { version: 'desc' }] } },
+    include: { videos: { where: LIVE_VIDEO } },
   })
   if (!folder) return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
   if (folder.videos.length === 0) return NextResponse.json({ error: '文件夹中没有可下载的视频' }, { status: 404 })
 
-  const latestVideos = [...new Map(folder.videos.map((video) => [video.name, video])).values()]
+  // Map-dedup of a version-DESC query keeps the *last* row seen, i.e. the oldest
+  // version, so the latest version has to be picked explicitly.
+  const versionsByName: Record<string, typeof folder.videos> = {}
+  for (const video of folder.videos) (versionsByName[video.name] ||= []).push(video)
+  const latestVideos = Object.values(versionsByName)
+    .map((versions) => getLatestVideo(versions)!)
+    .sort((a, b) => a.name.localeCompare(b.name))
   const token = crypto.randomBytes(32).toString('hex')
   const sessionId = `admin:${projectId}`
   await getRedis().setex(`folder_zip_download:${token}`, 300, JSON.stringify({

@@ -21,6 +21,7 @@ import { logError } from '@/lib/logging'
 import { cn } from '@/lib/utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { isVideoCandidate, VIDEO_INPUT_ACCEPT } from '@/lib/video-file-signature'
+import { getLatestVideo } from '@/lib/video-comment-counts'
 import { useAuth } from '@/components/AuthProvider'
 import FolderInteraction from '@/components/ui/folder-interaction'
 import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
@@ -504,9 +505,9 @@ export default function ProjectPage() {
   const downloadFolderOriginals = async (folderId: string) => {
     setFolderMenu(null)
     const folderVideos = project.videos.filter((video: any) => video.folderId === folderId)
-    const latestVideos = [...new Map(folderVideos
-      .sort((a: any, b: any) => b.version - a.version)
-      .map((video: any) => [video.name, video])).values()] as any[]
+    const versionsByName: Record<string, any[]> = {}
+    for (const video of folderVideos) (versionsByName[video.name] ||= []).push(video)
+    const latestVideos = Object.values(versionsByName).map((versions) => getLatestVideo(versions))
     if (latestVideos.length === 0) {
       appAlert('文件夹中没有可下载的视频')
       return
@@ -769,7 +770,7 @@ export default function ProjectPage() {
             })}
           </nav>
 
-          <main id="review-workspace" className="relative min-w-0 overscroll-contain p-3 sm:p-4 lg:min-h-0 lg:overflow-y-auto" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) }}>
+          <main id="review-workspace" className="scrollbar-hidden relative min-w-0 overscroll-contain p-3 sm:p-4 lg:min-h-0 lg:overflow-y-auto" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) }}>
             {contextMenu && (
               <div className="fixed z-[100] w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260) }} onClick={(event) => event.stopPropagation()}>
                 <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
@@ -818,7 +819,7 @@ export default function ProjectPage() {
                 </button>
               )}
               {!activeFolderId && projectFolders.length > 0 && (
-                <div className="mb-4 grid content-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 280px))' }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => void moveVideoToFolder(event, null)}>
+                <div className="mb-4 grid content-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => void moveVideoToFolder(event, null)}>
                   {projectFolders.map((folder) => {
                     const count = new Set(project.videos.filter((video: any) => video.folderId === folder.id).map((video: any) => video.name)).size
                     return (
@@ -969,7 +970,7 @@ export default function ProjectPage() {
             </section>
           </main>
 
-          <aside className="border-t border-border p-3 lg:border-l lg:border-t-0 lg:p-3">
+          <aside className="scrollbar-hidden border-t border-border p-3 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:p-3">
             {selectedVideoGroup ? (
               <Card className="overflow-hidden">
                 <div className="border-b border-border px-4 py-4">

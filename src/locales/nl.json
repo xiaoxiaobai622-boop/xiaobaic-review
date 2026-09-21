@@ -767,6 +767,7 @@
     "failedToUnapproveVideo": "Goedkeuring intrekken mislukt",
     "videoNotApproved": "Deze videoversie is niet goedgekeurd",
     "failedToGenerateDownload": "Kan downloadlink niet genereren",
+    "downloadSkippedFiles": "{count} videobestanden ontbreken en zijn niet in het archief opgenomen",
     "deleteVideo": "Naar prullenbak verplaatsen",
     "deleteVideoVersion": "Naar prullenbak verplaatsen",
     "deleteVersionConfirm": "{version} naar de prullenbak verplaatsen?",

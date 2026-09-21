@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { downloadFile, sanitizeFilenameForHeader } from '@/lib/storage'
+import { downloadFile } from '@/lib/storage'
+import { contentDispositionAttachment } from '@/lib/download-names'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { ZipArchive } from 'archiver'
@@ -130,15 +131,12 @@ export async function POST(
     const readableStream = Readable.toWeb(archive as any) as ReadableStream
 
     // Generate zip filename
-    const sanitizedVideoName = video.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const zipFilename = sanitizeFilenameForHeader(
-      `${sanitizedVideoName}_${video.versionLabel}_assets.zip`
-    )
+    const zipName = `${video.name}_${video.versionLabel}_assets.zip`
 
     return new NextResponse(readableStream, {
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${zipFilename}"`,
+        'Content-Disposition': contentDispositionAttachment(zipName),
       },
     })
   } catch (error) {

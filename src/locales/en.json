@@ -792,6 +792,7 @@
     "failedToUnapproveVideo": "Failed to unapprove video",
     "videoNotApproved": "This video version is not approved",
     "failedToGenerateDownload": "Failed to generate download link",
+    "downloadSkippedFiles": "{count} video file(s) are missing and were left out of the archive",
     "deleteVideo": "Move to Recycle Bin",
     "deleteVideoVersion": "Move to Recycle Bin",
     "deleteVersionConfirm": "Move {version} to the recycle bin?",

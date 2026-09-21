@@ -796,6 +796,7 @@
     "failedToUnapproveVideo": "Freigabe des Videos konnte nicht aufgehoben werden",
     "videoNotApproved": "Diese Videoversion ist nicht freigegeben",
     "failedToGenerateDownload": "Download-Link konnte nicht generiert werden",
+    "downloadSkippedFiles": "{count} Videodateien fehlen und wurden nicht ins Archiv aufgenommen",
     "deleteVideo": "In den Papierkorb verschieben",
     "deleteVideoVersion": "In den Papierkorb verschieben",
     "deleteVersionConfirm": "{version} in den Papierkorb verschieben?",

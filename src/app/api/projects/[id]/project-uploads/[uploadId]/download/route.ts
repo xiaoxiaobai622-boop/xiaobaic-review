@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
-import { getFilePath, sanitizeFilenameForHeader, isS3Mode, createWebReadableStream, downloadFile } from '@/lib/storage'
+import { getFilePath, isS3Mode, createWebReadableStream, downloadFile } from '@/lib/storage'
+import { contentDispositionAttachment } from '@/lib/download-names'
 import { Readable } from 'stream'
 import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
 import { getRedis, consumeTokenAtomically } from '@/lib/redis'
@@ -106,7 +107,7 @@ export async function GET(
       return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
     }
 
-    const safeFileName = sanitizeFilenameForHeader(upload.originalFileName || upload.fileName)
+    const rawFileName = upload.originalFileName || upload.fileName
 
     if (inline) {
       if (thumb && !upload.thumbnailPath) {
@@ -135,7 +136,7 @@ export async function GET(
       const presignedUrl = await s3GetPresignedDownloadUrl(
         upload.storagePath,
         3600,
-        safeFileName,
+        rawFileName,
         upload.fileType || 'application/octet-stream'
       )
       return NextResponse.redirect(presignedUrl, {
@@ -158,7 +159,7 @@ export async function GET(
       headers: {
         'Content-Type': upload.fileType || 'application/octet-stream',
         'Content-Length': upload.fileSize.toString(),
-        'Content-Disposition': `attachment; filename="${safeFileName}"`,
+        'Content-Disposition': contentDispositionAttachment(rawFileName),
         'Cache-Control': 'no-store',
       },
     })

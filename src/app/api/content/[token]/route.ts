@@ -3,7 +3,8 @@ import { verifyVideoAccessToken, detectHotlinking, trackVideoAccess, logSecurity
 import { getRedis } from '@/lib/redis'
 import { prisma } from '@/lib/db'
 import { createReadStream, existsSync, statSync } from 'fs'
-import { getFilePath, sanitizeFilenameForHeader, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
+import { getFilePath, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
+import { contentDispositionAttachment } from '@/lib/download-names'
 import { s3GetPresignedDownloadUrl, s3GetPresignedStreamUrl, s3FileExists, s3DownloadFile } from '@/lib/s3-storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { getClientIpAddress } from '@/lib/utils'
@@ -616,10 +617,9 @@ export async function GET(
       if (isDownload) {
         const rawFilename = filename || (video.approved
           ? video.originalFileName
-          : `${video.project.title.replace(/[^a-z0-9]/gi, '_')}_${verifiedToken.quality}${(video.originalFileName || '.mp4').slice((video.originalFileName || '.mp4').lastIndexOf('.'))}`)
-        const sanitizedFilename = sanitizeFilenameForHeader(rawFilename)
+          : `${video.project.title}_${verifiedToken.quality}${(video.originalFileName || '.mp4').slice((video.originalFileName || '.mp4').lastIndexOf('.'))}`)
         const ct = assetId ? contentType : getVideoContentType(video.originalFileName || '')
-        const presignedUrl = await s3GetPresignedDownloadUrl(filePath, 3600, sanitizedFilename, ct)
+        const presignedUrl = await s3GetPresignedDownloadUrl(filePath, 3600, rawFilename, ct)
         return NextResponse.redirect(presignedUrl, {
           status: 302,
           headers: { 'Cache-Control': 'no-store' },
@@ -665,8 +665,7 @@ export async function GET(
       // Use asset filename if available, otherwise generate from video info
       const rawFilename = filename || (video.approved
         ? video.originalFileName
-        : `${video.project.title.replace(/[^a-z0-9]/gi, '_')}_${verifiedToken.quality}${(video.originalFileName || '.mp4').slice((video.originalFileName || '.mp4').lastIndexOf('.'))}`)
-      const sanitizedFilename = sanitizeFilenameForHeader(rawFilename)
+        : `${video.project.title}_${verifiedToken.quality}${(video.originalFileName || '.mp4').slice((video.originalFileName || '.mp4').lastIndexOf('.'))}`)
 
       if (!assetId) {
         contentType = isThumbnail ? 'image/jpeg' : getVideoContentType(video.originalFileName || '')
@@ -703,7 +702,7 @@ export async function GET(
             'Content-Type': contentType,
             'Content-Length': stat.size.toString(),
             'Accept-Ranges': 'bytes',
-            'Content-Disposition': `attachment; filename="${sanitizedFilename}"`,
+            'Content-Disposition': contentDispositionAttachment(rawFilename),
             'Cache-Control': 'private, no-cache',
             'X-Content-Type-Options': 'nosniff',
             'X-Frame-Options': 'SAMEORIGIN',
@@ -740,7 +739,7 @@ export async function GET(
           'Accept-Ranges': 'bytes',
           'Content-Length': chunksize.toString(),
           'Content-Type': contentType,
-          'Content-Disposition': `attachment; filename="${sanitizedFilename}"`,
+          'Content-Disposition': contentDispositionAttachment(rawFilename),
           'Cache-Control': 'private, no-cache',
           'X-Content-Type-Options': 'nosniff',
           'X-Frame-Options': 'SAMEORIGIN',
