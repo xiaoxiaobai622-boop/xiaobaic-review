@@ -14,6 +14,22 @@ export type SortKey =
   | 'titleDesc'
   | 'statusPriority'
 
+export const SORT_KEYS: SortKey[] = [
+  'updatedDesc',
+  'createdDesc',
+  'createdAsc',
+  'dueAsc',
+  'titleAsc',
+  'titleDesc',
+  'statusPriority',
+]
+
+// Sort keys arrive from the URL, so an unknown value must never reach
+// sortProjects — a hand-edited ?sort= used to take the whole page down.
+export function parseSortKey(value: string | null | undefined): SortKey {
+  return SORT_KEYS.includes(value as SortKey) ? (value as SortKey) : 'updatedDesc'
+}
+
 export interface ProjectListItem {
   id: string
   projectCode: string
@@ -135,6 +151,8 @@ function sortProjects(list: ProjectListItem[], sort: SortKey): ProjectListItem[]
         if (diff !== 0) return diff
         return ts(b.updatedAt) - ts(a.updatedAt)
       })
+    default:
+      return sorted.sort((a, b) => ts(b.updatedAt) - ts(a.updatedAt))
   }
 }
 
@@ -211,7 +229,7 @@ export function filterStateFromParams(params: URLSearchParams): ProjectsFilterSt
     const v = params.get(key)
     return new Set(v ? v.split(',').filter(Boolean) : [])
   }
-  const sort = (params.get('sort') as SortKey) || 'updatedDesc'
+  const sort = parseSortKey(params.get('sort'))
   return {
     q: params.get('q') || '',
     statuses: splitSet('status'),

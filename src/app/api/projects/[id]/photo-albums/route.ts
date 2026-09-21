@@ -67,7 +67,12 @@ export async function GET(
       },
     })
 
-    const sessionId = accessCheck.shareTokenSessionId || `guest:${Date.now()}`
+    // verifyProjectAccess already hands back a stable per-session bucket. The
+    // old `guest:${Date.now()}` fallback missed the album token cache on every
+    // request and graded an admin caller as a guest (photo-access derives
+    // isAdmin from the `admin:` prefix).
+    const sessionId = accessCheck.shareTokenSessionId
+      || `${accessCheck.isAdmin ? 'admin' : 'guest'}:${projectId}`
 
     // Mint a content token per album so covers can render (cached per session).
     // Cover: admin-selected photo when set (and processed), else first photo.

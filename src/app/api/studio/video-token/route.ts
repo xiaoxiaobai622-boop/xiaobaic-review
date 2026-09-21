@@ -11,6 +11,10 @@ import { logError } from '@/lib/logging'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Playback renditions the studio surfaces. Originals go through
+// /api/videos/[id]/download-token, so they must never be minted from here.
+const PLAYBACK_QUALITIES = ['thumbnail', 'hls', '720p', '1080p', '2160p']
+
 /**
  * Admin Video Token Generation Endpoint
  *
@@ -35,14 +39,26 @@ export async function GET(request: NextRequest) {
     const videoId = searchParams.get('videoId')
     const projectId = searchParams.get('projectId')
     const quality = searchParams.get('quality')
-    const sessionId = searchParams.get('sessionId')
 
-    if (!videoId || !projectId || !quality || !sessionId) {
+    if (!videoId || !projectId || !quality) {
       return NextResponse.json(
         { error: videosMessages.missingRequiredParameters || 'Missing required parameters' },
         { status: 400 }
       )
     }
+
+    // The session id doubles as the token cache bucket and as the marker that
+    // grades a token as internal (`admin:` prefix in video-access). Accepting it
+    // from the query let any caller mint privileged tokens and let arbitrary
+    // quality values fan out unbounded Redis keys.
+    if (!PLAYBACK_QUALITIES.includes(quality)) {
+      return NextResponse.json(
+        { error: videosMessages.invalidQuality || 'Unsupported quality' },
+        { status: 400 }
+      )
+    }
+
+    const sessionId = authResult.sessionId ? `admin:${authResult.sessionId}` : `admin:${authResult.id}`
 
     const video = await findAccessibleVideo(prisma, authResult, projectId, videoId)
     if (!video) {

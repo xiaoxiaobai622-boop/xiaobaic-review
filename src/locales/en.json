@@ -533,6 +533,7 @@
     "allowPhotoDownloadsDescription": "Allow clients to download photos from the project's photo albums",
     "photos": "Photos",
     "photoAlbums": "Photo Albums",
+    "shareWorkspace": "Shares",
     "allowClientFileAttachments": "Allow File Attachments",
     "allowClientFileAttachmentsDescription": "Allow clients to attach files (images, documents, audio) to their comments",
     "allowReverseShare": "Allow File Submissions",
@@ -813,6 +814,7 @@
     "deleteConfirm": "Are you sure you want to delete this video?",
     "deleteGroupConfirm": "Move this video and all of its versions to the recycle bin? They will be permanently deleted after 7 days.",
     "deleteGroupFailed": "Failed to delete the video. Some versions may remain — refresh and try again.",
+    "moveToFolderFailed": "Upload finished, but the video could not be moved into the folder.",
 
     "noVideosAvailable": "No videos available",
     "loadingVideo": "Loading video...",

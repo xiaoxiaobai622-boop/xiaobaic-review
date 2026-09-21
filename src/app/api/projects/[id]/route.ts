@@ -56,6 +56,13 @@ export async function GET(
       return NextResponse.json({ error: '你没有这个项目的访问权限，请联系团队管理员' }, { status: 403 })
     }
 
+    // Plain team members can read this project. Comment author PII (email,
+    // department, bio) is reserved for project administrators, matching what
+    // /api/comments already does. The same gate guards the clear-text share
+    // password, so it is resolved for every request.
+    const canAdminister = await canAdministerProject(prisma, authResult, id)
+    const isProjectAdmin = !includeComments || canAdminister
+
     const project = await prisma.project.findUnique({
       where: { id },
       include: {
@@ -124,12 +131,16 @@ export async function GET(
 
     const sanitizedComments = includeComments
       ? (project as any).comments.map((comment: any) =>
-          sanitizeComment(comment, true, true, fallbackName, null, project.companyName)
+          sanitizeComment(comment, isProjectAdmin, true, fallbackName, authResult.id, project.companyName)
         )
       : []
 
-    // Decrypt password for admin view
-    const decryptedPassword = project.sharePassword ? decrypt(project.sharePassword) : null
+    // Decrypt password for admin view. Members only learn that a password
+    // exists - the clear-text value stays behind the same gate as PATCH.
+    const hasSharePassword = Boolean(project.sharePassword)
+    const decryptedPassword = canAdminister && project.sharePassword
+      ? decrypt(project.sharePassword)
+      : null
 
     // Convert BigInt fields to strings for JSON serialization
     const projectData = {
@@ -142,6 +153,7 @@ export async function GET(
       })),
       comments: sanitizedComments,
       sharePassword: decryptedPassword,
+      hasSharePassword,
       smtpConfigured,
     }
 

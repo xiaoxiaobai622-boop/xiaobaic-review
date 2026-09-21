@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   const calendarMessages = messages?.calendar || {}
 
   const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return NextResponse.json({ error: calendarMessages.notFound || 'Not found' }, { status: 404 })
+  if (authResult instanceof Response) return authResult
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,7 +14,7 @@ import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
 import RecycleBinBlock from '@/components/RecycleBinBlock'
 import ShareLinksPanel from '@/components/ShareLinksPanel'
 import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, FolderInput, ChevronRight, MessageSquare, PackageCheck } from 'lucide-react'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -132,6 +132,7 @@ export default function ProjectPage() {
   const [photoCounts, setPhotoCounts] = useState<{ albums: number; photos: number } | null>(null)
   const [uploadsCount, setUploadsCount] = useState<number | null>(null)
   const [recycleBinCount, setRecycleBinCount] = useState<number | null>(null)
+  const [sharesCount, setSharesCount] = useState<number | null>(null)
   const [recycleBinRefreshKey, setRecycleBinRefreshKey] = useState(0)
   const [collectionLinkCopied, setCollectionLinkCopied] = useState(false)
   const [uploadRequestKey, setUploadRequestKey] = useState(0)
@@ -152,7 +153,6 @@ export default function ProjectPage() {
   const [copiedFolderId, setCopiedFolderId] = useState<string | null>(null)
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null | undefined>(undefined)
   const [folderCoverUrls, setFolderCoverUrls] = useState<Record<string, string[]>>({})
-  const [folderCoverSessionId] = useState(() => `folder-covers:${Date.now()}`)
 
   const handlePhotoCounts = useCallback((albumCount: number, photoCount: number) => {
     setPhotoCounts({ albums: albumCount, photos: photoCount })
@@ -184,6 +184,12 @@ export default function ProjectPage() {
       }
     } catch {}
   }, [searchParams])
+
+  // Navigating between projects reuses this component, so a folder left open in
+  // the previous project filtered the new project down to an empty grid.
+  useEffect(() => {
+    setActiveFolderId(null)
+  }, [id])
 
   useEffect(() => {
     const requestedFolder = searchParams?.get('folder')
@@ -233,17 +239,34 @@ export default function ProjectPage() {
     fetchProject()
   }, [fetchProject])
 
+  // Polling and comment events hand back a fresh `project` object, so the cover
+  // effect keys off the folder/video identity it actually renders. Without this
+  // every poll re-mints every cover.
+  const folderCoverSignatureRef = useRef('')
+
   useEffect(() => {
     if (!project?.folders?.length || !project?.videos?.length) {
       setFolderCoverUrls({})
+      folderCoverSignatureRef.current = ''
       return
     }
+
+    const folders = project.folders as Array<{ id: string }>
+    const videos = project.videos as any[]
+    const signature = folders
+      .map(folder => `${folder.id}=${videos
+        .filter(video => video.folderId === folder.id && video.thumbnailPath)
+        .map(video => `${video.name}@${video.version}`)
+        .join(',')}`)
+      .join('|')
+    if (signature === folderCoverSignatureRef.current) return
+    folderCoverSignatureRef.current = signature
+
     let cancelled = false
     const loadFolderCovers = async () => {
-      const next: Record<string, string[]> = {}
-      for (const folder of project.folders as Array<{ id: string }>) {
+      const coverGroups = await Promise.all(folders.map(async folder => {
         const latestByName = new Map<string, any>()
-        for (const video of project.videos as any[]) {
+        for (const video of videos) {
           if (video.folderId !== folder.id || !video.thumbnailPath) continue
           const current = latestByName.get(video.name)
           if (!current || Number(video.version || 0) > Number(current.version || 0)) latestByName.set(video.name, video)
@@ -251,7 +274,7 @@ export default function ProjectPage() {
         const candidates = [...latestByName.values()].slice(0, 3)
         const urls = await Promise.all(candidates.map(async (video) => {
           try {
-            const query = new URLSearchParams({ videoId: video.id, projectId: String(id), quality: 'thumbnail', sessionId: folderCoverSessionId })
+            const query = new URLSearchParams({ videoId: video.id, projectId: String(id), quality: 'thumbnail' })
             const response = await apiFetch(`/api/studio/video-token?${query.toString()}`, { cache: 'no-store' })
             if (!response.ok) return null
             const data = await response.json()
@@ -260,13 +283,15 @@ export default function ProjectPage() {
             return null
           }
         }))
-        next[folder.id] = urls.filter(Boolean) as string[]
-      }
-      if (!cancelled) setFolderCoverUrls(next)
+        return { folderId: folder.id, urls: urls.filter(Boolean) as string[] }
+      }))
+
+      if (cancelled) return
+      setFolderCoverUrls(Object.fromEntries(coverGroups.map(group => [group.folderId, group.urls])))
     }
     void loadFolderCovers()
     return () => { cancelled = true }
-  }, [id, project?.folders, project?.videos, folderCoverSessionId])
+  }, [id, project?.folders, project?.videos])
 
   // Listen for immediate updates (approval changes, comment deletes/posts, etc.)
   useEffect(() => {
@@ -332,6 +357,22 @@ export default function ProjectPage() {
   }, [project?.slug])
 
 
+  // The video grid and its effects key off these arrays, so their identities
+  // have to survive unrelated re-renders (a poll replaces `project` with a new
+  // object on every tick).
+  const workspaceVideos = useMemo(() => {
+    const videos = (project?.videos as any[] | undefined) || []
+    return videos.filter((video: any) =>
+      !(video.status === 'PROCESSING' && video.sourceUpload?.id)
+      && (activeFolderId ? video.folderId === activeFolderId : !video.folderId)
+    )
+  }, [project?.videos, activeFolderId])
+
+  const videoGroupNames = useMemo(
+    () => Array.from(new Set(workspaceVideos.map((v: any) => v.name))) as string[],
+    [workspaceVideos]
+  )
+
   if (loading) {
     return (
       <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
@@ -358,11 +399,6 @@ export default function ProjectPage() {
   const countBadgeClassName = 'text-sm font-normal text-muted-foreground'
   const projectToolbarButtonClassName = 'h-9 px-3 sm:min-w-[132px]'
 
-  const workspaceVideos = project.videos.filter((video: any) =>
-    !(video.status === 'PROCESSING' && video.sourceUpload?.id)
-    && (activeFolderId ? video.folderId === activeFolderId : !video.folderId)
-  )
-  const videoGroupNames: string[] = Array.from(new Set(workspaceVideos.map((v: any) => v.name)))
   const selectedVideoGroup = selectedVideoGroupName
     ? {
         name: selectedVideoGroupName,
@@ -690,7 +726,7 @@ export default function ProjectPage() {
               { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
               { id: 'photos' as const, label: t('photoAlbums'), count: photoCounts?.albums || 0, icon: Images },
               { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
-              { id: 'shares' as const, label: '分享', count: 0, icon: Share2 },
+              { id: 'shares' as const, label: t('shareWorkspace'), count: sharesCount || 0, icon: Share2 },
               { id: 'trash' as const, label: t('recycleBin'), count: recycleBinCount || 0, icon: Trash2 },
             ]).map((item) => {
               const Icon = item.icon
@@ -798,7 +834,7 @@ export default function ProjectPage() {
                           event.stopPropagation()
                           const rect = event.currentTarget.getBoundingClientRect()
                           const menuWidth = 208
-                          const menuHeight = 366
+                          const menuHeight = 294
                           const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))
                           const top = rect.bottom + menuHeight <= window.innerHeight - 8
                             ? rect.bottom + 6
@@ -842,19 +878,13 @@ export default function ProjectPage() {
                       </button>
                       <div className="my-1 border-t border-border" />
                       <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderZip(folder.id)}>
-                        <Download className="h-4 w-4" />下载原文件
+                        <Package className="h-4 w-4" />打包下载
                       </button>
                       <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderOriginals(folder.id)}>
-                        <Package className="h-4 w-4" />打包下载
+                        <Download className="h-4 w-4" />下载原文件
                       </button>
                       <button type="button" role="menuitem" className={menuItemClass} onClick={() => void renameProjectFolder(folder)}>
                         <Pencil className="h-4 w-4" />重命名
-                      </button>
-                      <button type="button" role="menuitem" disabled className={cn(menuItemClass, 'cursor-not-allowed opacity-40')} title="当前项目暂不支持嵌套文件夹">
-                        <Copy className="h-4 w-4" />复制到
-                      </button>
-                      <button type="button" role="menuitem" disabled className={cn(menuItemClass, 'cursor-not-allowed opacity-40')} title="当前项目暂不支持嵌套文件夹">
-                        <FolderInput className="h-4 w-4" />移动到
                       </button>
                       <div className="my-1 border-t border-border" />
                       <button type="button" role="menuitem" className={cn(menuItemClass, 'text-destructive hover:bg-destructive/10')} onClick={() => void deleteProjectFolder(folder.id)}>
@@ -914,11 +944,11 @@ export default function ProjectPage() {
               <div className="mb-4">
                 <h2 className="flex items-center gap-2 text-lg font-semibold">
                   <span className={iconBadgeClassName}><Share2 className={iconBadgeIconClassName} /></span>
-                  分享
+                  {t('shareWorkspace')}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">管理项目、文件夹、视频和收录链接</p>
               </div>
-              <ShareLinksPanel project={project} />
+              <ShareLinksPanel project={project} onCountChange={setSharesCount} />
             </section>
           </main>
 

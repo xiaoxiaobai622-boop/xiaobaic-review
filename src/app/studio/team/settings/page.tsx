@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -76,9 +76,31 @@ export default function TeamSettingsPage() {
   const { user } = useAuth()
   const [settings, setSettings] = useState<TeamSettingsData>(DEFAULTS)
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const canEdit = Boolean(user && (user.teamRole === 'OWNER' || user.teamRole === 'ADMIN'))
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const response = await apiFetch('/api/team-settings')
+      if (!response.ok) throw new Error('无法加载视频设置')
+      const data = await response.json()
+      setSettings({ ...DEFAULTS, ...data.settings })
+      setLoaded(true)
+    } catch (err) {
+      // Leaving the form on DEFAULTS and allowing a save here would overwrite the
+      // team's real defaults with factory values, so the form stays hidden.
+      setLoaded(false)
+      setError(err instanceof Error ? err.message : '无法加载视频设置')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -88,23 +110,12 @@ export default function TeamSettingsPage() {
   }, [router, user])
 
   useEffect(() => {
-    if (!user || (user.teamRole !== 'OWNER' && user.teamRole !== 'ADMIN')) {
+    if (!canEdit) {
       setLoading(false)
       return
     }
-    ;(async () => {
-      try {
-        const response = await apiFetch('/api/team-settings')
-        if (!response.ok) throw new Error('无法加载视频设置')
-        const data = await response.json()
-        setSettings({ ...DEFAULTS, ...data.settings })
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '无法加载视频设置')
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [user])
+    void load()
+  }, [canEdit, load])
 
   const update = <K extends keyof TeamSettingsData>(key: K, value: TeamSettingsData[K]) => {
     setSettings((current) => ({ ...current, [key]: value }))
@@ -137,6 +148,16 @@ export default function TeamSettingsPage() {
     )
   }
 
+  if (!loaded) {
+    return (
+      <div className="mx-auto w-full max-w-2xl p-6 text-center">
+        <h1 className="text-lg font-semibold">未能加载视频设置</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{error || '当前显示的是出厂默认值，保存会覆盖团队已有配置，请重试。'}</p>
+        <Button variant="outline" className="mt-4" onClick={() => void load()}>重试</Button>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -144,7 +165,7 @@ export default function TeamSettingsPage() {
           <h1 className="text-2xl font-semibold">视频设置</h1>
           <p className="mt-1 text-sm text-muted-foreground">这些默认值只影响当前团队新建的项目。</p>
         </div>
-        <Button type="button" onClick={save} disabled={saving}>
+        <Button type="button" onClick={save} disabled={saving || !loaded}>
           {saving ? '保存中…' : '保存设置'}
         </Button>
       </div>

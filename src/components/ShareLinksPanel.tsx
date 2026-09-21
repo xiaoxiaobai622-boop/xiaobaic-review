@@ -13,7 +13,7 @@ type ShareLink = {
   viewCount: number; status: string; createdAt: string
 }
 
-export default function ShareLinksPanel({ project }: { project: any }) {
+export default function ShareLinksPanel({ project, onCountChange }: { project: any, onCountChange?: (count: number) => void }) {
   const [links, setLinks] = useState<ShareLink[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const folders = useMemo(() => Array.isArray(project.folders) ? project.folders : [], [project.folders])
@@ -23,6 +23,9 @@ export default function ShareLinksPanel({ project }: { project: any }) {
     if (response.ok) setLinks((await response.json()).shareLinks || [])
   }, [project.id])
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    onCountChange?.(links.length)
+  }, [links, onCountChange])
   useEffect(() => {
     const refresh = () => void load()
     window.addEventListener('shareLinksChanged', refresh)

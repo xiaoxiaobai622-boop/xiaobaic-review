@@ -7,10 +7,6 @@ import KofiWidget from '@/components/KofiWidget'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 
-function AdminRoleGate({ children }: { children: React.ReactNode }) {
-  return children
-}
-
 export default function AdminLayout({
   children,
 }: {
@@ -70,7 +66,7 @@ export default function AdminLayout({
 
   return (
     <AuthProvider requireAuth={true}>
-      <AdminRoleGate><div className="flex flex-1 min-h-0 bg-background flex-col overflow-x-clip">
+      <div className="flex flex-1 min-h-0 bg-background flex-col overflow-x-clip">
         <a href="#main-content" className="skip-link">
           跳到主要内容
         </a>
@@ -84,7 +80,7 @@ export default function AdminLayout({
         </main>
         <SessionMonitor />
         <KofiWidget />
-      </div></AdminRoleGate>
+      </div>
     </AuthProvider>
   )
 }

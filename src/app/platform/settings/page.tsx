@@ -101,6 +101,7 @@ export default function GlobalSettingsPage() {
   const [_settings, setSettings] = useState<Settings | null>(null)
   const [_securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadedOk, setLoadedOk] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -396,8 +397,14 @@ export default function GlobalSettingsPage() {
           const securityData = await securityResponse.json()
           setSecuritySettings(securityData)
           applySecuritySettingsToForm(securityData)
+          setLoadedOk(true)
+        } else {
+          // A blank security form plus a save would write factory thresholds over
+          // the live rate limits and session TTLs, so saving stays blocked.
+          throw new Error(t('failedToLoad'))
         }
       } catch (err) {
+        setLoadedOk(false)
         setError(t('failedToLoad'))
       } finally {
         setLoading(false)
@@ -520,6 +527,10 @@ export default function GlobalSettingsPage() {
   }
 
   async function handleSave() {
+    if (!loadedOk) {
+      setError(t('failedToLoad'))
+      return
+    }
     setSaving(true)
     setError('')
     setSuccess(false)
@@ -679,10 +690,18 @@ export default function GlobalSettingsPage() {
         viewSecurityEvents,
       }
 
-      await apiPatch('/api/settings/security', securityUpdates)
+      // The two writes are separate requests, so a failure after the global
+      // settings landed must be reported as a partial save rather than as
+      // "nothing happened".
+      let securitySaveFailed = false
+      try {
+        await apiPatch('/api/settings/security', securityUpdates)
+      } catch {
+        securitySaveFailed = true
+      }
 
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 3000)
+      setSuccess(!securitySaveFailed)
+      if (!securitySaveFailed) setTimeout(() => setSuccess(false), 3000)
 
       // Reload settings data to reflect changes
       const refreshResponse = await apiFetch('/api/settings')
@@ -698,6 +717,10 @@ export default function GlobalSettingsPage() {
         const refreshedSecurityData = await securityRefreshResponse.json()
         setSecuritySettings(refreshedSecurityData)
         applySecuritySettingsToForm(refreshedSecurityData)
+      }
+
+      if (securitySaveFailed) {
+        setError('安全设置未能保存，全局设置已保存。表单已回填为服务器上的实际值，请重试。')
       }
 
       // Refresh the page to update server components (like AdminHeader menu)
@@ -870,13 +893,13 @@ export default function GlobalSettingsPage() {
         </div>
 
         {error && (
-          <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-destructive-visible border-2 border-destructive-visible rounded-lg">
+          <div role="alert" className="mb-4 sm:mb-6 p-3 sm:p-4 bg-destructive-visible border-2 border-destructive-visible rounded-lg">
             <p className="text-xs sm:text-sm text-destructive font-medium">{error}</p>
           </div>
         )}
 
         {success && (
-          <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-success-visible border-2 border-success-visible rounded-lg">
+          <div role="status" aria-live="polite" className="mb-4 sm:mb-6 p-3 sm:p-4 bg-success-visible border-2 border-success-visible rounded-lg">
             <p className="text-xs sm:text-sm text-success font-medium">{t('savedSuccessfully')}</p>
           </div>
         )}
@@ -948,7 +971,7 @@ export default function GlobalSettingsPage() {
         </div>
 
         <div className="mt-6 sm:mt-8 pb-20 lg:pb-24 flex justify-end">
-          <Button onClick={handleSave} variant="default" disabled={saving} size="default">
+          <Button onClick={handleSave} variant="default" disabled={saving || !loadedOk} size="default">
             <Save className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">{saving ? tc('saving') : tc('saveChanges')}</span>
           </Button>

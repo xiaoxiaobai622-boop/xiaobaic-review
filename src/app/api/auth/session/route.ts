@@ -3,6 +3,7 @@ import { getCurrentUserFromRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { getAdminSessionTimeoutSeconds } from '@/lib/settings'
 import { logError } from '@/lib/logging'
 export const runtime = 'nodejs'
 
@@ -47,6 +48,10 @@ export async function GET(request: NextRequest) {
 
     const response = NextResponse.json({
       authenticated: true,
+      // The studio inactivity monitor needs the configured admin timeout, and it
+      // runs for every team member, so it cannot read the platform-admin-only
+      // settings endpoint. Expose just this one number.
+      sessionTimeoutSeconds: await getAdminSessionTimeoutSeconds(),
       user: {
         id: user.id,
         email: user.email,

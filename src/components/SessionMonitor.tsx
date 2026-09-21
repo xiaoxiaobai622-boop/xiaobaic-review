@@ -43,26 +43,17 @@ export default function SessionMonitor() {
       if (!token) return
 
       try {
-        const response = await fetch('/api/settings/security', {
+        const response = await fetch('/api/auth/session', {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          cache: 'no-store',
         })
         if (!response.ok) return
 
         const data = await response.json()
-        const value = Number.parseInt(String(data?.adminSessionTimeoutValue ?? '7'), 10)
-        const unit = String(data?.adminSessionTimeoutUnit ?? 'DAYS')
-        if (!Number.isFinite(value) || value <= 0) return
-
-        const seconds = unit === 'DAYS'
-          ? value * 24 * 60 * 60
-          : unit === 'HOURS'
-            ? value * 60 * 60
-            : unit === 'MINUTES'
-              ? value * 60
-              : null
-        if (!seconds || seconds <= 0) return
+        const seconds = Number(data?.sessionTimeoutSeconds)
+        if (!Number.isFinite(seconds) || seconds <= 0) return
 
         if (cancelled) return
         inactivityTimeoutRef.current = Math.min(seconds, 30 * 24 * 60 * 60) * 1000

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getInvalidWatermarkCharacters } from '@/lib/watermark'
 import { prisma } from '@/lib/db'
-import { getCurrentUserFromRequest, requirePlatformAdmin } from '@/lib/auth'
+import { requirePlatformAdmin } from '@/lib/auth'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSmtpConfigured } from '@/lib/settings'
@@ -23,8 +23,12 @@ export async function GET(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const settingsMessages = messages?.settings || {}
 
-  const authResult = await getCurrentUserFromRequest(request)
-  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // The settings console is platform-admin only. This payload carries the whole
+  // platform configuration including the security block (rate-limit thresholds,
+  // password attempt budget, session TTLs), so a logged-in team member must not
+  // be able to read it.
+  const authResult = await requirePlatformAdmin(request)
+  if (authResult instanceof Response) return authResult
 
   // Rate limiting to prevent enumeration/scraping
   const rateLimitResult = await rateLimit(request, {

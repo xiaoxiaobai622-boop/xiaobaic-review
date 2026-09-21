@@ -4,8 +4,10 @@ import { getDeviceAuthHeaders } from './device-id'
 import { getActiveTeamId } from './team-store'
 import { getPlatformAccessToken } from './platform-token-store'
 
-let isRedirecting = false
+let redirectGuardUntil = 0
 let refreshInFlight: Promise<boolean> | null = null
+
+const REDIRECT_GUARD_MS = 5000
 
 export async function apiFetch(
   input: RequestInfo | URL,
@@ -15,11 +17,6 @@ export async function apiFetch(
 
   try {
     const response = await fetch(input, requestInit)
-
-    // Reset redirect flag on successful responses so future 401s are handled
-    if (response.ok) {
-      isRedirecting = false
-    }
 
     if (response.status === 401) {
       const refreshed = await attemptRefresh()
@@ -33,7 +30,7 @@ export async function apiFetch(
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       const isSharePage = typeof window !== 'undefined' && window.location.pathname.startsWith('/share/')
       const isAuthEndpoint = url.includes('/api/auth')
-      if (!isSharePage && !isAuthEndpoint && !isRedirecting) {
+      if (!isSharePage && !isAuthEndpoint) {
         handleSessionExpired()
       }
     }
@@ -173,8 +170,12 @@ export async function attemptRefresh(): Promise<boolean> {
 }
 
 function handleSessionExpired() {
-  if (isRedirecting) return
-  isRedirecting = true
+  // A time-boxed guard, not a "until the next successful response" latch: if the
+  // hard navigation never completes, the console must still be able to surface a
+  // later 401 instead of swallowing every request forever.
+  const now = Date.now()
+  if (now < redirectGuardUntil) return
+  redirectGuardUntil = now + REDIRECT_GUARD_MS
 
   try {
     clearTokens()

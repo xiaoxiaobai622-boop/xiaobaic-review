@@ -82,6 +82,7 @@ export default function AdminPage() {
 
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [filters, setFilters] = useState<ProjectsFilterState>(() =>
     loadInitialFilters(new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''))
   )
@@ -138,11 +139,18 @@ export default function AdminPage() {
       if (projectsRes.ok) {
         const data = await projectsRes.json()
         setProjects(data.projects || data || [])
+        setLoadError('')
       } else {
+        // A failed request must not render as "no projects yet", which reads as
+        // if the team's data had disappeared.
         setProjects([])
+        setLoadError(projectsRes.status === 403
+          ? '没有权限读取项目列表，请确认当前团队已激活'
+          : `项目列表加载失败（HTTP ${projectsRes.status}）`)
       }
     } catch (error) {
       setProjects([])
+      setLoadError('项目列表加载失败，请检查网络后重试')
     } finally {
       setLoading(false)
     }
@@ -510,6 +518,37 @@ export default function AdminPage() {
               <p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p>
               <Button asChild variant="outline" className="mt-4">
                 <Link href="/studio/team?tab=team">查看团队激活</Link>
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  if (loadError && totalProjects === 0) {
+    return (
+      <div className="flex-1 min-h-0 bg-background">
+        <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
+          <div className="mb-4 sm:mb-6">
+            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <FolderKanban className="w-7 h-7 sm:w-8 sm:h-8" />
+              {t('dashboard')}
+            </h1>
+          </div>
+          <Card>
+            <div className="py-12 text-center" role="alert">
+              <p className="text-sm font-medium text-destructive">{loadError}</p>
+              <p className="mt-1 text-sm text-muted-foreground">项目数据仍在服务器上，恢复连接后重试即可。</p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => {
+                  setLoading(true)
+                  void loadProjects()
+                }}
+              >
+                重试
               </Button>
             </div>
           </Card>

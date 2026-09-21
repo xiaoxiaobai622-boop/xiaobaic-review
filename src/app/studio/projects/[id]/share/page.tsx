@@ -157,9 +157,9 @@ export default function AdminSharePage() {
   const [thumbnailsLoading, setThumbnailsLoading] = useState(true)
   const tokenCacheRef = useRef<Map<string, any>>(new Map())
   const thumbnailUrlsRef = useRef<Map<string, string>>(new Map())
-  // Stable per-project session id so tokens are reused across mounts
-  // (server cache key is `video_token_cache:${sessionId}:${videoId}:${quality}`).
-  const [sessionId] = useState<string>(() => `admin:${id}`)
+  // Local bucket for the token/thumbnail caches below. The server derives its own
+  // cache bucket from the authenticated session, so nothing here is privileged.
+  const [sessionId] = useState<string>(() => `project:${id}`)
   const sessionIdRef = useRef<string>(sessionId)
   const inFlightTokenRequestsRef = useRef<Map<string, { promise: Promise<string>; signal?: AbortSignal }>>(new Map())
   const tokenFetchTelemetryRef = useRef({
@@ -205,11 +205,10 @@ export default function AdminSharePage() {
   const fetchAdminVideoToken = useCallback(async (
     videoId: string,
     quality: string,
-    sessionId: string,
     signal?: AbortSignal,
   ) => {
     const response = await apiFetch(
-      `/api/studio/video-token?videoId=${videoId}&projectId=${id}&quality=${quality}&sessionId=${sessionId}`,
+      `/api/studio/video-token?videoId=${videoId}&projectId=${id}&quality=${quality}`,
       { cache: 'no-store', signal }
     )
 
@@ -232,7 +231,7 @@ export default function AdminSharePage() {
     const requestPromise = (async () => {
       for (let attempt = 1; attempt <= MAX_TOKEN_FETCH_ATTEMPTS; attempt += 1) {
         if (signal?.aborted) return ''
-        const tokenValue = await fetchAdminVideoToken(videoId, quality, sessionId, signal)
+        const tokenValue = await fetchAdminVideoToken(videoId, quality, signal)
         if (tokenValue) {
           if (attempt > 1) {
             emitTokenFetchTelemetry('retry-success', { videoId, quality, attempts: attempt })
@@ -1017,7 +1016,7 @@ export default function AdminSharePage() {
                 projectTitle={project.title}
                 projectDescription={project.description}
                 clientName={project.clientName}
-                isPasswordProtected={!!project.sharePassword}
+                isPasswordProtected={project.hasSharePassword}
                 watermarkEnabled={project.watermarkEnabled}
                 activeVideoName={activeVideoName}
                 initialSeekTime={initialSeekTime}
@@ -1064,7 +1063,7 @@ export default function AdminSharePage() {
                   videos={readyVideos}
                   isAdminView={true}
                   smtpConfigured={project.smtpConfigured}
-                  isPasswordProtected={!!project.sharePassword}
+                  isPasswordProtected={project.hasSharePassword}
                   adminUser={adminUser}
                   recipients={project.recipients || []}
                   shareToken={null}

@@ -502,10 +502,11 @@ export async function getCurrentUserFromRequest(request: NextRequest): Promise<A
   if (bearer) {
     const payload = await verifyAdminAccessToken(bearer)
     if (payload) {
-      return prisma.user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { id: payload.userId },
-        select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, projectAccessScope: true },
+        select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, isPlatformAdmin: true, projectAccessScope: true },
       })
+      return user ? { ...user, sessionId: payload.sessionId } : null
     }
   }
 
@@ -524,7 +525,7 @@ export async function getCurrentUserFromRequest(request: NextRequest): Promise<A
 
   return prisma.user.findUnique({
     where: { id: identity.userId },
-    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, projectAccessScope: true },
+    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, isPlatformAdmin: true, projectAccessScope: true },
   })
 }
 
@@ -582,9 +583,10 @@ export async function requirePlatformAdmin(request: NextRequest): Promise<AuthUs
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Platform administration is intentionally independent from team roles.
-  // Team owners are not allowed to manage users from other teams.
-  if (user.role !== 'ADMIN') {
+  // Platform administration is an explicit per-account flag, not a team role.
+  // Team owners and team admins can carry role='ADMIN', so role alone must
+  // never open these routes.
+  if (!user.isPlatformAdmin) {
     return NextResponse.json({ error: 'Platform administrator permission required' }, { status: 403 })
   }
 

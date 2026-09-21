@@ -357,7 +357,9 @@ export async function GET(
     }, 'content-stream-ip')
 
     if (ipRateLimitResult) {
-      await logSecurityEvent({
+      // Fire-and-forget: a rate-limit storm turns every blocked request into an
+      // extra round trip to Postgres on the response path.
+      void logSecurityEvent({
         type: 'RATE_LIMIT_HIT',
         severity: 'WARNING',
         ipAddress: getClientIpAddress(request),
@@ -412,7 +414,7 @@ export async function GET(
         : securitySettings.shareSessionRateLimit
 
       if (sessionCount > sessionRateLimit) {
-        await logSecurityEvent({
+        void logSecurityEvent({
           type: 'RATE_LIMIT_HIT',
           severity: 'INFO',
           projectId: preliminaryTokenData.projectId,

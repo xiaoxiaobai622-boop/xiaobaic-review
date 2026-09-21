@@ -152,7 +152,6 @@ export default function AdminVideoManager({
   const [selectedCollectionUploadId, setSelectedCollectionUploadId] = useState<string | null>(null)
   const [promotingCollectionUploadId, setPromotingCollectionUploadId] = useState<string | null>(null)
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
-  const [sessionId] = useState<string>(() => `admin:${Date.now()}`)
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(() => new Set())
   const [bulkStatusLoading, setBulkStatusLoading] = useState(false)
   const [reviewStatusUpdatingVideoId, setReviewStatusUpdatingVideoId] = useState<string | null>(null)
@@ -183,9 +182,9 @@ export default function AdminVideoManager({
   }, [actionMenuGroup, actionMenuPosition])
 
   const videoTokenUrl = useCallback((videoId: string, quality: string) => {
-    const params = new URLSearchParams({ videoId, projectId, quality, sessionId })
+    const params = new URLSearchParams({ videoId, projectId, quality })
     return `/api/studio/video-token?${params.toString()}`
-  }, [projectId, sessionId])
+  }, [projectId])
 
   useEffect(() => {
     if (uploadRequestKey > 0 && projectStatus !== 'APPROVED') {
@@ -252,14 +251,19 @@ export default function AdminVideoManager({
 
   // Handle upload completion from modal - refresh to show processing inline
   const handleUploadComplete = async (_videoName?: string, videoId?: string) => {
+    let folderAssigned = true
     if (videoId && uploadRequestFolderId) {
-      await apiFetch(`/api/videos/${videoId}`, {
+      const response = await apiFetch(`/api/videos/${videoId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folderId: uploadRequestFolderId }),
       })
+      folderAssigned = response.ok
     }
     await onRefresh?.()
+    // The file is already stored, so a failed PATCH only loses the folder
+    // attribution - say so instead of letting the upload look successful.
+    if (!folderAssigned) appAlert(t('moveToFolderFailed'))
   }
 
   // Preview the latest READY version's transcoded preview (never the original file)
@@ -275,12 +279,19 @@ export default function AdminVideoManager({
         videoTokenUrl(latest.id, '720p'),
         { cache: 'no-store' }
       )
-      if (!res.ok) return
+      if (!res.ok) {
+        appAlert(t('failedToLoadData'))
+        return
+      }
       const data = await res.json()
       if (data.token) {
         setPreview({ name: groupName, label: latest.versionLabel || `v${latest.version}`, token: data.token })
+        return
       }
-    } catch {}
+      appAlert(t('failedToLoadData'))
+    } catch {
+      appAlert(t('failedToLoadData'))
+    }
   }
 
   const handleCompare = async (groupName: string, e: React.MouseEvent) => {
@@ -638,16 +649,20 @@ export default function AdminVideoManager({
     if (!await appConfirm(t('deleteGroupConfirm'))) return
 
     setDeletingGroup(groupName)
+    let failed = false
     try {
       for (const video of videoGroups[groupName]) {
         await apiDelete(`/api/videos/${video.id}`)
       }
-      router.refresh()
-      onRefresh?.()
     } catch {
-      appAlert(t('deleteGroupFailed'))
+      failed = true
     } finally {
       setDeletingGroup(null)
+      // Deleting stops at the first failure, so refresh even then: without it
+      // the versions already removed on the server stayed on screen as ghosts.
+      router.refresh()
+      onRefresh?.()
+      if (failed) appAlert(t('deleteGroupFailed'))
     }
   }
 

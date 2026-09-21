@@ -77,9 +77,13 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
           return
         }
       }
+      // A 5xx from the session service is not a sign-out, and neither is a
+      // transport failure. bootstrap re-runs on every navigation, so clearing
+      // the identity here bounced active sessions back to /login on a blip.
+      if (response.status >= 500) return
       setUser(null)
     } catch (error) {
-      setUser(null)
+      return
     } finally{
       setLoading(false)
     }
