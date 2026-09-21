@@ -4,7 +4,6 @@ import {
   GetObjectCommand,
   CopyObjectCommand,
   DeleteObjectCommand,
-  DeleteObjectsCommand,
   ListObjectsV2Command,
   ListMultipartUploadsCommand,
   HeadObjectCommand,
@@ -168,6 +167,8 @@ const MULTIPART_THRESHOLD = 100 * 1024 * 1024
 const PART_SIZE = 25 * 1024 * 1024
 const THUMBNAIL_CACHE_CONTROL = 'public, max-age=86400, immutable'
 const VIDEO_CACHE_CONTROL = 'public, max-age=3600'
+// COS rejects batch DeleteObjects (it demands a Content-MD5 the SDK never sends), so a purge deletes one object at a time.
+const DELETE_DIRECTORY_CONCURRENCY = 8
 
 function getMediaCacheControl(key: string): string | undefined {
   if (key.includes('/thumbnail.') || key.includes('/thumbs/')) {
@@ -398,17 +399,12 @@ export async function s3DeleteDirectory(prefix: string): Promise<void> {
     const res = await client.send(
       new ListObjectsV2Command({ Bucket: bucket, Prefix: normalizedPrefix, ContinuationToken: continuationToken })
     )
-    const objects = res.Contents ?? []
-    if (objects.length > 0) {
-      await client.send(
-        new DeleteObjectsCommand({
-          Bucket: bucket,
-          Delete: { Objects: objects.map((o) => ({ Key: o.Key! })), Quiet: true },
-        })
-      )
-      for (const object of objects) {
-        if (object.Key) markS3FileExistsCache(object.Key, false, S3_FILE_MISSING_CACHE_TTL_MS)
-      }
+    const keys = (res.Contents ?? [])
+      .map((object) => object.Key)
+      .filter((key): key is string => typeof key === 'string')
+    for (let index = 0; index < keys.length; index += DELETE_DIRECTORY_CONCURRENCY) {
+      const batch = keys.slice(index, index + DELETE_DIRECTORY_CONCURRENCY)
+      await Promise.all(batch.map((key) => s3DeleteFile(key)))
     }
     continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
   } while (continuationToken)

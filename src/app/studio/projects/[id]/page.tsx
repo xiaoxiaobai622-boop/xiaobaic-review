@@ -112,6 +112,8 @@ function countVideoComments(comments: any[], videoId: string): number {
 export default function ProjectPage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
+  // The 版本信息 panel reuses the video-version strings, which live in `videos`.
+  const tv = useTranslations('videos')
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -135,6 +137,8 @@ export default function ProjectPage() {
   const [recycleBinCount, setRecycleBinCount] = useState<number | null>(null)
   const [sharesCount, setSharesCount] = useState<number | null>(null)
   const [recycleBinRefreshKey, setRecycleBinRefreshKey] = useState(0)
+  const [workspaceRefreshKey, setWorkspaceRefreshKey] = useState(0)
+  const [workspaceRefreshing, setWorkspaceRefreshing] = useState(false)
   const [collectionLinkCopied, setCollectionLinkCopied] = useState(false)
   const [uploadRequestKey, setUploadRequestKey] = useState(0)
   const [uploadRequestFiles, setUploadRequestFiles] = useState<File[] | undefined>(undefined)
@@ -238,6 +242,18 @@ export default function ProjectPage() {
   // Fetch project data on mount
   useEffect(() => {
     fetchProject()
+  }, [fetchProject])
+
+  // Each workspace block owns its own list fetch, so a refresh remounts them all —
+  // otherwise the nav counts and the visible list keep whatever was loaded on mount.
+  const refreshWorkspace = useCallback(async () => {
+    setWorkspaceRefreshing(true)
+    try {
+      await fetchProject()
+      setWorkspaceRefreshKey((key) => key + 1)
+    } finally {
+      setWorkspaceRefreshing(false)
+    }
   }, [fetchProject])
 
   // Polling and comment events hand back a fresh `project` object, so the cover
@@ -636,18 +652,18 @@ export default function ProjectPage() {
 
   const deleteVideoVersion = async (video: any) => {
     if (deletingVersionId) return
-    if (!await appConfirm(t('deleteVersionConfirm', { version: video.versionLabel || `v${video.version}` }))) return
+    if (!await appConfirm(tv('deleteVersionConfirm', { version: video.versionLabel || `v${video.version}` }))) return
     setDeletingVersionId(video.id)
     try {
       const response = await apiFetch(`/api/videos/${video.id}`, { method: 'DELETE' })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
-        throw new Error(data.error || t('deleteVersionFailed'))
+        throw new Error(data.error || tv('deleteVersionFailed'))
       }
       if (rollbackTarget?.id === video.id) setRollbackTarget(null)
       await fetchProject()
     } catch (error) {
-      appAlert(error instanceof Error ? error.message : t('deleteVersionFailed'))
+      appAlert(error instanceof Error ? error.message : tv('deleteVersionFailed'))
     } finally {
       setDeletingVersionId(null)
     }
@@ -760,7 +776,7 @@ export default function ProjectPage() {
                 <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); changeWorkspace('videos'); openFolderUpload() }}><FolderUp className="h-4 w-4" />上传文件夹</button>
                 <div className="my-1 border-t border-border" />
                 <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>
-                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); void fetchProject() }}><RotateCcw className="h-4 w-4" />刷新</button>
+                <button type="button" disabled={workspaceRefreshing} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-60" onClick={() => { void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
                 <div className="my-1 border-t border-border" />
                 <Link href={`/studio/projects/${id}/settings`} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><Settings className="h-4 w-4" />项目设置</Link>
                 <Link href="/studio/team" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><Users className="h-4 w-4" />邀请成员</Link>
@@ -911,7 +927,7 @@ export default function ProjectPage() {
                   <ArrowUpDown className="h-4 w-4" />
                 </Button>
               </div>
-              <PhotoAlbumsBlock projectId={project.id} sortMode={albumSortMode} onCountsChange={handlePhotoCounts} />
+              <PhotoAlbumsBlock key={`albums-${workspaceRefreshKey}`} projectId={project.id} sortMode={albumSortMode} onCountsChange={handlePhotoCounts} />
             </section>
 
             <section id="collection-inbox" className={activeWorkspace === 'uploads' ? 'scroll-mt-4' : 'hidden'}>
@@ -921,7 +937,7 @@ export default function ProjectPage() {
                 {uploadsCount !== null && <span className={countBadgeClassName}>{uploadsCount}</span>}
               </h2>
               {project.allowReverseShare ? (
-                <ProjectUploadsBlock projectId={project.id} onCountChange={handleUploadsCount} videoNames={videoGroupNames} onPromoted={fetchProject} />
+                <ProjectUploadsBlock key={`uploads-${workspaceRefreshKey}`} projectId={project.id} onCountChange={handleUploadsCount} videoNames={videoGroupNames} onPromoted={fetchProject} />
               ) : (
                 <div className="rounded-md border border-dashed border-border px-4 py-8 text-center">
                   <FolderUp className="mx-auto h-7 w-7 text-muted-foreground" />
@@ -938,7 +954,7 @@ export default function ProjectPage() {
                 {t('recycleBin')}
                 {recycleBinCount !== null && <span className={countBadgeClassName}>{recycleBinCount}</span>}
               </h2>
-              <RecycleBinBlock key={recycleBinRefreshKey} projectId={project.id} onCountChange={setRecycleBinCount} onRestored={fetchProject} />
+              <RecycleBinBlock key={`${recycleBinRefreshKey}-${workspaceRefreshKey}`} projectId={project.id} onCountChange={setRecycleBinCount} onRestored={fetchProject} />
             </section>
 
             <section className={activeWorkspace === 'shares' ? undefined : 'hidden'}>
@@ -949,7 +965,7 @@ export default function ProjectPage() {
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">管理项目、文件夹、视频和收录链接</p>
               </div>
-              <ShareLinksPanel project={project} onCountChange={setSharesCount} />
+              <ShareLinksPanel key={`shares-${workspaceRefreshKey}`} project={project} onCountChange={setSharesCount} />
             </section>
           </main>
 
@@ -998,7 +1014,8 @@ export default function ProjectPage() {
                       video.fps ? `${Number(video.fps).toFixed(2)} fps` : null,
                       formatAspectRatio(video.width, video.height),
                     ].filter((value) => value && value !== '-').join(' · ')
-                    const uploader = video.uploadedByName || t('legacyAdminUploader')
+                    const uploader = video.uploadedByName
+                      || (video.uploadedBy === 'client' ? t('unknownUploader') : t('legacyAdminUploader'))
                     const isLatestVersion = videoIndex === 0
 
                     return (
@@ -1042,7 +1059,7 @@ export default function ProjectPage() {
                           onClick={() => void deleteVideoVersion(video)}
                         >
                           {deletingVersionId === video.id ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
-                          {t('deleteVideoVersion')}
+                          {tv('deleteVideoVersion')}
                         </Button>
                       </div>
                     )

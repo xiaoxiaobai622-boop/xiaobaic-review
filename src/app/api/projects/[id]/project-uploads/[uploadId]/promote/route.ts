@@ -167,6 +167,9 @@ export async function POST(
       }
 
       const nextVersion = latestVersion + 1
+      // A collected file belongs to the client who sent it. Never sign the acting
+      // admin's name onto it — an anonymous client upload must stay anonymous.
+      const isClientUpload = Boolean(upload.uploadedBySessionId)
       const video = await tx.video.create({
         data: {
           projectId,
@@ -177,8 +180,10 @@ export async function POST(
           originalFileSize: upload.fileSize,
           originalStoragePath,
           fileType: normalizedMimeType,
-          uploadedBy: upload.uploadedBySessionId ? 'client' : authResult.id,
-          uploadedByName: upload.uploadedByName || upload.uploadedByEmail || authResult.name || authResult.email,
+          uploadedBy: isClientUpload ? 'client' : authResult.id,
+          uploadedByName: isClientUpload
+            ? (upload.uploadedByName || upload.uploadedByEmail)
+            : (upload.uploadedByName || upload.uploadedByEmail || authResult.name || authResult.email),
           status: 'PROCESSING',
           processingProgress: 0,
           duration: 0,

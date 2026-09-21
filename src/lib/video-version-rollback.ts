@@ -103,7 +103,10 @@ export async function rollbackLatestVideoVersion(request: NextRequest, videoId: 
           storagePath: video.originalStoragePath,
           thumbnailPath: video.thumbnailPath,
           category: 'video',
-          uploadedByName: video.uploadedByName || authResult.name || authResult.email,
+          // Keep the version's own ownership: an anonymous client file must not
+          // come back to 收录 signed with whoever pressed 回退.
+          uploadedByName: video.uploadedByName
+            || (video.uploadedBy === 'client' ? null : authResult.name || authResult.email),
           uploadCompletedAt: new Date(),
           transcodeStatus: 'READY',
           transcodeProgress: 100,
