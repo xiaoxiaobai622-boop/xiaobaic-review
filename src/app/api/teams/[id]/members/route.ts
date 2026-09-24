@@ -24,17 +24,17 @@ export async function GET(
       where: { teamId: id },
       orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
       select: {
-      id: true,
-      role: true,
-      status: true,
-      createdAt: true,
-      user: {
-        select: { id: true, name: true, email: true, phone: true, avatarUrl: true },
-      },
-      teamNickname: true,
-      teamProfession: true,
-      department: true,
-      bio: true,
+        id: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        user: {
+          select: { id: true, name: true, email: true, phone: true, avatarUrl: true },
+        },
+        teamNickname: true,
+        teamProfession: true,
+        department: true,
+        bio: true,
       },
     })
   } catch {

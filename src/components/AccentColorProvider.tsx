@@ -2,43 +2,43 @@
 
 import { useEffect, useCallback } from 'react'
 import { ACCENT_COLORS, AccentColorKey } from '@/components/settings/AppearanceSection'
+import { hexToHslTriplet, isCustomAccentColor } from '@/lib/accent'
+import { applyThemeChoice, readStoredTheme, resolveDefaultTheme } from '@/lib/theme'
 
 /**
- * Applies the accent color CSS variables and caches admin theme defaults
- * Fetches from API and caches in localStorage for faster subsequent loads
+ * Applies the admin's appearance defaults: the accent color CSS variables, and
+ * the site-wide theme when the visitor has not picked one themselves.
+ * Settings are cached in localStorage so later loads settle without waiting on the API.
+ * The pre-paint half of the theme lives in the root layout, which ships
+ * THEME_BOOTSTRAP_SCRIPT before this component can even hydrate.
  */
 export function AccentColorProvider() {
   const applyAppearanceSettings = useCallback(async () => {
     try {
-      // Fetch current setting from API
       const response = await fetch('/api/settings/theme')
       if (response.ok) {
         const data = await response.json()
-        const colorKey = (data.accentColor || 'blue') as AccentColorKey
+        const colorKey = data.accentColor || 'blue'
         const defaultTheme = data.defaultTheme || 'auto'
 
-        // Cache both values for faster loads on subsequent visits
         localStorage.setItem('adminAccentColor', colorKey)
         localStorage.setItem('adminDefaultTheme', defaultTheme)
 
-        // Apply the accent color
         applyColorVariables(colorKey)
 
-        // Apply theme if user hasn't set a preference
-        const userTheme = localStorage.getItem('theme')
-        if (!userTheme) {
-          applyDefaultTheme(defaultTheme)
+        if (!readStoredTheme()) {
+          applyThemeChoice(resolveDefaultTheme(defaultTheme))
         }
       } else {
-        // API failed, use cached values
-        const cachedColor = localStorage.getItem('adminAccentColor') as AccentColorKey | null
+        // API failed, use cached value
+        const cachedColor = localStorage.getItem('adminAccentColor')
         if (cachedColor) {
           applyColorVariables(cachedColor)
         }
       }
     } catch {
       // On error, try cached value
-      const cachedColor = localStorage.getItem('adminAccentColor') as AccentColorKey | null
+      const cachedColor = localStorage.getItem('adminAccentColor')
       if (cachedColor) {
         applyColorVariables(cachedColor)
       }
@@ -47,63 +47,57 @@ export function AccentColorProvider() {
 
   useEffect(() => {
     applyAppearanceSettings()
-  }, [applyAppearanceSettings])
 
-  const applyDefaultTheme = (defaultTheme: string) => {
-    const root = document.documentElement
-
-    if (defaultTheme === 'dark') {
-      root.classList.add('dark')
-    } else if (defaultTheme === 'light') {
-      root.classList.remove('dark')
-    } else {
-      // 'auto' - use system preference
-      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        root.classList.add('dark')
-      } else {
-        root.classList.remove('dark')
+    // While no explicit choice is stored, the OS preference keeps driving the app.
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleSystemChange = () => {
+      if (!readStoredTheme()) {
+        applyThemeChoice(resolveDefaultTheme(localStorage.getItem('adminDefaultTheme')))
       }
     }
-  }
 
-  const applyColorVariables = (colorKey: AccentColorKey) => {
-    const color = ACCENT_COLORS[colorKey]
-    if (!color) return
+    mediaQuery.addEventListener('change', handleSystemChange)
+    return () => mediaQuery.removeEventListener('change', handleSystemChange)
+  }, [applyAppearanceSettings])
+
+  const applyColorVariables = (colorKey: string) => {
+    const preset = ACCENT_COLORS[colorKey as AccentColorKey]
+    // A custom pick is painted verbatim in light and dark alike — the admin chose
+    // that exact colour, so nothing re-tunes it behind their back. The settings
+    // page reports the white-label contrast instead.
+    const customTriplet = isCustomAccentColor(colorKey) ? hexToHslTriplet(colorKey) : null
+    if (!preset && !customTriplet) return
 
     const root = document.documentElement
-    const isDark = root.classList.contains('dark')
 
-    // Apply the primary color based on current theme
-    const hslValue = isDark ? color.dark : color.light
-    root.style.setProperty('--primary', hslValue)
-    root.style.setProperty('--ring', hslValue)
-
-    // Calculate visible background (lighter version for badges/highlights)
-    const [h, s] = hslValue.split(' ')
-    const visibleLight = `${h} ${s} 95%`
-    const visibleDark = `${h} ${s} 20%`
-    root.style.setProperty('--primary-visible', isDark ? visibleDark : visibleLight)
-
-    // Update accent-foreground to match primary
-    root.style.setProperty('--accent-foreground', hslValue)
-
-    // Listen for theme changes to update colors
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.attributeName === 'class') {
-          const isDarkNow = root.classList.contains('dark')
-          const hslValueNow = isDarkNow ? color.dark : color.light
-          root.style.setProperty('--primary', hslValueNow)
-          root.style.setProperty('--ring', hslValueNow)
-          root.style.setProperty('--accent-foreground', hslValueNow)
-
-          const [hNow, sNow] = hslValueNow.split(' ')
-          root.style.setProperty('--primary-visible', isDarkNow ? `${hNow} ${sNow} 20%` : `${hNow} ${sNow} 95%`)
+    const write = () => {
+      // Mint paints its primary from globals.css; an inline style would outrank
+      // that rule, so hand the properties back to the stylesheet while it is on.
+      if (root.dataset.theme === 'mint') {
+        for (const name of ['--primary', '--ring', '--accent-foreground', '--primary-visible']) {
+          root.style.removeProperty(name)
         }
-      })
-    })
+        return
+      }
 
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] })
+      const isDark = root.classList.contains('dark')
+      const hslValue = customTriplet ?? (isDark ? preset?.dark : preset?.light)
+      if (!hslValue) return
+      const [h, s] = hslValue.split(' ')
+      root.style.setProperty('--primary', hslValue)
+      root.style.setProperty('--ring', hslValue)
+      root.style.setProperty('--accent-foreground', hslValue)
+      // Visible background is the same hue pushed to an extreme: a pale wash in
+      // light mode, a deep tint in dark, so badges keep contrast against text.
+      root.style.setProperty('--primary-visible', isDark ? `${h} ${s} 20%` : `${h} ${s} 95%`)
+    }
+
+    write()
+
+    // Re-applies when the theme flips between light/dark, and when mint turns on
+    // or off (which is only a data-theme change, not a class change).
+    const observer = new MutationObserver(write)
+    observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme'] })
   }
 
   return null

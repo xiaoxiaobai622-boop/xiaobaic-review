@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiFetch } from '@/lib/api-client'
 
 const steps = [
-  { name: '待审阅', description: '项目已创建，等待团队开始审阅。', status: 'IN_REVIEW' },
-  { name: '审阅中', description: '团队成员正在查看视频并提交批注。', status: 'IN_REVIEW' },
-  { name: '意见汇总完毕', description: '批注已整理，准备确认最终版本。', status: 'IN_REVIEW' },
-  { name: '通过', description: '项目已完成审阅，可进入交付。', status: 'APPROVED' },
+  { name: '待审阅', description: '项目已创建，等待团队开始审阅。' },
+  { name: '审阅中', description: '团队成员正在查看视频并提交批注。' },
+  { name: '意见汇总完毕', description: '批注已整理，准备确认最终版本。' },
+  { name: '通过', description: '项目已完成审阅，可进入交付。' },
 ]
 
 export default function TeamWorkflowPage() {

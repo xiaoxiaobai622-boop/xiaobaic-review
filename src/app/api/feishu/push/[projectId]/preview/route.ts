@@ -11,6 +11,18 @@ import { decrypt, encrypt } from '@/lib/encryption'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const FEISHU_BINDING_SELECT = {
+  id: true,
+  openId: true,
+  nickname: true,
+  avatarUrl: true,
+  userAccessTokenEncrypted: true,
+  refreshTokenEncrypted: true,
+  tokenExpiresAt: true,
+} as const
+
+const USER_PROFILE_SELECT = { id: true, name: true, avatarUrl: true } as const
+
 /**
  * GET /api/feishu/push/[projectId]/preview?videoId=xxx
  *
@@ -188,22 +200,14 @@ export async function GET(request: NextRequest) {
     const uploaderUser = uploader
       ? await prisma.user.findUnique({
           where: { id: uploader },
-          select: { id: true, name: true, avatarUrl: true },
+          select: USER_PROFILE_SELECT,
         })
       : null
 
     let uploaderBinding = uploaderUser
       ? await prisma.feishuBinding.findUnique({
           where: { userId: uploaderUser.id },
-          select: {
-            id: true,
-            openId: true,
-            nickname: true,
-            avatarUrl: true,
-            userAccessTokenEncrypted: true,
-            refreshTokenEncrypted: true,
-            tokenExpiresAt: true,
-          },
+          select: FEISHU_BINDING_SELECT,
         })
       : null
     uploaderBinding = await refreshBinding(uploaderBinding)
@@ -269,21 +273,13 @@ export async function GET(request: NextRequest) {
         const videoUploader = uploaderId
           ? await prisma.user.findUnique({
               where: { id: uploaderId },
-              select: { id: true, name: true, avatarUrl: true },
+              select: USER_PROFILE_SELECT,
             })
           : null
         let videoBinding = uploaderId
           ? await prisma.feishuBinding.findUnique({
               where: { userId: uploaderId },
-              select: {
-                id: true,
-                openId: true,
-                nickname: true,
-                avatarUrl: true,
-                userAccessTokenEncrypted: true,
-                refreshTokenEncrypted: true,
-                tokenExpiresAt: true,
-              },
+              select: FEISHU_BINDING_SELECT,
             })
           : null
         videoBinding = await refreshBinding(videoBinding)
@@ -299,8 +295,8 @@ export async function GET(request: NextRequest) {
           unpushedComments: videoUnpushed.length,
           lastPushAt: lastPushAtByVideo.get(video.id) || null,
           uploader: {
-          id: videoUploader?.id || video.uploadedBy || '',
-          name: videoUploader?.name || video.uploadedByName || null,
+            id: videoUploader?.id || video.uploadedBy || '',
+            name: videoUploader?.name || video.uploadedByName || null,
             avatarUrl: videoUploader?.avatarUrl || null,
             feishuNickname: videoBinding?.nickname || undefined,
             feishuAvatar: videoBinding?.avatarUrl || undefined,

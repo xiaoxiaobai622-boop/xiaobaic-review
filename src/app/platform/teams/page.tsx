@@ -155,7 +155,7 @@ export default function PlatformTeamsPage() {
                 </span>
               </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-muted-foreground">创建人</p>
                   <p className="mt-1 truncate">{team.createdBy.name || team.createdBy.email}</p>
@@ -164,7 +164,7 @@ export default function PlatformTeamsPage() {
                   <p className="text-xs text-muted-foreground">成员 / 项目</p>
                   <p className="mt-1">{team._count.members} / {team._count.projects}</p>
                 </div>
-            </div>
+              </div>
 
               <div className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-sm">
                 <Clock3 className="h-4 w-4 text-muted-foreground" />

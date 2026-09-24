@@ -1,124 +1,39 @@
 'use client'
 
-import { Moon, Sun } from 'lucide-react'
-import { useEffect, useState, useCallback } from 'react'
+import { Leaf, Moon, Sun } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
+import { applyThemeChoice, type ThemeChoice } from '@/lib/theme'
 
 interface ThemeToggleProps {
   className?: string
 }
 
+/** The document element is the source of truth; the admin default lives in AccentColorProvider. */
+function readThemeFromDom(): ThemeChoice {
+  const root = document.documentElement
+  if (root.getAttribute('data-theme') === 'mint') return 'mint'
+  return root.classList.contains('dark') ? 'dark' : 'light'
+}
+
 export default function ThemeToggle({ className }: ThemeToggleProps) {
   const t = useTranslations('controls')
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const [theme, setTheme] = useState<ThemeChoice>('light')
   const [mounted, setMounted] = useState(false)
-
-  const applyTheme = (themeToApply: 'light' | 'dark') => {
-    if (themeToApply === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }
-
-  const fetchAndApplyDefaultTheme = useCallback(async () => {
-    try {
-      // Check if we already have a cached admin default
-      const cachedDefault = localStorage.getItem('adminDefaultTheme')
-
-      // Fetch the current admin default
-      const response = await fetch('/api/settings/theme')
-      if (response.ok) {
-        const data = await response.json()
-        const adminDefault = data.defaultTheme || 'auto'
-
-        // Cache the admin default for future page loads
-        localStorage.setItem('adminDefaultTheme', adminDefault)
-
-        // Determine which theme to use
-        let themeToUse: 'light' | 'dark'
-        if (adminDefault === 'auto') {
-          // Use system preference
-          themeToUse = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        } else {
-          themeToUse = adminDefault as 'light' | 'dark'
-        }
-
-        setTheme(themeToUse)
-        applyTheme(themeToUse)
-      } else if (cachedDefault) {
-        // API failed, use cached default
-        let themeToUse: 'light' | 'dark'
-        if (cachedDefault === 'auto') {
-          themeToUse = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        } else {
-          themeToUse = cachedDefault as 'light' | 'dark'
-        }
-        setTheme(themeToUse)
-        applyTheme(themeToUse)
-      } else {
-        // No cached default and API failed - fall back to system preference
-        const systemPreference = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        setTheme(systemPreference)
-        applyTheme(systemPreference)
-      }
-    } catch {
-      // On error, fall back to system preference
-      const systemPreference = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      setTheme(systemPreference)
-      applyTheme(systemPreference)
-    }
-  }, [])
 
   useEffect(() => {
     setMounted(true)
+    setTheme(readThemeFromDom())
 
-    // Check if user has a saved preference
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null
+    const observer = new MutationObserver(() => setTheme(readThemeFromDom()))
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-theme'],
+    })
+    return () => observer.disconnect()
+  }, [])
 
-    if (savedTheme) {
-      // User has manually set a preference - use it
-      setTheme(savedTheme)
-      applyTheme(savedTheme)
-    } else {
-      // No saved preference - fetch admin default and apply
-      fetchAndApplyDefaultTheme()
-    }
-
-    // Listen for system preference changes (when user changes OS theme)
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = (e: MediaQueryListEvent) => {
-      // Only update if user hasn't set a manual preference AND admin default is 'auto'
-      if (!localStorage.getItem('theme')) {
-        const adminDefault = localStorage.getItem('adminDefaultTheme')
-        if (!adminDefault || adminDefault === 'auto') {
-          const newTheme = e.matches ? 'dark' : 'light'
-          setTheme(newTheme)
-          applyTheme(newTheme)
-        }
-      }
-    }
-
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [fetchAndApplyDefaultTheme])
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light'
-    setTheme(newTheme)
-    // Save user's manual preference
-    localStorage.setItem('theme', newTheme)
-
-    // Apply/remove dark class properly
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }
-
-  // Avoid hydration mismatch
   if (!mounted) {
     return (
       <button
@@ -130,18 +45,36 @@ export default function ThemeToggle({ className }: ThemeToggleProps) {
     )
   }
 
+  const Icon = theme === 'mint' ? Leaf : theme === 'dark' ? Moon : Sun
+  const labels: Record<ThemeChoice, string> = {
+    light: t('themeLight'),
+    mint: t('themeMint'),
+    dark: t('themeDark'),
+  }
+
   return (
-    <button
-      onClick={toggleTheme}
-      className={cn('inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background transition-colors hover:bg-accent', className)}
-      aria-label={t('toggleTheme')}
-      title={theme === 'light' ? t('switchToDark') : t('switchToLight')}
-    >
-      {theme === 'light' ? (
-        <Moon className="h-[18px] w-[18px] text-foreground" />
-      ) : (
-        <Sun className="h-[18px] w-[18px] text-foreground" />
-      )}
-    </button>
+    <label className={cn(
+      'flex h-9 items-center gap-2 rounded-md border border-border bg-background px-2 shadow-sm transition-colors hover:bg-accent',
+      className
+    )}>
+      <Icon className="h-4 w-4 shrink-0 text-foreground" aria-hidden="true" />
+      <span className="sr-only">{labels[theme]}</span>
+      <select
+        value={theme}
+        onChange={(event) => {
+          const next = event.target.value as ThemeChoice
+          localStorage.setItem('theme', next)
+          applyThemeChoice(next)
+        }}
+        className="max-w-28 cursor-pointer bg-transparent text-xs font-medium text-foreground outline-none"
+        aria-label={t('toggleTheme')}
+      >
+        {(['light', 'mint', 'dark'] as ThemeChoice[]).map((choice) => (
+          <option key={choice} value={choice}>
+            {labels[choice]}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }

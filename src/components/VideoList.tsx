@@ -19,6 +19,11 @@ interface VideoListProps {
   onRefresh?: () => void
 }
 
+function expandNewestOnly(videos: Video[]) {
+  const sorted = [...videos].sort((a, b) => b.version - a.version)
+  return new Set(sorted[0]?.id ? [sorted[0].id] : [])
+}
+
 export default function VideoList({ videos: initialVideos, isAdmin = true, onRefresh }: VideoListProps) {
   const t = useTranslations('videos')
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -28,10 +33,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
   const [uploadingAssetsFor, setUploadingAssetsFor] = useState<string | null>(null)
   const [assetRefreshTrigger, setAssetRefreshTrigger] = useState(0)
 
-  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => {
-    const sorted = [...initialVideos].sort((a, b) => b.version - a.version)
-    return new Set(sorted[0]?.id ? [sorted[0].id] : [])
-  })
+  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => expandNewestOnly(initialVideos))
   const [showAllVersions, setShowAllVersions] = useState(false)
 
   // Update local state when props change
@@ -42,8 +44,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
   // Recalculate expanded versions when videos change (but only if not showing all)
   useEffect(() => {
     if (!showAllVersions) {
-      const sorted = [...initialVideos].sort((a, b) => b.version - a.version)
-      setExpandedVersions(new Set(sorted[0]?.id ? [sorted[0].id] : []))
+      setExpandedVersions(expandNewestOnly(initialVideos))
     }
   }, [initialVideos, showAllVersions])
 
@@ -163,8 +164,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
 
   const handleShowAllVersions = () => {
     if (showAllVersions) {
-      const sorted = [...videos].sort((a, b) => b.version - a.version)
-      setExpandedVersions(new Set(sorted[0]?.id ? [sorted[0].id] : []))
+      setExpandedVersions(expandNewestOnly(videos))
     } else {
       setExpandedVersions(new Set(videos.map(v => v.id)))
     }
@@ -254,34 +254,32 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
       <div className="flex items-center gap-2">
         {/* Text block: version label row + filename */}
         <div className="flex-1 min-w-0">
-          <>
-              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                {(video as any).approved && (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0" />
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            {(video as any).approved && (
+              <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0" />
+            )}
+            <span className="font-medium text-sm truncate min-w-0">{video.versionLabel}</span>
+            {isLatest && videos.length > 1 && (
+              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary flex-shrink-0">
+                {t('latest')}
+              </span>
+            )}
+            {(video.status === 'PROCESSING' || video.status === 'ERROR') && (
+              <span
+                className={`px-1.5 py-0.5 rounded text-xs font-medium flex items-center gap-1 flex-shrink-0 ${
+                  video.status === 'PROCESSING'
+                    ? 'bg-primary-visible text-primary border border-primary-visible'
+                    : 'bg-destructive-visible text-destructive border border-destructive-visible'
+                }`}
+              >
+                {video.status === 'PROCESSING' && (
+                  <div className="animate-spin rounded-full h-2.5 w-2.5 border-b-2 border-primary" />
                 )}
-                <span className="font-medium text-sm truncate min-w-0">{video.versionLabel}</span>
-                {isLatest && videos.length > 1 && (
-                  <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary flex-shrink-0">
-                    {t('latest')}
-                  </span>
-                )}
-                {(video.status === 'PROCESSING' || video.status === 'ERROR') && (
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-xs font-medium flex items-center gap-1 flex-shrink-0 ${
-                      video.status === 'PROCESSING'
-                        ? 'bg-primary-visible text-primary border border-primary-visible'
-                        : 'bg-destructive-visible text-destructive border border-destructive-visible'
-                    }`}
-                  >
-                    {video.status === 'PROCESSING' && (
-                      <div className="animate-spin rounded-full h-2.5 w-2.5 border-b-2 border-primary" />
-                    )}
-                    {video.status}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground truncate">{video.originalFileName}</p>
-          </>
+                {video.status}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground truncate">{video.originalFileName}</p>
         </div>
 
         {/* Action icons — icon buttons only, fixed width, never overflow */}
@@ -471,11 +469,9 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
         const isExpanded = expandedVersions.has(video.id)
         const isLatest = video.id === latestVideoId
 
-        if (isExpanded) {
-          return renderExpandedVersion(video, isLatest)
-        } else {
-          return renderCollapsedVersion(video)
-        }
+        return isExpanded
+          ? renderExpandedVersion(video, isLatest)
+          : renderCollapsedVersion(video)
       })}
 
     </div>

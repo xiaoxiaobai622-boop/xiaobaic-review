@@ -243,7 +243,12 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
             const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
             const diffDays = Math.round((dueDay.getTime() - today.getTime()) / 86400000)
             const isCompleted = project.status === 'APPROVED' || project.status === 'ARCHIVED' || project.status === 'SHARE_ONLY'
-            const colorClass = isCompleted ? '' : diffDays < 0 ? 'text-destructive' : diffDays <= 1 ? 'text-warning' : diffDays <= 7 ? 'text-primary' : ''
+            let colorClass = ''
+            if (!isCompleted) {
+              if (diffDays < 0) colorClass = 'text-destructive'
+              else if (diffDays <= 1) colorClass = 'text-warning'
+              else if (diffDays <= 7) colorClass = 'text-primary'
+            }
             const dateStr = due.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
 
             return (

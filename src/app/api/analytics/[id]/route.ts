@@ -70,6 +70,7 @@ export async function GET(
                   select: {
                     id: true,
                     fileName: true,
+                    originalFileName: true,
                     category: true,
                   },
                 },
@@ -81,7 +82,7 @@ export async function GET(
           select: {
             id: true,
             name: true,
-            photos: { select: { id: true, fileName: true } },
+            photos: { select: { id: true, fileName: true, originalFileName: true } },
           },
         },
         projectUploads: {
@@ -90,6 +91,7 @@ export async function GET(
           select: {
             id: true,
             fileName: true,
+            originalFileName: true,
             uploadedByName: true,
             uploadedByEmail: true,
             createdAt: true,
@@ -174,12 +176,15 @@ export async function GET(
       if (download.assetId) {
         // Single asset download
         const asset = download.video!.assets.find(a => a.id === download.assetId)
-        assetFileName = asset?.fileName
+        assetFileName = asset?.originalFileName || asset?.fileName
       } else if (download.assetIds) {
         // Multiple asset download (ZIP)
         const assetIdArray = JSON.parse(download.assetIds) as string[]
         assetFileNames = assetIdArray
-          .map(id => download.video!.assets.find(a => a.id === id)?.fileName)
+          .map(id => {
+            const asset = download.video!.assets.find(a => a.id === id)
+            return asset && (asset.originalFileName || asset.fileName)
+          })
           .filter((name): name is string => !!name)
       }
 
@@ -198,7 +203,7 @@ export async function GET(
 
     // Photo download events (albumId null = whole-project zip)
     const photosById = new Map(
-      project.photoAlbums.flatMap(album => album.photos.map(photo => [photo.id, photo.fileName] as const))
+      project.photoAlbums.flatMap(album => album.photos.map(photo => [photo.id, photo.originalFileName || photo.fileName] as const))
     )
     const albumsById = new Map(project.photoAlbums.map(album => [album.id, album.name]))
 
@@ -220,7 +225,7 @@ export async function GET(
     const clientUploadEvents = project.projectUploads.map(upload => ({
       id: upload.id,
       type: 'CLIENT_UPLOAD' as const,
-      fileName: upload.fileName,
+      fileName: upload.originalFileName || upload.fileName,
       uploaderName: upload.uploadedByName,
       uploaderEmail: upload.uploadedByEmail,
       createdAt: upload.createdAt,

@@ -2,6 +2,7 @@
 
 import Hls, { ErrorTypes, Events, type ErrorData } from 'hls.js'
 import { useEffect, useRef, useState, type RefObject } from 'react'
+import { isTimeBuffered } from '@/lib/media-buffer'
 
 interface UseHlsSourceOptions {
   videoRef: RefObject<HTMLVideoElement | null>
@@ -74,10 +75,6 @@ export function useHlsSource({
     let mediaRecoveryAttempts = 0
     let manifestReady = false
     const previousPreload = video.preload
-    let handleSeeking: (() => void) | null = null
-    let handleWaiting: (() => void) | null = null
-    let handleLoadedMetadata: (() => void) | null = null
-    let handleDurationChange: (() => void) | null = null
     let seekLoadTimer: ReturnType<typeof setTimeout> | null = null
     let pendingSeekPosition: number | null = null
     let pendingForceLoad = false
@@ -88,24 +85,21 @@ export function useHlsSource({
     let disposed = false
     let lastNetworkStatus: number | undefined
 
-    const isBufferedAt = (position: number): boolean => {
-      if (!Number.isFinite(position)) return false
-
-      const duration = Number.isFinite(video.duration) && video.duration > 0
-        ? video.duration
-        : null
-      const isAtMediaEnd = duration !== null && position >= duration - 0.05
-
-      for (let index = 0; index < video.buffered.length; index += 1) {
-        // Keep the same tolerance hls.js uses for small buffer holes. Treating
-        // a position at the exact end of a range as buffered can leave the
-        // player waiting for the next fragment, so leave a small tail here.
-        const start = video.buffered.start(index)
-        const end = video.buffered.end(index)
-        if (position >= start && (position < end - 0.15 || (isAtMediaEnd && end >= (duration ?? 0) - 0.05))) return true
-      }
-      return false
+    // Registered in attach order so teardown replays the same order.
+    const videoListeners: Array<[string, () => void]> = []
+    const listenToVideo = (type: string, handler: () => void) => {
+      video.addEventListener(type, handler)
+      videoListeners.push([type, handler])
     }
+
+    const clampToDuration = (position: number): number => {
+      const duration = video.duration
+      return Number.isFinite(duration) && duration > 0
+        ? Math.min(position, duration)
+        : position
+    }
+
+    const isBufferedAt = (position: number): boolean => isTimeBuffered(video, position)
 
     const scheduleLoadAt = (position: number, force = false) => {
       if (disposed || !hls || !Number.isFinite(position)) return
@@ -188,10 +182,7 @@ export function useHlsSource({
     const applyPendingSeek = () => {
       if (disposed || pendingSeekPosition === null) return
 
-      const duration = video.duration
-      const target = Number.isFinite(duration) && duration > 0
-        ? Math.min(pendingSeekPosition, duration)
-        : pendingSeekPosition
+      const target = clampToDuration(pendingSeekPosition)
 
       if (Number.isFinite(target)) {
         try {
@@ -240,10 +231,7 @@ export function useHlsSource({
         if (fallbackPosition !== null) {
           const restoreFallbackPosition = () => {
             if (disposed) return
-            const duration = video.duration
-            const target = Number.isFinite(duration) && duration > 0
-              ? Math.min(fallbackPosition, duration)
-              : fallbackPosition
+            const target = clampToDuration(fallbackPosition)
             try {
               video.currentTime = target
               if (shouldResume) void video.play().catch(() => {})
@@ -278,7 +266,7 @@ export function useHlsSource({
       }
     }
 
-    video.addEventListener('error', handleMediaElementError)
+    listenToVideo('error', handleMediaElementError)
 
     if (hlsUrl && video.canPlayType('application/vnd.apple.mpegurl')) {
       setVideoSource(hlsUrl, 'hls')
@@ -327,28 +315,25 @@ export function useHlsSource({
       // Keep seeks made before the manifest/metadata is ready. hls.js cannot
       // select a fragment for those seeks yet, so replay the latest target as
       // soon as the level is available.
-      handleSeeking = () => {
+      listenToVideo('seeking', () => {
         if (disposed || !Number.isFinite(video.currentTime)) return
         pendingSeekPosition = Math.max(0, video.currentTime)
         if (manifestReady) scheduleLoadAt(video.currentTime)
-      }
-      video.addEventListener('seeking', handleSeeking)
+      })
 
-      handleWaiting = () => {
+      // hls.js exposes `loadingEnabled` as a start/stop switch, not as an
+      // indication that a fragment request is currently in flight. Let the
+      // position/cooldown guard in scheduleLoadAt decide whether a restart
+      // is useful so a stalled loader can recover as well.
+      const handleWaiting = () => {
         if (disposed || !manifestReady || !Number.isFinite(video.currentTime)) return
-        // hls.js exposes `loadingEnabled` as a start/stop switch, not as an
-        // indication that a fragment request is currently in flight. Let the
-        // position/cooldown guard in scheduleLoadAt decide whether a restart
-        // is useful so a stalled loader can recover as well.
         scheduleLoadAt(video.currentTime)
       }
-      video.addEventListener('waiting', handleWaiting)
-      video.addEventListener('stalled', handleWaiting)
+      listenToVideo('waiting', handleWaiting)
+      listenToVideo('stalled', handleWaiting)
 
-      handleLoadedMetadata = applyPendingSeek
-      handleDurationChange = applyPendingSeek
-      video.addEventListener('loadedmetadata', handleLoadedMetadata)
-      video.addEventListener('durationchange', handleDurationChange)
+      listenToVideo('loadedmetadata', applyPendingSeek)
+      listenToVideo('durationchange', applyPendingSeek)
 
       hls.on(Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal || disposed || !hls) return
@@ -363,22 +348,21 @@ export function useHlsSource({
             activateFallback()
             return
           }
-        }
-
-        if (data.type === ErrorTypes.NETWORK_ERROR && networkRecoveryAttempts < 5) {
-          networkRecoveryAttempts += 1
-          const retryDelay = Math.min(8000, 500 * Math.pow(2, networkRecoveryAttempts - 1))
-          if (recoveryTimer !== null) clearTimeout(recoveryTimer)
-          recoveryTimer = setTimeout(() => {
-            recoveryTimer = null
-            if (disposed || !hls) return
-            if (manifestReady && Number.isFinite(video.currentTime)) {
-              scheduleLoadAt(video.currentTime, true)
-            } else {
-              hls.startLoad()
-            }
-          }, retryDelay)
-          return
+          if (networkRecoveryAttempts < 5) {
+            networkRecoveryAttempts += 1
+            const retryDelay = Math.min(8000, 500 * Math.pow(2, networkRecoveryAttempts - 1))
+            if (recoveryTimer !== null) clearTimeout(recoveryTimer)
+            recoveryTimer = setTimeout(() => {
+              recoveryTimer = null
+              if (disposed || !hls) return
+              if (manifestReady && Number.isFinite(video.currentTime)) {
+                scheduleLoadAt(video.currentTime, true)
+              } else {
+                hls.startLoad()
+              }
+            }, retryDelay)
+            return
+          }
         }
 
         if (data.type === ErrorTypes.MEDIA_ERROR && mediaRecoveryAttempts < 1) {
@@ -401,14 +385,7 @@ export function useHlsSource({
 
     return () => {
       disposed = true
-      video.removeEventListener('error', handleMediaElementError)
-      if (handleSeeking) video.removeEventListener('seeking', handleSeeking)
-      if (handleWaiting) {
-        video.removeEventListener('waiting', handleWaiting)
-        video.removeEventListener('stalled', handleWaiting)
-      }
-      if (handleLoadedMetadata) video.removeEventListener('loadedmetadata', handleLoadedMetadata)
-      if (handleDurationChange) video.removeEventListener('durationchange', handleDurationChange)
+      for (const [type, handler] of videoListeners) video.removeEventListener(type, handler)
       if (seekLoadTimer !== null) clearTimeout(seekLoadTimer)
       if (recoveryTimer !== null) clearTimeout(recoveryTimer)
       pendingForceLoad = false

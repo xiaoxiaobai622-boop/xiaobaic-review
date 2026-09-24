@@ -14,7 +14,7 @@ import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
 import RecycleBinBlock from '@/components/RecycleBinBlock'
 import ShareLinksPanel from '@/components/ShareLinksPanel'
 import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderOpen, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck } from 'lucide-react'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -31,6 +31,29 @@ export const dynamic = 'force-dynamic'
 
 const VIDEO_VIEW_MODE_KEY = 'vitransfer-admin-video-view-mode'
 const WORKSPACE_VIEW_KEY = 'vitransfer-admin-project-workspace'
+
+const CONTEXT_MENU_ITEM_CLASS_NAME = 'flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent'
+const MENU_SEPARATOR_CLASS_NAME = 'my-1 border-t border-border'
+
+const COMMON_ASPECT_RATIOS = [
+  { label: '1:1', value: 1 },
+  { label: '4:3', value: 4 / 3 },
+  { label: '3:4', value: 3 / 4 },
+  { label: '16:9', value: 16 / 9 },
+  { label: '9:16', value: 9 / 16 },
+  { label: '21:9', value: 21 / 9 },
+  { label: '9:21', value: 9 / 21 },
+]
+
+function triggerBrowserDownload(url: string) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = ''
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
 
 function formatFileSize(value: string | number | null | undefined): string {
   const bytes = Number(value)
@@ -72,16 +95,7 @@ function greatestCommonDivisor(a: number, b: number): number {
 function formatAspectRatio(width: number | null | undefined, height: number | null | undefined): string {
   if (!width || !height || width <= 0 || height <= 0) return '-'
   const ratio = width / height
-  const commonRatios = [
-    { label: '1:1', value: 1 },
-    { label: '4:3', value: 4 / 3 },
-    { label: '3:4', value: 3 / 4 },
-    { label: '16:9', value: 16 / 9 },
-    { label: '9:16', value: 9 / 16 },
-    { label: '21:9', value: 21 / 9 },
-    { label: '9:21', value: 9 / 21 },
-  ]
-  const commonRatio = commonRatios.find((candidate) =>
+  const commonRatio = COMMON_ASPECT_RATIOS.find((candidate) =>
     Math.abs(ratio - candidate.value) / candidate.value <= 0.03
   )
   if (commonRatio) return commonRatio.label
@@ -168,13 +182,13 @@ export default function ProjectPage() {
     setUploadsCount(count)
   }, [])
 
-  // Restore workspace preferences across projects.
   useEffect(() => {
     const closeMenu = () => { setContextMenu(null); setFolderMenu(null); setFolderShareMenuId(null) }
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [id])
 
+  // Restore workspace preferences across projects.
   useEffect(() => {
     const requestedWorkspace = searchParams?.get('workspace')
     if (requestedWorkspace === 'videos' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads' || requestedWorkspace === 'shares' || requestedWorkspace === 'trash') {
@@ -247,7 +261,7 @@ export default function ProjectPage() {
 
   // Each workspace block owns its own list fetch, so a refresh remounts them all —
   // otherwise the nav counts and the visible list keep whatever was loaded on mount.
-  const refreshWorkspace = useCallback(async () => {
+  async function refreshWorkspace() {
     setWorkspaceRefreshing(true)
     try {
       await fetchProject()
@@ -255,7 +269,7 @@ export default function ProjectPage() {
     } finally {
       setWorkspaceRefreshing(false)
     }
-  }, [fetchProject])
+  }
 
   // Polling and comment events hand back a fresh `project` object, so the cover
   // effect keys off the folder/video identity it actually renders. Without this
@@ -411,11 +425,16 @@ export default function ProjectPage() {
     )
   }
 
-  // Filter comments to only show comments for active videos
   const iconBadgeClassName = 'rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10'
   const iconBadgeIconClassName = 'w-4 h-4 text-primary'
   const countBadgeClassName = 'text-sm font-normal text-muted-foreground'
   const projectToolbarButtonClassName = 'h-9 px-3 sm:min-w-[132px]'
+  const versionStatusLabels: Record<string, string> = {
+    READY: t('videoStatusReady'),
+    PROCESSING: t('videoStatusProcessing'),
+    UPLOADING: t('videoStatusUploading'),
+    ERROR: t('videoStatusError'),
+  }
 
   const selectedVideoGroup = selectedVideoGroupName
     ? {
@@ -519,13 +538,7 @@ export default function ProjectPage() {
         appAlert(data.error || '生成下载链接失败')
         return
       }
-      const link = document.createElement('a')
-      link.href = data.url
-      link.download = ''
-      link.rel = 'noopener'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
+      triggerBrowserDownload(data.url)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
     }
   }
@@ -542,13 +555,7 @@ export default function ProjectPage() {
       appAlert(data.error || '生成打包下载链接失败')
       return
     }
-    const link = document.createElement('a')
-    link.href = data.url
-    link.download = ''
-    link.rel = 'noopener'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    triggerBrowserDownload(data.url)
   }
 
   const renameProjectFolder = async (folder: { id: string; name: string }) => {
@@ -773,14 +780,14 @@ export default function ProjectPage() {
           <main id="review-workspace" className="scrollbar-hidden relative min-w-0 overscroll-contain p-3 sm:p-4 lg:min-h-0 lg:overflow-y-auto" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) }}>
             {contextMenu && (
               <div className="fixed z-[100] w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260) }} onClick={(event) => event.stopPropagation()}>
-                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
-                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); changeWorkspace('videos'); openFolderUpload() }}><FolderUp className="h-4 w-4" />上传文件夹</button>
-                <div className="my-1 border-t border-border" />
-                <button type="button" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setContextMenu(null); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>
-                <button type="button" disabled={workspaceRefreshing} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-60" onClick={() => { void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
-                <div className="my-1 border-t border-border" />
-                <Link href={`/studio/projects/${id}/settings`} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><Settings className="h-4 w-4" />项目设置</Link>
-                <Link href="/studio/team" className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><Users className="h-4 w-4" />邀请成员</Link>
+                <button type="button" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
+                <button type="button" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); changeWorkspace('videos'); openFolderUpload() }}><FolderUp className="h-4 w-4" />上传文件夹</button>
+                <div className={MENU_SEPARATOR_CLASS_NAME} />
+                <button type="button" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>
+                <button type="button" disabled={workspaceRefreshing} className={cn(CONTEXT_MENU_ITEM_CLASS_NAME, 'disabled:opacity-60')} onClick={() => { void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
+                <div className={MENU_SEPARATOR_CLASS_NAME} />
+                <Link href={`/studio/projects/${id}/settings`} className={CONTEXT_MENU_ITEM_CLASS_NAME}><Settings className="h-4 w-4" />项目设置</Link>
+                <Link href="/studio/team" className={CONTEXT_MENU_ITEM_CLASS_NAME}><Users className="h-4 w-4" />邀请成员</Link>
               </div>
             )}
             <section className={activeWorkspace === 'videos' ? undefined : 'hidden'}>
@@ -894,7 +901,7 @@ export default function ProjectPage() {
                         {copiedFolderId === folder.id ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
                         {copiedFolderId === folder.id ? tc('copied') : '复制文件链接'}
                       </button>
-                      <div className="my-1 border-t border-border" />
+                      <div className={MENU_SEPARATOR_CLASS_NAME} />
                       <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderZip(folder.id)}>
                         <Package className="h-4 w-4" />打包下载
                       </button>
@@ -904,7 +911,7 @@ export default function ProjectPage() {
                       <button type="button" role="menuitem" className={menuItemClass} onClick={() => void renameProjectFolder(folder)}>
                         <Pencil className="h-4 w-4" />重命名
                       </button>
-                      <div className="my-1 border-t border-border" />
+                      <div className={MENU_SEPARATOR_CLASS_NAME} />
                       <button type="button" role="menuitem" className={cn(menuItemClass, 'text-destructive hover:bg-destructive/10')} onClick={() => void deleteProjectFolder(folder.id)}>
                         <Trash2 className="h-4 w-4" />放入回收站
                       </button>
@@ -991,12 +998,7 @@ export default function ProjectPage() {
                   {selectedVideoGroup.videos.map((video: any, videoIndex: number) => {
                     const statusLabel = video.approved
                       ? t('videoStatusApproved')
-                      : ({
-                          READY: t('videoStatusReady'),
-                          PROCESSING: t('videoStatusProcessing'),
-                          UPLOADING: t('videoStatusUploading'),
-                          ERROR: t('videoStatusError'),
-                        } as Record<string, string>)[video.status] || video.status
+                      : versionStatusLabels[video.status] || video.status
                     const uploadedAt = video.createdAt
                       ? new Intl.DateTimeFormat('zh-CN', {
                           timeZone: 'Asia/Shanghai',

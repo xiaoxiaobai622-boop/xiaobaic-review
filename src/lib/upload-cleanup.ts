@@ -21,8 +21,6 @@ export async function cleanupOrphanedUploads() {
   try {
     const files = fs.readdirSync(TUS_UPLOAD_DIR)
     const now = Date.now()
-    let cleanedCount = 0
-    let skippedCount = 0
 
     for (const file of files) {
       try {
@@ -38,14 +36,11 @@ export async function cleanupOrphanedUploads() {
 
         if (ageHours > MAX_AGE_HOURS) {
           fs.unlinkSync(filePath)
-          cleanedCount++
 
           const infoPath = `${filePath}.info`
           if (fs.existsSync(infoPath)) {
             fs.unlinkSync(infoPath)
           }
-        } else {
-          skippedCount++
         }
       } catch (error) {
         logError(`[Upload Cleanup] Error processing file ${file}:`, error)
@@ -105,47 +100,22 @@ export async function runCleanup() {
  */
 export async function cleanupIncompleteUploadRecords() {
   const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const where = { uploadCompletedAt: null, createdAt: { lt: cutoffDate } }
+  const incompleteRecordTables = [
+    { model: 'ProjectUpload', deleteMany: () => prisma.projectUpload.deleteMany({ where }) },
+    { model: 'VideoAsset', deleteMany: () => prisma.videoAsset.deleteMany({ where }) },
+    { model: 'Photo', deleteMany: () => prisma.photo.deleteMany({ where }) },
+  ]
 
-  try {
-    const deletedUploads = await prisma.projectUpload.deleteMany({
-      where: {
-        uploadCompletedAt: null,
-        createdAt: { lt: cutoffDate },
-      },
-    })
-    if (deletedUploads.count > 0) {
-      logMessage(`[Upload Cleanup] Deleted ${deletedUploads.count} incomplete ProjectUpload record(s)`)
+  for (const table of incompleteRecordTables) {
+    try {
+      const deleted = await table.deleteMany()
+      if (deleted.count > 0) {
+        logMessage(`[Upload Cleanup] Deleted ${deleted.count} incomplete ${table.model} record(s)`)
+      }
+    } catch (error) {
+      logError(`[Upload Cleanup] Error cleaning up incomplete ${table.model} records:`, error)
     }
-  } catch (error) {
-    logError('[Upload Cleanup] Error cleaning up incomplete ProjectUpload records:', error)
-  }
-
-  try {
-    const deletedAssets = await prisma.videoAsset.deleteMany({
-      where: {
-        uploadCompletedAt: null,
-        createdAt: { lt: cutoffDate },
-      },
-    })
-    if (deletedAssets.count > 0) {
-      logMessage(`[Upload Cleanup] Deleted ${deletedAssets.count} incomplete VideoAsset record(s)`)
-    }
-  } catch (error) {
-    logError('[Upload Cleanup] Error cleaning up incomplete VideoAsset records:', error)
-  }
-
-  try {
-    const deletedPhotos = await prisma.photo.deleteMany({
-      where: {
-        uploadCompletedAt: null,
-        createdAt: { lt: cutoffDate },
-      },
-    })
-    if (deletedPhotos.count > 0) {
-      logMessage(`[Upload Cleanup] Deleted ${deletedPhotos.count} incomplete Photo record(s)`)
-    }
-  } catch (error) {
-    logError('[Upload Cleanup] Error cleaning up incomplete Photo records:', error)
   }
 }
 

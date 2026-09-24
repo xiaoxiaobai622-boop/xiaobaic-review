@@ -131,7 +131,7 @@ export default function TeamSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-9 w-48 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent sm:w-56"
+        className="flex min-h-11 w-48 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-xs sm:px-3 sm:text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent sm:w-56"
         aria-label="团队中心"
       >
         <Building2 className="h-4 w-4 shrink-0 text-primary" />

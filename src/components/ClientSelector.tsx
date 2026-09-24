@@ -159,21 +159,13 @@ export function ClientSelector({
     setCompanySearch(value)
     onCompanyChange(value, null) // Clear company ID when manually typing
     setSelectedCompanyId(null)
-    if (value.length >= 1) {
-      setShowCompanyDropdown(true)
-    } else {
-      setShowCompanyDropdown(false)
-    }
+    setShowCompanyDropdown(value.length >= 1)
   }
 
   function handleContactInputChange(value: string) {
     setContactSearch(value)
     onRecipientNameChange(value)
-    if (value.length >= 1) {
-      setShowContactDropdown(true)
-    } else {
-      setShowContactDropdown(false)
-    }
+    setShowContactDropdown(value.length >= 1)
   }
 
   async function handleCreateCompany() {

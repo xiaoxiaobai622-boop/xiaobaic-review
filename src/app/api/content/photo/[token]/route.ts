@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { downloadFile } from '@/lib/storage'
 import { contentDispositionAttachment } from '@/lib/download-names'
+import { isInvalidFileType, sanitizeContentType } from '@/lib/file-validation'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyAlbumAccessToken, trackPhotoDownload } from '@/lib/photo-access'
 import { getSecuritySettings } from '@/lib/video-access'
@@ -83,6 +84,16 @@ export async function GET(
       )
     }
 
+    // A photo the worker proved undecodable has no rendition and its original
+    // bytes will not render either — serving them only produces a broken image.
+    // Downloads still work: the file is there, it just isn't a picture.
+    if (!isDownload && isInvalidFileType(photo.fileType)) {
+      return NextResponse.json(
+        { error: photoMessages.photoUnpreviewable || 'Photo cannot be previewed' },
+        { status: 404 }
+      )
+    }
+
     // Viewing serves worker-generated webp renditions (thumb or preview) —
     // originals can be 25-90 MB and are only streamed for explicit downloads.
     // previewPath falls back to the original for photos processed before previews existed.
@@ -113,7 +124,9 @@ export async function GET(
 
     const servingWebp = useThumb || (useWebpRendition && !!photo.previewPath)
     const headers: Record<string, string> = {
-      'Content-Type': servingWebp ? 'image/webp' : photo.fileType,
+      // photo.fileType carries the 'INVALID - …' marker for rejected uploads,
+      // which is not a legal Content-Type — sanitizeContentType degrades it.
+      'Content-Type': servingWebp ? 'image/webp' : sanitizeContentType(photo.fileType),
       'Cache-Control': 'private, max-age=3600',
       'X-Content-Type-Options': 'nosniff',
     }
@@ -124,7 +137,7 @@ export async function GET(
     }
 
     if (isDownload) {
-      headers['Content-Disposition'] = contentDispositionAttachment(photo.fileName)
+      headers['Content-Disposition'] = contentDispositionAttachment(photo.originalFileName || photo.fileName)
     } else {
       headers['Content-Disposition'] = 'inline'
     }

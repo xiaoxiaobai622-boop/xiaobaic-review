@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
-import { sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
+import { sanitizeDisplayFilename, sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { checkTeamStorageQuota } from '@/lib/platform-access'
@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const displayOriginalFileName = sanitizeDisplayFilename(originalFileName || 'upload.mp4')
     const sanitizedOriginalFileName = fileValidation.sanitizedFilename || sanitizeFilename(originalFileName || 'upload.mp4')
 
     const projectForQuota = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
           name: videoName,
           version: nextVersion,
           versionLabel: `v${nextVersion}`,
-          originalFileName,
+          originalFileName: displayOriginalFileName,
           originalFileSize: BigInt(originalFileSize),
           originalStoragePath: teamProjectStorageKey(projectForQuota.teamId, projectId, 'videos', `original-${Date.now()}-${sanitizedOriginalFileName}`),
           fileType: mimeType || 'video/mp4',

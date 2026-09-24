@@ -48,6 +48,13 @@ const projectTabs = [
   { label: '项目状态', href: '/studio/team/projects?tab=status', value: 'status' },
 ]
 
+const tabsBySection: Record<string, { label: string; href: string; value: string }[]> = {
+  overview: overviewTabs,
+  members: memberTabs,
+  storage: storageTabs,
+  projects: projectTabs,
+}
+
 export default function TeamAdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? ''
   const searchParams = useSearchParams()
@@ -55,15 +62,7 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
     ? sections[0]
     : sections.slice(1).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) || sections[0]
   const auxiliaryPage = pathname.startsWith('/studio/team/settings') || pathname.startsWith('/studio/team/invite') || pathname.startsWith('/studio/team/join')
-  const tabs = auxiliaryPage ? [] : section.key === 'overview'
-    ? overviewTabs
-    : section.key === 'members'
-      ? memberTabs
-      : section.key === 'storage'
-        ? storageTabs
-        : section.key === 'projects'
-          ? projectTabs
-          : []
+  const tabs = auxiliaryPage ? [] : tabsBySection[section.key] ?? []
   const activeTab = searchParams?.get('tab') || tabs[0]?.value
 
   useLayoutEffect(() => {

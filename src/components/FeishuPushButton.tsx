@@ -393,12 +393,10 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
   const selectableProjectVideos = projectVideos.filter(
     (item) => rePushAll || item.unpushedComments > 0
   )
-  const selectedProjectCount = projectVideos.filter(
-    (item) => selectedVideos.has(item.video.id) && (rePushAll || item.unpushedComments > 0)
-  ).length
   const selectedProjectVideos = projectVideos.filter(
     (item) => selectedVideos.has(item.video.id) && (rePushAll || item.unpushedComments > 0)
   )
+  const selectedProjectCount = selectedProjectVideos.length
   const selectedProjectStats = selectedProjectVideos.reduce(
     (stats, item) => ({
       totalComments: stats.totalComments + item.totalComments,

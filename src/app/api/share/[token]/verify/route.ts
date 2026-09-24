@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/encryption'
 import crypto from 'crypto'
 import { logSecurityEvent } from '@/lib/video-access'
@@ -17,9 +16,6 @@ import { logError } from '@/lib/logging'
 import { resolveShareMetadata, isShareLinkActive, linkPermissions } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
-
-
-
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 const RATE_LIMIT_TTL_SECONDS = Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)
@@ -41,13 +37,13 @@ function constantTimeCompare(a: string, b: string): boolean {
 
 function getIdentifier(request: NextRequest, token: string): string {
   const ip = getClientIpAddress(request)
-  
+
   const hash = crypto
     .createHash('sha256')
     .update(`${ip}:${token}`)
     .digest('hex')
     .slice(0, 16)
-  
+
   return `ratelimit:share-verify-failed:${token}:${hash}`
 }
 
@@ -112,6 +108,14 @@ export async function POST(
     const messages = await loadLocaleMessages(locale).catch(() => null)
     const shareMessages = messages?.share
     const notificationsText = messages?.notificationsText
+
+    function tooManyAttemptsResponse(retryAfter: number) {
+      return NextResponse.json(
+        { error: shareMessages?.tooManyPasswordAttempts || 'Too many failed password attempts. Please try again later.', retryAfter },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+      )
+    }
+
     const redis = getRedis()
     const rateLimitKey = getIdentifier(request, token)
     const globalRateLimitKey = getGlobalIdentifier(token)
@@ -137,12 +141,9 @@ export async function POST(
         wasBlocked: true,
       })
 
-      return NextResponse.json(
-        { error: shareMessages?.tooManyPasswordAttempts || 'Too many failed password attempts. Please try again later.', retryAfter: activeLockout.retryAfter },
-        { status: 429, headers: { 'Retry-After': String(activeLockout.retryAfter) } }
-      )
+      return tooManyAttemptsResponse(activeLockout.retryAfter)
     }
-    
+
     const parsed = await safeParseBody(request)
     if (!parsed.success) return parsed.response
     const { password } = parsed.data
@@ -233,10 +234,7 @@ export async function POST(
           logError('[SHARE VERIFY] Failed to enqueue external lockout notification:', notificationError)
         })
 
-        return NextResponse.json(
-          { error: shareMessages?.tooManyPasswordAttempts || 'Too many failed password attempts. Please try again later.', retryAfter },
-          { status: 429, headers: { 'Retry-After': String(retryAfter) } }
-        )
+        return tooManyAttemptsResponse(retryAfter)
       }
 
       return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })

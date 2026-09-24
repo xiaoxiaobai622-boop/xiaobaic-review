@@ -327,12 +327,12 @@ export async function verifyOTP(
         error: 'Incorrect code',
         attemptsLeft,
       }
-    } else {
-      await redis.del(otpKey)
-      return {
-        success: false,
-        error: 'Too many incorrect attempts. Please request a new code.',
-      }
+    }
+
+    await redis.del(otpKey)
+    return {
+      success: false,
+      error: 'Too many incorrect attempts. Please request a new code.',
     }
   }
 

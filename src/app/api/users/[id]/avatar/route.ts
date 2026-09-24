@@ -8,7 +8,6 @@ import { logError } from '@/lib/logging'
 import { getAppDomain } from '@/lib/url'
 import {
   checkWechatImage,
-  CONTENT_SECURITY_ERROR,
   CONTENT_VIOLATION_MESSAGE,
   submitWechatMediaCheck,
 } from '@/lib/wechat-content-security'

@@ -1,40 +1,19 @@
 import { prisma } from '@/lib/db'
+import { accentToHex } from './accent'
 
-type AccentKey =
-  | 'blue'
-  | 'purple'
-  | 'green'
-  | 'orange'
-  | 'red'
-  | 'pink'
-  | 'teal'
-  | 'amber'
-  | 'stone'
-  | 'gold'
-
-const accentPalette: Record<AccentKey, string> = {
-  blue: 'hsl(211 100% 50%)',
-  purple: 'hsl(262 83% 58%)',
-  green: 'hsl(145 63% 42%)',
-  orange: 'hsl(25 95% 53%)',
-  red: 'hsl(0 84% 60%)',
-  pink: 'hsl(330 81% 60%)',
-  teal: 'hsl(173 80% 40%)',
-  amber: 'hsl(38 92% 50%)',
-  stone: 'hsl(30 12% 50%)',
-  gold: 'hsl(37 56% 65%)',
-}
-
+/**
+ * The accent as a CSS colour for generated SVG. Resolved through lib/accent so
+ * the favicon, the logo PNG route and the emails all agree on one hex table.
+ */
 export async function getAccentColor(): Promise<string> {
   try {
     const settings = await prisma.settings.findUnique({
       where: { id: 'default' },
       select: { accentColor: true },
     })
-    const accentKey = (settings?.accentColor as AccentKey | undefined) || 'blue'
-    return accentPalette[accentKey] || accentPalette.blue
+    return accentToHex(settings?.accentColor)
   } catch {
-    return accentPalette.blue
+    return accentToHex('blue')
   }
 }
 

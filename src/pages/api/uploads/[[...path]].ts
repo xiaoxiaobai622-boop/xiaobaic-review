@@ -3,24 +3,31 @@ import { FileStore } from '@tus/file-store'
 import { prisma } from '@/lib/db'
 import { ALL_ALLOWED_EXTENSIONS } from '@/lib/asset-validation'
 import { ALLOWED_PHOTO_TYPES } from '@/lib/file-validation'
-import { getFilePath, initStorage, moveFile } from '@/lib/storage'
+import { getFilePath, initStorage, isS3Mode, moveFile } from '@/lib/storage'
 import path from 'path'
 import fs from 'fs'
 import { Readable } from 'stream'
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { logError, logMessage } from '@/lib/logging'
 import { parseBearerToken, verifyAdminAccessToken, verifyShareToken } from '@/lib/auth'
-import { isS3Mode } from '@/lib/storage'
 import { handleReverseShareUploadNotification } from '@/lib/upload-notifications'
 import { canUserAdministerUploadTarget } from '@/lib/s3-upload-auth'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
-
 const TUS_UPLOAD_DIR = '/tmp/vitransfer-tus-uploads'
 const ABSOLUTE_MAX_UPLOAD_SIZE_BYTES = 1000 * 1024 * 1024 * 1024 // 1000 GB hard safety cap
+const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.avi', '.webm', '.mkv']
 
 if (!fs.existsSync(TUS_UPLOAD_DIR)) {
   fs.mkdirSync(TUS_UPLOAD_DIR, { recursive: true })
+}
+
+/**
+ * Build a rejection @tus/server turns into this exact status code and bare body:
+ * the server reads `status_code` and `body` off the thrown object.
+ */
+function tusError(status: number, body: string) {
+  return { status_code: status, body }
 }
 
 const tusServer: Server = new Server({
@@ -37,12 +44,7 @@ const tusServer: Server = new Server({
     try {
       const bearer = parseBearerToken(req as any)
 
-      if (!bearer) {
-        throw {
-          status_code: 401,
-          body: 'Authentication required'
-        }
-      }
+      if (!bearer) throw tusError(401, 'Authentication required')
 
       // Try admin auth first, then fall back to share token auth
       let isAdmin = false
@@ -54,35 +56,22 @@ const tusServer: Server = new Server({
           projectUploadId: upload.metadata?.projectUploadId as string | undefined,
           photoId: upload.metadata?.photoId as string | undefined,
         })
-        if (!isAdmin) {
-          throw { status_code: 403, body: 'Access denied for upload target' }
-        }
+        if (!isAdmin) throw tusError(403, 'Access denied for upload target')
       } else {
         // Try share token auth for client uploads
         const sharePayload = await verifyShareToken(bearer)
-        if (!sharePayload) {
-          throw {
-            status_code: 403,
-            body: 'Access denied'
-          }
-        }
+        if (!sharePayload) throw tusError(403, 'Access denied')
 
         // Share tokens can only upload assets or project uploads (not videos)
         if (!upload.metadata?.assetId && !upload.metadata?.projectUploadId) {
-          throw {
-            status_code: 403,
-            body: 'Share tokens can only upload assets'
-          }
+          throw tusError(403, 'Share tokens can only upload assets')
         }
 
         if (upload.metadata?.projectUploadId) {
           // Reverse share upload — verify the ProjectUpload record
           // Uploads require an authenticated account (share recipient or admin override).
           if (!sharePayload.recipientId && !sharePayload.adminOverride) {
-            throw {
-              status_code: 403,
-              body: '请登录后上传素材'
-            }
+            throw tusError(403, '请登录后上传素材')
           }
 
           const projectUpload = await prisma.projectUpload.findUnique({
@@ -90,16 +79,12 @@ const tusServer: Server = new Server({
             select: { projectId: true, uploadedBySessionId: true },
           })
 
-          if (!projectUpload) {
-            throw { status_code: 404, body: 'Upload record not found' }
-          }
-
+          if (!projectUpload) throw tusError(404, 'Upload record not found')
           if (projectUpload.projectId !== sharePayload.projectId) {
-            throw { status_code: 403, body: 'Upload does not belong to your project' }
+            throw tusError(403, 'Upload does not belong to your project')
           }
-
           if (projectUpload.uploadedBySessionId !== sharePayload.sessionId) {
-            throw { status_code: 403, body: 'Upload does not belong to your session' }
+            throw tusError(403, 'Upload does not belong to your session')
           }
 
           const project = await prisma.project.findUnique({
@@ -108,22 +93,14 @@ const tusServer: Server = new Server({
           })
 
           if (!project?.allowReverseShare) {
-            throw { status_code: 403, body: 'File submissions are not enabled for this project' }
+            throw tusError(403, 'File submissions are not enabled for this project')
           }
         } else {
           // Comment attachments still require comment permission and cannot be guests.
           if (!sharePayload.permissions?.includes('comment')) {
-            throw {
-              status_code: 403,
-              body: 'Comment permission required'
-            }
+            throw tusError(403, 'Comment permission required')
           }
-          if (sharePayload.guest) {
-            throw {
-              status_code: 403,
-              body: 'Guest access cannot upload files'
-            }
-          }
+          if (sharePayload.guest) throw tusError(403, 'Guest access cannot upload files')
 
           // Comment attachment upload — verify VideoAsset record
           const asset = await prisma.videoAsset.findUnique({
@@ -135,20 +112,13 @@ const tusServer: Server = new Server({
             },
           })
 
-          if (!asset) {
-            throw { status_code: 404, body: 'Asset record not found' }
-          }
-
-          if (asset.uploadedBy !== 'client') {
-            throw { status_code: 403, body: 'Access denied' }
-          }
-
+          if (!asset) throw tusError(404, 'Asset record not found')
+          if (asset.uploadedBy !== 'client') throw tusError(403, 'Access denied')
           if (asset.video.projectId !== sharePayload.projectId) {
-            throw { status_code: 403, body: 'Asset does not belong to your project' }
+            throw tusError(403, 'Asset does not belong to your project')
           }
-
           if (asset.uploadedBySessionId !== sharePayload.sessionId) {
-            throw { status_code: 403, body: 'Asset does not belong to your session' }
+            throw tusError(403, 'Asset does not belong to your session')
           }
 
           const project = await prisma.project.findUnique({
@@ -157,7 +127,7 @@ const tusServer: Server = new Server({
           })
 
           if (!project?.allowClientAssetUpload) {
-            throw { status_code: 403, body: 'File attachments are not enabled for this project' }
+            throw tusError(403, 'File attachments are not enabled for this project')
           }
         }
       }
@@ -168,10 +138,7 @@ const tusServer: Server = new Server({
       const photoId = upload.metadata?.photoId as string
 
       if (!videoId && !assetId && !projectUploadId && !photoId) {
-        throw {
-          status_code: 400,
-          body: 'Missing required metadata: videoId, assetId, projectUploadId, or photoId'
-        }
+        throw tusError(400, 'Missing required metadata: videoId, assetId, projectUploadId, or photoId')
       }
 
       const appSettings = await prisma.settings.findUnique({
@@ -183,72 +150,40 @@ const tusServer: Server = new Server({
       const requestedSize = Number(upload.size || 0)
 
       if (!Number.isFinite(requestedSize) || requestedSize <= 0) {
-        throw {
-          status_code: 400,
-          body: 'Invalid upload size metadata'
-        }
+        throw tusError(400, 'Invalid upload size metadata')
       }
-
       if (requestedSize > maxUploadSizeBytes) {
-        throw {
-          status_code: 413,
-          body: `Upload exceeds maximum allowed size of ${maxUploadSizeGB} GB`
-        }
+        throw tusError(413, `Upload exceeds maximum allowed size of ${maxUploadSizeGB} GB`)
       }
-
       if (requestedSize > ABSOLUTE_MAX_UPLOAD_SIZE_BYTES) {
-        throw {
-          status_code: 413,
-          body: 'Upload exceeds maximum allowed size'
-        }
+        throw tusError(413, 'Upload exceeds maximum allowed size')
       }
 
       if (videoId) {
         // In S3 mode, video uploads must go through /api/uploads/s3/presign — not TUS.
         // TUS is only used for local filesystem storage.
         if (isS3Mode()) {
-          throw { status_code: 400, body: 'Video uploads must use the S3 multipart upload path in S3 mode' }
+          throw tusError(400, 'Video uploads must use the S3 multipart upload path in S3 mode')
         }
-
-        // Only admins can upload videos
-        if (!isAdmin) {
-          throw {
-            status_code: 403,
-            body: 'Admin access required for video uploads'
-          }
-        }
+        if (!isAdmin) throw tusError(403, 'Admin access required for video uploads')
 
         const video = await prisma.video.findUnique({
-          where: { id: videoId }
+          where: { id: videoId },
+          select: { status: true },
         })
 
-        if (!video) {
-          throw {
-            status_code: 404,
-            body: 'Video record not found'
-          }
-        }
-
-        if (video.status !== 'UPLOADING') {
-          throw {
-            status_code: 400,
-            body: 'Video is not in UPLOADING state'
-          }
-        }
+        if (!video) throw tusError(404, 'Video record not found')
+        if (video.status !== 'UPLOADING') throw tusError(400, 'Video is not in UPLOADING state')
       }
 
+      // Admin asset upload: the share-token path already verified ownership above.
       if (assetId && isAdmin) {
-        // Admin asset upload — just verify asset exists (share token path already verified above)
         const asset = await prisma.videoAsset.findUnique({
-          where: { id: assetId }
+          where: { id: assetId },
+          select: { id: true },
         })
 
-        if (!asset) {
-          throw {
-            status_code: 404,
-            body: 'Asset record not found'
-          }
-        }
+        if (!asset) throw tusError(404, 'Asset record not found')
       }
 
       if (projectUploadId && isAdmin) {
@@ -257,34 +192,18 @@ const tusServer: Server = new Server({
           select: { id: true },
         })
 
-        if (!projectUpload) {
-          throw {
-            status_code: 404,
-            body: 'Upload record not found'
-          }
-        }
+        if (!projectUpload) throw tusError(404, 'Upload record not found')
       }
 
       if (photoId) {
-        // Photo uploads are admin-only
-        if (!isAdmin) {
-          throw {
-            status_code: 403,
-            body: 'Admin access required for photo uploads'
-          }
-        }
+        if (!isAdmin) throw tusError(403, 'Admin access required for photo uploads')
 
         const photo = await prisma.photo.findUnique({
           where: { id: photoId },
           select: { id: true },
         })
 
-        if (!photo) {
-          throw {
-            status_code: 404,
-            body: 'Photo record not found'
-          }
-        }
+        if (!photo) throw tusError(404, 'Photo record not found')
       }
 
       return { metadata: upload.metadata }
@@ -303,11 +222,11 @@ const tusServer: Server = new Server({
 
     try {
       if (videoId) {
-        return await handleVideoUploadFinish(tusFilePath, upload, videoId, tusServer)
+        return await handleVideoUploadFinish(tusFilePath, upload, videoId)
       } else if (assetId) {
-        return await handleAssetUploadFinish(tusFilePath, upload, assetId, tusServer)
+        return await handleAssetUploadFinish(tusFilePath, upload, assetId)
       } else if (projectUploadId) {
-        return await handleProjectUploadFinish(tusFilePath, upload, projectUploadId, tusServer)
+        return await handleProjectUploadFinish(tusFilePath, upload, projectUploadId)
       } else if (photoId) {
         return await handlePhotoUploadFinish(tusFilePath, upload, photoId)
       } else {
@@ -327,7 +246,7 @@ const tusServer: Server = new Server({
   }
 })
 
-async function handleVideoUploadFinish(tusFilePath: string, upload: any, videoId: string, tusServer: any) {
+async function handleVideoUploadFinish(tusFilePath: string, upload: any, videoId: string) {
   const video = await prisma.video.findUnique({
     where: { id: videoId }
   })
@@ -339,7 +258,7 @@ async function handleVideoUploadFinish(tusFilePath: string, upload: any, videoId
   }
 
   await initStorage()
-  const fileSize = await ensureTusFileStored(
+  await ensureTusFileStored(
     tusFilePath,
     video.originalStoragePath,
     upload,
@@ -371,7 +290,7 @@ async function handleVideoUploadFinish(tusFilePath: string, upload: any, videoId
   return {}
 }
 
-async function handleAssetUploadFinish(tusFilePath: string, upload: any, assetId: string, tusServer: any) {
+async function handleAssetUploadFinish(tusFilePath: string, upload: any, assetId: string) {
   const asset = await prisma.videoAsset.findUnique({
     where: { id: assetId }
   })
@@ -407,7 +326,7 @@ async function handleAssetUploadFinish(tusFilePath: string, upload: any, assetId
   return {}
 }
 
-async function handleProjectUploadFinish(tusFilePath: string, upload: any, projectUploadId: string, tusServer: any) {
+async function handleProjectUploadFinish(tusFilePath: string, upload: any, projectUploadId: string) {
   const projectUpload = await prisma.projectUpload.findUnique({
     where: { id: projectUploadId }
   })
@@ -441,7 +360,7 @@ async function handleProjectUploadFinish(tusFilePath: string, upload: any, proje
   // Fire-and-forget notification to admins
   void handleReverseShareUploadNotification({
     projectId: projectUpload.projectId,
-    fileName: projectUpload.fileName,
+    fileName: projectUpload.originalFileName || projectUpload.fileName,
     uploaderName: projectUpload.uploadedByName,
     uploaderEmail: projectUpload.uploadedByEmail,
   })
@@ -511,71 +430,63 @@ async function verifyUploadedFile(tusFilePath: string, expectedSize?: number): P
     throw new Error('Uploaded file not found on disk')
   }
 
-  const fileStats = fs.statSync(tusFilePath)
-  const fileSize = fileStats.size
+  const fileSize = fs.statSync(tusFilePath).size
 
   if (expectedSize && fileSize !== expectedSize) {
     await cleanupTUSFile(tusFilePath)
-    throw new Error(
-      `File size mismatch: expected ${expectedSize} bytes, got ${fileSize} bytes. ` +
-      `Upload may have been interrupted.`
-    )
+    throw new Error(`File size mismatch: expected ${expectedSize} bytes, got ${fileSize} bytes. Upload may have been interrupted.`)
   }
 
   return fileSize
 }
 
+/**
+ * Magic-byte validation is performed in the processor worker: this keeps file-type's
+ * ESM module out of the Next.js build while still rejecting the wrong file kinds here.
+ */
+async function assertExtensionAllowed(
+  tusFilePath: string,
+  filename: string | undefined,
+  allowed: readonly string[],
+  allowedDescription: string,
+) {
+  if (!filename) return
+
+  const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'))
+  if (allowed.includes(ext)) return
+
+  await cleanupTUSFile(tusFilePath)
+  throw new Error(`Invalid file extension: ${ext}. ${allowedDescription}`)
+}
+
 async function validateVideoFile(tusFilePath: string, filename?: string) {
-  // Validate file extension
-  if (filename) {
-    const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'))
-    const allowedExtensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv']
-
-    if (!allowedExtensions.includes(ext)) {
-      await cleanupTUSFile(tusFilePath)
-      throw new Error(
-        `Invalid file extension: ${ext}. Allowed video formats: ${allowedExtensions.join(', ')}`
-      )
-    }
-  }
-
-  // NOTE: Magic byte validation is performed in the video-processor worker
-  // This ensures proper file content validation happens during processing
-  // without causing Next.js build issues with the file-type ESM module
-  logMessage(`[UPLOAD] File extension validation passed, magic byte check will run in worker`)
+  await assertExtensionAllowed(
+    tusFilePath,
+    filename,
+    VIDEO_FILE_EXTENSIONS,
+    `Allowed video formats: ${VIDEO_FILE_EXTENSIONS.join(', ')}`,
+  )
+  logMessage('[UPLOAD] File extension validation passed, magic byte check will run in worker')
 }
 
 async function validateUploadedAssetFile(tusFilePath: string, filename?: string) {
-  // Validate file extension
-  if (filename) {
-    const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'))
-    if (!ALL_ALLOWED_EXTENSIONS.includes(ext)) {
-      await cleanupTUSFile(tusFilePath)
-      throw new Error(
-        `Invalid file extension: ${ext}. Allowed: ${ALL_ALLOWED_EXTENSIONS.join(', ')}`
-      )
-    }
-  }
-
-  // NOTE: Magic byte validation is performed in the asset-processor worker
-  // This ensures proper file content validation happens during processing
-  // without causing Next.js build issues with the file-type ESM module
-  logMessage(`[UPLOAD] Asset extension validation passed, magic byte check will run in worker`)
+  await assertExtensionAllowed(
+    tusFilePath,
+    filename,
+    ALL_ALLOWED_EXTENSIONS,
+    `Allowed: ${ALL_ALLOWED_EXTENSIONS.join(', ')}`,
+  )
+  logMessage('[UPLOAD] Asset extension validation passed, magic byte check will run in worker')
 }
 
 async function validateUploadedPhotoFile(tusFilePath: string, filename?: string) {
-  if (filename) {
-    const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'))
-    if (!ALLOWED_PHOTO_TYPES.extensions.includes(ext)) {
-      await cleanupTUSFile(tusFilePath)
-      throw new Error(
-        `Invalid file extension: ${ext}. Allowed: ${ALLOWED_PHOTO_TYPES.extensions.join(', ')}`
-      )
-    }
-  }
-
-  // NOTE: Magic byte validation is performed in the photo-processor worker
-  logMessage(`[UPLOAD] Photo extension validation passed, magic byte check will run in worker`)
+  await assertExtensionAllowed(
+    tusFilePath,
+    filename,
+    ALLOWED_PHOTO_TYPES.extensions,
+    `Allowed: ${ALLOWED_PHOTO_TYPES.extensions.join(', ')}`,
+  )
+  logMessage('[UPLOAD] Photo extension validation passed, magic byte check will run in worker')
 }
 
 async function cleanupTUSFile(tusFilePath: string) {

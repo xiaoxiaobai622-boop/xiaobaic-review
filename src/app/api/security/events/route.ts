@@ -140,44 +140,43 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    let result
-    let message
-
     if (olderThan === 0) {
-      result = await prisma.securityEvent.deleteMany({})
+      const result = await prisma.securityEvent.deleteMany({})
 
       // Also clear the Redis recent events list
       const redis = getRedis()
       await redis.del('security:events:recent')
 
-  message = (securityMessages.deletedAllSecurityEvents || 'Deleted all {count} security events').replace('{count}', String(result.count))
-    } else {
-      const cutoffDate = new Date()
-      cutoffDate.setDate(cutoffDate.getDate() - olderThan)
-
-      result = await prisma.securityEvent.deleteMany({
-        where: {
-          createdAt: {
-            lt: cutoffDate
-          }
-        }
+      return NextResponse.json({
+        success: true,
+        deleted: result.count,
+        message: (securityMessages.deletedAllSecurityEvents || 'Deleted all {count} security events').replace('{count}', String(result.count))
       })
+    }
 
-      // Trim Redis recent events list to remove stale entries
-      // (Redis list is capped at 1000 entries with auto-trim, so clearing
-      // the whole list is acceptable — new events will repopulate it)
-      if (result.count > 0) {
-        const redis = getRedis()
-        await redis.del('security:events:recent')
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - olderThan)
+
+    const result = await prisma.securityEvent.deleteMany({
+      where: {
+        createdAt: {
+          lt: cutoffDate
+        }
       }
+    })
 
-  message = (securityMessages.deletedEventsOlderThanDays || 'Deleted {count} events older than {days} days').replace('{count}', String(result.count)).replace('{days}', String(olderThan))
+    // Trim Redis recent events list to remove stale entries
+    // (Redis list is capped at 1000 entries with auto-trim, so clearing
+    // the whole list is acceptable — new events will repopulate it)
+    if (result.count > 0) {
+      const redis = getRedis()
+      await redis.del('security:events:recent')
     }
 
     return NextResponse.json({
       success: true,
       deleted: result.count,
-      message
+      message: (securityMessages.deletedEventsOlderThanDays || 'Deleted {count} events older than {days} days').replace('{count}', String(result.count)).replace('{days}', String(olderThan))
     })
   } catch (error) {
     logError('Error deleting security events:', error)

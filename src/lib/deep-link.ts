@@ -75,17 +75,10 @@ export function parseTimecodeToSeconds(timecode: string): number {
     return parseInt(timecode, 10)
   }
 
-  // Parse HH:MM:SS or HH:MM:SS:FF
+  // Parse HH:MM:SS or HH:MM:SS:FF (the frame component is not used)
   const parts = timecode.split(':').map(p => parseInt(p, 10))
 
-  if (parts.length === 3) {
-    // HH:MM:SS
-    const [hours, minutes, seconds] = parts
-    return hours * 3600 + minutes * 60 + seconds
-  }
-
-  if (parts.length === 4) {
-    // HH:MM:SS:FF (ignore frames, just use seconds)
+  if (parts.length === 3 || parts.length === 4) {
     const [hours, minutes, seconds] = parts
     return hours * 3600 + minutes * 60 + seconds
   }

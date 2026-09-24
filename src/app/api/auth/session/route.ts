@@ -13,6 +13,13 @@ export const runtime = 'nodejs'
 // Prevent static generation for this route
 export const dynamic = 'force-dynamic'
 
+function withNoStore(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  response.headers.set('Pragma', 'no-cache')
+  response.headers.set('Expires', '0')
+  return response
+}
+
 export async function GET(request: NextRequest) {
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
@@ -33,17 +40,7 @@ export async function GET(request: NextRequest) {
     const user = await getCurrentUserFromRequest(request)
 
     if (!user) {
-      const response = NextResponse.json(
-        { authenticated: false, user: null },
-        { status: 401 }
-      )
-      
-      // Add cache control headers
-      response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
-      response.headers.set('Pragma', 'no-cache')
-      response.headers.set('Expires', '0')
-      
-      return response
+      return withNoStore(NextResponse.json({ authenticated: false, user: null }, { status: 401 }))
     }
 
     const response = NextResponse.json({
@@ -77,13 +74,8 @@ export async function GET(request: NextRequest) {
         }),
       },
     })
-    
-    // Add cache control headers to prevent caching of user session data
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
-    response.headers.set('Pragma', 'no-cache')
-    response.headers.set('Expires', '0')
-    
-    return response
+
+    return withNoStore(response)
   } catch (error) {
     logError('Session check error:', error)
     return NextResponse.json(

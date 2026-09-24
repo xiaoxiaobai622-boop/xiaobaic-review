@@ -3,13 +3,11 @@ import { getRecipientLocale } from '@/lib/email'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import {
-
   generateOTP,
   verifyRecipientEmail,
   checkOTPRateLimit,
   storeOTP,
   sendOTPEmail,
-
 } from '@/lib/otp'
 import { logSecurityEvent } from '@/lib/video-access'
 import { getClientIpAddress } from '@/lib/utils'
@@ -213,14 +211,14 @@ export async function POST(
     let unsubscribeUrl: string | undefined
     if (recipient?.email) {
       try {
-        const token = generateRecipientUnsubscribeToken({
+        const unsubscribeToken = generateRecipientUnsubscribeToken({
           recipientId: recipient.id,
           projectId: project.id,
           recipientEmail: recipient.email,
         })
         const appUrl = await getAppUrl(request).catch(() => '')
         if (appUrl) {
-          unsubscribeUrl = buildUnsubscribeUrl(appUrl, token)
+          unsubscribeUrl = buildUnsubscribeUrl(appUrl, unsubscribeToken)
         }
       } catch {
         unsubscribeUrl = undefined

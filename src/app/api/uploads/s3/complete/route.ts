@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     let s3Key = authResult.s3Key
     let dbVideo: { id: string; originalStoragePath: string; originalFileName: string; projectId: string; status: string } | null = null
     let dbAsset: { id: string; storagePath: string; category: string | null; uploadCompletedAt: Date | null } | null = null
-    let dbProjectUpload: { id: string; storagePath: string; projectId: string; fileName: string; uploadedByName: string | null; uploadedByEmail: string | null; uploadCompletedAt: Date | null } | null = null
+    let dbProjectUpload: { id: string; storagePath: string; projectId: string; fileName: string; originalFileName: string | null; uploadedByName: string | null; uploadedByEmail: string | null; uploadCompletedAt: Date | null } | null = null
     let dbPhoto: { id: string; storagePath: string; uploadCompletedAt: Date | null } | null = null
 
     if (videoId) {
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
     } else {
       const pu = await prisma.projectUpload.findUnique({
         where: { id: projectUploadId! },
-        select: { id: true, storagePath: true, projectId: true, fileName: true, uploadedByName: true, uploadedByEmail: true, uploadCompletedAt: true },
+        select: { id: true, storagePath: true, projectId: true, fileName: true, originalFileName: true, uploadedByName: true, uploadedByEmail: true, uploadCompletedAt: true },
       })
       if (!pu) return NextResponse.json({ error: 'Upload record not found' }, { status: 404 })
       dbProjectUpload = pu
@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
       // Fire-and-forget notification to admins
       void handleReverseShareUploadNotification({
         projectId: dbProjectUpload.projectId,
-        fileName: dbProjectUpload.fileName,
+        fileName: dbProjectUpload.originalFileName || dbProjectUpload.fileName,
         uploaderName: dbProjectUpload.uploadedByName,
         uploaderEmail: dbProjectUpload.uploadedByEmail,
       })

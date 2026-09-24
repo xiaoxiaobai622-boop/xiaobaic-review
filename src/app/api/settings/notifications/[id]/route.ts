@@ -104,7 +104,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         config: parsed.config,
         ...(secretsToUpdate !== undefined ? { secretsEncrypted: secretsToUpdate } : {}),
       },
-      include: { subscriptions: true },
     })
 
     if (subscriptionUpdates.length > 0) {

@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get('q')?.toLowerCase() || ''
     const type = searchParams.get('type') || 'all' // 'company', 'contact', or 'all'
 
-    if (!query || query.length < 1) {
+    if (!query) {
       return NextResponse.json({ companies: [], contacts: [] })
     }
 

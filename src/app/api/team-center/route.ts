@@ -102,10 +102,15 @@ export async function GET(request: NextRequest) {
   }))
 
   const requestedTeamId = getRequestedTeamId(request)
-  const activeTeamId =
-    (requestedTeamId && memberships.some((item) => item.team.id === requestedTeamId)
-      ? requestedTeamId
-      : memberships.find((item) => item.team.status === 'ACTIVE')?.team.id || memberships[0]?.team.id) || null
+  let activeTeamId: string | null
+  if (requestedTeamId && memberships.some((item) => item.team.id === requestedTeamId)) {
+    activeTeamId = requestedTeamId
+  } else {
+    activeTeamId =
+      memberships.find((item) => item.team.status === 'ACTIVE')?.team.id ||
+      memberships[0]?.team.id ||
+      null
+  }
 
   const response = NextResponse.json({
     teams,

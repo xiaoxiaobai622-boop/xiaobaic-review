@@ -34,11 +34,8 @@ export async function generateAlbumAccessToken(
   const cacheKey = `album_token_cache:${sessionId}:${isGuest ? 'guest' : 'full'}:${albumId}`
   const cachedToken = await redis.get(cacheKey)
 
-  if (cachedToken) {
-    const tokenData = await redis.get(`album_access:${cachedToken}`)
-    if (tokenData) {
-      return cachedToken
-    }
+  if (cachedToken && await redis.get(`album_access:${cachedToken}`)) {
+    return cachedToken
   }
 
   const token = crypto.randomBytes(16).toString('base64url')

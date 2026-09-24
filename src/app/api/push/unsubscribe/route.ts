@@ -44,29 +44,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    let deleted = false
+    // The earlier guard guarantees exactly one handle is present, and both
+    // deletes are scoped to the caller's own userId.
+    const target = subscriptionId
+      ? { id: subscriptionId, userId: authResult.id }
+      : { endpoint, userId: authResult.id }
+    const { count } = await prisma.pushSubscription.deleteMany({ where: target })
 
-    if (subscriptionId) {
-      // Delete by subscription ID (verify ownership)
-      const result = await prisma.pushSubscription.deleteMany({
-        where: {
-          id: subscriptionId,
-          userId: authResult.id,
-        },
-      })
-      deleted = result.count > 0
-    } else if (endpoint) {
-      // Delete by endpoint (verify ownership)
-      const result = await prisma.pushSubscription.deleteMany({
-        where: {
-          endpoint,
-          userId: authResult.id,
-        },
-      })
-      deleted = result.count > 0
-    }
-
-    if (!deleted) {
+    if (count === 0) {
       return NextResponse.json(
         { error: webPushMessages.subscriptionNotFound || 'Subscription not found' },
         { status: 404 }

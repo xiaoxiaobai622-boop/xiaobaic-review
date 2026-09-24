@@ -56,14 +56,22 @@ function normalizeTelegramText(text: string): string {
   return clampText(normalized, 3500)
 }
 
-function buildGotifyUrl(baseUrl: string, appToken: string): string {
+/** Apprise wants `scheme://host:port`, chosen by the endpoint's own protocol. */
+function parseEndpoint(baseUrl: string, httpsScheme: string, httpScheme: string) {
   const parsed = new URL(baseUrl)
-  const schema = parsed.protocol === 'https:' ? 'gotifys' : 'gotify'
-  const host = parsed.hostname
-  const port = parsed.port ? `:${parsed.port}` : ''
-  let path = parsed.pathname || '/'
+  return {
+    scheme: parsed.protocol === 'https:' ? httpsScheme : httpScheme,
+    host: parsed.hostname,
+    port: parsed.port ? `:${parsed.port}` : '',
+    pathname: parsed.pathname,
+  }
+}
+
+function buildGotifyUrl(baseUrl: string, appToken: string): string {
+  const { scheme, host, port, pathname } = parseEndpoint(baseUrl, 'gotifys', 'gotify')
+  let path = pathname || '/'
   if (!path.endsWith('/')) path += '/'
-  return `${schema}://${host}${port}${path}${encodeURIComponent(appToken)}`
+  return `${scheme}://${host}${port}${path}${encodeURIComponent(appToken)}`
 }
 
 function buildNtfyUrl(serverUrl: string | undefined, topic: string, accessToken?: string): string {
@@ -71,12 +79,9 @@ function buildNtfyUrl(serverUrl: string | undefined, topic: string, accessToken?
     return `ntfys://${encodeURIComponent(topic)}`
   }
 
-  const parsed = new URL(serverUrl)
-  const schema = parsed.protocol === 'https:' ? 'ntfys' : 'ntfy'
-  const host = parsed.hostname
-  const port = parsed.port ? `:${parsed.port}` : ''
+  const { scheme, host, port } = parseEndpoint(serverUrl, 'ntfys', 'ntfy')
   const auth = accessToken ? `${encodeURIComponent(accessToken)}@` : ''
-  return `${schema}://${auth}${host}${port}/${encodeURIComponent(topic)}`
+  return `${scheme}://${auth}${host}${port}/${encodeURIComponent(topic)}`
 }
 
 function buildPushoverUrl(userKey: string, apiToken: string): string {

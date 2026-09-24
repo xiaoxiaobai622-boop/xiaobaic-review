@@ -130,6 +130,7 @@ export function sanitizeComment(
     sanitized.assets = comment.assets.map((asset: any) => ({
       id: asset.id,
       fileName: asset.fileName,
+      originalFileName: asset.originalFileName,
       fileSize: typeof asset.fileSize === 'bigint' ? asset.fileSize.toString() : String(asset.fileSize),
       fileType: asset.fileType,
       category: asset.category,

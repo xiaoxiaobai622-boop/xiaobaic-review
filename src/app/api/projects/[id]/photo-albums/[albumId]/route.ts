@@ -8,6 +8,7 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { createRecycleBinItem } from '@/lib/recycle-bin'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
+import { isInvalidFileType } from '@/lib/file-validation'
 
 export const runtime = 'nodejs'
 
@@ -63,10 +64,15 @@ export async function PATCH(
     if (parsed.data.coverPhotoId) {
       const photo = await prisma.photo.findUnique({
         where: { id: parsed.data.coverPhotoId },
-        select: { albumId: true, uploadCompletedAt: true },
+        select: { albumId: true, uploadCompletedAt: true, fileType: true },
       })
       if (!photo || photo.albumId !== albumId || !photo.uploadCompletedAt) {
         return NextResponse.json({ error: photoMessages.photoNotFound || 'Photo not found' }, { status: 404 })
+      }
+      // Such a photo has no thumbnail, so the read side would silently ignore it
+      // as a cover — say why instead of reporting a successful choice.
+      if (isInvalidFileType(photo.fileType)) {
+        return NextResponse.json({ error: photoMessages.corruptPhoto || 'Photo is damaged' }, { status: 400 })
       }
     }
 

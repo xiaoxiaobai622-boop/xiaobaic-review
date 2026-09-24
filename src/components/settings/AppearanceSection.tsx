@@ -3,13 +3,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import { Monitor, Moon, Sun, Check, Globe } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { accentToHex, isCustomAccentColor, whiteOnAccentRatio } from '@/lib/accent'
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'zh' },
-  { code: 'en' },
-  { code: 'nl' },
-  { code: 'de' },
-] as const
+const SUPPORTED_LANGUAGES = ['zh', 'en', 'nl', 'de'] as const
 
 // Accent color presets with HSL values for light and dark modes
 export const ACCENT_COLORS = {
@@ -52,9 +48,9 @@ export function AppearanceSection({
 }: AppearanceSectionProps) {
   const t = useTranslations('settings')
   const themeOptions = [
-    { value: 'auto', label: t('appearance.auto'), icon: Monitor, description: t('appearance.autoDescription') },
-    { value: 'light', label: t('appearance.light'), icon: Sun, description: t('appearance.lightDescription') },
-    { value: 'dark', label: t('appearance.dark'), icon: Moon, description: t('appearance.darkDescription') },
+    { value: 'auto', label: t('appearance.auto'), icon: Monitor },
+    { value: 'light', label: t('appearance.light'), icon: Sun },
+    { value: 'dark', label: t('appearance.dark'), icon: Moon },
   ]
 
   return (
@@ -78,9 +74,9 @@ export function AppearanceSection({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {SUPPORTED_LANGUAGES.map((lang) => (
-              <SelectItem key={lang.code} value={lang.code}>
-                {t(`language.${lang.code}`)}
+            {SUPPORTED_LANGUAGES.map((code) => (
+              <SelectItem key={code} value={code}>
+                {t(`language.${code}`)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -149,11 +145,66 @@ export function AppearanceSection({
               </button>
             )
           })}
+          <CustomAccentSwatch
+            value={accentColor}
+            onSelect={setAccentColor}
+            label={t('appearance.custom')}
+          />
         </div>
         <p className="text-xs text-muted-foreground">
           {t('appearance.accentColorHint')}
         </p>
+        <p className="text-xs text-muted-foreground">
+          {t('appearance.accentContrast', { ratio: whiteOnAccentRatio(accentToHex(accentColor)).toFixed(2) })}
+          <span className="mx-1.5">·</span>
+          {t('appearance.accentMintNote')}
+        </p>
       </div>
     </CollapsibleSection>
+  )
+}
+
+const SPECTRUM = 'conic-gradient(from 90deg, #007AFF, #14B8A6, #22C55E, #F59E0B, #EF4444, #EC4899, #8B5CF6, #007AFF)'
+
+/**
+ * The eleventh swatch is the native colour picker: clicking it writes a
+ * `#rrggbb` straight into the accent setting, which every accent surface
+ * resolves through `lib/accent`.
+ */
+function CustomAccentSwatch({
+  value,
+  onSelect,
+  label,
+}: {
+  value: string
+  onSelect: (hex: string) => void
+  label: string
+}) {
+  const isCustom = isCustomAccentColor(value)
+  // The tick has to stay visible on whatever colour was picked.
+  const tickClass = isCustom && whiteOnAccentRatio(value) < 4.5 ? 'text-black' : 'text-white'
+
+  return (
+    <label
+      className={`group relative flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-all cursor-pointer ${
+        isCustom ? 'border-foreground' : 'border-transparent hover:border-border'
+      }`}
+      title={label}
+    >
+      <input
+        type="color"
+        value={isCustom ? value : '#007AFF'}
+        onChange={(event) => onSelect(event.target.value.toLowerCase())}
+        className="sr-only"
+        aria-label={label}
+      />
+      <div
+        className="w-10 h-10 rounded-full flex items-center justify-center transition-transform group-hover:scale-110"
+        style={{ background: isCustom ? value : SPECTRUM }}
+      >
+        {isCustom && <Check className={`w-5 h-5 ${tickClass}`} />}
+      </div>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </label>
   )
 }

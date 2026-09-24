@@ -88,8 +88,6 @@ export default function NewProjectPage() {
     }
   }
 
-  const needsPassword = passwordProtected
-
   return (
     <div className="flex-1 min-h-0 bg-background">
       <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
@@ -199,61 +197,57 @@ export default function NewProjectPage() {
                         {t('passwordOnly')}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {authMode === 'PASSWORD' && t('passwordDescriptionLong')}
-
+                        {t('passwordDescriptionLong')}
                       </p>
-
                     </div>
 
                     {/* Password Field (conditional) */}
-                    {needsPassword && (
-                      <div className="space-y-3">
-                        <Label htmlFor="sharePassword">{t('sharePassword')}</Label>
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                            <Input
-                              id="sharePassword"
-                              value={sharePassword}
-                              onChange={(e) => setSharePassword(e.target.value)}
-                              type={showPassword ? 'text' : 'password'}
-                              className="pr-10 font-mono"
-                              required={needsPassword}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            >
-                              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                          </div>
-                          <Button
+                    <div className="space-y-3">
+                      <Label htmlFor="sharePassword">{t('sharePassword')}</Label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            id="sharePassword"
+                            value={sharePassword}
+                            onChange={(e) => setSharePassword(e.target.value)}
+                            type={showPassword ? 'text' : 'password'}
+                            className="pr-10 font-mono"
+                            required
+                          />
+                          <button
                             type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={handleGeneratePassword}
-                            title={t('generatePassword')}
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                           >
-                            <RefreshCw className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={handleCopyPassword}
-                            title={t('copyPassword')}
-                          >
-                            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-                          </Button>
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
                         </div>
-                        {sharePassword && (
-                          <SharePasswordRequirements password={sharePassword} />
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          {t('savePasswordWarningLong')}
-                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={handleGeneratePassword}
+                          title={t('generatePassword')}
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={handleCopyPassword}
+                          title={t('copyPassword')}
+                        >
+                          {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                        </Button>
                       </div>
-                    )}
+                      {sharePassword && (
+                        <SharePasswordRequirements password={sharePassword} />
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {t('savePasswordWarningLong')}
+                      </p>
+                    </div>
                   </div>
                 )}
 

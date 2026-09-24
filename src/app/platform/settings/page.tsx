@@ -93,13 +93,17 @@ interface BlockedDomain {
   createdAt: string
 }
 
+const UNSAFE_SVG_PATTERNS = [/<script[\s>]/i, /on[a-zA-Z]+\s*=/, /javascript:/i]
+
+function hasUnsafeSvgContent(text: string) {
+  return UNSAFE_SVG_PATTERNS.some((pattern) => pattern.test(text))
+}
+
 export default function GlobalSettingsPage() {
   const router = useRouter()
   const t = useTranslations('settings')
   const tc = useTranslations('common')
 
-  const [_settings, setSettings] = useState<Settings | null>(null)
-  const [_securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadedOk, setLoadedOk] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -290,22 +294,9 @@ export default function GlobalSettingsPage() {
         return
       }
       
-      // Security validation (isSafeSvg)
       // Strip XML declaration if present before checking for <svg
       const stripped = text.trim().replace(/^<\?xml[^?]*\?>\s*/i, '')
-      if (!/^<svg[\s>]/i.test(stripped)) {
-        setLogoError(t('unsafeSvg'))
-        return
-      }
-      if (/<script[\s>]/i.test(text)) {
-        setLogoError(t('unsafeSvg'))
-        return
-      }
-      if (/on[a-zA-Z]+\s*=/.test(text)) {
-        setLogoError(t('unsafeSvg'))
-        return
-      }
-      if (/javascript:/i.test(text)) {
+      if (!/^<svg[\s>]/i.test(stripped) || hasUnsafeSvgContent(text)) {
         setLogoError(t('unsafeSvg'))
         return
       }
@@ -357,7 +348,7 @@ export default function GlobalSettingsPage() {
           setFaviconError(t('faviconUnsafeSvg'))
           return
         }
-        if (/<script[\s>]/i.test(text) || /on[a-zA-Z]+\s*=/.test(text) || /javascript:/i.test(text)) {
+        if (hasUnsafeSvgContent(text)) {
           setFaviconError(t('faviconUnsafeSvg'))
           return
         }
@@ -388,14 +379,11 @@ export default function GlobalSettingsPage() {
           throw new Error(t('failedToLoad'))
         }
         const data = await response.json()
-        setSettings(data)
-
         applySettingsToForm(data)
 
         const securityResponse = await apiFetch('/api/settings/security')
         if (securityResponse.ok) {
           const securityData = await securityResponse.json()
-          setSecuritySettings(securityData)
           applySecuritySettingsToForm(securityData)
           setLoadedOk(true)
         } else {
@@ -707,7 +695,6 @@ export default function GlobalSettingsPage() {
       const refreshResponse = await apiFetch('/api/settings')
       if (refreshResponse.ok) {
         const refreshedData = await refreshResponse.json()
-        setSettings(refreshedData)
         applySettingsToForm(refreshedData)
       }
 
@@ -715,7 +702,6 @@ export default function GlobalSettingsPage() {
       const securityRefreshResponse = await apiFetch('/api/settings/security')
       if (securityRefreshResponse.ok) {
         const refreshedSecurityData = await securityRefreshResponse.json()
-        setSecuritySettings(refreshedSecurityData)
         applySecuritySettingsToForm(refreshedSecurityData)
       }
 
@@ -756,13 +742,12 @@ export default function GlobalSettingsPage() {
           type: 'error',
           message: t('fillSmtpFields')
         })
-        setTestEmailSending(false)
         return
       }
 
       const data = await apiPost('/api/settings/test-email', {
         testEmail: testEmailAddress,
-        smtpConfig: smtpConfig
+        smtpConfig
       })
 
       setTestEmailResult({

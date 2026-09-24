@@ -8,17 +8,11 @@ import { headers } from 'next/headers'
  * Automatically detects headers from Server Components when request is not provided
  */
 export async function getAppUrl(request?: NextRequest): Promise<string> {
-  try {
-    const settings = await prisma.settings.findUnique({
-      where: { id: 'default' },
-      select: { appDomain: true },
-    })
-
-    if (settings?.appDomain) {
-      return settings.appDomain
-    }
-  } catch (error) {
-    // DB not available, continue to request detection
+  // Empty means "not configured" and "settings row unreadable" alike; both fall
+  // through to request-header detection.
+  const configuredDomain = await getAppDomain()
+  if (configuredDomain) {
+    return configuredDomain
   }
 
   if (request) {
@@ -113,4 +107,24 @@ export async function generateProjectShareUrlById(
 
   if (!project) throw new Error('Project not found')
   return generateShareUrl(project, request)
+}
+
+/**
+ * returnUrl is echoed only when the referer is this origin's own /login page,
+ * so the notification link cannot point off-site.
+ */
+export function buildFailedLoginLink(request: NextRequest, baseUrl: string): string | null {
+  const fallbackLink = baseUrl ? `${baseUrl}/login` : null
+  const referer = request.headers.get('referer') || ''
+  if (!baseUrl || !referer) return fallbackLink
+  try {
+    const ref = new URL(referer)
+    if (ref.origin !== baseUrl) return fallbackLink
+    if (ref.pathname !== '/login') return fallbackLink
+    const returnUrl = ref.searchParams.get('returnUrl')
+    if (!returnUrl) return fallbackLink
+    return `${baseUrl}/login?returnUrl=${encodeURIComponent(returnUrl)}`
+  } catch {
+    return fallbackLink
+  }
 }

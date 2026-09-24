@@ -13,6 +13,14 @@ interface NotificationsSectionProps extends EmailSettingsContentProps {
   collapsible?: boolean
 }
 
+const TAB_CLASS_BASE = 'flex-1 px-3 py-2 text-sm font-medium rounded-md border transition-colors'
+const TAB_CLASS_ACTIVE = 'bg-primary text-primary-foreground border-primary'
+const TAB_CLASS_INACTIVE = 'bg-background text-muted-foreground border-border hover:bg-accent hover:text-foreground'
+
+function tabClassName(isActive: boolean) {
+  return [TAB_CLASS_BASE, isActive ? TAB_CLASS_ACTIVE : TAB_CLASS_INACTIVE].join(' ')
+}
+
 export function NotificationsSection({ show, setShow, collapsible, ...emailProps }: NotificationsSectionProps) {
   const [activeTab, setActiveTab] = useState<'email' | 'external' | 'browser'>('email')
   const t = useTranslations('settings')
@@ -37,12 +45,7 @@ export function NotificationsSection({ show, setShow, collapsible, ...emailProps
               role="tab"
               aria-selected={activeTab === 'email'}
               aria-controls="notifications-tabpanel-email"
-              className={[
-                'flex-1 px-3 py-2 text-sm font-medium rounded-md border transition-colors',
-                activeTab === 'email'
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-background text-muted-foreground border-border hover:bg-accent hover:text-foreground',
-              ].join(' ')}
+              className={tabClassName(activeTab === 'email')}
               onClick={() => setActiveTab('email')}
             >
               {t('notifications.emailTab')}
@@ -52,12 +55,7 @@ export function NotificationsSection({ show, setShow, collapsible, ...emailProps
               role="tab"
               aria-selected={activeTab === 'external'}
               aria-controls="notifications-tabpanel-external"
-              className={[
-                'flex-1 px-3 py-2 text-sm font-medium rounded-md border transition-colors',
-                activeTab === 'external'
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-background text-muted-foreground border-border hover:bg-accent hover:text-foreground',
-              ].join(' ')}
+              className={tabClassName(activeTab === 'external')}
               onClick={() => setActiveTab('external')}
             >
               {t('notifications.pushTab')}
@@ -67,12 +65,7 @@ export function NotificationsSection({ show, setShow, collapsible, ...emailProps
               role="tab"
               aria-selected={activeTab === 'browser'}
               aria-controls="notifications-tabpanel-browser"
-              className={[
-                'flex-1 px-3 py-2 text-sm font-medium rounded-md border transition-colors',
-                activeTab === 'browser'
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-background text-muted-foreground border-border hover:bg-accent hover:text-foreground',
-              ].join(' ')}
+              className={tabClassName(activeTab === 'browser')}
               onClick={() => setActiveTab('browser')}
             >
               {t('notifications.browserPushTab')}

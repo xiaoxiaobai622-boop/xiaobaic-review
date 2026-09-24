@@ -11,9 +11,6 @@ import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 
-
-
-
 const updateRecipientSchema = z.object({
   name: z.string().nullable().optional(),
   email: z.string().email('INVALID_EMAIL_FORMAT').nullable().optional(),
@@ -55,6 +52,11 @@ export async function PATCH(
     return rateLimitResult
   }
 
+  const recipientNotFound = () => NextResponse.json(
+    { error: recipientMessages.recipientNotFound || 'Recipient not found' },
+    { status: 404 },
+  )
+
   try {
     const { id: projectId, rid: recipientId } = await params
     if (!(await canAccessProject(prisma, authResult, projectId))) {
@@ -83,10 +85,7 @@ export async function PATCH(
     })
 
     if (!currentRecipient) {
-      return NextResponse.json(
-        { error: recipientMessages.recipientNotFound || 'Recipient not found' },
-        { status: 404 }
-      )
+      return recipientNotFound()
     }
 
     const recipient = await updateRecipient(recipientId, validation.data)
@@ -94,7 +93,7 @@ export async function PATCH(
     // If email changed, invalidate sessions for the old email
     // This forces re-authentication with the new email
     if (validation.data.email !== undefined &&
-        currentRecipient?.email &&
+        currentRecipient.email &&
         currentRecipient.email !== validation.data.email) {
       await invalidateSessionsByEmail(currentRecipient.email)
     }
@@ -104,10 +103,7 @@ export async function PATCH(
     logError('Failed to update recipient:', error)
 
     if (error.message === 'Recipient not found') {
-      return NextResponse.json(
-        { error: recipientMessages.recipientNotFound || 'Recipient not found' },
-        { status: 404 }
-      )
+      return recipientNotFound()
     }
 
     return NextResponse.json(
@@ -142,6 +138,11 @@ export async function DELETE(
     return rateLimitResult
   }
 
+  const recipientNotFound = () => NextResponse.json(
+    { error: recipientMessages.recipientNotFound || 'Recipient not found' },
+    { status: 404 },
+  )
+
   try {
     const { id: projectId, rid: recipientId } = await params
     if (!(await canAccessProject(prisma, authResult, projectId))) {
@@ -155,16 +156,13 @@ export async function DELETE(
     })
 
     if (!recipientToDelete) {
-      return NextResponse.json(
-        { error: recipientMessages.recipientNotFound || 'Recipient not found' },
-        { status: 404 }
-      )
+      return recipientNotFound()
     }
 
     await deleteRecipient(recipientId)
 
     // Invalidate sessions for the deleted recipient's email
-    if (recipientToDelete?.email) {
+    if (recipientToDelete.email) {
       await invalidateSessionsByEmail(recipientToDelete.email)
     }
 
@@ -173,10 +171,7 @@ export async function DELETE(
     logError('Failed to delete recipient:', error)
 
     if (error.message === 'Recipient not found') {
-      return NextResponse.json(
-        { error: recipientMessages.recipientNotFound || 'Recipient not found' },
-        { status: 404 }
-      )
+      return recipientNotFound()
     }
 
     if (error.message === 'Cannot delete the last recipient') {

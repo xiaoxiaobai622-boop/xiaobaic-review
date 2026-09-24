@@ -5,7 +5,6 @@ import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 
-
 /**
  * Generate a temporary download token for asset downloads (admins and share users)
  * This allows using window.open() without loading files into browser memory
@@ -15,34 +14,42 @@ export async function POST(
   { params }: { params: Promise<{ id: string; assetId: string }> }
 ) {
   try {
-    const locale = await getConfiguredLocale()
-    const messages = await loadLocaleMessages(locale)
+    const locale = await getConfiguredLocale().catch(() => 'en')
+    const messages = await loadLocaleMessages(locale).catch(() => null)
     const videoMessages = messages?.videos || {}
 
     const { id: videoId, assetId } = await params
 
-    // Get asset with video and project info
     const asset = await prisma.videoAsset.findUnique({
       where: { id: assetId },
-      include: {
+      select: {
+        videoId: true,
+        uploadedBy: true,
         video: {
-          include: {
-            project: true,
+          select: {
+            approved: true,
+            project: {
+              select: {
+                id: true,
+                sharePassword: true,
+                authMode: true,
+                allowAssetDownload: true,
+              },
+            },
           },
         },
       },
     })
 
     if (!asset || asset.videoId !== videoId) {
-  return NextResponse.json({ error: messages?.share?.assetNotFound || 'Asset not found' }, { status: 404 })
+      return NextResponse.json({ error: messages?.share?.assetNotFound || 'Asset not found' }, { status: 404 })
     }
 
     const project = asset.video.project
     const isClientAsset = asset.uploadedBy === 'client'
 
-    // Verify user has access to this project
-    // Client-uploaded comment attachments only need 'comment' permission (view-level access)
-    // Admin/regular assets need 'download' permission
+    // Client-uploaded comment attachments only need view-level access ('comment');
+    // admin/regular assets need 'download'. Guests are never allowed here.
     const accessCheck = await verifyProjectAccess(
       request,
       project.id,
@@ -55,11 +62,10 @@ export async function POST(
     )
 
     if (!accessCheck.authorized) {
-  return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
 
-    // Check download permissions for non-admins (non-client assets only)
-    // Client-uploaded comment attachments bypass approval/download checks
+    // Client-uploaded comment attachments bypass the project download setting and the approval gate.
     if (!accessCheck.isAdmin && !isClientAsset) {
       if (!project.allowAssetDownload) {
         return NextResponse.json(
@@ -76,18 +82,11 @@ export async function POST(
       }
     }
 
-    // Generate video access token (we use video access tokens for assets too); tag admin sessions.
-    // Stable admin session id so repeated downloads reuse the cached token.
+    // Video access tokens also gate asset downloads. A stable admin session id lets
+    // repeated downloads reuse the cached token instead of minting one per click.
     const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${project.id}` : `guest:${Date.now()}`)
-    const token = await generateVideoAccessToken(
-      videoId,
-      project.id,
-      'original',
-      request,
-      sessionId
-    )
+    const token = await generateVideoAccessToken(videoId, project.id, 'original', request, sessionId)
 
-    // Return download URL with asset ID parameter
     return NextResponse.json({
       url: `/api/content/${token}?download=true&assetId=${assetId}`,
     })

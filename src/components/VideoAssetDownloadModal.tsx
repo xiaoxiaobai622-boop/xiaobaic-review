@@ -11,6 +11,7 @@ import { getAccessToken } from '@/lib/token-store'
 interface VideoAsset {
   id: string
   fileName: string
+  originalFileName: string | null
   fileSize: string
   fileType: string
   category: string | null
@@ -326,7 +327,7 @@ export function VideoAssetDownloadModal({
                     />
                     <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{asset.fileName}</p>
+                      <p className="text-sm font-medium truncate">{asset.originalFileName || asset.fileName}</p>
                       <div className="flex gap-3 text-xs text-muted-foreground">
                         <span>{formatFileSizeBigInt(asset.fileSize)}</span>
                         <span>•</span>

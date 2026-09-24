@@ -2,6 +2,8 @@ import React from 'react'
 import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import { useTranslations } from 'next-intl'
 
+const BLOCKLIST_INPUT_CLASS = 'w-full px-3 py-2 border border-border rounded-md bg-background text-foreground'
+
 interface BlocklistSectionProps {
   blockedIPs: Array<{ id: string; ipAddress: string; reason: string | null; createdAt: string }>
   blockedDomains: Array<{ id: string; domain: string; reason: string | null; createdAt: string }>
@@ -73,14 +75,14 @@ export function BlocklistSection({
                 value={newIP}
                 onChange={(e) => setNewIP(e.target.value)}
                 placeholder={t('security.ipPlaceholder')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                className={BLOCKLIST_INPUT_CLASS}
               />
               <input
                 type="text"
                 value={newIPReason}
                 onChange={(e) => setNewIPReason(e.target.value)}
                 placeholder={t('security.reasonPlaceholder')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                className={BLOCKLIST_INPUT_CLASS}
               />
               <button
                 type="submit"
@@ -126,14 +128,14 @@ export function BlocklistSection({
                 value={newDomain}
                 onChange={(e) => setNewDomain(e.target.value)}
                 placeholder={t('security.domainPlaceholder')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                className={BLOCKLIST_INPUT_CLASS}
               />
               <input
                 type="text"
                 value={newDomainReason}
                 onChange={(e) => setNewDomainReason(e.target.value)}
                 placeholder={t('security.reasonPlaceholder')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                className={BLOCKLIST_INPUT_CLASS}
               />
               <button
                 type="submit"

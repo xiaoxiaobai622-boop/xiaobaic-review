@@ -46,14 +46,14 @@ export async function POST(request: NextRequest) {
     const token = typeof body?.token === 'string' ? body.token.trim() : ''
     const newPassword = typeof body?.password === 'string' ? body.password : ''
 
-    if (!token || token.length === 0) {
+    if (!token) {
       return NextResponse.json(
         { error: authMessages.resetTokenRequired || 'Reset token is required' },
         { status: 400 }
       )
     }
 
-    if (!newPassword || newPassword.length === 0) {
+    if (!newPassword) {
       return NextResponse.json(
         { error: authMessages.newPasswordRequired || 'New password is required' },
         { status: 400 }

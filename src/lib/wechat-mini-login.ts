@@ -83,9 +83,12 @@ export async function generateWechatMiniQrCode(scene: string, page: string): Pro
     const body = Buffer.from(await response.arrayBuffer())
     if (contentType.includes('image')) return body
 
-    let detail = body.toString('utf8').slice(0, 300)
+    // The body is already consumed, so the error JSON is parsed from the buffer;
+    // a second response.json() call would always throw and hide the real detail.
+    const text = body.toString('utf8')
+    let detail = text.slice(0, 300)
     try {
-      detail = JSON.stringify(await response.json())
+      detail = JSON.stringify(JSON.parse(text))
     } catch {
       // Keep the raw body for non-JSON errors.
     }

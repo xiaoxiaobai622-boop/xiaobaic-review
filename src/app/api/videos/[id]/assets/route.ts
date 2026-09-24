@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest, requireApiAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
-import { validateAssetFile } from '@/lib/file-validation'
+import { validateAssetFile, sanitizeDisplayFilename, isInvalidFileType } from '@/lib/file-validation'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -101,8 +101,12 @@ export async function GET(
         id: asset.id,
         videoId: asset.videoId,
         fileName: asset.fileName,
+        originalFileName: asset.originalFileName,
         fileSize: asset.fileSize.toString(),
         fileType: asset.fileType,
+        // Derives from the worker's rejection marker so the list can say
+        // "damaged" instead of rendering an icon that promises a preview.
+        isInvalid: isInvalidFileType(asset.fileType),
         category: asset.category,
         commentId: asset.commentId,
         createdAt: asset.createdAt,
@@ -232,6 +236,7 @@ export async function POST(
       data: {
         videoId,
         fileName: sanitizedFileName,
+        originalFileName: sanitizeDisplayFilename(fileName),
         fileSize: BigInt(fileSize),
         fileType: mimeType || 'application/octet-stream',
         storagePath,

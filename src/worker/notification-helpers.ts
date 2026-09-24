@@ -4,6 +4,12 @@ import { logError, logMessage } from '../lib/logging'
 
 const MAX_ATTEMPTS = 3
 
+// Which NotificationQueue columns record delivery for each audience.
+const AUDIT_FIELDS = {
+  client: { sent: 'sentToClients', sentAt: 'clientSentAt', failed: 'clientFailed' },
+  admin: { sent: 'sentToAdmins', sentAt: 'adminSentAt', failed: 'adminFailed' },
+} as const
+
 /** Get period description string for email template */
 export function getPeriodString(schedule: string): string {
   switch (schedule) {
@@ -29,6 +35,13 @@ export function shouldSendNow(
   lastSent: Date | null,
   now: Date
 ): boolean {
+  const timeOfDayTarget = () => {
+    const [hour, minute] = time!.split(':').map(Number)
+    const target = new Date(now)
+    target.setHours(hour, minute, 0, 0)
+    return target
+  }
+
   const getTargetTime = (): Date | null => {
     switch (schedule) {
       case 'HOURLY':
@@ -38,16 +51,11 @@ export function shouldSendNow(
 
       case 'DAILY':
         if (!time) return null
-        const [dailyHour, dailyMin] = time.split(':').map(Number)
-        const dailyTarget = new Date(now)
-        dailyTarget.setHours(dailyHour, dailyMin, 0, 0)
-        return dailyTarget
+        return timeOfDayTarget()
 
       case 'WEEKLY':
         if (!time || day === null) return null
-        const [weeklyHour, weeklyMin] = time.split(':').map(Number)
-        const weeklyTarget = new Date(now)
-        weeklyTarget.setHours(weeklyHour, weeklyMin, 0, 0)
+        const weeklyTarget = timeOfDayTarget()
         // Calculate most recent occurrence of the configured day
         const currentDay = now.getDay()
         let daysBack = currentDay - day
@@ -139,6 +147,7 @@ export async function sendNotificationsWithRetry(config: {
   logPrefix: string
 }): Promise<{ success: boolean; lastError?: string }> {
   const { notificationIds, currentAttempts, isClientNotification, onSuccess, logPrefix } = config
+  const fields = isClientNotification ? AUDIT_FIELDS.client : AUDIT_FIELDS.admin
 
   let sendSuccess = false
   let lastError: string | undefined
@@ -157,8 +166,8 @@ export async function sendNotificationsWithRetry(config: {
     await prisma.notificationQueue.updateMany({
       where: { id: { in: notificationIds } },
       data: {
-        [isClientNotification ? 'sentToClients' : 'sentToAdmins']: true,
-        [isClientNotification ? 'clientSentAt' : 'adminSentAt']: now,
+        [fields.sent]: true,
+        [fields.sentAt]: now,
         lastError: null
       }
     })
@@ -167,7 +176,7 @@ export async function sendNotificationsWithRetry(config: {
     await prisma.notificationQueue.updateMany({
       where: { id: { in: notificationIds } },
       data: {
-        [isClientNotification ? 'clientFailed' : 'adminFailed']: true,
+        [fields.failed]: true,
         lastError: lastError || `Failed after ${MAX_ATTEMPTS} attempts`
       }
     })

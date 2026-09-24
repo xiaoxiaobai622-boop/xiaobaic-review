@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -79,42 +80,19 @@ export async function POST(
     }
 
     // Verify the requested scope resolves to at least one completed photo
-    if (parsed.data.scope === 'selection') {
-      const count = await prisma.photo.count({
-        where: {
-          id: { in: parsed.data.photoIds },
-          albumId: parsed.data.albumId,
-          album: { projectId },
-          uploadCompletedAt: { not: null },
-        },
-      })
-      if (count === 0) {
-        return NextResponse.json({ error: photoMessages.noPhotosFound || 'No photos found' }, { status: 404 })
-      }
-      if (count !== parsed.data.photoIds.length) {
-        return NextResponse.json({ error: photoMessages.somePhotosInvalid || 'Some photos are invalid' }, { status: 400 })
-      }
-    } else if (parsed.data.scope === 'album') {
-      const count = await prisma.photo.count({
-        where: {
-          albumId: parsed.data.albumId,
-          album: { projectId },
-          uploadCompletedAt: { not: null },
-        },
-      })
-      if (count === 0) {
-        return NextResponse.json({ error: photoMessages.noPhotosFound || 'No photos found' }, { status: 404 })
-      }
-    } else {
-      const count = await prisma.photo.count({
-        where: {
-          album: { projectId },
-          uploadCompletedAt: { not: null },
-        },
-      })
-      if (count === 0) {
-        return NextResponse.json({ error: photoMessages.noPhotosFound || 'No photos found' }, { status: 404 })
-      }
+    const completedPhotos: Prisma.PhotoWhereInput = {
+      album: { projectId },
+      uploadCompletedAt: { not: null },
+    }
+    if (parsed.data.scope !== 'project') completedPhotos.albumId = parsed.data.albumId
+    if (parsed.data.scope === 'selection') completedPhotos.id = { in: parsed.data.photoIds }
+
+    const count = await prisma.photo.count({ where: completedPhotos })
+    if (count === 0) {
+      return NextResponse.json({ error: photoMessages.noPhotosFound || 'No photos found' }, { status: 404 })
+    }
+    if (parsed.data.scope === 'selection' && count !== parsed.data.photoIds.length) {
+      return NextResponse.json({ error: photoMessages.somePhotosInvalid || 'Some photos are invalid' }, { status: 400 })
     }
 
     const token = crypto.randomBytes(32).toString('base64url')

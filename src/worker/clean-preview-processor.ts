@@ -15,6 +15,14 @@ import { teamProjectStorageKey } from '../lib/storage-keys'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 
+// Video column holding the clean preview for each resolution. Callers fall back
+// to the 720p column for anything unexpected.
+const CLEAN_PREVIEW_FIELD_BY_RESOLUTION = {
+  '2160p': 'cleanPreview2160Path',
+  '1080p': 'cleanPreview1080Path',
+  '720p': 'cleanPreview720Path',
+} as const
+
 function debugLog(message: string, data?: any) {
   if (!DEBUG) return
   if (data !== undefined) {
@@ -108,11 +116,8 @@ async function processCleanPreview(job: Job<CleanPreviewJob>): Promise<void> {
     )
 
     // Update database with clean preview path
-    const updateField = resolution === '2160p'
-      ? 'cleanPreview2160Path'
-      : resolution === '1080p'
-        ? 'cleanPreview1080Path'
-        : 'cleanPreview720Path'
+    const updateField = CLEAN_PREVIEW_FIELD_BY_RESOLUTION[resolution as keyof typeof CLEAN_PREVIEW_FIELD_BY_RESOLUTION]
+      ?? 'cleanPreview720Path'
     await prisma.video.update({
       where: { id: videoId },
       data: { [updateField]: storagePath }

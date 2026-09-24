@@ -83,10 +83,9 @@ export async function POST(request: NextRequest) {
     const baseLogoUrl = buildBrandingLogoUrl(settings)
     const brandingLogoUrl = `${baseLogoUrl}?ts=${Date.now()}`
 
-    const previewMessages = emailTemplateMessages || {}
     const emailCommonMessages = messages?.email?.common || {}
 
-    const sampleValues = generateSampleValues(templateType, companyName, appDomain, brand, previewMessages, emailCommonMessages)
+    const sampleValues = generateSampleValues(templateType, companyName, appDomain, brand, emailTemplateMessages, emailCommonMessages)
 
     // Fill in any missing placeholders to avoid raw {{PLACEHOLDER}} tokens in preview
     const completeSampleValues = { ...sampleValues }
@@ -113,8 +112,8 @@ export async function POST(request: NextRequest) {
 
     const html = renderEmailShell({
       companyName,
-      title: getEmailTitle(templateType, previewMessages),
-      subtitle: getEmailSubtitle(templateType, completeSampleValues, previewMessages),
+      title: getEmailTitle(templateType, emailTemplateMessages),
+      subtitle: getEmailSubtitle(templateType, completeSampleValues, emailTemplateMessages),
       bodyContent: processedBody,
       brand,
       brandingLogoUrl,

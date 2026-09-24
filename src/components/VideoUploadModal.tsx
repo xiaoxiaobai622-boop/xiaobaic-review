@@ -46,6 +46,29 @@ interface VideoUploadModalProps {
   initialFiles?: File[]
 }
 
+// Maximum length for video names (fits comfortably in modal)
+const MAX_VIDEO_NAME_LENGTH = 50
+// Maximum display length for file names before truncation
+const MAX_FILENAME_DISPLAY_LENGTH = 38
+
+// Truncate filename for display
+function truncateFilename(filename: string, maxLength: number): string {
+  if (filename.length <= maxLength) return filename
+  const ext = filename.lastIndexOf('.') > 0 ? filename.slice(filename.lastIndexOf('.')) : ''
+  const nameWithoutExt = filename.slice(0, filename.lastIndexOf('.') > 0 ? filename.lastIndexOf('.') : filename.length)
+  const availableLength = maxLength - ext.length - 3 // 3 for "..."
+  if (availableLength <= 0) return filename.slice(0, maxLength - 3) + '...'
+  return nameWithoutExt.slice(0, availableLength) + '...' + ext
+}
+
+// Extract video name from filename (remove extension, truncate if needed)
+function getVideoNameFromFile(file: File): string {
+  const name = file.name
+  const lastDot = name.lastIndexOf('.')
+  const baseName = lastDot > 0 ? name.substring(0, lastDot) : name
+  return baseName.substring(0, MAX_VIDEO_NAME_LENGTH)
+}
+
 export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete, initialFiles }: VideoUploadModalProps) {
   const t = useTranslations('videos')
   const tc = useTranslations('common')
@@ -59,29 +82,6 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
   const s3UploadKeys = useRef<Map<string, string>>(new Map())
   // Prevent infinite loops: auto-recover stale resume metadata at most once per item
   const autoRecoveryAttempted = useRef<Set<string>>(new Set())
-
-  // Maximum length for video names (fits comfortably in modal)
-  const MAX_VIDEO_NAME_LENGTH = 50
-  // Maximum display length for file names before truncation
-  const MAX_FILENAME_DISPLAY_LENGTH = 38
-
-  // Truncate filename for display
-  const truncateFilename = (filename: string, maxLength: number): string => {
-    if (filename.length <= maxLength) return filename
-    const ext = filename.lastIndexOf('.') > 0 ? filename.slice(filename.lastIndexOf('.')) : ''
-    const nameWithoutExt = filename.slice(0, filename.lastIndexOf('.') > 0 ? filename.lastIndexOf('.') : filename.length)
-    const availableLength = maxLength - ext.length - 3 // 3 for "..."
-    if (availableLength <= 0) return filename.slice(0, maxLength - 3) + '...'
-    return nameWithoutExt.slice(0, availableLength) + '...' + ext
-  }
-
-  // Extract video name from filename (remove extension, truncate if needed)
-  const getVideoNameFromFile = (file: File): string => {
-    const name = file.name
-    const lastDot = name.lastIndexOf('.')
-    const baseName = lastDot > 0 ? name.substring(0, lastDot) : name
-    return baseName.substring(0, MAX_VIDEO_NAME_LENGTH)
-  }
 
   // Validate video file format
   const validateVideoFile = async (file: File): Promise<{ valid: boolean; error?: string }> => {
@@ -638,7 +638,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
                           <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
                             <div
                               className={cn(
-                                "h-full transition-all",
+                                'h-full transition-all',
                                 upload.status === 'completed' ? 'bg-success' : upload.paused ? 'bg-warning' : 'bg-primary'
                               )}
                               style={{ width: `${upload.progress}%` }}

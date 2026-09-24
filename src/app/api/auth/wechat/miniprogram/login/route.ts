@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
 
   const qrId = typeof body?.qrId === 'string' ? body.qrId.trim() : ''
   const mode = body?.mode === 'bind' ? 'bind' : 'login'
+  const nickname = typeof body?.nickname === 'string' ? body.nickname.slice(0, 100) : null
 
   try {
     const identity = await exchangeMiniProgramCode(code)
@@ -30,7 +31,8 @@ export async function POST(request: NextRequest) {
     // ── 绑定模式：把微信身份关联到当前已登录用户 ─────────────────────
     if (mode === 'bind' && qrId) {
       const redis = getRedis()
-      const raw = await redis.get(getWechatQrKey(qrId))
+      const qrKey = getWechatQrKey(qrId)
+      const raw = await redis.get(qrKey)
       if (!raw) {
         return NextResponse.json({ error: '二维码已过期，请重新获取' }, { status: 404 })
       }
@@ -53,19 +55,19 @@ export async function POST(request: NextRequest) {
           platform: 'MINI_PROGRAM',
           openId: identity.openid,
           unionId: identity.unionid || null,
-          nickname: typeof body?.nickname === 'string' ? body.nickname.slice(0, 100) : null,
+          nickname,
           userId: session.userId,
         },
         update: {
           unionId: identity.unionid || null,
-          nickname: typeof body?.nickname === 'string' ? body.nickname.slice(0, 100) : null,
+          nickname,
           userId: session.userId,
         },
       })
 
-      const ttl = await redis.ttl(getWechatQrKey(qrId))
+      const ttl = await redis.ttl(qrKey)
       await redis.set(
-        getWechatQrKey(qrId),
+        qrKey,
         JSON.stringify({ ...session, status: 'success', bound: true }),
         'EX',
         Math.max(ttl > 0 ? ttl : 300, 60),
@@ -77,7 +79,7 @@ export async function POST(request: NextRequest) {
     // ── 登录模式（原有逻辑）────────────────────────────────────────
     const user = await findOrCreateUserFromWechat({
       ...identity,
-      nickname: typeof body?.nickname === 'string' ? body.nickname.slice(0, 100) : null,
+      nickname,
     })
     const tokens = await issueAdminTokens({
       id: user.id,

@@ -69,11 +69,8 @@ export function getTusUploadErrorMessage(error: unknown): string {
   const combined = `${message}\n${body}`
 
   const statusFromMessageMatch = combined.match(/\bresponse code:\s*(\d{3})\b/i)
-  const status = Number.isFinite(statusFromResponse)
-    ? statusFromResponse
-    : statusFromMessageMatch
-      ? Number.parseInt(statusFromMessageMatch[1], 10)
-      : null
+  const statusFromMessage = statusFromMessageMatch ? Number.parseInt(statusFromMessageMatch[1], 10) : null
+  const status = Number.isFinite(statusFromResponse) ? statusFromResponse : statusFromMessage
 
   if (combined.includes('NetworkError') || combined.includes('Failed to fetch')) {
     return 'Network error. Please check your connection and try again.'

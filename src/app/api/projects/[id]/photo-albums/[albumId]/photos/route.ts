@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest, requireApiAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
-import { validatePhotoFile } from '@/lib/file-validation'
+import { validatePhotoFile, sanitizeDisplayFilename, isInvalidFileType } from '@/lib/file-validation'
 import { generateAlbumAccessToken } from '@/lib/photo-access'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -71,9 +71,13 @@ export async function GET(
       contentToken,
       photos: photos.map(photo => ({
         id: photo.id,
-        fileName: photo.fileName,
+        // Consumers of this list show the name and address the file by id only.
+        fileName: photo.originalFileName || photo.fileName,
         fileSize: photo.fileSize.toString(),
         fileType: photo.fileType,
+        // 'INVALID - …' means the worker proved the bytes are unusable; the grid
+        // must say "damaged" rather than keep showing "processing" forever.
+        isInvalid: isInvalidFileType(photo.fileType),
         width: photo.width,
         height: photo.height,
         hasThumbnail: !!photo.thumbnailPath,
@@ -159,6 +163,7 @@ export async function POST(
       data: {
         albumId,
         fileName: sanitizedFileName,
+        originalFileName: sanitizeDisplayFilename(fileName),
         fileSize: BigInt(fileSize),
         fileType: mimeType || 'application/octet-stream',
         storagePath,

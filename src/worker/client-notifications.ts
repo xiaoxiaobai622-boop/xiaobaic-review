@@ -86,10 +86,6 @@ export async function processClientNotifications() {
 
       logMessage(`[CLIENT]   Sending summary now...`)
 
-      if (project.notificationQueue.length === 0) {
-        continue
-      }
-
       // Get recipients with notifications enabled
       const allRecipients = await getProjectRecipients(project.id)
       const recipients = allRecipients.filter(r => r.receiveNotifications && r.email)
@@ -141,8 +137,8 @@ export async function processClientNotifications() {
         data: { clientAttempts: { increment: 1 } }
       })
 
-      const currentAttempts = project.notificationQueue[0]?.clientAttempts + 1 || 1
-      logMessage(`[CLIENT]   Attempt #${currentAttempts} for ${project.notificationQueue.length} notification(s)`)
+      const currentAttempts = validNotifications[0]?.clientAttempts + 1 || 1
+      logMessage(`[CLIENT]   Attempt #${currentAttempts} for ${validNotifications.length} notification(s)`)
 
       // Send summary to each recipient
       const result = await sendNotificationsWithRetry({

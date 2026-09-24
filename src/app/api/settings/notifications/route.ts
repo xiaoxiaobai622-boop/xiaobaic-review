@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
@@ -11,6 +12,24 @@ import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+// `secretsEncrypted` is deliberately never part of this shape; callers get `hasSecrets`.
+function serializeDestination(destination: Prisma.NotificationDestinationGetPayload<{ include: { subscriptions: true } }>) {
+  return {
+    id: destination.id,
+    name: destination.name,
+    enabled: destination.enabled,
+    provider: destination.provider,
+    config: destination.config,
+    hasSecrets: !!destination.secretsEncrypted,
+    subscriptions: destination.subscriptions.reduce<Record<string, boolean>>((acc, sub) => {
+      acc[sub.eventType] = sub.enabled
+      return acc
+    }, {}),
+    createdAt: destination.createdAt,
+    updatedAt: destination.updatedAt,
+  }
+}
 
 function buildSubscriptions(input?: Record<string, boolean> | null) {
   const enabledByEvent = new Map<string, boolean>()
@@ -62,22 +81,7 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(
-      destinations.map((dest) => ({
-        id: dest.id,
-        name: dest.name,
-        enabled: dest.enabled,
-        provider: dest.provider,
-        config: dest.config,
-        hasSecrets: !!dest.secretsEncrypted,
-        subscriptions: dest.subscriptions.reduce<Record<string, boolean>>((acc, sub) => {
-          acc[sub.eventType] = sub.enabled
-          return acc
-        }, {}),
-        createdAt: dest.createdAt,
-        updatedAt: dest.updatedAt,
-      }))
-    )
+    return NextResponse.json(destinations.map(serializeDestination))
   } catch (error) {
     logError('Error fetching notification destinations:', error)
     return NextResponse.json({ error: notificationsMessages.failedToFetchNotificationDestinations || 'Failed to fetch notification destinations' }, { status: 500 })
@@ -133,23 +137,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(
-      {
-        id: created.id,
-        name: created.name,
-        enabled: created.enabled,
-        provider: created.provider,
-        config: created.config,
-        hasSecrets: !!created.secretsEncrypted,
-        subscriptions: created.subscriptions.reduce<Record<string, boolean>>((acc, sub) => {
-          acc[sub.eventType] = sub.enabled
-          return acc
-        }, {}),
-        createdAt: created.createdAt,
-        updatedAt: created.updatedAt,
-      },
-      { status: 201 }
-    )
+    return NextResponse.json(serializeDestination(created), { status: 201 })
   } catch (error) {
     if (error instanceof Error) {
       return NextResponse.json({ error: error.message }, { status: 400 })

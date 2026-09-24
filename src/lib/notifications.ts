@@ -2,7 +2,7 @@ import { Comment } from '@prisma/client'
 import { prisma } from './db'
 import { sendCommentNotificationEmail, sendAdminCommentNotificationEmail, sendProjectApprovedEmail, sendAdminProjectApprovedEmail, getEmailSettings, sendEmail, getRecipientLocale } from './email'
 import { generateNotificationSummaryEmail, generateAdminSummaryEmail } from './email-templates'
-import { getProjectRecipients } from './recipients'
+import { getProjectRecipients, type Recipient } from './recipients'
 import { generateProjectShareUrlById } from './url'
 import { getRedis } from './redis'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
@@ -26,6 +26,47 @@ interface ApprovalNotificationContext {
   authorName?: string | null
   authorEmail?: string | null
   isComplete?: boolean // true = all videos approved, false = partial approval
+}
+
+/** A missing unsubscribe link must not block the notification, so a token failure degrades to no link. */
+function buildRecipientUnsubscribeUrl(recipient: Recipient, projectId: string, shareUrl: string): string | undefined {
+  try {
+    const token = generateRecipientUnsubscribeToken({
+      recipientId: recipient.id!,
+      projectId,
+      recipientEmail: recipient.email!,
+    })
+    return buildUnsubscribeUrl(new URL(shareUrl).origin, token)
+  } catch {
+    return undefined
+  }
+}
+
+/** Side effect: the cancelled rows are deleted from the queue while the rest are returned. */
+async function keepPendingNotifications<T extends { id: string; data: unknown }>(notifications: T[]): Promise<T[]> {
+  const redis = getRedis()
+  const pending: T[] = []
+  const cancelledIds: string[] = []
+
+  for (const notification of notifications) {
+    const commentId = (notification.data as any).commentId
+    if (commentId) {
+      const isCancelled = await redis.get(`comment_cancelled:${commentId}`)
+      if (isCancelled) {
+        cancelledIds.push(notification.id)
+        continue
+      }
+    }
+    pending.push(notification)
+  }
+
+  if (cancelledIds.length > 0) {
+    await prisma.notificationQueue.deleteMany({
+      where: { id: { in: cancelledIds } }
+    })
+  }
+
+  return pending
 }
 
 /**
@@ -67,17 +108,7 @@ export async function sendImmediateNotification(context: NotificationContext, ta
     logMessage(`[IMMEDIATE→CLIENT]   Author: ${comment.authorName || (comment.isInternal ? 'Admin' : 'Client')}`)
 
     const emailPromises = recipients.map(async (recipient) => {
-      let unsubscribeUrl: string | undefined
-      try {
-        const token = generateRecipientUnsubscribeToken({
-          recipientId: recipient.id!,
-          projectId: comment.projectId,
-          recipientEmail: recipient.email!,
-        })
-        unsubscribeUrl = buildUnsubscribeUrl(new URL(shareUrl).origin, token)
-      } catch {
-        unsubscribeUrl = undefined
-      }
+      const unsubscribeUrl = buildRecipientUnsubscribeUrl(recipient, comment.projectId, shareUrl)
 
       const recipientLocale = await getRecipientLocale(recipient.email!)
 
@@ -225,7 +256,14 @@ export async function queueNotification(
 export async function handleApprovalNotification(context: ApprovalNotificationContext) {
   const { project, video, approved, isComplete = false } = context
 
-  const type = isComplete ? 'PROJECT_APPROVED' : (approved ? 'VIDEO_APPROVED' : 'VIDEO_UNAPPROVED')
+  let type: string
+  if (isComplete) {
+    type = 'PROJECT_APPROVED'
+  } else if (approved) {
+    type = 'VIDEO_APPROVED'
+  } else {
+    type = 'VIDEO_UNAPPROVED'
+  }
 
   logMessage(`[APPROVAL] Handling ${type} for "${project.title}"`)
   if (video) {
@@ -265,17 +303,7 @@ async function sendApprovalImmediately(context: ApprovalNotificationContext) {
     logMessage(`[IMMEDIATE→CLIENT] Sending complete project approval to ${recipients.length} recipient(s)`)
 
     const emailPromises = recipients.map(async (recipient) => {
-      let unsubscribeUrl: string | undefined
-      try {
-        const token = generateRecipientUnsubscribeToken({
-          recipientId: recipient.id!,
-          projectId: project.id,
-          recipientEmail: recipient.email!,
-        })
-        unsubscribeUrl = buildUnsubscribeUrl(new URL(shareUrl).origin, token)
-      } catch {
-        unsubscribeUrl = undefined
-      }
+      const unsubscribeUrl = buildRecipientUnsubscribeUrl(recipient, project.id, shareUrl)
 
       const isApprover = authorEmail && recipient.email?.toLowerCase() === authorEmail.toLowerCase()
 
@@ -383,27 +411,7 @@ export async function flushPendingAdminNotifications(): Promise<void> {
       return
     }
 
-    const redis = getRedis()
-    const validNotifications = []
-    const cancelledIds: string[] = []
-
-    for (const notification of pendingNotifications) {
-      const commentId = (notification.data as any).commentId
-      if (commentId) {
-        const isCancelled = await redis.get(`comment_cancelled:${commentId}`)
-        if (isCancelled) {
-          cancelledIds.push(notification.id)
-          continue
-        }
-      }
-      validNotifications.push(notification)
-    }
-
-    if (cancelledIds.length > 0) {
-      await prisma.notificationQueue.deleteMany({
-        where: { id: { in: cancelledIds } }
-      })
-    }
+    const validNotifications = await keepPendingNotifications(pendingNotifications)
 
     if (validNotifications.length === 0) {
       logMessage('[FLUSH-ADMIN] All pending notifications were cancelled')
@@ -505,27 +513,7 @@ export async function flushPendingClientNotifications(projectId: string): Promis
       return
     }
 
-    const redis = getRedis()
-    const validNotifications = []
-    const cancelledIds: string[] = []
-
-    for (const notification of project.notificationQueue) {
-      const commentId = (notification.data as any).commentId
-      if (commentId) {
-        const isCancelled = await redis.get(`comment_cancelled:${commentId}`)
-        if (isCancelled) {
-          cancelledIds.push(notification.id)
-          continue
-        }
-      }
-      validNotifications.push(notification)
-    }
-
-    if (cancelledIds.length > 0) {
-      await prisma.notificationQueue.deleteMany({
-        where: { id: { in: cancelledIds } }
-      })
-    }
+    const validNotifications = await keepPendingNotifications(project.notificationQueue)
 
     if (validNotifications.length === 0) {
       logMessage(`[FLUSH-CLIENT] All pending notifications were cancelled for project ${projectId}`)
@@ -550,17 +538,7 @@ export async function flushPendingClientNotifications(projectId: string): Promis
     logMessage(`[FLUSH-CLIENT] Sending ${validNotifications.length} queued notification(s) to ${recipients.length} recipient(s) for "${project.title}"`)
 
     for (const recipient of recipients) {
-      let unsubscribeUrl: string | undefined
-      try {
-        const token = generateRecipientUnsubscribeToken({
-          recipientId: recipient.id!,
-          projectId: project.id,
-          recipientEmail: recipient.email!,
-        })
-        unsubscribeUrl = buildUnsubscribeUrl(new URL(shareUrl).origin, token)
-      } catch {
-        unsubscribeUrl = undefined
-      }
+      const unsubscribeUrl = buildRecipientUnsubscribeUrl(recipient, project.id, shareUrl)
 
       const summaryEmail = await generateNotificationSummaryEmail({
         companyName,

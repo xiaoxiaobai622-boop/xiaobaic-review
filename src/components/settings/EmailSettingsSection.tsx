@@ -3,9 +3,14 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { PasswordInput } from '@/components/ui/password-input'
 import { ScheduleSelector } from '@/components/ScheduleSelector'
-import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import { Send, Loader2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+
+const SMTP_SECURE_MODES = [
+  { value: 'STARTTLS', labelKey: 'starttls', hintKey: 'starttlsHint', hintClassName: 'text-muted-foreground' },
+  { value: 'TLS', labelKey: 'tls', hintKey: 'tlsHint', hintClassName: 'text-muted-foreground' },
+  { value: 'NONE', labelKey: 'noEncryption', hintKey: 'noEncryptionHint', hintClassName: 'text-destructive' },
+] as const
 
 export interface EmailSettingsContentProps {
   // SMTP Settings
@@ -36,13 +41,6 @@ export interface EmailSettingsContentProps {
   setAdminNotificationTime: (value: string) => void
   adminNotificationDay: number
   setAdminNotificationDay: (value: number) => void
-}
-
-interface EmailSettingsSectionProps extends EmailSettingsContentProps {
-
-  // Collapsible state
-  show: boolean
-  setShow: (value: boolean) => void
 }
 
 export function EmailSettingsContent({
@@ -112,62 +110,26 @@ export function EmailSettingsContent({
         <div className="space-y-2">
           <Label>{t('email.security')}</Label>
           <div className="space-y-3 p-4 bg-muted/50 rounded-md border border-border">
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="radio"
-                name="smtpSecure"
-                value="STARTTLS"
-                checked={smtpSecure === 'STARTTLS'}
-                onChange={(e) => setSmtpSecure(e.target.value)}
-                className="mt-1 h-4 w-4 text-primary focus:ring-primary"
-              />
-              <div className="flex-1">
-                <div className="font-medium text-sm group-hover:text-primary transition-colors">
-                  {t('email.starttls')}
+            {SMTP_SECURE_MODES.map((mode) => (
+              <label key={mode.value} className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="radio"
+                  name="smtpSecure"
+                  value={mode.value}
+                  checked={smtpSecure === mode.value}
+                  onChange={(e) => setSmtpSecure(e.target.value)}
+                  className="mt-1 h-4 w-4 text-primary focus:ring-primary"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-sm group-hover:text-primary transition-colors">
+                    {t(`email.${mode.labelKey}`)}
+                  </div>
+                  <div className={`text-xs ${mode.hintClassName} mt-1`}>
+                    {t(`email.${mode.hintKey}`)}
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {t('email.starttlsHint')}
-                </div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="radio"
-                name="smtpSecure"
-                value="TLS"
-                checked={smtpSecure === 'TLS'}
-                onChange={(e) => setSmtpSecure(e.target.value)}
-                className="mt-1 h-4 w-4 text-primary focus:ring-primary"
-              />
-              <div className="flex-1">
-                <div className="font-medium text-sm group-hover:text-primary transition-colors">
-                  {t('email.tls')}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {t('email.tlsHint')}
-                </div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="radio"
-                name="smtpSecure"
-                value="NONE"
-                checked={smtpSecure === 'NONE'}
-                onChange={(e) => setSmtpSecure(e.target.value)}
-                className="mt-1 h-4 w-4 text-primary focus:ring-primary"
-              />
-              <div className="flex-1">
-                <div className="font-medium text-sm group-hover:text-primary transition-colors">
-                  {t('email.noEncryption')}
-                </div>
-                <div className="text-xs text-destructive mt-1">
-                  {t('email.noEncryptionHint')}
-                </div>
-              </div>
-            </label>
+              </label>
+            ))}
           </div>
         </div>
 
@@ -260,21 +222,5 @@ export function EmailSettingsContent({
           />
         </div>
     </div>
-  )
-}
-
-export function EmailSettingsSection({ show, setShow, ...contentProps }: EmailSettingsSectionProps) {
-  const t = useTranslations('settings')
-  return (
-    <CollapsibleSection
-      className="border-border"
-      title={t('email.title')}
-      description={t('email.description')}
-      open={show}
-      onOpenChange={setShow}
-      contentClassName="space-y-4 border-t pt-4"
-    >
-      <EmailSettingsContent {...contentProps} />
-    </CollapsibleSection>
   )
 }

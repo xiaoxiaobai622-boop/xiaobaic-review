@@ -49,6 +49,10 @@ export function usePhotoUploadQueue({
     queueRef.current = queue
   }, [queue])
 
+  const patchUpload = useCallback((uploadId: string, patch: Partial<QueuedPhotoUpload>) => {
+    setQueue(prev => prev.map(u => (u.id === uploadId ? { ...u, ...patch } : u)))
+  }, [])
+
   const addToQueue = useCallback((file: File, targetAlbumId?: string): string => {
     const uploadId = `photo-upload-${crypto.randomUUID()}`
 
@@ -86,9 +90,7 @@ export function usePhotoUploadQueue({
     if (!upload || upload.status === 'uploading') return
 
     try {
-      setQueue(prev => prev.map(u =>
-        u.id === uploadId ? { ...u, status: 'uploading' as const, error: null } : u
-      ))
+      patchUpload(uploadId, { status: 'uploading', error: null })
 
       const targetAlbumId = upload.albumId
       const response = await apiPost(`/api/projects/${projectId}/photo-albums/${targetAlbumId}/photos`, {
@@ -116,25 +118,17 @@ export function usePhotoUploadQueue({
           {
             onProgress: (bytesUploaded, bytesTotal) => {
               const percentage = Math.round((bytesUploaded / bytesTotal) * 100)
-              setQueue(prev => prev.map(u =>
-                u.id === uploadId ? { ...u, progress: percentage } : u
-              ))
+              patchUpload(uploadId, { progress: percentage })
             },
             onSuccess: () => {
-              setQueue(prev => prev.map(u =>
-                u.id === uploadId
-                  ? { ...u, status: 'completed' as const, progress: 100, photoId }
-                  : u
-              ))
+              patchUpload(uploadId, { status: 'completed', progress: 100, photoId })
               s3AbortKeysMap.current.delete(uploadId)
               photoIdsMap.current.delete(uploadId)
               onUploadComplete?.()
             },
             onError: async (err) => {
               await deletePhotoRecord()
-              setQueue(prev => prev.map(u =>
-                u.id === uploadId ? { ...u, status: 'error' as const, error: err.message } : u
-              ))
+              patchUpload(uploadId, { status: 'error', error: err.message })
               s3AbortKeysMap.current.delete(uploadId)
               photoIdsMap.current.delete(uploadId)
             },
@@ -160,18 +154,12 @@ export function usePhotoUploadQueue({
 
           onProgress: (bytesUploaded, bytesTotal) => {
             const percentage = Math.round((bytesUploaded / bytesTotal) * 100)
-            setQueue(prev => prev.map(u =>
-              u.id === uploadId ? { ...u, progress: percentage } : u
-            ))
+            patchUpload(uploadId, { progress: percentage })
           },
 
           onSuccess: () => {
             resetTusAuthRetry(tusRef.current)
-            setQueue(prev => prev.map(u =>
-              u.id === uploadId
-                ? { ...u, status: 'completed' as const, progress: 100, photoId }
-                : u
-            ))
+            patchUpload(uploadId, { status: 'completed', progress: 100, photoId })
             uploadRefsMap.current.delete(uploadId)
             photoIdsMap.current.delete(uploadId)
             onUploadComplete?.()
@@ -180,9 +168,7 @@ export function usePhotoUploadQueue({
           onError: async (error) => {
             const errorMessage = getTusUploadErrorMessage(error)
             await deletePhotoRecord()
-            setQueue(prev => prev.map(u =>
-              u.id === uploadId ? { ...u, status: 'error' as const, error: errorMessage } : u
-            ))
+            patchUpload(uploadId, { status: 'error', error: errorMessage })
             resetTusAuthRetry(tusRef.current)
             uploadRefsMap.current.delete(uploadId)
             photoIdsMap.current.delete(uploadId)
@@ -205,11 +191,9 @@ export function usePhotoUploadQueue({
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Upload failed'
-      setQueue(prev => prev.map(u =>
-        u.id === uploadId ? { ...u, status: 'error' as const, error: errorMessage } : u
-      ))
+      patchUpload(uploadId, { status: 'error', error: errorMessage })
     }
-  }, [projectId, onUploadComplete, storageProvider, startS3Upload])
+  }, [projectId, onUploadComplete, storageProvider, startS3Upload, patchUpload])
 
   useEffect(() => {
     const currentUploading = queue.filter(u => u.status === 'uploading').length
@@ -249,23 +233,9 @@ export function usePhotoUploadQueue({
     setQueue(prev => prev.filter(u => u.id !== uploadId))
   }, [projectId, abortS3Upload, storageProvider])
 
-  const clearFinished = useCallback(() => {
-    setQueue(prev => prev.filter(u => u.status === 'queued' || u.status === 'uploading'))
-  }, [])
-
-  const stats = {
-    total: queue.length,
-    queued: queue.filter(u => u.status === 'queued').length,
-    uploading: queue.filter(u => u.status === 'uploading').length,
-    completed: queue.filter(u => u.status === 'completed').length,
-    error: queue.filter(u => u.status === 'error').length,
-  }
-
   return {
     queue,
-    stats,
     addToQueue,
     cancelUpload,
-    clearFinished,
   }
 }

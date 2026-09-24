@@ -5,7 +5,7 @@ import { appConfirm } from '@/components/AppDialogProvider'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import {
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderPlus, ImageIcon, Loader2, Pencil, Plus, Star, Trash2, Upload, X,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderPlus, ImageIcon, ImageOff, Loader2, Pencil, Plus, Star, Trash2, Upload, X,
 } from 'lucide-react'
 import { formatFileSize } from '@/lib/utils'
 import { Button } from './ui/button'
@@ -138,9 +138,10 @@ export default function PhotoAlbumsBlock({ projectId, sortMode = 'date', onCount
     }
   }, [selectedAlbum, fetchPhotos])
 
-  // Poll while thumbnails are still being generated
+  // Poll while thumbnails are still being generated — a photo the worker proved
+  // undecodable will never gain one, so it must not keep this loop alive.
   useEffect(() => {
-    if (!selectedAlbum || !photos.some(p => !p.hasThumbnail)) return
+    if (!selectedAlbum || !photos.some(p => !p.hasThumbnail && !p.isInvalid)) return
     const interval = setInterval(() => fetchPhotos(selectedAlbum.id), 4000)
     return () => clearInterval(interval)
   }, [selectedAlbum, photos, fetchPhotos])
@@ -514,6 +515,13 @@ export default function PhotoAlbumsBlock({ projectId, sortMode = 'date', onCount
                                     loading="lazy"
                                     className="w-20 h-12 rounded-md object-cover border border-border bg-muted"
                                   />
+                                ) : photo.isInvalid ? (
+                                  <div
+                                    className="w-20 h-12 rounded-md border border-dashed border-destructive/40 bg-muted flex items-center justify-center"
+                                    title={t('corruptPhotoHint')}
+                                  >
+                                    <ImageOff className="w-4 h-4 text-destructive" />
+                                  </div>
                                 ) : (
                                   <div className="w-20 h-12 rounded-md border border-border bg-muted flex items-center justify-center">
                                     <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -525,6 +533,7 @@ export default function PhotoAlbumsBlock({ projectId, sortMode = 'date', onCount
                                 <p className="text-xs text-muted-foreground">
                                   {formatFileSize(Number(photo.fileSize))}
                                   {photo.width && photo.height ? ` • ${photo.width}×${photo.height}` : ''}
+                                  {photo.isInvalid && <span className="text-destructive"> • {t('corruptPhoto')}</span>}
                                 </p>
                               </div>
                               <div className="flex items-center gap-1 flex-shrink-0">

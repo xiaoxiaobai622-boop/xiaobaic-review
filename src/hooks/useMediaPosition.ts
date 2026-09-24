@@ -79,6 +79,15 @@ export function useMediaPosition(
       sync()
     }
     const handleImmediateUpdate = () => sync(true)
+    const mediaEvents: Array<[string, EventListener]> = [
+      ['timeupdate', handleTimeUpdate],
+      ['seeked', handleImmediateUpdate],
+      ['playing', handleImmediateUpdate],
+      ['pause', handleImmediateUpdate],
+      ['ended', handleImmediateUpdate],
+      ['loadedmetadata', handleImmediateUpdate],
+    ]
+
     const handleSeekRequested = (event: Event) => {
       const detail = (event as CustomEvent<{ time?: number; videoId?: string | null }>).detail
       if (!detail || !isSameVideo(detail.videoId) || !Number.isFinite(detail.time)) return
@@ -86,23 +95,13 @@ export function useMediaPosition(
       setPosition(getNormalizedSeekTarget(pendingSeekTarget))
     }
 
-    video.addEventListener('timeupdate', handleTimeUpdate)
-    video.addEventListener('seeked', handleImmediateUpdate)
-    video.addEventListener('playing', handleImmediateUpdate)
-    video.addEventListener('pause', handleImmediateUpdate)
-    video.addEventListener('ended', handleImmediateUpdate)
-    video.addEventListener('loadedmetadata', handleImmediateUpdate)
-    window.addEventListener('videoSeekRequested', handleSeekRequested as EventListener)
+    for (const [type, handler] of mediaEvents) video.addEventListener(type, handler)
+    window.addEventListener('videoSeekRequested', handleSeekRequested)
     sync(true)
 
     return () => {
-      video.removeEventListener('timeupdate', handleTimeUpdate)
-      video.removeEventListener('seeked', handleImmediateUpdate)
-      video.removeEventListener('playing', handleImmediateUpdate)
-      video.removeEventListener('pause', handleImmediateUpdate)
-      video.removeEventListener('ended', handleImmediateUpdate)
-      video.removeEventListener('loadedmetadata', handleImmediateUpdate)
-      window.removeEventListener('videoSeekRequested', handleSeekRequested as EventListener)
+      for (const [type, handler] of mediaEvents) video.removeEventListener(type, handler)
+      window.removeEventListener('videoSeekRequested', handleSeekRequested)
     }
   }, [attachmentKey, videoRef])
 

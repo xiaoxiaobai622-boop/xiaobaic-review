@@ -8,10 +8,26 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { createPhoneOnlyEmail } from '@/lib/user-contact'
 export const runtime = 'nodejs'
 
-
-
 // Prevent static generation for this route
 export const dynamic = 'force-dynamic'
+
+// Shared by GET and POST so the returned user shape, which omits the password
+// column, is defined in exactly one place.
+const USER_SUMMARY_SELECT = {
+  id: true,
+  email: true,
+  phone: true,
+  username: true,
+  name: true,
+  role: true,
+  isPlatformAdmin: true,
+  projectAccessScope: true,
+  projectMemberships: {
+    select: { project: { select: { id: true, title: true, projectCode: true } } },
+  },
+  createdAt: true,
+  updatedAt: true,
+} as const
 
 // GET /api/users - List all users
 export async function GET(request: NextRequest) {
@@ -37,22 +53,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        phone: true,
-        username: true,
-        name: true,
-        role: true,
-        isPlatformAdmin: true,
-        projectAccessScope: true,
-        projectMemberships: {
-          select: { project: { select: { id: true, title: true, projectCode: true } } },
-        },
-        createdAt: true,
-        updatedAt: true,
-        // Exclude password from response
-      },
+      select: USER_SUMMARY_SELECT,
       orderBy: {
         createdAt: 'desc',
       },
@@ -170,35 +171,21 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await prisma.user.create({
-        data: {
-          email: resolvedEmail,
-          phone: phone || null,
-          username: username || null,
-          password: hashedPassword,
-          name: name || null,
-          role,
-          isPlatformAdmin,
-          projectAccessScope,
-          projectMemberships: projectAccessScope === 'ASSIGNED_ONLY'
-            ? { create: projectIds.map((projectId) => ({ projectId })) }
-            : undefined,
-        },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          username: true,
-          name: true,
-          role: true,
-          isPlatformAdmin: true,
-          projectAccessScope: true,
-          projectMemberships: {
-            select: { project: { select: { id: true, title: true, projectCode: true } } },
-          },
-          createdAt: true,
-          updatedAt: true,
-        },
-      })
+      data: {
+        email: resolvedEmail,
+        phone: phone || null,
+        username: username || null,
+        password: hashedPassword,
+        name: name || null,
+        role,
+        isPlatformAdmin,
+        projectAccessScope,
+        projectMemberships: projectAccessScope === 'ASSIGNED_ONLY'
+          ? { create: projectIds.map((projectId) => ({ projectId })) }
+          : undefined,
+      },
+      select: USER_SUMMARY_SELECT,
+    })
 
     return NextResponse.json({ user }, { status: 201 })
   } catch (error) {

@@ -78,7 +78,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (language !== undefined) {
       const contactLanguage = language?.trim() || null
-      if (contactLanguage && !SUPPORTED_LOCALES.includes(contactLanguage as any)) {
+      if (contactLanguage && !(SUPPORTED_LOCALES as readonly string[]).includes(contactLanguage)) {
         return NextResponse.json({ error: contactMessages?.unsupportedLanguage || 'Unsupported language' }, { status: 400 })
       }
       updateData.language = contactLanguage

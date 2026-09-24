@@ -5,6 +5,7 @@ import { canAdministerProject } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getFilePath, deleteFile, isS3Mode, createWebReadableStream } from '@/lib/storage'
 import { contentDispositionAttachment } from '@/lib/download-names'
+import { sanitizeContentType } from '@/lib/file-validation'
 import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { createReadStream } from 'fs'
@@ -90,6 +91,7 @@ export async function GET(
     }
 
     // ── S3 mode: redirect directly to presigned URL ──────────────────────────
+    const displayName = asset.originalFileName || asset.fileName
     if (isS3Mode()) {
       const exists = await s3FileExists(asset.storagePath)
       if (!exists) {
@@ -98,8 +100,8 @@ export async function GET(
       const presignedUrl = await s3GetPresignedDownloadUrl(
         asset.storagePath,
         3600,
-        asset.fileName,
-        asset.fileType
+        displayName,
+        sanitizeContentType(asset.fileType)
       )
       return NextResponse.redirect(presignedUrl, {
         status: 302,
@@ -133,8 +135,8 @@ export async function GET(
       return new NextResponse(readableStream, {
         status: 206,
         headers: {
-          'Content-Type': asset.fileType,
-          'Content-Disposition': contentDispositionAttachment(asset.fileName),
+          'Content-Type': sanitizeContentType(asset.fileType),
+          'Content-Disposition': contentDispositionAttachment(displayName),
           'Content-Length': chunkSize.toString(),
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Accept-Ranges': 'bytes',
@@ -149,8 +151,8 @@ export async function GET(
 
     return new NextResponse(readableStream, {
       headers: {
-        'Content-Type': asset.fileType,
-        'Content-Disposition': contentDispositionAttachment(asset.fileName),
+        'Content-Type': sanitizeContentType(asset.fileType),
+        'Content-Disposition': contentDispositionAttachment(displayName),
         'Content-Length': stat.size.toString(),
         'Accept-Ranges': 'bytes',
         'X-Content-Type-Options': 'nosniff',

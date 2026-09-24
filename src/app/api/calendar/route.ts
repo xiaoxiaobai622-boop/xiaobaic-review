@@ -36,17 +36,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: calendarMessages.invalidToDateParameter || 'Invalid "to" date parameter' }, { status: 400 })
     }
 
-    const where: any = { dueDate: { not: null } }
-    if (from || to) {
-      where.dueDate = { ...where.dueDate }
-      if (from) where.dueDate.gte = new Date(from)
-      if (to) where.dueDate.lte = new Date(to)
-    }
+    const dueDate: { not: null; gte?: Date; lte?: Date } = { not: null }
+    if (from) dueDate.gte = new Date(from)
+    if (to) dueDate.lte = new Date(to)
 
     const projects = await prisma.project.findMany({
       where: {
         ...projectAccessWhere(authResult, getRequestedTeamId(request)),
-        ...where,
+        dueDate,
       },
       select: {
         id: true,

@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       profileSyncError,
       boundAt: binding.createdAt.toISOString(),
     })
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: 'Failed to fetch binding status' },
       { status: 500 }

@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
               },
             })
           }
-        } catch (e) {
+        } catch {
           // Invalid token, continue
         }
       }
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
     })
 
     return response
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: 'Failed to initiate Feishu authorization' },
       { status: 500 }

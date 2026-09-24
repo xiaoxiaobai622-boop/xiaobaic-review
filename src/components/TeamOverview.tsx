@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Activity, Check, CircleDot, FolderKanban, HardDrive, Users } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiFetch } from '@/lib/api-client'
@@ -118,10 +118,10 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
       ]
     : []
 
-  const legend = useMemo(() => (data ? [
+  const legend = data ? [
     ['使用中', formatBytes(liveBytes), 'bg-primary'],
     ['回收站（7 天内可恢复）', formatBytes(recycleBinBytes), 'bg-muted-foreground'],
-  ] : []), [data, liveBytes, recycleBinBytes])
+  ] : []
 
   return (
     <section aria-labelledby="team-overview-heading" className="space-y-4">

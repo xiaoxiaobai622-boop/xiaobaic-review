@@ -5,7 +5,7 @@ import { getClientIpAddress } from '@/lib/utils'
 import type { AuthenticationResponseJSON } from '@simplewebauthn/browser'
 import { issueAdminTokens } from '@/lib/auth'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
-import { getAppUrl } from '@/lib/url'
+import { getAppUrl, buildFailedLoginLink } from '@/lib/url'
 import { safeParseBody } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limit tied to IP for usernameless auth
-    const rateLimitKey = getClientIpAddress(request)
-    const rateLimitCheck = await checkRateLimit(request, 'login', rateLimitKey)
+    const ipAddress = getClientIpAddress(request)
+    const rateLimitCheck = await checkRateLimit(request, 'login', ipAddress)
     if (rateLimitCheck.limited) {
       return NextResponse.json(
         {
@@ -55,54 +55,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const ipAddress = getClientIpAddress(request)
-
     const result = await verifyPasskeyAuthentication(response, sessionId, ipAddress)
 
     if (!result.success || !result.user) {
-      const { lockedOut } = await incrementRateLimit(request, 'login', rateLimitKey)
+      const { lockedOut } = await incrementRateLimit(request, 'login', ipAddress)
 
       if (lockedOut) {
+        const lockoutBody = authMessages.adminLoginLockedOutAfterTooManyAttempts || 'Admin login locked out after too many failed attempts'
         void enqueueExternalNotification({
           eventType: 'SECURITY_ALERT',
           title: authMessages.securityAlertTitle || 'Security Alert',
-          body: authMessages.adminLoginLockedOutAfterTooManyAttempts || 'Admin login locked out after too many failed attempts',
+          body: lockoutBody,
           notifyType: 'failure',
           pushData: {
             ip: ipAddress,
             title: authMessages.securityAlertTitle || 'Security Alert',
-            body: authMessages.adminLoginLockedOutAfterTooManyAttempts || 'Admin login locked out after too many failed attempts',
+            body: lockoutBody,
           },
         }).catch(() => {})
       } else {
+        const baseUrl = await getAppUrl(request).catch(() => '')
+        const link = buildFailedLoginLink(request, baseUrl)
+        const attemptBody = authMessages.someoneTriedToLogInViaPasskey || 'Someone tried to log in via passkey'
         void enqueueExternalNotification({
           eventType: 'ADMIN_ACCESS',
           title: authMessages.failedLoginAttemptTitle || 'Failed Login Attempt',
-          body: await (async () => {
-            const baseUrl = await getAppUrl(request).catch(() => '')
-            const fallbackLink = baseUrl ? `${baseUrl}/login` : null
-            const referer = request.headers.get('referer') || ''
-            const link = (() => {
-              if (!baseUrl || !referer) return fallbackLink
-              try {
-                const ref = new URL(referer)
-                if (ref.origin !== baseUrl) return fallbackLink
-                if (ref.pathname !== '/login') return fallbackLink
-                const returnUrl = ref.searchParams.get('returnUrl')
-                if (!returnUrl) return fallbackLink
-                return `${baseUrl}/login?returnUrl=${encodeURIComponent(returnUrl)}`
-              } catch {
-                return fallbackLink
-              }
-            })()
-
-            return [authMessages.someoneTriedToLogInViaPasskey || 'Someone tried to log in via passkey', link ? `Link: ${link}` : null].filter(Boolean).join('\n')
-          })(),
+          body: [attemptBody, link ? `Link: ${link}` : null].filter(Boolean).join('\n'),
           notifyType: 'warning',
           pushData: {
             ip: ipAddress,
             title: authMessages.failedLoginAttemptTitle || 'Failed Login Attempt',
-            body: authMessages.someoneTriedToLogInViaPasskey || 'Someone tried to log in via passkey',
+            body: attemptBody,
           },
         }).catch(() => {})
       }
@@ -114,23 +97,24 @@ export async function POST(request: NextRequest) {
     }
 
     // SUCCESSFUL LOGIN: Clear rate limit
-    await clearRateLimit(request, 'login', rateLimitKey)
+    await clearRateLimit(request, 'login', ipAddress)
 
     const fingerprint = getAdminDeviceFingerprint(request)
     const tokens = await issueAdminTokens(result.user, fingerprint)
 
+    const loginBody = authMessages.userLoggedInViaPasskey?.replace('{user}', result.user.name || result.user.email)
+      || `${result.user.name || result.user.email} logged in via passkey`
+
     void enqueueExternalNotification({
       eventType: 'ADMIN_ACCESS',
       title: authMessages.adminLogin || 'Admin Login',
-      body: authMessages.userLoggedInViaPasskey?.replace('{user}', result.user.name || result.user.email)
-        || `${result.user.name || result.user.email} logged in via passkey`,
+      body: loginBody,
       notifyType: 'info',
       pushData: {
         email: result.user.email,
         ip: ipAddress,
         title: authMessages.adminLogin || 'Admin Login',
-        body: authMessages.userLoggedInViaPasskey?.replace('{user}', result.user.name || result.user.email)
-          || `${result.user.name || result.user.email} logged in via passkey`,
+        body: loginBody,
       },
     }).catch(() => {})
 

@@ -3,6 +3,7 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import { initStorage, uploadFile, deleteFile, getFilePath } from '@/lib/storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
+import { ACCENT_PRESET_KEYS } from '@/lib/accent'
 import fs from 'fs/promises'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -15,7 +16,6 @@ const MAX_SIZE_BYTES = 300 * 1024
 const STORAGE_PATH = 'branding/logo.svg'
 const PNG_CACHE_PATH = 'branding/logo.png'
 const DEFAULT_CACHE_PREFIX = 'branding/default-logo-'
-const VALID_ACCENT_COLORS = ['blue', 'purple', 'green', 'orange', 'red', 'pink', 'teal', 'amber', 'stone', 'gold']
 
 /**
  * Clear all cached logo PNGs (custom and default)
@@ -29,8 +29,8 @@ async function clearAllLogoPngCaches(): Promise<void> {
     // Ignore if doesn't exist
   }
   
-  // Delete all default logo PNG caches (one per accent color)
-  for (const color of VALID_ACCENT_COLORS) {
+  // Delete all default logo PNG caches (one per accent colour)
+  for (const color of ACCENT_PRESET_KEYS) {
     try {
       await fs.unlink(getFilePath(`${DEFAULT_CACHE_PREFIX}${color}.png`))
     } catch {

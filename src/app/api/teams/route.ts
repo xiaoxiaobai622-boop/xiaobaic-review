@@ -5,7 +5,6 @@ import { randomBytes } from 'crypto'
 import { TRIAL_PLAN, UNACTIVATED_PLAN, TRIAL_QUOTA } from '@/lib/platform-access'
 import {
   checkWechatText,
-  CONTENT_SECURITY_ERROR,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
 

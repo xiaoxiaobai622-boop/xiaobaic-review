@@ -5,7 +5,7 @@ import { validateRequest, loginSchema, safeParseBody } from '@/lib/validation'
 import { logSecurityEvent } from '@/lib/video-access'
 import { getClientIpAddress } from '@/lib/utils'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
-import { getAppUrl } from '@/lib/url'
+import { getAppUrl, buildFailedLoginLink } from '@/lib/url'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { getAdminDeviceFingerprint } from '@/lib/studio-device'
 export const runtime = 'nodejs'
@@ -90,58 +90,41 @@ export async function POST(request: NextRequest) {
 
       if (lockedOut) {
         // Lockout just triggered — send SECURITY_ALERT (not ADMIN_ACCESS)
+        const lockoutBody = authMessages.adminLoginLockedOutForEmailAfterTooManyAttempts?.replace('{email}', email)
+          || `Admin login locked out for ${email} after too many failed attempts`
         void enqueueExternalNotification({
           eventType: 'SECURITY_ALERT',
           title: authMessages.securityAlertTitle || 'Security Alert',
-          body: authMessages.adminLoginLockedOutForEmailAfterTooManyAttempts?.replace('{email}', email)
-            || `Admin login locked out for ${email} after too many failed attempts`,
+          body: lockoutBody,
           notifyType: 'failure',
           pushData: {
             email,
             ip: ipAddress,
             title: authMessages.securityAlertTitle || 'Security Alert',
-            body: authMessages.adminLoginLockedOutForEmailAfterTooManyAttempts?.replace('{email}', email)
-              || `Admin login locked out for ${email} after too many failed attempts`,
+            body: lockoutBody,
           },
         }).catch(() => {})
       } else {
         // Normal failed attempt — send ADMIN_ACCESS warning
+        const baseUrl = await getAppUrl(request).catch(() => '')
+        const link = buildFailedLoginLink(request, baseUrl)
+        const attemptBody = authMessages.someoneTriedToLogInWithEmailViaPassword?.replace('{email}', email)
+          || `Someone tried to log in with ${email} via password`
         void enqueueExternalNotification({
           eventType: 'ADMIN_ACCESS',
           title: authMessages.failedLoginAttemptTitle || 'Failed Login Attempt',
-          body: await (async () => {
-            const baseUrl = await getAppUrl(request).catch(() => '')
-            const fallbackLink = baseUrl ? `${baseUrl}/login` : null
-            const referer = request.headers.get('referer') || ''
-            const link = (() => {
-              if (!baseUrl || !referer) return fallbackLink
-              try {
-                const ref = new URL(referer)
-                if (ref.origin !== baseUrl) return fallbackLink
-                if (ref.pathname !== '/login') return fallbackLink
-                const returnUrl = ref.searchParams.get('returnUrl')
-                if (!returnUrl) return fallbackLink
-                return `${baseUrl}/login?returnUrl=${encodeURIComponent(returnUrl)}`
-              } catch {
-                return fallbackLink
-              }
-            })()
-
-            return [
-              authMessages.someoneTriedToLogInWithEmailViaPassword?.replace('{email}', email)
-                || `Someone tried to log in with ${email} via password`,
-              link ? `Link: ${link}` : null,
-            ]
-              .filter(Boolean)
-              .join('\n')
-          })(),
+          body: [
+            attemptBody,
+            link ? `Link: ${link}` : null,
+          ]
+            .filter(Boolean)
+            .join('\n'),
           notifyType: 'warning',
           pushData: {
             email,
             ip: ipAddress,
             title: authMessages.failedLoginAttemptTitle || 'Failed Login Attempt',
-            body: authMessages.someoneTriedToLogInWithEmailViaPassword?.replace('{email}', email)
-              || `Someone tried to log in with ${email} via password`,
+            body: attemptBody,
           },
         }).catch(() => {})
       }
@@ -170,18 +153,19 @@ export async function POST(request: NextRequest) {
       wasBlocked: false,
     })
 
+    const loginBody = authMessages.userLoggedInViaPassword?.replace('{user}', user.name || user.email)
+      || `${user.name || user.email} logged in via password`
+
     void enqueueExternalNotification({
       eventType: 'ADMIN_ACCESS',
       title: authMessages.adminLogin || 'Admin Login',
-      body: authMessages.userLoggedInViaPassword?.replace('{user}', user.name || user.email)
-        || `${user.name || user.email} logged in via password`,
+      body: loginBody,
       notifyType: 'info',
       pushData: {
         email: user.email,
         ip: ipAddress,
         title: authMessages.adminLogin || 'Admin Login',
-        body: authMessages.userLoggedInViaPassword?.replace('{user}', user.name || user.email)
-          || `${user.name || user.email} logged in via password`,
+        body: loginBody,
       },
     }).catch(() => {})
 

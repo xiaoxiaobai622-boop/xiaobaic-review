@@ -41,7 +41,7 @@ export default function ForgotPasswordPage() {
         setStatus('error')
         setMessage(data.error || t('somethingWrong'))
       }
-    } catch (error) {
+    } catch {
       setStatus('error')
       setMessage(t('unableToProcess'))
     }

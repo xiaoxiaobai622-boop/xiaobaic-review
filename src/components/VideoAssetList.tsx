@@ -12,6 +12,7 @@ import {
   FileText,
   File,
   FileArchive,
+  FileWarning,
   ImagePlay,
   Trash2,
   Loader2,
@@ -31,8 +32,10 @@ import { AssetCopyMoveModal } from './AssetCopyMoveModal'
 interface VideoAsset {
   id: string
   fileName: string
+  originalFileName: string | null
   fileSize: string
   fileType: string
+  isInvalid: boolean
   category: string | null
   uploadedBy: string | null
   createdAt: string
@@ -122,6 +125,9 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
   }
 
   const canSetAsThumbnail = (asset: VideoAsset) => {
+    // The API rejects undecodable files with 400, so offering the action would lie
+    if (asset.isInvalid) return false
+
     const fileType = asset.fileType?.toLowerCase() || ''
     const fileName = asset.fileName.toLowerCase()
     const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : ''
@@ -141,6 +147,10 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
     const fileType = asset.fileType?.toLowerCase() || ''
     const fileName = asset.fileName.toLowerCase()
     const category = asset.category?.toLowerCase() || ''
+
+    if (asset.isInvalid) {
+      return <FileWarning className="h-5 w-5 text-destructive flex-shrink-0" />
+    }
 
     if (category === 'thumbnail' || fileType.startsWith('image/')) {
       return <FileImage className="h-5 w-5 text-muted-foreground flex-shrink-0" />
@@ -398,11 +408,19 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
               </button>
               {getAssetIcon(asset)}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{asset.fileName}</p>
+                <p className="text-sm font-medium truncate">{asset.originalFileName || asset.fileName}</p>
                 <div className="flex gap-3 text-xs text-muted-foreground items-center">
                   <span>{formatFileSizeBigInt(asset.fileSize)}</span>
                   <span>•</span>
                   <span>{getCategoryLabel(asset.category)}</span>
+                  {asset.isInvalid && (
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive"
+                      title={t('corruptAssetHint')}
+                    >
+                      {t('corruptAsset')}
+                    </span>
+                  )}
                   {asset.uploadedBy === 'client' && (
                     <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
                       {t('clientUpload')}
@@ -440,7 +458,7 @@ export function VideoAssetList({ videoId, videoName, versionLabel, projectId, on
                   type="button"
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleDelete(asset.id, asset.fileName)}
+                  onClick={() => handleDelete(asset.id, asset.originalFileName || asset.fileName)}
                   disabled={deletingId === asset.id}
                   title={t('deleteAsset')}
                 >

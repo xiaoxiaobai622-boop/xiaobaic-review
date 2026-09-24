@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getFilePath } from '@/lib/storage'
 import { prisma } from '@/lib/db'
+import { accentCacheKey, accentToHex } from '@/lib/accent'
 import fs from 'fs/promises'
 import sharp from 'sharp'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -14,18 +15,14 @@ const STORAGE_PATH = 'branding/logo.svg'
 const CACHE_PATH = 'branding/logo.png'
 const DEFAULT_CACHE_PREFIX = 'branding/default-logo-'
 
-// Accent color hex values (must match email.ts)
-const ACCENT_COLOR_HEX: Record<string, string> = {
-  blue: '#007AFF',
-  purple: '#8B5CF6',
-  green: '#22C55E',
-  orange: '#F97316',
-  red: '#EF4444',
-  pink: '#EC4899',
-  teal: '#14B8A6',
-  amber: '#F59E0B',
-  stone: '#9d9487',
-  gold: '#DEC091',
+function pngResponse(png: Buffer): NextResponse {
+  return new NextResponse(new Uint8Array(png), {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=3600, must-revalidate',
+    },
+  })
 }
 
 /**
@@ -64,13 +61,7 @@ export async function GET() {
       const pngPath = getFilePath(CACHE_PATH)
       try {
         const cachedPng = await fs.readFile(pngPath)
-        return new NextResponse(new Uint8Array(cachedPng), {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/png',
-            'Cache-Control': 'public, max-age=3600, must-revalidate',
-          },
-        })
+        return pngResponse(cachedPng)
       } catch {
         // No cached PNG
       }
@@ -87,32 +78,20 @@ export async function GET() {
         // Ignore cache write errors
       }
 
-      return new NextResponse(new Uint8Array(pngBuffer), {
-        status: 200,
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=3600, must-revalidate',
-        },
-      })
+      return pngResponse(pngBuffer)
     }
 
     const settings = await prisma.settings.findUnique({
       where: { id: 'default' },
       select: { accentColor: true },
     })
-    const accentKey = settings?.accentColor || 'blue'
-    const accentHex = ACCENT_COLOR_HEX[accentKey] || ACCENT_COLOR_HEX.blue
-    
-    const defaultCachePath = getFilePath(`${DEFAULT_CACHE_PREFIX}${accentKey}.png`)
+    const accent = settings?.accentColor || 'blue'
+    const accentHex = accentToHex(accent)
+
+    const defaultCachePath = getFilePath(`${DEFAULT_CACHE_PREFIX}${accentCacheKey(accent)}.png`)
     try {
       const cachedPng = await fs.readFile(defaultCachePath)
-      return new NextResponse(new Uint8Array(cachedPng), {
-        status: 200,
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=3600, must-revalidate',
-        },
-      })
+      return pngResponse(cachedPng)
     } catch {
       // No cached PNG
     }
@@ -128,13 +107,7 @@ export async function GET() {
       // Ignore cache write errors
     }
 
-    return new NextResponse(new Uint8Array(pngBuffer), {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/png',
-        'Cache-Control': 'public, max-age=3600, must-revalidate',
-      },
-    })
+    return pngResponse(pngBuffer)
   } catch (error) {
     logError('[BRANDING:LOGO-PNG] Error:', error)
     return NextResponse.json({ error: settingsMessages.failedToGenerateLogo || 'Failed to generate logo' }, { status: 500 })

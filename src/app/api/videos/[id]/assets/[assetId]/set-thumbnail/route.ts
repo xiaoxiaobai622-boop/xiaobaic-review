@@ -9,8 +9,7 @@ import { teamProjectStorageKey } from '@/lib/storage-keys'
 
 export const runtime = 'nodejs'
 
-
-
+const THUMBNAIL_FILE_TYPES = ['image/jpeg', 'image/png', 'image/jpg']
 
 // POST /api/videos/[id]/assets/[assetId]/set-thumbnail - Set asset as video thumbnail
 export async function POST(
@@ -21,19 +20,17 @@ export async function POST(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
 
-  // 1. AUTHENTICATION
   const authResult = await requireApiAdmin(request)
   if (authResult instanceof Response) {
     return authResult
   }
 
-  // 3. RATE LIMITING
   const rateLimitResult = await rateLimit(
     request,
     {
       windowMs: 60 * 1000,
       maxRequests: 30,
-  message: videoMessages.tooManyThumbnailUpdateRequests || 'Too many thumbnail update requests. Please slow down.',
+      message: videoMessages.tooManyThumbnailUpdateRequests || 'Too many thumbnail update requests. Please slow down.',
     },
     'set-asset-thumbnail'
   )
@@ -42,23 +39,21 @@ export async function POST(
   const { id: videoId, assetId } = await params
 
   try {
-    // Get the action from request body (default to 'set')
     const body = await request.json()
     const action = body.action || 'set'
 
-    // Verify video exists
     const video = await prisma.video.findUnique({
       where: { id: videoId },
+      select: { projectId: true },
     })
 
     if (!video) {
-  return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
+      return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
     if (!(await canAccessProject(prisma, authResult, video.projectId))) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    // If action is 'remove', revert to system-generated thumbnail
     if (action === 'remove') {
       const project = await prisma.project.findUnique({ where: { id: video.projectId }, select: { teamId: true } })
       if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
@@ -77,9 +72,9 @@ export async function POST(
       })
     }
 
-    // For 'set' action, verify asset and set it as thumbnail
     const asset = await prisma.videoAsset.findUnique({
       where: { id: assetId },
+      select: { videoId: true, fileType: true, storagePath: true },
     })
 
     if (!asset || asset.videoId !== videoId) {
@@ -89,16 +84,14 @@ export async function POST(
       )
     }
 
-    // Verify asset is an image (fileType is now properly set after TUS upload)
-    const imageTypes = ['image/jpeg', 'image/png', 'image/jpg']
-    if (!imageTypes.includes(asset.fileType.toLowerCase())) {
+    // fileType is only populated once the TUS upload completes.
+    if (!THUMBNAIL_FILE_TYPES.includes(asset.fileType.toLowerCase())) {
       return NextResponse.json(
         { error: videoMessages.invalidThumbnailFileType || 'Only JPG and PNG images can be set as thumbnails' },
         { status: 400 }
       )
     }
 
-    // Update video thumbnail path to point to this asset
     await prisma.video.update({
       where: { id: videoId },
       data: {

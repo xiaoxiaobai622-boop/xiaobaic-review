@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requirePlatformAdmin, getCurrentUserFromRequest } from '@/lib/auth'
+import { requirePlatformAdmin, getConsoleUserFromRequest } from '@/lib/auth'
 import { hashPassword, validateSixDigitPassword, verifyPassword } from '@/lib/encryption'
 import { revokeAllUserTokens } from '@/lib/token-revocation'
 import { invalidateAdminSessions } from '@/lib/session-invalidation'
@@ -10,15 +10,31 @@ import { logError } from '@/lib/logging'
 import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '@/lib/user-contact'
 import {
   checkWechatText,
-  CONTENT_SECURITY_ERROR,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
 
 export const runtime = 'nodejs'
-
-
-
 export const dynamic = 'force-dynamic'
+
+// Single definition of the profile shape this route returns: password and other
+// credential columns stay out of it by construction.
+const USER_PROFILE_SELECT = {
+  id: true,
+  email: true,
+  phone: true,
+  username: true,
+  name: true,
+  avatarUrl: true,
+  onboardingCompleted: true,
+  role: true,
+  isPlatformAdmin: true,
+  projectAccessScope: true,
+  projectMemberships: {
+    select: { project: { select: { id: true, title: true, projectCode: true } } },
+  },
+  createdAt: true,
+  updatedAt: true,
+} as const
 
 // GET /api/users/[id] - Get user by ID
 export async function GET(
@@ -29,7 +45,7 @@ export async function GET(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const usersMessages = messages?.users || {}
 
-  const authResult = await getCurrentUserFromRequest(request)
+  const authResult = await getConsoleUserFromRequest(request)
   if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
@@ -50,23 +66,7 @@ export async function GET(
   try {
     const user = await prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        email: true,
-        phone: true,
-        username: true,
-        name: true,
-        avatarUrl: true,
-        onboardingCompleted: true,
-        role: true,
-        isPlatformAdmin: true,
-        projectAccessScope: true,
-        projectMemberships: {
-          select: { project: { select: { id: true, title: true, projectCode: true } } },
-        },
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: USER_PROFILE_SELECT,
     })
 
     if (!user) {
@@ -96,7 +96,7 @@ export async function PATCH(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const usersMessages = messages?.users || {}
 
-  const authResult = await getCurrentUserFromRequest(request)
+  const authResult = await getConsoleUserFromRequest(request)
   if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
@@ -197,13 +197,6 @@ export async function PATCH(
     }
 
     if (role !== undefined) {
-      if (role !== 'ADMIN' && role !== 'MEMBER') {
-        return NextResponse.json(
-          { error: '角色必须是管理员或团队成员' },
-          { status: 400 }
-        )
-      }
-
       if (authResult.id === id && role !== 'ADMIN') {
         return NextResponse.json({ error: '不能将当前登录的管理员改为团队成员' }, { status: 400 })
       }
@@ -239,11 +232,14 @@ export async function PATCH(
     }
 
     const targetRole = role || currentAccess.role
-    const resolvedScope = targetRole === 'ADMIN'
-      ? 'ALL_PROJECTS'
-      : projectAccessScope === undefined
-        ? currentAccess.projectAccessScope
-        : projectAccessScope === 'ASSIGNED_ONLY' ? 'ASSIGNED_ONLY' : 'ALL_PROJECTS'
+    let resolvedScope: string
+    if (targetRole === 'ADMIN') {
+      resolvedScope = 'ALL_PROJECTS'
+    } else if (projectAccessScope === undefined) {
+      resolvedScope = currentAccess.projectAccessScope
+    } else {
+      resolvedScope = projectAccessScope === 'ASSIGNED_ONLY' ? 'ASSIGNED_ONLY' : 'ALL_PROJECTS'
+    }
     const accessChanged = role !== undefined || projectAccessScope !== undefined || projectIds !== undefined
     if (role !== undefined || projectAccessScope !== undefined) {
       updateData.projectAccessScope = resolvedScope
@@ -311,42 +307,21 @@ export async function PATCH(
       return tx.user.update({
         where: { id },
         data: updateData,
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          username: true,
-          name: true,
-          avatarUrl: true,
-          onboardingCompleted: true,
-          role: true,
-          isPlatformAdmin: true,
-          projectAccessScope: true,
-          projectMemberships: {
-            select: { project: { select: { id: true, title: true, projectCode: true } } },
-          },
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: USER_PROFILE_SELECT,
       })
     })
 
     // SECURITY: Handle session invalidation for sensitive changes
-    const currentUser = await getCurrentUserFromRequest(request)
     let securityMessage = ''
 
     if (passwordChanged) {
-      if (currentUser && currentUser.id === id) {
-        await revokeAllUserTokens(user.id)
-      } else {
-        await revokeAllUserTokens(user.id)
-      }
+      await revokeAllUserTokens(user.id)
 
       securityMessage = usersMessages.allSessionsInvalidatedUserMustLoginAgain || 'All sessions have been invalidated - user will need to log in again.'
     }
 
     if (roleChanged || (isPlatformAdmin !== undefined && isPlatformAdmin !== currentAccess.isPlatformAdmin)) {
-      if (currentUser && currentUser.id === id) {
+      if (authResult.id === id) {
         await revokeAllUserTokens(user.id)
         securityMessage = securityMessage
           ? `${securityMessage} ${usersMessages.roleUpdatedLoginAgainToRefreshPermissions || 'Role updated - please log in again to refresh permissions.'}`
@@ -398,8 +373,10 @@ export async function DELETE(
       )
     }
 
+    // Existence check only: the credential columns must never leave the table here.
     const user = await prisma.user.findUnique({
       where: { id },
+      select: { id: true },
     })
 
     if (!user) {

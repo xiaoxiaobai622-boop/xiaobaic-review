@@ -8,6 +8,7 @@ function generateFileFingerprint(file: File, endpoint?: string): string {
 }
 
 const UPLOAD_META_PREFIX = 'vitransfer-upload:'
+const CONTEXT_PREFIX = 'vitransfer-context:'
 
 export interface StoredUploadMetadata {
   videoId: string
@@ -50,9 +51,13 @@ export function clearTUSFingerprint(file: File): void {
     if (key) {
       localStorage.removeItem(key)
     }
-  } catch (error) {
+  } catch {
     // Silent failure
   }
+}
+
+function getContextKey(file: File): string {
+  return `${CONTEXT_PREFIX}${generateFileFingerprint(file)}`
 }
 
 /**
@@ -60,10 +65,8 @@ export function clearTUSFingerprint(file: File): void {
  */
 export function storeFileContext(file: File, context: string): void {
   try {
-    const fingerprint = generateFileFingerprint(file)
-    const key = `vitransfer-context:${fingerprint}`
-    localStorage.setItem(key, context)
-  } catch (error) {
+    localStorage.setItem(getContextKey(file), context)
+  } catch {
     // Silent failure
   }
 }
@@ -73,10 +76,8 @@ export function storeFileContext(file: File, context: string): void {
  */
 export function getFileContext(file: File): string | null {
   try {
-    const fingerprint = generateFileFingerprint(file)
-    const key = `vitransfer-context:${fingerprint}`
-    return localStorage.getItem(key)
-  } catch (error) {
+    return localStorage.getItem(getContextKey(file))
+  } catch {
     return null
   }
 }
@@ -86,10 +87,8 @@ export function getFileContext(file: File): string | null {
  */
 export function clearFileContext(file: File): void {
   try {
-    const fingerprint = generateFileFingerprint(file)
-    const key = `vitransfer-context:${fingerprint}`
-    localStorage.removeItem(key)
-  } catch (error) {
+    localStorage.removeItem(getContextKey(file))
+  } catch {
     // Silent failure
   }
 }

@@ -1,0 +1,23 @@
+High-fidelity screenshot of a real web admin page (Simplified Chinese UI), desktop 1440px. Software interface, not a poster: crisp chrome, 1px borders, flat SaaS styling, no gradients, no illustration, and NO photographic imagery anywhere on this page — every element is typographic, numeric or a thin colored bar.
+
+Layout in order, with scale relationships:
+1. 56px top bar, white #FFFFFF, bottom hairline #E5E7EB: left small square product mark + "剧爆影视" 14px semibold #212121 + muted breadcrumb "/ 项目中心"; right three ghost icon buttons and a circular avatar.
+2. DIGEST BAND, 96px tall, full width, background #FAFAFA with hairline rules dividing it into three equal cells, each cell: a 11px uppercase-tracked muted gray label on top, a 30px bold tabular numeral beneath, and a 11px gray delta note on the third line. Cell 1 label "本周新上传版本", number "12", note "涉及 4 部剧". Cell 2 label "本周客户新增批注", number "47", note "最长等待 3 天". Cell 3 label "未处理批注合计", number "596" in #F9483C, note "分布在 4 部剧".
+3. CONTROL ROW, 44px: a 260px search input placeholder "搜索片名或编号", filter pills "状态" "客户" "年份" "截止日期", right-aligned a segmented control "看板 / 列表" and a solid #007BFF button "新建项目".
+4. LEDGER TABLE filling the rest of the viewport: one row per project, 44px tall, alternating no fill, separated by 1px #F3F4F6 rules. Columns, left to right with widths: a 200px column holding an 11px monospace muted "ID 2041" above a 14px semibold #212121 truncated title; a 64px right-aligned 12px monospace "181 集"; a wide flexible column holding a single aggregate progress band 8px tall — the band is segmented into 18 equal blocks separated by 1px white gaps (one block per 10 episodes), block fill meaning: #2FC252 approved, #007BFF in review, #F3F4F6 untouched, and a block carrying unresolved client annotations gets a 3px #F9483C dot on top of it; a 96px right-aligned 12px monospace "已定 12"; a 110px 12px "未处理 184" where the numeral is #F9483C; a 130px 11px gray "最近动作 2 小时前".
+
+Rows, exactly:
+ID 2041 / 黑手党 / 181 集 / band: 1 green block then 17 blue blocks, red dots on 9 of them / 已定 12 / 未处理 184 / 最近动作 2 小时前
+ID 2044 / 月圆之吻-分账项目 / 38 集 / band: 4 pale blocks, red dots on 4 / 已定 0 / 未处理 92 / 最近动作 昨天
+ID 2049 / TheAlphaWolf'sCaptiveHiddenPup / 40 集 / band: 3 green then 1 blue / 已定 33 / 未处理 312 / 最近动作 6 天前
+ID 2055 / 测试项目（勿动） / 19 集 / band: 1 green, 1 blue with dots / 已定 4 / 未处理 8 / 最近动作 3 天前
+ID 2060 / 夜上海 / 62 集 / 已定 21 / 未处理 154 / 最近动作 5 小时前
+ID 2063 / 山海契约 / 24 集 / 已定 0 / 未处理 67 / 最近动作 昨天
+ID 2066 / 无名者 / 88 集 / band: 8 green, 1 blue / 已定 76 / 未处理 26 / 最近动作 2 天前
+ID 2071 / 长夜将尽 / 30 集 / 已定 0 / 未处理 41 / 最近动作 4 天前
+
+Below the last row, a 12px muted line "共 52 个项目 · 已显示 8" and a small "加载更多" ghost button.
+
+Bottom-left of the ledger header row, a 11px legend strip: a green swatch "已定", a blue swatch "审片中", a pale swatch "未上传", a red dot "有未处理批注", and a 11px gray note "一格 = 10 集".
+
+Color system strictly: page #FFFFFF, band background #FAFAFA, chips #F3F4F6, borders #E5E7EB, body #212121, secondary #6B7280, primary #007BFF, success #2FC252, destructive #F9483C. Tabular monospaced numerals throughout. Dense, quiet, like a distribution delivery ledger.

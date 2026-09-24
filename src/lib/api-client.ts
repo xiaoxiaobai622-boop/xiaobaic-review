@@ -27,10 +27,21 @@ export async function apiFetch(
         }
       }
 
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      let url: string
+      if (typeof input === 'string') {
+        url = input
+      } else if (input instanceof URL) {
+        url = input.href
+      } else {
+        url = input.url
+      }
+
       const isSharePage = typeof window !== 'undefined' && window.location.pathname.startsWith('/share/')
       const isAuthEndpoint = url.includes('/api/auth')
-      if (!isSharePage && !isAuthEndpoint) {
+      // A 401 on the platform console is not the team session expiring: kicking
+      // to /login there logs people out of the studio for nothing, and
+      // PlatformAuthProvider already owns the redirect to /platform/login.
+      if (!isSharePage && !isAuthEndpoint && !isPlatformConsole()) {
         handleSessionExpired()
       }
     }
@@ -105,15 +116,21 @@ export async function apiDelete<T = any>(
   })
 }
 
+function isPlatformConsole(): boolean {
+  return typeof window !== 'undefined' && window.location.pathname.startsWith('/platform/')
+}
+
 function withAuthHeader(input: RequestInfo | URL, init?: RequestInit): RequestInit {
   const headers = new Headers(init?.headers || {})
   // Only inject the stored admin token when no Authorization header was
   // explicitly provided.  Share-page uploads pass their own bearer token;
   // overwriting it with a stale admin token would break auth.
   if (!headers.has('Authorization')) {
-    const isPlatformRequest =
-      typeof input === 'string' && input.startsWith('/api/platform/')
-    const token = isPlatformRequest ? getPlatformAccessToken() : getAccessToken()
+    const isPlatformRoute = typeof input === 'string' && input.startsWith('/api/platform/')
+    // The platform console also calls platform-admin endpoints that live outside
+    // /api/platform/ (/api/settings, /api/users, /api/security/*). Those must
+    // carry the platform token, which is the only credential that page has.
+    const token = isPlatformRoute || isPlatformConsole() ? getPlatformAccessToken() : getAccessToken()
     if (token) {
       headers.set('Authorization', `Bearer ${token}`)
     }
@@ -181,7 +198,7 @@ function handleSessionExpired() {
     clearTokens()
     localStorage.removeItem('vitransfer_preferences')
     sessionStorage.clear()
-  } catch (error) {
+  } catch {
     // ignore
   }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { downloadFile } from '@/lib/storage'
-import { contentDispositionAttachment } from '@/lib/download-names'
+import { contentDispositionAttachment, zipSafeName } from '@/lib/download-names'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis, consumeTokenAtomically } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
@@ -151,7 +151,7 @@ export async function GET(
     for (const asset of assets) {
       try {
         const fileStream = await downloadFile(asset.storagePath)
-        archive.append(fileStream, { name: asset.fileName })
+        archive.append(fileStream, { name: zipSafeName(asset.originalFileName, asset.fileName) })
         appendedCount += 1
       } catch (error) {
         logError(`Error adding file ${asset.fileName} to archive:`, error)

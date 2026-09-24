@@ -27,8 +27,6 @@ export interface QueuedUpload {
   uploadSpeed: number
   error: string | null
 
-  tusUpload: tus.Upload | null
-
   createdAt: number
   startedAt: number | null
   completedAt: number | null
@@ -57,6 +55,10 @@ export function useAssetUploadQueue({
     queueRef.current = queue
   }, [queue])
 
+  const patchUpload = useCallback((uploadId: string, patch: Partial<QueuedUpload>) => {
+    setQueue(prev => prev.map(u => (u.id === uploadId ? { ...u, ...patch } : u)))
+  }, [])
+
   const addToQueue = useCallback((file: File, category: string): string => {
     const uploadId = `upload-${crypto.randomUUID()}`
 
@@ -70,7 +72,6 @@ export function useAssetUploadQueue({
       progress: 0,
       uploadSpeed: 0,
       error: null,
-      tusUpload: null,
       createdAt: Date.now(),
       startedAt: null,
       completedAt: null,
@@ -115,11 +116,7 @@ export function useAssetUploadQueue({
         (existingMetadata.category || null) === (upload.category || null)
       let createdAssetRecord = false
 
-      setQueue(prev => prev.map(u =>
-        u.id === uploadId
-          ? { ...u, status: 'uploading' as const, startedAt: Date.now(), error: null }
-          : u
-      ))
+      patchUpload(uploadId, { status: 'uploading', startedAt: Date.now(), error: null })
 
       let assetId: string
       if (canResumeExisting) {
@@ -160,16 +157,10 @@ export function useAssetUploadQueue({
           {
             onProgress: (bytesUploaded, bytesTotal) => {
               const percentage = Math.round((bytesUploaded / bytesTotal) * 100)
-              setQueue(prev => prev.map(u =>
-                u.id === uploadId ? { ...u, progress: percentage } : u
-              ))
+              patchUpload(uploadId, { progress: percentage })
             },
             onSuccess: () => {
-              setQueue(prev => prev.map(u =>
-                u.id === uploadId
-                  ? { ...u, status: 'completed' as const, progress: 100, completedAt: Date.now() }
-                  : u
-              ))
+              patchUpload(uploadId, { status: 'completed', progress: 100, completedAt: Date.now() })
               s3AbortKeysMap.current.delete(uploadId)
               assetIdsMap.current.delete(uploadId)
               clearFileContext(upload.file)
@@ -182,21 +173,20 @@ export function useAssetUploadQueue({
                 try { await apiDelete(`/api/videos/${videoId}/assets/${currentAssetId}`) } catch {}
                 clearUploadMetadata(upload.file)
               }
-              setQueue(prev => prev.map(u =>
-                u.id === uploadId ? { ...u, status: 'error' as const, error: err.message } : u
-              ))
+              patchUpload(uploadId, { status: 'error', error: err.message })
               s3AbortKeysMap.current.delete(uploadId)
               assetIdsMap.current.delete(uploadId)
             },
           },
           s3Key
         )
-      } else {
-        // ── TUS resumable upload ─────────────────────────────────────────────
-        const startTime = Date.now()
-        let lastLoaded = 0
-        let lastTime = startTime
-        const tusRef: { current: tus.Upload | null } = { current: null }
+        return
+      }
+
+      // ── TUS resumable upload ─────────────────────────────────────────────
+      let lastLoaded = 0
+      let lastTime = Date.now()
+      const tusRef: { current: tus.Upload | null } = { current: null }
 
       const tusUpload = new tus.Upload(upload.file, {
         endpoint: `${window.location.origin}/api/uploads`,
@@ -204,7 +194,7 @@ export function useAssetUploadQueue({
         metadata: {
           filename: upload.file.name,
           filetype: upload.file.type || 'application/octet-stream',
-          assetId: assetId,
+          assetId,
         },
         chunkSize: getTusChunkSizeBytes(upload.file.size),
         storeFingerprintForResuming: true,
@@ -246,11 +236,7 @@ export function useAssetUploadQueue({
         onSuccess: () => {
           resetTusAuthRetry(tusRef.current)
 
-          setQueue(prev => prev.map(u =>
-            u.id === uploadId
-              ? { ...u, status: 'completed' as const, progress: 100, completedAt: Date.now() }
-              : u
-          ))
+          patchUpload(uploadId, { status: 'completed', progress: 100, completedAt: Date.now() })
 
           uploadRefsMap.current.delete(uploadId)
           assetIdsMap.current.delete(uploadId)
@@ -260,9 +246,7 @@ export function useAssetUploadQueue({
           clearUploadMetadata(upload.file)
           clearTUSFingerprint(upload.file)
 
-          if (onUploadComplete) {
-            onUploadComplete()
-          }
+          onUploadComplete?.()
 
           // useEffect will auto-start next queued upload
         },
@@ -289,11 +273,7 @@ export function useAssetUploadQueue({
             assetIdsMap.current.delete(uploadId)
           }
 
-          setQueue(prev => prev.map(u =>
-            u.id === uploadId
-              ? { ...u, status: 'error' as const, error: errorMessage }
-              : u
-          ))
+          patchUpload(uploadId, { status: 'error', error: errorMessage })
 
           resetTusAuthRetry(tusRef.current)
           uploadRefsMap.current.delete(uploadId)
@@ -323,16 +303,11 @@ export function useAssetUploadQueue({
 
       uploadRefsMap.current.set(uploadId, tusUpload)
       tusUpload.start()
-      } // end TUS else block
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Upload failed'
-      setQueue(prev => prev.map(u =>
-        u.id === uploadId
-          ? { ...u, status: 'error' as const, error: errorMessage }
-          : u
-      ))
+      patchUpload(uploadId, { status: 'error', error: errorMessage })
     }
-  }, [videoId, onUploadComplete, storageProvider, startS3Upload])
+  }, [videoId, onUploadComplete, storageProvider, startS3Upload, patchUpload])
 
   useEffect(() => {
     const currentUploading = queue.filter(u => u.status === 'uploading').length
@@ -351,42 +326,30 @@ export function useAssetUploadQueue({
   const pauseUpload = useCallback((uploadId: string) => {
     if (storageProvider === 's3') {
       const s3Key = s3AbortKeysMap.current.get(uploadId)
-      if (s3Key) {
-        pauseS3Upload(s3Key)
-        setQueue(prev => prev.map(u =>
-          u.id === uploadId ? { ...u, status: 'paused' as const } : u
-        ))
-      }
+      if (!s3Key) return
+      pauseS3Upload(s3Key)
+      patchUpload(uploadId, { status: 'paused' })
     } else {
       const tusUpload = uploadRefsMap.current.get(uploadId)
-      if (tusUpload) {
-        tusUpload.abort()
-        setQueue(prev => prev.map(u =>
-          u.id === uploadId ? { ...u, status: 'paused' as const } : u
-        ))
-      }
+      if (!tusUpload) return
+      tusUpload.abort()
+      patchUpload(uploadId, { status: 'paused' })
     }
-  }, [storageProvider, pauseS3Upload])
+  }, [storageProvider, pauseS3Upload, patchUpload])
 
   const resumeUpload = useCallback((uploadId: string) => {
     if (storageProvider === 's3') {
       const s3Key = s3AbortKeysMap.current.get(uploadId)
-      if (s3Key) {
-        resumeS3Upload(s3Key)
-        setQueue(prev => prev.map(u =>
-          u.id === uploadId ? { ...u, status: 'uploading' as const } : u
-        ))
-      }
+      if (!s3Key) return
+      resumeS3Upload(s3Key)
+      patchUpload(uploadId, { status: 'uploading' })
     } else {
       const tusUpload = uploadRefsMap.current.get(uploadId)
-      if (tusUpload) {
-        tusUpload.start()
-        setQueue(prev => prev.map(u =>
-          u.id === uploadId ? { ...u, status: 'uploading' as const } : u
-        ))
-      }
+      if (!tusUpload) return
+      tusUpload.start()
+      patchUpload(uploadId, { status: 'uploading' })
     }
-  }, [storageProvider, resumeS3Upload])
+  }, [storageProvider, resumeS3Upload, patchUpload])
 
   const cancelUpload = useCallback(async (uploadId: string) => {
     if (storageProvider === 's3') {
@@ -434,20 +397,21 @@ export function useAssetUploadQueue({
 
   // Retry failed upload — sets status to 'queued' so the auto-start useEffect picks it up
   const retryUpload = useCallback((uploadId: string) => {
-    setQueue(prev => prev.map(u =>
-      u.id === uploadId
-        ? { ...u, status: 'queued' as const, error: null, progress: 0, uploadSpeed: 0 }
-        : u
-    ))
-  }, [])
+    patchUpload(uploadId, { status: 'queued', error: null, progress: 0, uploadSpeed: 0 })
+  }, [patchUpload])
+
+  const statusCounts: Record<QueuedUpload['status'], number> = {
+    queued: 0,
+    uploading: 0,
+    paused: 0,
+    completed: 0,
+    error: 0,
+  }
+  for (const upload of queue) statusCounts[upload.status] += 1
 
   const stats = {
     total: queue.length,
-    queued: queue.filter(u => u.status === 'queued').length,
-    uploading: queue.filter(u => u.status === 'uploading').length,
-    paused: queue.filter(u => u.status === 'paused').length,
-    completed: queue.filter(u => u.status === 'completed').length,
-    error: queue.filter(u => u.status === 'error').length,
+    ...statusCounts,
   }
 
   return {

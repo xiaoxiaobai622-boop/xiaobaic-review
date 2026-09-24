@@ -26,6 +26,12 @@ const TOKEN_FETCH_RETRY_BASE_MS = 120
 const TOKEN_FETCH_RETRY_MAX_MS = 400
 const COMMENT_REFRESH_INTERVAL_MS = 30_000
 
+const QUALITY_PROBE_ORDER: Record<'720p' | '1080p' | '2160p', Array<'720p' | '1080p' | '2160p'>> = {
+  '720p': ['720p', '1080p', '2160p'],
+  '1080p': ['1080p', '720p', '2160p'],
+  '2160p': ['2160p', '1080p', '720p'],
+}
+
 // Approval/review status changes do not change the media source. Keep them
 // out of this signature so a status action can update the shell without
 // throwing away valid playback tokens and remounting the player.
@@ -124,9 +130,11 @@ export default function AdminSharePage() {
   }
 
   // Parse URL parameters for video seeking (same as public share page)
-  const urlTimestamp = searchParams?.get('t') ? parseFloat(searchParams.get('t')!) : null
+  const timestampParam = searchParams?.get('t')
+  const versionParam = searchParams?.get('version')
+  const urlTimestamp = timestampParam ? parseFloat(timestampParam) : null
   const urlVideoName = searchParams?.get('video') || null
-  const urlVersion = searchParams?.get('version') ? parseInt(searchParams.get('version')!, 10) : null
+  const urlVersion = versionParam ? parseInt(versionParam, 10) : null
   const urlFocusCommentId = searchParams?.get('comment') || null
 
   const [focusCommentId, setFocusCommentId] = useState<string | null>(urlFocusCommentId)
@@ -458,11 +466,7 @@ export default function AdminSharePage() {
       if (cached) tokenCacheRef.current.delete(cacheKey)
 
       try {
-        const qualityOrder: Array<'720p' | '1080p' | '2160p'> = defaultQuality === '2160p'
-          ? ['2160p', '1080p', '720p']
-          : defaultQuality === '1080p'
-            ? ['1080p', '720p', '2160p']
-            : ['720p', '1080p', '2160p']
+        const qualityOrder = QUALITY_PROBE_ORDER[defaultQuality]
         const streamTokens: Record<'720p' | '1080p' | '2160p', string> = {
           '720p': '',
           '1080p': '',
@@ -517,7 +521,7 @@ export default function AdminSharePage() {
           tokenCacheRef.current.set(cacheKey, tokenized)
         }
         tokenizedById.set(video.id, tokenized)
-      } catch (error) {
+      } catch {
         tokenizedById.set(video.id, video)
       }
     })
@@ -571,7 +575,7 @@ export default function AdminSharePage() {
             if (!projectData.hideFeedback) void fetchComments()
           }
         }
-      } catch (error) {
+      } catch {
         // Silent fail
       } finally {
         if (isMounted && !redirectingMember) {
@@ -760,7 +764,7 @@ export default function AdminSharePage() {
           newThumbnails.set(name, thumbnailUrl)
           setThumbnailsByName(new Map(newThumbnails))
         })
-      } catch (error) {
+      } catch {
         // Failed to load thumbnails
       } finally {
         if (isMounted) {
@@ -839,7 +843,7 @@ export default function AdminSharePage() {
   const projectUrl = `/studio/projects/${id}`
 
   const handleReturnToSource = useCallback(() => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
+    if (window.history.length > 1) {
       router.back()
       return
     }
@@ -876,17 +880,15 @@ export default function AdminSharePage() {
   }
 
   // Filter to READY videos
-  let readyVideos = activeVideos.filter((v: any) => v.status === 'READY')
+  const readyVideos = activeVideos.filter((v: any) => v.status === 'READY')
 
   const activeVideoIds = new Set(activeVideos.map((v: any) => v.id))
   const filteredComments = comments.filter((comment: any) => {
     return !comment.videoId || activeVideoIds.has(comment.videoId)
   })
 
-  const clientDisplayName = (() => {
-    const primaryRecipient = project.recipients?.find((r: any) => r.isPrimary) || project.recipients?.[0]
-    return project.companyName || primaryRecipient?.name || primaryRecipient?.email || t('client')
-  })()
+  const primaryRecipient = project.recipients?.find((r: any) => r.isPrimary) || project.recipients?.[0]
+  const clientDisplayName = project.companyName || primaryRecipient?.name || primaryRecipient?.email || t('client')
 
   const showCommentPanel = !project.hideFeedback
   const timestampDisplayMode = project.timestampDisplay === 'AUTO' ? 'AUTO' : 'TIMECODE'
@@ -1015,7 +1017,7 @@ export default function AdminSharePage() {
                 defaultQuality={defaultQuality}
                 projectTitle={project.title}
                 projectDescription={project.description}
-                clientName={project.clientName}
+                clientName={clientDisplayName}
                 isPasswordProtected={project.hasSharePassword}
                 watermarkEnabled={project.watermarkEnabled}
                 activeVideoName={activeVideoName}

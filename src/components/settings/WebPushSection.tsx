@@ -281,6 +281,13 @@ export function WebPushSection({ active }: { active: boolean }) {
     )
   }
 
+  let currentDeviceStatusText = t('enablePrompt')
+  if (currentDeviceSubscribed) {
+    currentDeviceStatusText = t('enabled')
+  } else if (permissionState === 'denied') {
+    currentDeviceStatusText = t('blocked')
+  }
+
   return (
     <div className="space-y-6">
       {/* Status messages */}
@@ -307,11 +314,7 @@ export function WebPushSection({ active }: { active: boolean }) {
             <div>
               <h4 className="font-medium">{t('thisDevice')}</h4>
               <p className="text-sm text-muted-foreground">
-                {currentDeviceSubscribed
-                  ? t('enabled')
-                  : permissionState === 'denied'
-                    ? t('blocked')
-                    : t('enablePrompt')}
+                {currentDeviceStatusText}
               </p>
             </div>
           </div>

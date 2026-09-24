@@ -63,17 +63,18 @@ async function callApi(action: string, payload: Record<string, unknown>): Promis
 export async function submitMpsHls(inputObject: string, videoId: string, teamId?: string, projectId?: string): Promise<string> {
   const cfg = config()
   const bucket = required('S3_BUCKET')
+  const region = process.env.S3_REGION || cfg.region
   const outputDir = teamId && projectId
     ? `teams/${teamId}/projects/${projectId}/derived/mps`
     : cfg.outputDir
   const response = await callApi('ProcessMedia', {
     InputInfo: {
       Type: 'COS',
-      CosInputInfo: { Bucket: bucket, Region: process.env.S3_REGION || cfg.region, Object: inputObject },
+      CosInputInfo: { Bucket: bucket, Region: region, Object: inputObject },
     },
     OutputStorage: {
       Type: 'COS',
-      CosOutputStorage: { Bucket: bucket, Region: process.env.S3_REGION || cfg.region },
+      CosOutputStorage: { Bucket: bucket, Region: region },
     },
     MediaProcessTask: {
       TranscodeTaskSet: [{

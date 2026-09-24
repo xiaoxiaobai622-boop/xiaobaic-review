@@ -98,7 +98,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
   async function handleUpload() {
     if (!file) return
 
-      if (!videoName || !videoName.trim()) {
+    if (!videoName.trim()) {
       setError(t('videoNameRequired'))
       return
     }
@@ -205,9 +205,8 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
         )
       } else {
         // ── TUS resumable upload ───────────────────────────────────────────────
-        const startTime = Date.now()
         let lastLoaded = 0
-        let lastTime = startTime
+        let lastTime = Date.now()
 
         const upload = new tus.Upload(file, {
           // TUS server endpoint (absolute URL for fingerprint consistency)
@@ -290,18 +289,18 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
             } else if (createdVideoRecord && videoIdRef.current) {
               // Only clean up DB record if we created it in this attempt
               try {
-              await apiDelete(`/api/videos/${videoIdRef.current}`)
-              videoIdRef.current = null
-            } catch {}
-            clearUploadMetadata(file)
-            clearTUSFingerprint(file)
-          }
+                await apiDelete(`/api/videos/${videoIdRef.current}`)
+                videoIdRef.current = null
+              } catch {}
+              clearUploadMetadata(file)
+              clearTUSFingerprint(file)
+            }
 
-          setError(errorMessage)
-          setUploading(false)
-          resetTusAuthRetry(uploadRef.current)
-          uploadRef.current = null
-        },
+            setError(errorMessage)
+            setUploading(false)
+            resetTusAuthRetry(uploadRef.current)
+            uploadRef.current = null
+          },
       })
 
       const previousUploads = await upload.findPreviousUploads()

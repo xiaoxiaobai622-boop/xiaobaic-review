@@ -23,6 +23,27 @@ const DEBUG = process.env.DEBUG_WORKER === 'true'
 const ONE_HOUR_MS = 60 * 60 * 1000
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000
 
+/**
+ * `jobNoun` is part of the operator-facing log line, so each worker passes its
+ * own wording ("Asset job", "Project upload job", ...).
+ */
+function logJobLifecycle<T>(worker: Worker<T>, jobNoun: string, logFailureDetails: boolean) {
+  worker.on('completed', (job) => {
+    logMessage(`[WORKER] ${jobNoun} ${job.id} completed successfully`)
+  })
+
+  worker.on('failed', (job, err) => {
+    logError(`[WORKER ERROR] ${jobNoun} ${job?.id} failed`, err)
+    if (logFailureDetails && DEBUG) {
+      logMessage(`[WORKER DEBUG] ${jobNoun} failure details: ${JSON.stringify({
+        jobId: job?.id,
+        jobData: job?.data,
+        error: err instanceof Error ? err.stack : err
+      })}`)
+    }
+  })
+}
+
 async function main() {
   logMessage('[WORKER] Initializing video processing worker...')
 
@@ -59,6 +80,11 @@ async function main() {
 
   logMessage(`[WORKER] Worker concurrency: ${concurrency} (from CPU allocation)`)
 
+  const limiter = {
+    max: concurrency * 10,
+    duration: 60000,
+  }
+
   const worker = new Worker<VideoProcessingJob>('video-processing', processVideo, {
     connection: getRedisForQueue(),
     concurrency,
@@ -67,37 +93,18 @@ async function main() {
     lockDuration: 2_000_000,
     stalledInterval: 300_000,
     maxStalledCount: 2,
-    limiter: {
-      max: concurrency * 10,
-      duration: 60000,
-    },
+    limiter,
   })
 
   if (DEBUG) {
     logMessage(`[WORKER DEBUG] BullMQ worker created with config: ${JSON.stringify({
       queue: 'video-processing',
       concurrency,
-      limiter: {
-        max: concurrency * 10,
-        duration: 60000
-      }
+      limiter,
     })}`)
   }
 
-  worker.on('completed', (job) => {
-    logMessage(`[WORKER] Job ${job.id} completed successfully`)
-  })
-
-  worker.on('failed', (job, err) => {
-    logError(`[WORKER ERROR] Job ${job?.id} failed`, err)
-    if (DEBUG) {
-      logMessage(`[WORKER DEBUG] Job failure details: ${JSON.stringify({
-        jobId: job?.id,
-        jobData: job?.data,
-        error: err instanceof Error ? err.stack : err
-      })}`)
-    }
-  })
+  logJobLifecycle(worker, 'Job', true)
 
   logMessage('[WORKER] Video processing worker started')
 
@@ -107,20 +114,7 @@ async function main() {
     concurrency: concurrency * 2, // Assets are lighter than videos
   })
 
-  assetWorker.on('completed', (job) => {
-    logMessage(`[WORKER] Asset job ${job.id} completed successfully`)
-  })
-
-  assetWorker.on('failed', (job, err) => {
-    logError(`[WORKER ERROR] Asset job ${job?.id} failed`, err)
-    if (DEBUG) {
-      logMessage(`[WORKER DEBUG] Asset job failure details: ${JSON.stringify({
-        jobId: job?.id,
-        jobData: job?.data,
-        error: err instanceof Error ? err.stack : err
-      })}`)
-    }
-  })
+  logJobLifecycle(assetWorker, 'Asset job', true)
 
   logMessage('[WORKER] Asset processing worker started')
 
@@ -130,20 +124,7 @@ async function main() {
     concurrency: concurrency * 2, // Project uploads are lighter than videos
   })
 
-  projectUploadWorker.on('completed', (job) => {
-    logMessage(`[WORKER] Project upload job ${job.id} completed successfully`)
-  })
-
-  projectUploadWorker.on('failed', (job, err) => {
-    logError(`[WORKER ERROR] Project upload job ${job?.id} failed`, err)
-    if (DEBUG) {
-      logMessage(`[WORKER DEBUG] Project upload job failure details: ${JSON.stringify({
-        jobId: job?.id,
-        jobData: job?.data,
-        error: err instanceof Error ? err.stack : err
-      })}`)
-    }
-  })
+  logJobLifecycle(projectUploadWorker, 'Project upload job', true)
 
   logMessage('[WORKER] Project upload processing worker started')
 
@@ -153,13 +134,7 @@ async function main() {
     concurrency: concurrency * 2, // Photos are lighter than videos
   })
 
-  photoWorker.on('completed', (job) => {
-    logMessage(`[WORKER] Photo job ${job.id} completed successfully`)
-  })
-
-  photoWorker.on('failed', (job, err) => {
-    logError(`[WORKER ERROR] Photo job ${job?.id} failed`, err)
-  })
+  logJobLifecycle(photoWorker, 'Photo job', false)
 
   logMessage('[WORKER] Photo processing worker started')
 

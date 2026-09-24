@@ -1,22 +1,36 @@
 'use client'
 
 import { useTranslations, useLocale } from 'next-intl'
+import { useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import Link from 'next/link'
-import { Video, MessageSquare, ChevronRight, Calendar } from 'lucide-react'
+import { Video, MessageSquare, ChevronRight, Calendar, FolderOpen } from 'lucide-react'
 import type { ViewMode } from '@/components/ViewModeToggle'
 import { formatDate } from '@/lib/utils'
 import type { ProjectListItem } from '@/lib/projects-filter'
+import { PROJECT_DND_MIME, folderPathLabels, type FolderNode } from '@/lib/project-folders'
 import { useAuth } from '@/components/AuthProvider'
 
 interface ProjectsListProps {
   projects: ProjectListItem[]
   viewMode: ViewMode
+  folders: FolderNode[]
+  /** Same rule as the grid's path chip: inside a folder, every row is already there. */
+  showFolderColumn: boolean
   emptyMessage?: React.ReactNode
 }
 
 const metricIconWrapperClassName = 'rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10'
 const metricIconClassName = 'w-4 h-4 text-primary'
+const statusBadgeClassNameBase = 'px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap'
+
+function statusBadgeColorClass(status: string): string {
+  if (status === 'APPROVED') return 'bg-success-visible text-success border-2 border-success-visible'
+  if (status === 'SHARE_ONLY') return 'bg-info-visible text-info border-2 border-info-visible'
+  if (status === 'IN_REVIEW') return 'bg-primary-visible text-primary border-2 border-primary-visible'
+  if (status === 'ARCHIVED') return 'bg-muted text-muted-foreground border-2 border-muted'
+  return 'bg-muted text-muted-foreground border border-border'
+}
 
 function getDueDateColor(dueDate: string, status: string): string {
   if (status === 'APPROVED' || status === 'ARCHIVED' || status === 'SHARE_ONLY') {
@@ -33,15 +47,49 @@ function getDueDateColor(dueDate: string, status: string): string {
   return 'text-muted-foreground'
 }
 
-export default function ProjectsList({ projects, viewMode, emptyMessage }: ProjectsListProps) {
+export default function ProjectsList({
+  projects, viewMode, folders, showFolderColumn, emptyMessage,
+}: ProjectsListProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const tn = useTranslations('nav')
   const locale = useLocale()
   const { user } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
+  const folderLabels = useMemo(() => folderPathLabels(folders), [folders])
+  const statusLabels: Record<string, string> = {
+    IN_REVIEW: t('statusInReview'),
+    APPROVED: t('statusApproved'),
+    SHARE_ONLY: t('statusShareOnly'),
+    ARCHIVED: t('statusArchived'),
+  }
   const projectHref = (project: ProjectListItem) => user?.role === 'ADMIN'
     ? `/studio/projects/${project.id}`
     : `/share/${project.slug}`
+
+  // Rows drag to the sidebar tree exactly like the grid cards do, so filing a project
+  // never depends on switching back to the grid view.
+  function startDrag(project: ProjectListItem, e: React.DragEvent) {
+    const payload = JSON.stringify([project.id])
+    e.dataTransfer.clearData()
+    e.dataTransfer.setData(PROJECT_DND_MIME, payload)
+    e.dataTransfer.setData('text/plain', payload)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const folderCell = (project: ProjectListItem) => {
+    const label = project.groupId ? folderLabels.get(project.groupId) : null
+    return (
+      <span className="w-36 min-w-0 hidden xl:inline-flex items-center gap-1 text-xs text-muted-foreground" title={label || undefined}>
+        {label ? (
+          <>
+            <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
+            <span className="truncate">{label}</span>
+          </>
+        ) : <span aria-hidden>—</span>}
+      </span>
+    )
+  }
 
   if (projects.length === 0) {
     return (
@@ -72,20 +120,8 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
                         {project.title}
                       </CardTitle>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                        project.status === 'APPROVED'
-                          ? 'bg-success-visible text-success border-2 border-success-visible'
-                        : project.status === 'SHARE_ONLY'
-                          ? 'bg-info-visible text-info border-2 border-info-visible'
-                        : project.status === 'IN_REVIEW'
-                          ? 'bg-primary-visible text-primary border-2 border-primary-visible'
-                        : project.status === 'ARCHIVED'
-                          ? 'bg-muted text-muted-foreground border-2 border-muted'
-                          : 'bg-muted text-muted-foreground border border-border'
-                      }`}
-                    >
-                      {{ IN_REVIEW: t('statusInReview'), APPROVED: t('statusApproved'), SHARE_ONLY: t('statusShareOnly'), ARCHIVED: t('statusArchived') }[project.status] || project.status}
+                    <span className={`${statusBadgeClassNameBase} ${statusBadgeColorClass(project.status)}`}>
+                      {statusLabels[project.status] || project.status}
                     </span>
                   </div>
                 </CardHeader>
@@ -131,6 +167,7 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
       </div>
       <div className="hidden sm:flex items-center gap-4 px-5 py-2 text-xs text-muted-foreground bg-muted/20 border-b">
         <span className="flex-1 min-w-0">{tc('name')}</span>
+        {showFolderColumn && <span className="w-36 hidden xl:block">{t('folder')}</span>}
         <span className="w-28">{tc('status')}</span>
         <span className="w-16 text-center hidden lg:block">{t('videos')}</span>
         <span className="w-20 text-center hidden lg:block">{t('comments')}</span>
@@ -146,24 +183,15 @@ export default function ProjectsList({ projects, viewMode, emptyMessage }: Proje
             <Link
               key={project.id}
               href={projectHref(project)}
+              draggable={isAdmin}
+              onDragStart={(e) => startDrag(project, e)}
               className="flex items-center gap-4 px-5 py-3 text-sm hover:bg-accent/30 transition-colors"
             >
               <span className="flex-1 min-w-0 font-medium truncate"><span className="mr-2 font-mono text-xs text-muted-foreground">{project.projectCode}</span>{project.title}</span>
+              {showFolderColumn && folderCell(project)}
               <span className="w-28">
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                    project.status === 'APPROVED'
-                      ? 'bg-success-visible text-success border-2 border-success-visible'
-                    : project.status === 'SHARE_ONLY'
-                      ? 'bg-info-visible text-info border-2 border-info-visible'
-                    : project.status === 'IN_REVIEW'
-                      ? 'bg-primary-visible text-primary border-2 border-primary-visible'
-                    : project.status === 'ARCHIVED'
-                      ? 'bg-muted text-muted-foreground border-2 border-muted'
-                    : 'bg-muted text-muted-foreground border border-border'
-                  }`}
-                >
-                  {{ IN_REVIEW: t('statusInReview'), APPROVED: t('statusApproved'), SHARE_ONLY: t('statusShareOnly'), ARCHIVED: t('statusArchived') }[project.status] || project.status}
+                <span className={`${statusBadgeClassNameBase} ${statusBadgeColorClass(project.status)}`}>
+                  {statusLabels[project.status] || project.status}
                 </span>
               </span>
               <span className="w-16 text-center text-xs text-muted-foreground tabular-nums hidden lg:block">{totalVideos}</span>

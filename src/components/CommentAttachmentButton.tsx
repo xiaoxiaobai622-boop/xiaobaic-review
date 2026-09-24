@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { Paperclip, Loader2, CheckCircle2, AlertCircle, Upload, X, FileIcon, RotateCcw } from 'lucide-react'
 import { Button } from './ui/button'
@@ -58,8 +58,6 @@ const DEFAULT_MAX_FILES = 10
 
 const ALLOWED_EXTENSIONS = new Set(ALL_ALLOWED_EXTENSIONS)
 
-const ALLOWED_TYPES_DISPLAY = 'Images, audio, video, documents, subtitles, project files, and archives'
-
 function getFileExtension(filename: string): string {
   const lastDot = filename.lastIndexOf('.')
   if (lastDot === -1) return ''
@@ -101,7 +99,7 @@ export default function CommentAttachmentButton({
   const hasFiles = items.length > 0
   const atLimit = items.length >= MAX_FILES
 
-  const addFiles = useCallback((files: FileList | File[]) => {
+  const addFiles = (files: FileList | File[]) => {
     setItems((prev) => {
       const remaining = MAX_FILES - prev.length
       if (remaining <= 0) return prev
@@ -118,9 +116,9 @@ export default function CommentAttachmentButton({
       })
       return [...prev, ...newItems]
     })
-  }, [MAX_FILES])
+  }
 
-  const removeFile = useCallback((id: string) => {
+  const removeFile = (id: string) => {
     if (storageProvider === 's3') {
       const s3Key = s3AbortKeysRef.current.get(id)
       if (s3Key) {
@@ -136,7 +134,7 @@ export default function CommentAttachmentButton({
       }
     }
     setItems((prev) => prev.filter((i) => i.id !== id))
-  }, [abortS3Upload, storageProvider])
+  }
 
   const uploadFile = async (item: FileUploadItem): Promise<boolean> => {
     // Step 1: Create asset record via JSON POST
@@ -314,11 +312,11 @@ export default function CommentAttachmentButton({
     })
   }
 
-  const retryFile = useCallback((id: string) => {
+  const retryFile = (id: string) => {
     setItems((prev) =>
       prev.map((i) => (i.id === id ? { ...i, status: 'pending', error: undefined, progress: 0, assetId: undefined } : i))
     )
-  }, [])
+  }
 
   const startUpload = async () => {
     const pending = items.filter((i) => i.status === 'pending')
@@ -352,12 +350,9 @@ export default function CommentAttachmentButton({
   }
 
   const handleOpenChange = (next: boolean) => {
-    if (!next && isUploading) {
-      // Allow closing during upload — uploads continue in background via refs
-    }
     setOpen(next)
+    // Allow closing during upload — uploads continue in background via refs
     if (!next && !uploadingRef.current) {
-      // Abort any remaining uploads
       tusUploadsRef.current.forEach((upload) => upload.abort(true))
       tusUploadsRef.current.clear()
       s3AbortKeysRef.current.forEach((key) => abortS3Upload(key).catch(() => {}))

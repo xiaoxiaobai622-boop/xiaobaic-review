@@ -87,11 +87,7 @@ export function CompanyNameInput({
   function handleInputChange(newValue: string) {
     setSearch(newValue)
     onChange(newValue, null) // Clear company ID when manually typing
-    if (newValue.length >= 1) {
-      setShowDropdown(true)
-    } else {
-      setShowDropdown(false)
-    }
+    setShowDropdown(newValue.length >= 1)
   }
 
   async function handleCreateCompany() {

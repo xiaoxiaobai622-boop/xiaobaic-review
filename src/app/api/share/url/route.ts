@@ -8,9 +8,6 @@ import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 
-
-
-
 export async function GET(request: NextRequest) {
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)

@@ -23,7 +23,6 @@ export async function GET(request: NextRequest) {
   if (rateLimitResult) return rateLimitResult
 
   try {
-    const now = new Date()
     const thirtyDaysFromNow = new Date()
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
 
@@ -43,10 +42,8 @@ export async function GET(request: NextRequest) {
       orderBy: { dueDate: 'asc' },
     })
 
-    // Include overdue projects (dueDate < now)
-    const upcoming = projects.filter(p => p.dueDate)
-
-    return NextResponse.json({ projects: upcoming })
+    // Projects with a due date in the past are included (overdue) by design.
+    return NextResponse.json({ projects })
   } catch {
     return NextResponse.json({ error: calendarMessages.operationFailed || 'Operation failed' }, { status: 500 })
   }

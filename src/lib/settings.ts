@@ -22,6 +22,17 @@ function getHttpsEnvironmentOverride(): boolean | null {
   return envValue === 'true' || envValue === '1'
 }
 
+/** Shared conversion for the two session timeouts, which differ only in their fallback. */
+function sessionTimeoutSeconds(value: number, unit: string, fallbackSeconds: number): number {
+  switch (unit) {
+    case 'MINUTES': return value * 60
+    case 'HOURS': return value * 60 * 60
+    case 'DAYS': return value * 24 * 60 * 60
+    case 'WEEKS': return value * 7 * 24 * 60 * 60
+    default: return fallbackSeconds
+  }
+}
+
 export async function invalidateSecuritySettingsCache(): Promise<void> {
   cachedRateLimits.expiresAt = 0
   cachedSessionTimeout.expiresAt = 0
@@ -182,32 +193,9 @@ export async function getClientSessionTimeoutSeconds(): Promise<number> {
       },
     })
 
-    if (!settings) {
-      cachedSessionTimeout.value = 15 * 60
-      cachedSessionTimeout.expiresAt = now + SETTINGS_CACHE_TTL_MS
-      return cachedSessionTimeout.value
-    }
-
-    const value = settings.sessionTimeoutValue
-    const unit = settings.sessionTimeoutUnit
-
-    switch (unit) {
-      case 'MINUTES':
-        cachedSessionTimeout.value = value * 60
-        break
-      case 'HOURS':
-        cachedSessionTimeout.value = value * 60 * 60
-        break
-      case 'DAYS':
-        cachedSessionTimeout.value = value * 24 * 60 * 60
-        break
-      case 'WEEKS':
-        cachedSessionTimeout.value = value * 7 * 24 * 60 * 60
-        break
-      default:
-        cachedSessionTimeout.value = 15 * 60
-        break
-    }
+    cachedSessionTimeout.value = settings
+      ? sessionTimeoutSeconds(settings.sessionTimeoutValue, settings.sessionTimeoutUnit, 15 * 60)
+      : 15 * 60
 
     cachedSessionTimeout.expiresAt = now + SETTINGS_CACHE_TTL_MS
     return cachedSessionTimeout.value
@@ -243,32 +231,9 @@ export async function getAdminSessionTimeoutSeconds(): Promise<number> {
       },
     })
 
-    if (!settings) {
-      cachedAdminSessionTimeout.value = 7 * 24 * 60 * 60
-      cachedAdminSessionTimeout.expiresAt = now + SETTINGS_CACHE_TTL_MS
-      return cachedAdminSessionTimeout.value
-    }
-
-    const value = settings.adminSessionTimeoutValue
-    const unit = settings.adminSessionTimeoutUnit
-
-    switch (unit) {
-      case 'MINUTES':
-        cachedAdminSessionTimeout.value = value * 60
-        break
-      case 'HOURS':
-        cachedAdminSessionTimeout.value = value * 60 * 60
-        break
-      case 'DAYS':
-        cachedAdminSessionTimeout.value = value * 24 * 60 * 60
-        break
-      case 'WEEKS':
-        cachedAdminSessionTimeout.value = value * 7 * 24 * 60 * 60
-        break
-      default:
-        cachedAdminSessionTimeout.value = 7 * 24 * 60 * 60
-        break
-    }
+    cachedAdminSessionTimeout.value = settings
+      ? sessionTimeoutSeconds(settings.adminSessionTimeoutValue, settings.adminSessionTimeoutUnit, 7 * 24 * 60 * 60)
+      : 7 * 24 * 60 * 60
 
     cachedAdminSessionTimeout.expiresAt = now + SETTINGS_CACHE_TTL_MS
     return cachedAdminSessionTimeout.value
@@ -278,12 +243,6 @@ export async function getAdminSessionTimeoutSeconds(): Promise<number> {
   }
 }
 
-/**
- * Check if HTTPS enforcement is enabled
- *
- * Priority: Environment variable (HTTPS_ENABLED) > Database setting > Default (true)
- * IMPORTANT: Environment variable ALWAYS takes precedence (escape hatch for localhost).
- */
 /**
  * Initialize security settings from environment variables on container startup
  */
@@ -312,11 +271,17 @@ export async function getMaxAuthAttempts(): Promise<number> {
       select: { passwordAttempts: true }
     })
     return securitySettings?.passwordAttempts || 5
-  } catch (error) {
+  } catch {
     return 5 // Default fallback
   }
 }
 
+/**
+ * Check if HTTPS enforcement is enabled
+ *
+ * Priority: Environment variable (HTTPS_ENABLED) > Database setting > Default (true)
+ * IMPORTANT: Environment variable ALWAYS takes precedence (escape hatch for localhost).
+ */
 export async function isHttpsEnabled(): Promise<boolean> {
   const envOverride = getHttpsEnvironmentOverride()
   if (envOverride !== null) {
@@ -433,9 +398,7 @@ export async function getWebAuthnConfig(): Promise<{
     // RP_ID is the hostname without protocol or port
     const rpID = url.hostname
 
-    const origin = url.origin
-
-    const origins = [origin]
+    const origins = [url.origin]
     if (rpID === 'localhost' || rpID === '127.0.0.1') {
       origins.push('http://localhost:3000', 'http://127.0.0.1:3000')
     }
@@ -462,23 +425,8 @@ export async function getWebAuthnConfig(): Promise<{
  * Development: Localhost + HTTPS disabled
  */
 export async function isPasskeyConfigured(): Promise<boolean> {
-  try {
-    const config = await getWebAuthnConfig()
-    const httpsEnabled = await isHttpsEnabled()
-
-    const isLocalhost =
-      config.rpID === 'localhost' ||
-      config.rpID === '127.0.0.1'
-
-    // Valid configurations (no mixing):
-    const isValidConfig =
-      (!isLocalhost && httpsEnabled) ||
-      (isLocalhost && !httpsEnabled)
-
-    return isValidConfig
-  } catch (error) {
-    return false
-  }
+  const status = await getPasskeyConfigStatus()
+  return status.available
 }
 
 /**
@@ -500,17 +448,14 @@ export async function getPasskeyConfigStatus(): Promise<{
     const isLocalhost =
       config.rpID === 'localhost' ||
       config.rpID === '127.0.0.1'
+    const configStatus = { domain: config.rpID, httpsEnabled, isLocalhost }
 
     // Early return for invalid localhost configuration
     if (isLocalhost && httpsEnabled) {
       return {
         available: false,
         reason: 'Invalid configuration: Localhost requires HTTPS to be disabled',
-        config: {
-          domain: config.rpID,
-          httpsEnabled,
-          isLocalhost,
-        },
+        config: configStatus,
       }
     }
 
@@ -519,22 +464,14 @@ export async function getPasskeyConfigStatus(): Promise<{
       return {
         available: false,
         reason: 'Invalid configuration: Production domain requires HTTPS to be enabled',
-        config: {
-          domain: config.rpID,
-          httpsEnabled,
-          isLocalhost,
-        },
+        config: configStatus,
       }
     }
 
     // Valid configuration
     return {
       available: true,
-      config: {
-        domain: config.rpID,
-        httpsEnabled,
-        isLocalhost,
-      },
+      config: configStatus,
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes('PASSKEY_CONFIG_ERROR')) {

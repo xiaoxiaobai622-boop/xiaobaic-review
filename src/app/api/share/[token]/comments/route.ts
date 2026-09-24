@@ -95,6 +95,7 @@ export async function GET(
       select: {
         id: true,
         fileName: true,
+        originalFileName: true,
         fileSize: true,
         fileType: true,
         category: true,

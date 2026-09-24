@@ -48,7 +48,7 @@ export async function DELETE(
     await prisma.$transaction(async (tx) => {
       await createRecycleBinItem(tx, projectId, {
         itemType: 'PHOTO',
-        itemName: photo.fileName,
+        itemName: photo.originalFileName || photo.fileName,
         metadata: { photoId: photo.id, albumId },
         paths: [photo.storagePath, photo.thumbnailPath, photo.previewPath].filter((path): path is string => Boolean(path)),
       })

@@ -13,7 +13,6 @@ import { logError } from '@/lib/logging'
 import { getRequestedTeamId } from '@/lib/team-access'
 import {
   checkWechatText,
-  CONTENT_SECURITY_ERROR,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
 
@@ -69,6 +68,7 @@ export async function GET(request: NextRequest) {
         previewResolution: true,
         companyName: true,
         clientCompanyId: true,
+        groupId: true,
         clientCompany: {
           select: {
             name: true,
@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             status: true,
+            reviewStatus: true,
             version: true,
             thumbnailPath: true,
           },

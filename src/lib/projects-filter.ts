@@ -40,10 +40,11 @@ export interface ProjectListItem {
   companyName: string | null
   clientCompanyId?: string | null
   clientCompany?: { name: string } | null
+  groupId?: string | null
   createdAt: string | Date
   updatedAt: string | Date
   dueDate: string | null
-  videos: { id: string; status: string }[]
+  videos: { id: string; status: string; reviewStatus?: string | null }[]
   recipients: { id: string; name: string | null; email?: string | null; isPrimary: boolean }[]
   _count: { videos?: number; comments: number }
 }
@@ -58,6 +59,11 @@ export interface ProjectsFilterState {
 }
 
 export const NO_CLIENT_KEY = '__no_client__'
+export const NO_GROUP_KEY = '__no_folder__'
+
+export function groupKeyFor(p: ProjectListItem): string {
+  return p.groupId || NO_GROUP_KEY
+}
 
 export function clientKeyFor(p: ProjectListItem): string {
   if (p.clientCompanyId) return `cc:${p.clientCompanyId}`
@@ -186,6 +192,34 @@ export function getDistinctYears(projects: ProjectListItem[]): string[] {
   const set = new Set<string>()
   for (const p of projects) set.add(yearFor(p))
   return Array.from(set).sort((a, b) => Number(b) - Number(a))
+}
+
+/**
+ * Folder id (or NO_GROUP_KEY) -> how many projects the caller can see filed directly
+ * in it. Counted here rather than on the server so the badge always matches the grid
+ * below it, including for members who only see the projects assigned to them.
+ */
+export function countProjectsByGroup(projects: ProjectListItem[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const p of projects) {
+    const key = groupKeyFor(p)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
+}
+
+/**
+ * What the open folder holds. Like a folder on a computer this shows direct contents
+ * only: a subfolder's projects belong to the subfolder, not to the list above it.
+ * `null` means "全部项目", NO_GROUP_KEY means "未归类".
+ */
+export function scopeProjectsToFolder<T extends { groupId?: string | null }>(
+  projects: T[],
+  openFolderId: string | null
+): T[] {
+  if (openFolderId === null) return projects
+  if (openFolderId === NO_GROUP_KEY) return projects.filter(p => !p.groupId)
+  return projects.filter(p => p.groupId === openFolderId)
 }
 
 export const DUE_BUCKETS: DueBucket[] = ['overdue', 'thisWeek', 'thisMonth', 'later', 'none']

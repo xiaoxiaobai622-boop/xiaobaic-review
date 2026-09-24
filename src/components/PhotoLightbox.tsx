@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
-import { X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Download, ImageOff } from 'lucide-react'
 import type { GalleryPhoto } from './PhotoGrid'
 
 interface PhotoLightboxProps {
@@ -87,13 +87,22 @@ export default function PhotoLightbox({
       </div>
 
       <div className="flex-1 relative min-h-0 flex items-center justify-center p-4" onClick={onClose}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={buildPhotoUrl(photo.id, 'full')}
-          alt={photo.fileName}
-          className="max-w-full max-h-full object-contain"
-          onClick={(e) => e.stopPropagation()}
-        />
+        {photo.isInvalid ? (
+          // The full-quality rendition for such a photo is its original bytes, which
+          // the browser cannot raster either — say so instead of showing a broken img.
+          <div className="flex flex-col items-center gap-3 text-center px-6" onClick={(e) => e.stopPropagation()}>
+            <ImageOff className="w-12 h-12 text-destructive" />
+            <p className="text-sm text-muted-foreground max-w-md">{t('corruptPhotoHint')}</p>
+          </div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={buildPhotoUrl(photo.id, 'full')}
+            alt={photo.fileName}
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
 
         {photos.length > 1 && (
           <>

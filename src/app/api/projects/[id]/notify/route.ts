@@ -5,7 +5,7 @@ import { generateProjectShareUrlById } from '@/lib/url'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { decrypt } from '@/lib/encryption'
-import { getProjectRecipients } from '@/lib/recipients'
+import { getProjectRecipients, type Recipient } from '@/lib/recipients'
 import { rateLimit } from '@/lib/rate-limit'
 import { buildUnsubscribeUrl, generateRecipientUnsubscribeToken } from '@/lib/unsubscribe'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -13,9 +13,6 @@ import { logError } from '@/lib/logging'
 import { isSmtpConfigured } from '@/lib/settings'
 
 export const runtime = 'nodejs'
-
-
-
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -76,14 +73,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
 
     if (!project) {
-  return NextResponse.json({ error: projectMessages.projectNotFound || 'Project not found' }, { status: 404 })
+      return NextResponse.json({ error: projectMessages.projectNotFound || 'Project not found' }, { status: 404 })
     }
 
     // Get recipients
     const recipients = await getProjectRecipients(projectId)
 
     if (recipients.length === 0) {
-  return NextResponse.json({ error: projectMessages.noRecipientsConfigured || 'No recipients configured for this project' }, { status: 400 })
+      return NextResponse.json({ error: projectMessages.noRecipientsConfigured || 'No recipients configured for this project' }, { status: 400 })
     }
 
     // Generate share URL
@@ -94,7 +91,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     let video = null
     if (!notifyEntireProject) {
       if (!videoId) {
-  return NextResponse.json({ error: projectMessages.videoIdRequiredForNotification || 'videoId is required for specific video notification' }, { status: 400 })
+        return NextResponse.json({ error: projectMessages.videoIdRequiredForNotification || 'videoId is required for specific video notification' }, { status: 400 })
       }
 
       video = await prisma.video.findUnique({
@@ -107,7 +104,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       })
 
       if (!video) {
-  return NextResponse.json({ error: messages?.share?.videoNotFound || 'Video not found' }, { status: 404 })
+        return NextResponse.json({ error: messages?.share?.videoNotFound || 'Video not found' }, { status: 404 })
       }
 
       if (video.status !== 'READY') {
@@ -118,63 +115,63 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // Send emails to all recipients with email addresses
-    const emailPromises = recipients
-      .filter(recipient => recipient.email)
-      .map(async (recipient) => {
-        let unsubscribeUrl: string | undefined
-        try {
-          const token = generateRecipientUnsubscribeToken({
-            recipientId: recipient.id!,
-            projectId,
-            recipientEmail: recipient.email!,
-          })
-          unsubscribeUrl = buildUnsubscribeUrl(new URL(shareUrl).origin, token)
-        } catch {
-          unsubscribeUrl = undefined
-        }
+    // Recipients without an address are skipped by every send path below.
+    const emailRecipients = recipients.filter(recipient => recipient.email)
 
-        if (notifyEntireProject) {
-          // Resolve per-recipient locale
-          const recipientLocale = await getRecipientLocale(recipient.email!)
-          return sendProjectGeneralNotificationEmail({
-            clientEmail: recipient.email!,
-            clientName: recipient.name || 'Client',
-            projectTitle: project.title,
-            projectDescription: project.description || '',
-            shareUrl,
-            readyVideos: project.videos.map(v => ({ name: v.name, versionLabel: v.versionLabel })),
-            isPasswordProtected,
-            unsubscribeUrl,
-            locale: recipientLocale,
-          })
-        } else {
-          // Resolve per-recipient locale
-          const recipientLocale = await getRecipientLocale(recipient.email!)
-          return sendNewVersionEmail({
-            clientEmail: recipient.email!,
-            clientName: recipient.name || 'Client',
-            projectTitle: project.title,
-            videoName: video!.name,
-            versionLabel: video!.versionLabel,
-            shareUrl,
-            isPasswordProtected,
-            unsubscribeUrl,
-            locale: recipientLocale,
-          })
-        }
+    const unsubscribeUrlFor = (recipient: Recipient): string | undefined => {
+      try {
+        const token = generateRecipientUnsubscribeToken({
+          recipientId: recipient.id!,
+          projectId,
+          recipientEmail: recipient.email!,
+        })
+        return buildUnsubscribeUrl(new URL(shareUrl).origin, token)
+      } catch {
+        return undefined
+      }
+    }
+
+    // Send emails to all recipients with email addresses
+    const emailPromises = emailRecipients.map(async (recipient) => {
+      const unsubscribeUrl = unsubscribeUrlFor(recipient)
+      // Resolve per-recipient locale
+      const recipientLocale = await getRecipientLocale(recipient.email!)
+
+      if (notifyEntireProject) {
+        return sendProjectGeneralNotificationEmail({
+          clientEmail: recipient.email!,
+          clientName: recipient.name || 'Client',
+          projectTitle: project.title,
+          projectDescription: project.description || '',
+          shareUrl,
+          readyVideos: project.videos.map(v => ({ name: v.name, versionLabel: v.versionLabel })),
+          isPasswordProtected,
+          unsubscribeUrl,
+          locale: recipientLocale,
+        })
+      }
+      return sendNewVersionEmail({
+        clientEmail: recipient.email!,
+        clientName: recipient.name || 'Client',
+        projectTitle: project.title,
+        videoName: video!.name,
+        versionLabel: video!.versionLabel,
+        shareUrl,
+        isPasswordProtected,
+        unsubscribeUrl,
+        locale: recipientLocale,
       })
+    })
 
     const results = await Promise.allSettled(emailPromises)
     const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length
 
     // Get recipients with emails who were actually sent
-    const recipientsWithEmails = recipients.filter(r => r.email)
-    const successfulRecipients = recipientsWithEmails.slice(0, successCount)
+    const successfulRecipients = emailRecipients.slice(0, successCount)
 
     // Send password emails if requested
     let passwordSuccessCount = 0
-    let successfulPasswordRecipients: any[] = []
+    let successfulPasswordRecipients: Recipient[] = []
     if (sendPasswordSeparately && isPasswordProtected && project.sharePassword) {
       try {
         // Wait 10 seconds before sending password emails
@@ -182,67 +179,52 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         const decryptedPassword = decrypt(project.sharePassword)
 
-        const passwordPromises = recipients
-          .filter(recipient => recipient.email)
-          .map(recipient =>
-            (async () => {
-              let unsubscribeUrl: string | undefined
-              try {
-                const token = generateRecipientUnsubscribeToken({
-                  recipientId: recipient.id!,
-                  projectId,
-                  recipientEmail: recipient.email!,
-                })
-                unsubscribeUrl = buildUnsubscribeUrl(new URL(shareUrl).origin, token)
-              } catch {
-                unsubscribeUrl = undefined
-              }
+        const passwordPromises = emailRecipients.map(async (recipient) => {
+          const unsubscribeUrl = unsubscribeUrlFor(recipient)
+          // Resolve per-recipient locale
+          const recipientLocale = await getRecipientLocale(recipient.email!)
 
-              // Resolve per-recipient locale
-              const recipientLocale = await getRecipientLocale(recipient.email!)
-
-              return sendPasswordEmail({
-              clientEmail: recipient.email!,
-              clientName: recipient.name || 'Client',
-              projectTitle: project.title,
-              password: decryptedPassword,
-                unsubscribeUrl,
-                locale: recipientLocale,
-              })
-            })()
-          )
+          return sendPasswordEmail({
+            clientEmail: recipient.email!,
+            clientName: recipient.name || 'Client',
+            projectTitle: project.title,
+            password: decryptedPassword,
+            unsubscribeUrl,
+            locale: recipientLocale,
+          })
+        })
 
         const passwordResults = await Promise.allSettled(passwordPromises)
         passwordSuccessCount = passwordResults.filter(r => r.status === 'fulfilled' && (r.value as any).success).length
-        successfulPasswordRecipients = recipientsWithEmails.slice(0, passwordSuccessCount)
+        successfulPasswordRecipients = emailRecipients.slice(0, passwordSuccessCount)
       } catch (error) {
         logError('Error sending password emails:', error)
       }
     }
 
-    if (successCount > 0) {
-      // Format recipient names
-      const formatRecipientList = (recipients: any[]) => {
-        const names = recipients.map(r => r.name || r.email)
-        if (names.length === 1) return names[0]
-        if (names.length === 2) return `${names[0]} & ${names[1]}`
-        return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1]
-      }
-
-      const sentEmailTo = messages?.projects?.sentEmailTo || 'Sent email to {recipients}.'
-      const passwordSentTo = messages?.projects?.passwordSentTo || 'Password sent to {recipients}.'
-
-      let message = sentEmailTo.replace('{recipients}', formatRecipientList(successfulRecipients))
-      if (sendPasswordSeparately && isPasswordProtected && passwordSuccessCount > 0) {
-        message += ` ${passwordSentTo.replace('{recipients}', formatRecipientList(successfulPasswordRecipients))}`
-      }
-      return NextResponse.json({ success: true, message })
-    } else {
+    if (successCount === 0) {
       return NextResponse.json(
         { error: projectMessages.failedToSendEmails || 'Failed to send emails to any recipients' },
         { status: 500 }
       )
     }
+
+    // Format recipient names
+    const formatRecipientList = (entries: any[]) => {
+      const names = entries.map(r => r.name || r.email)
+      if (names.length === 1) return names[0]
+      if (names.length === 2) return `${names[0]} & ${names[1]}`
+      return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1]
+    }
+
+    const sentEmailTo = messages?.projects?.sentEmailTo || 'Sent email to {recipients}.'
+    const passwordSentTo = messages?.projects?.passwordSentTo || 'Password sent to {recipients}.'
+
+    let message = sentEmailTo.replace('{recipients}', formatRecipientList(successfulRecipients))
+    if (sendPasswordSeparately && isPasswordProtected && passwordSuccessCount > 0) {
+      message += ` ${passwordSentTo.replace('{recipients}', formatRecipientList(successfulPasswordRecipients))}`
+    }
+    return NextResponse.json({ success: true, message })
   } catch (error) {
     logError('Notify error:', error)
     const locale = await getConfiguredLocale().catch(() => 'en')

@@ -200,8 +200,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const [error, setError] = useState('')
   const [project, setProject] = useState<any>(null)
   const [comments, setComments] = useState<any[]>([])
-  const [_commentsLoading, setCommentsLoading] = useState(false)
-  const [_companyName, setCompanyName] = useState('Studio')
   const [defaultQuality, setDefaultQuality] = useState<'720p' | '1080p' | '2160p'>('720p')
   const [activeVideoName, setActiveVideoName] = useState<string>('')
   const [activeVideos, setActiveVideos] = useState<any[]>([])
@@ -274,7 +272,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const activeVideoIdRef = useRef<string | null>(null)
   const projectVideoCatalogRef = useRef('')
   const activeVideosRawRef = useRef<any[]>([])
-  const activeVideosRef = useRef<any[]>([])
   const shareTokenRef = useRef<string | null>(shareToken)
 
   useEffect(() => {
@@ -284,10 +281,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   useEffect(() => {
     activeVideosRawRef.current = activeVideosRaw
   }, [activeVideosRaw])
-
-  useEffect(() => {
-    activeVideosRef.current = activeVideos
-  }, [activeVideos])
 
   /** Read GDPR analytics consent from localStorage */
   const getConsentHeader = useCallback((): Record<string, string> => {
@@ -343,7 +336,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     if (commentsRequestRef.current) return commentsRequestRef.current
 
     const request = (async () => {
-      setCommentsLoading(true)
       try {
         const response = await apiFetch(`/api/share/${token}/comments`, {
           cache: 'no-store',
@@ -357,8 +349,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         }
       } catch {
         // Keep showing the last known comments when a refresh fails.
-      } finally {
-        setCommentsLoading(false)
       }
     })()
 
@@ -493,11 +483,9 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           fetchComments()
         }
       }
-    } catch (error) {
+    } catch {
     }
   }, [activeVideoName, fetchComments, getConsentHeader, shareToken, storageKey, supportsHls, token, urlFolderId])
-
-  // Company name and default quality loaded from project settings
 
   useEffect(() => {
     let isMounted = true
@@ -600,7 +588,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
             setIsGuest(projectData.isGuest || false)
 
             if (projectData.settings) {
-              setCompanyName(projectData.settings.companyName || 'Studio')
               setDefaultQuality(projectData.previewResolution || projectData.settings.defaultPreviewResolution || '720p')
             }
 
@@ -609,7 +596,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
             }
           }
         }
-      } catch (error) {
+      } catch {
       }
     }
 
@@ -1013,7 +1000,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         if (isMounted) {
           setThumbnailsByName(newThumbnails)
         }
-      } catch (error) {
+      } catch {
         // Failed to load thumbnails
       } finally {
         if (isMounted) {
@@ -1106,11 +1093,10 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
       if (response.ok) {
         setOtpSent(true)
-        setError('')
       } else {
         setError(data.error || t('failedToSendCode'))
       }
-    } catch (error) {
+    } catch {
       setError(tc('errorTryAgain'))
     } finally {
       setSendingOtp(false)
@@ -1144,7 +1130,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         // Generic error to prevent email enumeration
         setError(t('invalidCode'))
       }
-    } catch (error) {
+    } catch {
       setError(tc('errorTryAgain'))
     } finally {
       setLoading(false)
@@ -1174,7 +1160,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       } else {
         setError(t('incorrectPassword'))
       }
-    } catch (error) {
+    } catch {
       setError(tc('error'))
     } finally {
       setLoading(false)
@@ -1202,7 +1188,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       } else {
         setError(t('unableToAccessGuest'))
       }
-    } catch (error) {
+    } catch {
       setError(tc('error'))
     } finally {
       setLoading(false)
@@ -1420,15 +1406,16 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   }
 
   // Filter to READY videos first
-  let readyVideos = activeVideos.filter((v: any) => v.status === 'READY')
+  const readyVideos = activeVideos.filter((v: any) => v.status === 'READY')
 
   const activeVideoIds = new Set(activeVideos.map((v: any) => v.id))
-  const filteredComments = comments.filter((comment: any) => {
-    return !comment.videoId || activeVideoIds.has(comment.videoId)
-  })
+  const filteredComments = comments.filter((comment: any) => !comment.videoId || activeVideoIds.has(comment.videoId))
   const displayClientName = project.clientName?.trim().toLowerCase() === 'client'
     ? t('clientFallback')
     : project.clientName
+
+  // Whether to show comment panel
+  const showCommentPanel = !project.hideFeedback && canComment
 
   if (viewState === 'grid') {
     return (
@@ -1458,22 +1445,18 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
         <div className="flex-1 overflow-y-auto">
           <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-            {(() => {
-              return (
-                <ThumbnailGrid
-                  videosByName={project.videosByName}
-                  thumbnailsByName={thumbnailsByName}
-                  thumbnailsLoading={thumbnailsLoading}
-                  onVideoSelect={handleVideoSelect}
-                  projectTitle={project.title}
-                  projectDescription={isGuest ? undefined : project.description}
-                  allowAssetDownload={canDownload}
-                  viewMode={viewMode}
-                  albumCount={albumCount}
-                  comments={comments}
-                />
-              )
-            })()}
+            <ThumbnailGrid
+              videosByName={project.videosByName}
+              thumbnailsByName={thumbnailsByName}
+              thumbnailsLoading={thumbnailsLoading}
+              onVideoSelect={handleVideoSelect}
+              projectTitle={project.title}
+              projectDescription={isGuest ? undefined : project.description}
+              allowAssetDownload={canDownload}
+              viewMode={viewMode}
+              albumCount={albumCount}
+              comments={comments}
+            />
             {project.hasPhotos && project.id && shareToken && (
               <SharePhotoSection
                 projectId={project.id}
@@ -1495,8 +1478,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     )
   }
 
-  // Whether to show comment panel
-  const showCommentPanel = !project.hideFeedback && canComment
   const timestampDisplayMode = project.timestampDisplay === 'AUTO' ? 'AUTO' : 'TIMECODE'
 
   return (
@@ -1509,7 +1490,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           onVideoSelect={handleVideoSelect}
           onBackToGrid={handleBackToGrid}
           showBackButton={true}
-          showCommentToggle={!project.hideFeedback && canComment}
+          showCommentToggle={showCommentPanel}
           isCommentPanelVisible={!hideComments}
           onToggleCommentPanel={() => setHideComments(!hideComments)}
           comments={comments}
@@ -1562,7 +1543,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 onStreamAuthExpired={recoverStreamAuth}
                 hideDownloadButton={!canDownload}
                 allowComparison={false}
-                comments={!project.hideFeedback && canComment ? filteredComments : []}
+                comments={showCommentPanel ? filteredComments : []}
                 timestampDisplayMode={timestampDisplayMode}
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}

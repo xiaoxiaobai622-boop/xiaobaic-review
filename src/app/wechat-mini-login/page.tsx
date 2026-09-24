@@ -62,9 +62,10 @@ function WechatMiniLoginForm() {
           setState('success')
           setMessage('登录成功')
           window.setTimeout(() => {
+            const statusReturnUrl = safeReturnUrl(data.returnUrl)
             const target = data.needsOnboarding
-              ? `/onboarding?returnUrl=${encodeURIComponent(safeReturnUrl(data.returnUrl))}`
-              : safeReturnUrl(data.returnUrl)
+              ? `/onboarding?returnUrl=${encodeURIComponent(statusReturnUrl)}`
+              : statusReturnUrl
             router.replace(target)
             router.refresh()
           }, 450)

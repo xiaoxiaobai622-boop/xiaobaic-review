@@ -77,6 +77,24 @@ function validateMimeType(mimeType: string): boolean {
 
 
 /**
+ * 展示名进 DB（文本列，255 字符就够），对象键要当文件名用：
+ * 存储路径的文件名段还会拼上 `client-<时间戳>-` / `original-<时间戳>-` 这类前缀，
+ * 而本地磁盘 NAME_MAX 是 255 **字节**（macOS/Linux 同名），所以键必须留出余量，
+ * 否则 TUS 收尾的 rename 会 ENAMETOOLONG —— 建档成功、字节永远落不了地。
+ */
+const DISPLAY_FILENAME_MAX_LENGTH = 255
+const STORAGE_KEY_MAX_LENGTH = 200
+
+/** 截断并保留扩展名；无扩展名（或扩展名本身超长）时退化为纯截断 */
+function truncatePreservingExtension(value: string, max: number): string {
+  if (value.length <= max) return value
+  const dot = value.lastIndexOf('.')
+  const ext = dot > 0 ? value.slice(dot) : ''
+  if (ext.length >= max) return value.slice(0, max)
+  return value.slice(0, max - ext.length) + ext
+}
+
+/**
  * Sanitize filename to prevent path traversal and other attacks
  */
 export function sanitizeDisplayFilename(filename: string): string {
@@ -101,11 +119,7 @@ export function sanitizeDisplayFilename(filename: string): string {
   safe = safe.replace(/\.\./g, '')
   
   // Limit length while preserving extension
-  if (safe.length > 255) {
-    const ext = safe.slice(safe.lastIndexOf('.'))
-    const name = safe.slice(0, 255 - ext.length)
-    safe = name + ext
-  }
+  safe = truncatePreservingExtension(safe, DISPLAY_FILENAME_MAX_LENGTH)
   
   // Ensure not empty and not just dots
   if (!safe || safe === '.' || safe === '..') {
@@ -118,7 +132,8 @@ export function sanitizeDisplayFilename(filename: string): string {
 export function sanitizeFilename(filename: string): string {
   // Storage paths remain ASCII-only; the original Unicode display name is
   // stored separately so users see exactly what they uploaded.
-  return sanitizeDisplayFilename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')
+  const ascii = sanitizeDisplayFilename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')
+  return truncatePreservingExtension(ascii, STORAGE_KEY_MAX_LENGTH)
 }
 
 /**
@@ -339,4 +354,20 @@ export function sanitizeContentType(raw: string | undefined | null): string {
     return 'application/octet-stream'
   }
   return base
+}
+
+/**
+ * Marks a Photo/VideoAsset row whose stored bytes are permanently unusable
+ * (wrong magic bytes, or a header that decodes to nothing). The format is
+ * load-bearing: `src/worker/backfill.ts` selects rows via
+ * `fileType: { startsWith: 'INVALID' }`, so writer and readers must agree.
+ */
+const INVALID_FILE_TYPE_PREFIX = 'INVALID - '
+
+export function markInvalidFileType(detected: string): string {
+  return `${INVALID_FILE_TYPE_PREFIX}${detected}`
+}
+
+export function isInvalidFileType(fileType: string | null | undefined): boolean {
+  return !!fileType && fileType.startsWith(INVALID_FILE_TYPE_PREFIX)
 }

@@ -33,7 +33,7 @@ interface EmailTemplatesEditorProps {
   setEmailHeaderStyle: (value: string) => void
 }
 
-// Embedded component for use inside AppearanceSection
+// Embedded component for use inside BrandingSection
 export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: EmailTemplatesEditorProps) {
   const t = useTranslations('settings.emailTemplates')
   const tc = useTranslations('common')
@@ -85,17 +85,17 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
   }, [templates.length, loadTemplates])
 
   // Select a template for editing
-  const handleSelectTemplate = useCallback((template: EmailTemplate) => {
+  const handleSelectTemplate = (template: EmailTemplate) => {
     setSelectedTemplate(template)
     setEditSubject(template.subject)
     setEditBody(template.bodyContent)
     setEditMode(true)
     setShowPreview(false)
     setSaveSuccess(false)
-  }, [])
+  }
 
   // Generate preview
-  const handlePreview = useCallback(async () => {
+  const handlePreview = async () => {
     if (!selectedTemplate) return
 
     setPreviewLoading(true)
@@ -120,10 +120,10 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
     } finally {
       setPreviewLoading(false)
     }
-  }, [selectedTemplate, editSubject, editBody])
+  }
 
   // Save template
-  const handleSave = useCallback(async () => {
+  const handleSave = async () => {
     if (!selectedTemplate) return
 
     setSaving(true)
@@ -160,10 +160,10 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
     } finally {
       setSaving(false)
     }
-  }, [selectedTemplate, editSubject, editBody])
+  }
 
   // Reset template to default
-  const handleReset = useCallback(async () => {
+  const handleReset = async () => {
     if (!selectedTemplate) return
     if (!await appConfirm(t('resetConfirm'))) return
 
@@ -192,22 +192,22 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
     } catch (err) {
       logError('Reset error:', err)
     }
-  }, [selectedTemplate, t])
+  }
 
   // Copy placeholder to clipboard
-  const handleCopyPlaceholder = useCallback(async (placeholder: string) => {
+  const handleCopyPlaceholder = async (placeholder: string) => {
     if (await copyTextToClipboard(placeholder)) {
       setCopiedPlaceholder(placeholder)
       setTimeout(() => setCopiedPlaceholder(null), 2000)
     }
-  }, [])
+  }
 
   // Back to template list
-  const handleBack = useCallback(() => {
+  const handleBack = () => {
     setEditMode(false)
     setSelectedTemplate(null)
     setShowPreview(false)
-  }, [])
+  }
 
   // Group templates by category
   const groupedTemplates = templates.reduce(

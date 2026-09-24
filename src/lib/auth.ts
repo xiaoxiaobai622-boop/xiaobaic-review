@@ -102,6 +102,24 @@ const PLATFORM_ACCESS_TOKEN_DURATION = safeParseInt(process.env.PLATFORM_ACCESS_
 const PLATFORM_REFRESH_TOKEN_DURATION = safeParseInt(process.env.PLATFORM_REFRESH_TTL_SECONDS, 12 * 60 * 60)
 const DUMMY_BCRYPT_HASH = '$2a$14$aoLibk0GEJrzo6fSqPoQIONMGynUKWEoQhkCrFcEapn6I.WzXXdki'
 
+/**
+ * The single shape the auth layer accepts for a signed-in user. Every account
+ * read must select exactly these fields: `isPlatformAdmin` gates the platform
+ * routes and `projectAccessScope` gates project filtering, so a read that drops
+ * either one silently downgrades or upgrades the caller.
+ */
+const AUTH_USER_SELECT = {
+  id: true,
+  email: true,
+  phone: true,
+  name: true,
+  avatarUrl: true,
+  onboardingCompleted: true,
+  role: true,
+  isPlatformAdmin: true,
+  projectAccessScope: true,
+} as const
+
 if (process.env.SKIP_ENV_VALIDATION !== '1') {
   const missing: string[] = []
   if (!ADMIN_ACCESS_SECRET) missing.push('JWT_SECRET')
@@ -413,7 +431,7 @@ export async function getPlatformUserFromRequest(request: NextRequest): Promise<
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, isPlatformAdmin: true, projectAccessScope: true },
+    select: AUTH_USER_SELECT,
   })
   return user?.isPlatformAdmin ? { ...user, sessionId: payload.sessionId } : null
 }
@@ -504,7 +522,7 @@ export async function getCurrentUserFromRequest(request: NextRequest): Promise<A
     if (payload) {
       const user = await prisma.user.findUnique({
         where: { id: payload.userId },
-        select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, isPlatformAdmin: true, projectAccessScope: true },
+        select: AUTH_USER_SELECT,
       })
       return user ? { ...user, sessionId: payload.sessionId } : null
     }
@@ -525,8 +543,17 @@ export async function getCurrentUserFromRequest(request: NextRequest): Promise<A
 
   return prisma.user.findUnique({
     where: { id: identity.userId },
-    select: { id: true, email: true, phone: true, name: true, avatarUrl: true, onboardingCompleted: true, role: true, isPlatformAdmin: true, projectAccessScope: true },
+    select: AUTH_USER_SELECT,
   })
+}
+
+/**
+ * Resolves whichever browser session a request carries — studio or platform
+ * console. Both families are signed with different secrets and carry different
+ * `type` claims, so a request can only ever present one of them.
+ */
+export async function getConsoleUserFromRequest(request: NextRequest): Promise<AuthUser | null> {
+  return (await getCurrentUserFromRequest(request)) ?? (await getPlatformUserFromRequest(request))
 }
 
 export async function hasWebsiteLoginSession(request: NextRequest): Promise<boolean> {
@@ -578,7 +605,11 @@ export async function requireApiAdmin(request: NextRequest): Promise<AuthUser | 
 }
 
 export async function requirePlatformAdmin(request: NextRequest): Promise<AuthUser | Response> {
-  const user = await getCurrentUserFromRequest(request)
+  // These routes are platform-admin only but sit outside /api/platform/, so the
+  // browser reaches them with whichever session it happens to hold. Accepting
+  // either token family is safe only because the flag below — not the audience —
+  // is what decides.
+  const user = await getConsoleUserFromRequest(request)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

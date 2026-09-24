@@ -95,6 +95,17 @@ function fileNameWithoutExtension(fileName: string): string {
   return (lastDot > 0 ? fileName.slice(0, lastDot) : fileName).trim()
 }
 
+function clickAnchorDownload(url: string) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  a.rel = 'noopener'
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 export default function ProjectUploadsBlock({ projectId, onCountChange, videoNames = [], onPromoted }: ProjectUploadsBlockProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -198,14 +209,7 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
         return
       }
       const { url } = await res.json()
-      const a = document.createElement('a')
-      a.href = url
-      a.download = ''
-      a.rel = 'noopener'
-      a.style.display = 'none'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      clickAnchorDownload(url)
     } catch (error) {
       logError('Error downloading project upload:', error)
     } finally {
@@ -359,14 +363,7 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
         )
         if (!res.ok) continue
         const { url } = await res.json()
-        const a = document.createElement('a')
-        a.href = url
-        a.download = ''
-        a.rel = 'noopener'
-        a.style.display = 'none'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
+        clickAnchorDownload(url)
         // Browsers will batch simultaneous downloads otherwise; small gap helps.
         await new Promise((r) => setTimeout(r, 200))
       } catch (error) {

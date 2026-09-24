@@ -7,9 +7,13 @@ import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
+function badRequest(error: string): NextResponse {
+  return NextResponse.json({ error }, { status: 400 })
+}
+
 export async function POST(request: NextRequest) {
   if (!isS3Mode()) {
-    return NextResponse.json({ error: 'S3 storage is not enabled' }, { status: 400 })
+    return badRequest('S3 storage is not enabled')
   }
 
   try {
@@ -23,17 +27,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (!videoId && !assetId && !projectUploadId && !photoId) {
-      return NextResponse.json(
-        { error: 'Missing required field: videoId, assetId, projectUploadId, or photoId' },
-        { status: 400 }
-      )
+      return badRequest('Missing required field: videoId, assetId, projectUploadId, or photoId')
     }
 
-    // Authenticate and verify ownership (no feature-flag checks for abort)
+    // Ownership only — aborting deliberately skips the feature-flag checks.
     const authResult = await verifyS3UploadAccess(request, { videoId, assetId, projectUploadId, photoId })
     if (authResult.errorResponse) return authResult.errorResponse
 
-    // Rate limit: 30 abort requests per minute per client
     const rateLimitResult = await rateLimit(request, {
       windowMs: 60 * 1000,
       maxRequests: 30,
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     if (rateLimitResult) return rateLimitResult
 
     if (!uploadId || typeof uploadId !== 'string' || uploadId.length > 1024) {
-      return NextResponse.json({ error: 'Missing or invalid field: uploadId' }, { status: 400 })
+      return badRequest('Missing or invalid field: uploadId')
     }
 
     await s3AbortMultipartUpload(authResult.s3Key, uploadId)

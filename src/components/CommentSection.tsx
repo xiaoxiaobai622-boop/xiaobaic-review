@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Comment, Video } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -11,10 +11,9 @@ import { cn } from '@/lib/utils'
 import MessageBubble from './MessageBubble'
 import CommentInput from './CommentInput'
 import { useCommentManagement } from '@/hooks/useCommentManagement'
-import { formatDate } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-client'
 import { formatCommentTimestamp, timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
-import { COMMENT_CATEGORIES, getCommentCategory, type CommentCategory } from '@/lib/comment-categories'
+import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -119,14 +118,12 @@ export default function CommentSection({
     handleSubmitComment,
     handleReply,
     handleCancelReply,
-    handleClearTimestamp,
     handleDeleteComment,
     handleAttachmentAdded,
     handleRemoveAttachment,
     handleAttachmentErrorChange,
     handleStartDrawing,
     handleSetTimecodeEnd,
-    handleClearTimecodeEnd,
   } = useCommentManagement({
     projectId,
     initialComments,
@@ -138,7 +135,6 @@ export default function CommentSection({
     authenticatedName,
   })
 
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [localComments, setLocalComments] = useState<CommentWithReplies[]>(initialComments)
 
   // The page-level review shell owns comment fetching and passes the current
@@ -262,7 +258,7 @@ export default function CommentSection({
   const isCurrentVideoAllowed = () => {
     if (!restrictToLatestVersion) return true
     if (!selectedVideoId) return true
-    const selectedVideo = selectedVideoId ? videoById.get(selectedVideoId) : undefined
+    const selectedVideo = videoById.get(selectedVideoId)
     if (!selectedVideo) return true
     return selectedVideo.version === latestVideoVersion
   }
@@ -449,48 +445,6 @@ export default function CommentSection({
           </div>
         )}
 
-        {/* Comment Input - MOVED TO TOP on mobile when collapsible */}
-        {false && mobileCollapsible && (
-          <div className="order-1 lg:hidden">
-            <CommentInput
-              newComment={newComment}
-              onCommentChange={handleCommentChange}
-              onSubmit={handleSubmitWithAuth}
-              loading={loading}
-              selectedCategory={selectedCategory}
-              onCategoryChange={handleCategoryChange}
-              selectedTimestamp={selectedTimestamp}
-              onClearTimestamp={handleClearTimestamp}
-              selectedVideoFps={selectedVideoFps}
-              selectedVideoDurationSeconds={currentVideoDuration}
-              timestampDisplayMode={timestampDisplayMode}
-              selectedTimecodeEnd={selectedTimecodeEnd}
-              isSelectingTimecodeEnd={isSelectingTimecodeEnd}
-              onSetTimecodeEnd={handleSetTimecodeEnd}
-              onClearTimecodeEnd={handleClearTimecodeEnd}
-              replyingToComment={replyingToComment}
-              onCancelReply={handleCancelReply}
-              currentVideoRestricted={currentVideoRestricted}
-              restrictionMessage={restrictionMessage}
-              commentsDisabled={commentsDisabled}
-              allowClientAssetUpload={allowClientAssetUpload}
-              maxCommentAttachments={maxCommentAttachments}
-              selectedVideoId={selectedVideoId}
-              pendingAttachments={pendingAttachments}
-              onAttachmentAdded={handleAttachmentAdded}
-              onRemoveAttachment={handleRemoveAttachment}
-              attachmentError={attachmentError}
-              attachmentNotice={attachmentNotice}
-              onAttachmentErrorChange={handleAttachmentErrorChange}
-              shareToken={shareToken}
-              pendingAnnotation={pendingAnnotation}
-              onStartDrawing={handleStartDrawing}
-              showShortcutsButton={showShortcutsButton}
-              onShowShortcuts={handleOpenShortcuts}
-            />
-          </div>
-        )}
-
         {/* Collapsible header for messages (mobile only) - NOW includes "Feedback & Discussion" title */}
         {mobileCollapsible && (
           <button
@@ -516,7 +470,6 @@ export default function CommentSection({
 
         {/* Messages Area - Threaded Conversations */}
         <div
-          ref={messagesContainerRef}
           className={cn(
             "min-h-0 flex-1 space-y-0 overflow-y-auto bg-card p-0",
             mobileCollapsible && "order-3 lg:order-2",
@@ -600,14 +553,12 @@ export default function CommentSection({
           selectedCategory={selectedCategory}
           onCategoryChange={handleCategoryChange}
           selectedTimestamp={selectedTimestamp}
-          onClearTimestamp={handleClearTimestamp}
           selectedVideoFps={selectedVideoFps}
           selectedVideoDurationSeconds={currentVideoDuration}
           timestampDisplayMode={timestampDisplayMode}
           selectedTimecodeEnd={selectedTimecodeEnd}
           isSelectingTimecodeEnd={isSelectingTimecodeEnd}
           onSetTimecodeEnd={handleSetTimecodeEnd}
-          onClearTimecodeEnd={handleClearTimecodeEnd}
           replyingToComment={replyingToComment}
           onCancelReply={handleCancelReply}
           currentVideoRestricted={currentVideoRestricted}

@@ -285,7 +285,7 @@ export async function getRateLimitedEntries(): Promise<Array<{
               type,
             })
           }
-        } catch (parseError) {
+        } catch {
           continue
         }
       }

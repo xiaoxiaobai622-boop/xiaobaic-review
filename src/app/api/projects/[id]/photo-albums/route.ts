@@ -56,7 +56,13 @@ export async function GET(
       include: {
         coverPhoto: { select: { id: true, thumbnailPath: true } },
         photos: {
-          where: { uploadCompletedAt: { not: null }, thumbnailPath: { not: null } },
+          where: {
+            uploadCompletedAt: { not: null },
+            thumbnailPath: { not: null },
+            // An uploaded-but-undecodable photo keeps its original bytes and can
+            // still be downloaded, so it must not become the album cover.
+            NOT: { fileType: { startsWith: 'INVALID' } },
+          },
           orderBy: { createdAt: 'asc' },
           take: 1,
           select: { id: true },

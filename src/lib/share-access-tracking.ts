@@ -82,6 +82,7 @@ export async function trackSharePageAccess(params: {
       const baseUrl = await getAppUrl(request).catch(() => '')
       const person = email || notificationsText?.someone || 'Someone'
       const projectTitle = project?.title || notificationsText?.unknownProject || 'Unknown Project'
+      const linkTarget = shareUrl || baseUrl
 
       return [
         project?.title
@@ -91,11 +92,7 @@ export async function trackSharePageAccess(params: {
           : (notificationsText?.openedAProject || '{person} opened a project')
               .replace('{person}', person),
         (notificationsText?.method || 'Method: {method}').replace('{method}', accessMethod),
-        shareUrl
-          ? (notificationsText?.link || 'Link: {url}').replace('{url}', shareUrl)
-          : baseUrl
-            ? (notificationsText?.link || 'Link: {url}').replace('{url}', baseUrl)
-            : null,
+        linkTarget ? (notificationsText?.link || 'Link: {url}').replace('{url}', linkTarget) : null,
       ]
         .filter(Boolean)
         .join('\n')

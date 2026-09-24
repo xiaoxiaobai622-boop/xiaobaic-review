@@ -404,7 +404,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                         setShowContactDropdown(true)
                       }
                     }}
-                    placeholder={companyId ? t('clientNamePlaceholder') : t('clientNamePlaceholder')}
+                    placeholder={t('clientNamePlaceholder')}
                     className="pl-9"
                     autoFocus
                     autoComplete="off"

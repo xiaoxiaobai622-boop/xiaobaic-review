@@ -82,7 +82,7 @@ export default function EditUserPage() {
 
   const fetchLoggedInUser = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/auth/session')
+      const res = await apiFetch('/api/platform/auth/session')
       if (res.ok) {
         const data = await res.json()
         setLoggedInUser(data.user)
@@ -247,6 +247,10 @@ export default function EditUserPage() {
     }
   }
 
+  const isOwnAccount = Boolean(
+    loggedInUser && currentUser && loggedInUser.id === currentUser.id,
+  )
+
   return (
     <>
       <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
@@ -310,7 +314,7 @@ export default function EditUserPage() {
 
                 {/* Action Buttons for Password and Passkeys */}
                 <div className="border-t pt-4 mt-4 space-y-3">
-                  {loggedInUser && currentUser && loggedInUser.id === currentUser.id && (
+                  {isOwnAccount && (
                     <Button
                       type="button"
                       variant="outline"
@@ -475,7 +479,7 @@ export default function EditUserPage() {
                   <X className="w-4 h-4" /> {t('passwordsDoNotMatch')}
                 </p>
               )}
-              {passwordData.password && passwordData.confirmPassword && passwordData.password === passwordData.confirmPassword && passwordData.password.length > 0 && (
+              {passwordData.password && passwordData.confirmPassword && passwordData.password === passwordData.confirmPassword && (
                 <p className="text-sm text-success flex items-center gap-1">
                   <Check className="w-4 h-4" /> {t('passwordsMatch')}
                 </p>
@@ -525,7 +529,7 @@ export default function EditUserPage() {
                   {passkeys.length === 0 ? t('noPasskeys') : t('passkeyCount', { count: passkeys.length })}
                 </p>
               </div>
-              {loggedInUser && currentUser && loggedInUser.id === currentUser.id && (
+              {isOwnAccount && (
                 <Button
                   type="button"
                   variant="outline"

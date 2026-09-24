@@ -119,12 +119,12 @@ export default function SharePhotoSection({ projectId, shareToken, allowPhotoDow
   const handleZipDownload = async (scope: 'selection' | 'album' | 'project') => {
     setDownloading(true)
     try {
-      const body =
-        scope === 'selection' && selectedAlbum
-          ? { scope, albumId: selectedAlbum.id, photoIds: Array.from(selectedIds) }
-          : scope === 'album' && selectedAlbum
-            ? { scope, albumId: selectedAlbum.id }
-            : { scope: 'project' as const }
+      let body: { scope: string; albumId?: string; photoIds?: string[] } = { scope: 'project' }
+      if (scope === 'selection' && selectedAlbum) {
+        body = { scope, albumId: selectedAlbum.id, photoIds: Array.from(selectedIds) }
+      } else if (scope === 'album' && selectedAlbum) {
+        body = { scope, albumId: selectedAlbum.id }
+      }
 
       const res = await doFetch(`/api/projects/${projectId}/photos/download-zip-token`, {
         method: 'POST',

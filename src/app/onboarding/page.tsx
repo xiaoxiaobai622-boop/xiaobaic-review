@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ArrowRight, Camera, Check, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
@@ -24,12 +24,10 @@ function OnboardingContent() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
 
-  const destination = useMemo(() => {
-    const requested = searchParams?.get('returnUrl') || ''
-    if (requested.startsWith('/share/')) return requested
-    if (/^\/studio\/projects\/[^/]+\/share(?:[/?#]|$)/.test(requested)) return requested
-    return '/studio/team?welcome=1'
-  }, [searchParams])
+  const requestedReturnUrl = searchParams?.get('returnUrl') || ''
+  const isShareDestination = requestedReturnUrl.startsWith('/share/') ||
+    /^\/studio\/projects\/[^/]+\/share(?:[/?#]|$)/.test(requestedReturnUrl)
+  const destination = isShareDestination ? requestedReturnUrl : '/studio/team?welcome=1'
 
   async function handleAvatarChange(file: File | null) {
     if (!user?.id || !file) return

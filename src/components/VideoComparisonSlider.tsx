@@ -10,7 +10,12 @@ interface VideoComparisonSliderProps {
   labelB: string
   posterA?: string
   posterB?: string
-  onLoadedMetadata: () => void
+  mutedA: boolean
+  mutedB: boolean
+  /** Annotation layer for A; drawn over the full underlying picture. */
+  overlayA?: React.ReactNode
+  /** Annotation layer for B; lives inside the clipped layer so it reveals with it. */
+  overlayB?: React.ReactNode
 }
 
 export default function VideoComparisonSlider({
@@ -20,7 +25,10 @@ export default function VideoComparisonSlider({
   labelB,
   posterA,
   posterB,
-  onLoadedMetadata,
+  mutedA,
+  mutedB,
+  overlayA,
+  overlayB,
 }: VideoComparisonSliderProps) {
   const [sliderPosition, setSliderPosition] = useState(50)
   const [isDragging, setIsDragging] = useState(false)
@@ -105,8 +113,11 @@ export default function VideoComparisonSlider({
         crossOrigin="anonymous"
         playsInline
         preload="auto"
-        onLoadedMetadata={onLoadedMetadata}
+        muted={mutedA}
       />
+      {/* A's drawings carry their own z-index, so the layer has to be isolated:
+          otherwise they float above B's reveal instead of under it. */}
+      <div className="absolute inset-0 isolate">{overlayA}</div>
 
       {/* Video B (clipped, on top) */}
       <div
@@ -120,8 +131,9 @@ export default function VideoComparisonSlider({
           crossOrigin="anonymous"
           playsInline
           preload="auto"
-          onLoadedMetadata={onLoadedMetadata}
+          muted={mutedB}
         />
+        {overlayB}
       </div>
 
       {/* Version Labels */}

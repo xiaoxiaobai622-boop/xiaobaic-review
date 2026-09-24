@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Play, Pause, SkipBack, SkipForward, Columns2, SplitSquareHorizontal, MessageSquare, X } from 'lucide-react'
 import { secondsToTimecode, formatCommentTimestamp, timecodeToSeconds } from '@/lib/timecode'
 import { InitialsAvatar } from './InitialsAvatar'
+
+const SPEED_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
 function formatTimeWithMode(
   seconds: number,
@@ -30,6 +32,10 @@ interface VideoComparisonControlsProps {
   onSpeedChange: (speed: number) => void
   videoFps: number
   timestampDisplayMode: 'TIMECODE' | 'AUTO'
+  /** Side whose missing media currently freezes the pair, or null. */
+  waitingSide?: 'A' | 'B' | null
+  audioSide: 'none' | 'A' | 'B'
+  onAudioChange: (side: 'none' | 'A' | 'B') => void
   comments?: Array<{
     id: string
     timecode: string
@@ -56,6 +62,9 @@ export default function VideoComparisonControls({
   onSpeedChange,
   videoFps,
   timestampDisplayMode,
+  waitingSide = null,
+  audioSide,
+  onAudioChange,
   comments = [],
 }: VideoComparisonControlsProps) {
   const [isDragging, setIsDragging] = useState(false)
@@ -97,21 +106,21 @@ export default function VideoComparisonControls({
     }
   }, [activeCommentGroupKey, commentGroups])
 
-  const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!timelineRef.current || !videoDuration) return
     const rect = timelineRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const percentage = Math.max(0, Math.min(1, x / rect.width))
     setActiveCommentGroupKey(null)
     onSeek(percentage * videoDuration)
-  }, [videoDuration, onSeek])
+  }
 
-  const handleTimelineMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     setIsDragging(true)
     handleTimelineClick(e)
-  }, [handleTimelineClick])
+  }
 
-  const handleTimelineTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+  const handleTimelineTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (!timelineRef.current || !videoDuration) return
     setIsDragging(true)
     const touch = e.touches[0]
@@ -119,22 +128,22 @@ export default function VideoComparisonControls({
     const x = touch.clientX - rect.left
     const percentage = Math.max(0, Math.min(1, x / rect.width))
     onSeek(percentage * videoDuration)
-  }, [videoDuration, onSeek])
+  }
 
-  const handleTimelineTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+  const handleTimelineTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (!timelineRef.current || !videoDuration || !isDragging) return
     const touch = e.touches[0]
     const rect = timelineRef.current.getBoundingClientRect()
     const x = touch.clientX - rect.left
     const percentage = Math.max(0, Math.min(1, x / rect.width))
     onSeek(percentage * videoDuration)
-  }, [isDragging, videoDuration, onSeek])
+  }
 
-  const handleTimelineTouchEnd = useCallback(() => {
+  const handleTimelineTouchEnd = () => {
     setIsDragging(false)
-  }, [])
+  }
 
-  const handleTimelineMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleTimelineMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!timelineRef.current || !videoDuration) return
     const rect = timelineRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
@@ -143,13 +152,13 @@ export default function VideoComparisonControls({
     if (isDragging) {
       onSeek(percentage * videoDuration)
     }
-  }, [isDragging, videoDuration, onSeek])
+  }
 
-  const handleTimelineMouseLeave = useCallback(() => {
+  const handleTimelineMouseLeave = () => {
     setHoveredTime(null)
-  }, [])
+  }
 
-  const handleTimelineKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleTimelineKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!videoDuration) return
     const step = videoFps ? 1 / videoFps : 1
     let nextTime: number | null = null
@@ -160,7 +169,7 @@ export default function VideoComparisonControls({
     if (nextTime === null) return
     event.preventDefault()
     onSeek(nextTime)
-  }, [currentTime, onSeek, videoDuration, videoFps])
+  }
 
   useEffect(() => {
     const handleMouseUp = () => {
@@ -334,7 +343,7 @@ export default function VideoComparisonControls({
       </div>
 
       {/* Control Buttons */}
-      <div className="flex items-center justify-between gap-2 sm:gap-3 px-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-1">
         {/* Left Controls */}
         <div className="flex items-center gap-1 sm:gap-2">
           <button
@@ -372,16 +381,55 @@ export default function VideoComparisonControls({
           <div className="text-foreground text-xs sm:text-sm font-sans font-medium tabular-nums ml-1 sm:ml-2 whitespace-nowrap">
             {formatTimeWithMode(currentTime, videoFps, videoDuration, timestampDisplayMode)} / {formatTimeWithMode(videoDuration, videoFps, videoDuration, timestampDisplayMode)}
           </div>
+
+          {waitingSide && (
+            <span
+              role="status"
+              className="ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md bg-amber-500/15 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-400"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
+              {t('waitingForBuffer', { side: waitingSide })}
+            </span>
+          )}
         </div>
 
         {/* Right Controls */}
         <div className="flex items-center gap-1 sm:gap-2">
+          {/* Audio: the pair always plays two frames of two different encodes,
+              so exactly one soundtrack (or none) can be audible at a time. */}
+          <div
+            role="group"
+            aria-label={t('comparisonAudio')}
+            className="flex items-center overflow-hidden rounded-lg border border-border/70"
+          >
+            {([
+              ['none', t('audioMuted')],
+              ['A', t('audioListenA')],
+              ['B', t('audioListenB')],
+            ] as const).map(([value, label], index) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onAudioChange(value)}
+                aria-pressed={audioSide === value}
+                className={`px-2 py-1.5 text-xs transition-colors touch-manipulation ${
+                  index > 0 ? 'border-l border-border/70' : ''
+                } ${
+                  audioSide === value
+                    ? 'bg-foreground/15 font-medium text-foreground'
+                    : 'text-muted-foreground hover:bg-foreground/10'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Speed */}
           <button
             onClick={() => {
-              const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
-              const idx = speeds.indexOf(playbackSpeed)
-              const next = idx >= 0 && idx < speeds.length - 1 ? speeds[idx + 1] : speeds[0]
+              const idx = SPEED_STEPS.indexOf(playbackSpeed)
+              const next = idx >= 0 && idx < SPEED_STEPS.length - 1 ? SPEED_STEPS[idx + 1] : SPEED_STEPS[0]
               onSpeedChange(next)
             }}
             className="px-2 py-1 sm:px-2.5 sm:py-1.5 hover:bg-foreground/10 active:bg-foreground/15 rounded-lg transition-colors text-foreground text-xs sm:text-sm font-sans tabular-nums touch-manipulation"

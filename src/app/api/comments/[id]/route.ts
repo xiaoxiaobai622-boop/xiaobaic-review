@@ -139,6 +139,12 @@ export async function DELETE(
     return rateLimitResult
   }
 
+  // Uniform denial, exactly as PATCH does, so ids cannot be enumerated.
+  const notAvailable = () => NextResponse.json(
+    { error: commentsMessages.commentNotFound || 'Comment not found' },
+    { status: 404 },
+  )
+
   try {
     const { id } = await params
 
@@ -160,10 +166,7 @@ export async function DELETE(
     })
 
     if (!existingComment) {
-      return NextResponse.json(
-        { error: commentsMessages.commentNotFound || 'Comment not found' },
-        { status: 404 }
-      )
+      return notAvailable()
     }
 
     const access = await verifyProjectAccess(
@@ -173,13 +176,8 @@ export async function DELETE(
       existingComment.project.authMode,
       { allowGuest: false, requiredPermission: 'comment' },
     )
-    // Same uniform denial as PATCH: a caller without comment access cannot tell
-    // an existing id from a fabricated one.
     if (!access.authorized) {
-      return NextResponse.json(
-        { error: commentsMessages.commentNotFound || 'Comment not found' },
-        { status: 404 },
-      )
+      return notAvailable()
     }
 
     const actor = await getCommentActor(request, existingComment.project.teamId, existingComment.userId)
@@ -200,7 +198,7 @@ export async function DELETE(
 
     // Return success - client will refresh to get updated comments
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: commentsMessages.failedToDeleteComment || 'Failed to delete comment' }, { status: 500 })
   }
 }

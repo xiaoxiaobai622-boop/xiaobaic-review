@@ -6,15 +6,11 @@ import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import fs from 'fs'
-import { createReadStream } from 'fs'
+import fs, { createReadStream } from 'fs'
 import { logError } from '@/lib/logging'
 import { STREAM_HIGH_WATER_MARK_BYTES, parseDownloadRangeHeader } from '@/lib/transfer-tuning'
 
 export const runtime = 'nodejs'
-
-
-
 
 export async function GET(
   request: NextRequest,
@@ -109,7 +105,6 @@ export async function GET(
       return NextResponse.json({ error: videoMessages.fileNotFound || 'File not found' }, { status: 404 })
     }
 
-    // Use the original filename from the database, guard against missing values
     const range = request.headers.get('range')
 
     if (range) {

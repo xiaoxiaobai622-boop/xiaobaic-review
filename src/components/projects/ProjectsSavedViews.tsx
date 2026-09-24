@@ -49,12 +49,13 @@ export default function ProjectsSavedViews({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 mb-3">
+    // Shares a row with the search field, so no bottom margin and it may shrink.
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       <button
         type="button"
         onClick={() => onSelect(null)}
         className={cn(
-          'px-3 py-1 text-xs rounded-full border transition-colors',
+          'h-9 inline-flex items-center whitespace-nowrap px-3 text-xs rounded-lg border transition-colors',
           activeViewId === null && !isFilterActive(filters)
             ? 'bg-primary text-primary-foreground border-primary'
             : 'border-border hover:bg-muted'
@@ -67,7 +68,7 @@ export default function ProjectsSavedViews({
         <span
           key={v.id}
           className={cn(
-            'inline-flex items-center text-xs rounded-full border transition-colors',
+            'h-9 inline-flex items-center whitespace-nowrap text-xs rounded-lg border transition-colors',
             activeViewId === v.id
               ? 'bg-primary text-primary-foreground border-primary'
               : 'border-border hover:bg-muted'
@@ -76,7 +77,7 @@ export default function ProjectsSavedViews({
           <button
             type="button"
             onClick={() => onSelect(v)}
-            className="pl-3 pr-2 py-1 inline-flex items-center gap-1.5"
+            className="h-full pl-3 pr-2 inline-flex items-center gap-1.5"
           >
             <Bookmark className="w-3 h-3" />
             {v.name}
@@ -85,7 +86,7 @@ export default function ProjectsSavedViews({
             type="button"
             onClick={() => onDelete(v.id)}
             className={cn(
-              'pr-2 py-1 hover:opacity-70',
+              'h-full pr-2 inline-flex items-center hover:opacity-70',
               activeViewId === v.id ? '' : 'text-muted-foreground'
             )}
             aria-label={t('deleteSavedView')}
@@ -107,18 +108,18 @@ export default function ProjectsSavedViews({
               if (e.key === 'Enter') handleSave()
               if (e.key === 'Escape') { setNaming(false); setName('') }
             }}
-            className="h-7 text-xs w-44"
+            className="h-9 text-sm w-44"
           />
-          <Button size="sm" variant="default" onClick={handleSave} disabled={!name.trim()} className="h-7 text-xs px-2">
+          <Button size="sm" variant="default" onClick={handleSave} disabled={!name.trim()} className="px-2">
             {tc('save')}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => { setNaming(false); setName('') }} className="h-7 text-xs px-2">
+          <Button size="sm" variant="ghost" onClick={() => { setNaming(false); setName('') }} className="px-2">
             {tc('cancel')}
           </Button>
         </div>
       ) : (
         canSave && !currentMatchesView && (
-          <Button size="sm" variant="outline" onClick={() => setNaming(true)} className="h-7 text-xs px-2">
+          <Button size="sm" variant="outline" onClick={() => setNaming(true)} className="px-2">
             <Plus className="w-3 h-3 mr-1" />
             {t('saveCurrentView')}
           </Button>

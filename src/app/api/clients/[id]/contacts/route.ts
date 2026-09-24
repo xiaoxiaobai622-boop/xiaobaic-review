@@ -5,8 +5,7 @@ import { getRequestedTeamId, resolveActiveTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeText } from '@/lib/security/html-sanitization'
 import { safeParseBody } from '@/lib/validation'
-import { SUPPORTED_LOCALES } from '@/i18n/locale'
-import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { SUPPORTED_LOCALES, getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 
 
@@ -19,7 +18,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const clientContactMessages = messages?.clientContacts || {}
-  const clientsMessages = messages?.clients || {}
 
   // 1. AUTHENTICATION
   const authResult = await requireApiAdmin(request)

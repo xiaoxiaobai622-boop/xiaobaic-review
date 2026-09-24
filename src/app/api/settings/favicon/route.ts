@@ -22,6 +22,12 @@ const FAVICON_PATHS = {
 } as const
 type FaviconExt = keyof typeof FAVICON_PATHS
 
+const FAVICON_CONTENT_TYPES: Record<FaviconExt, string> = {
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  ico: 'image/x-icon',
+}
+
 // Magic-byte signatures used for content verification (defends against the
 // browser sending an SVG masqueraded as a PNG, etc.).
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -116,7 +122,6 @@ export async function POST(request: NextRequest) {
   }
 
   let bodyToStore: Buffer = buffer
-  let storeContentType = contentType.split(';')[0].trim()
 
   if (kind === 'svg') {
     const sanitized = sanitizeSvg(buffer.toString('utf-8'))
@@ -124,13 +129,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: settingsMessages.faviconUnsafeSvg || 'Invalid or unsafe SVG content' }, { status: 400 })
     }
     bodyToStore = Buffer.from(sanitized, 'utf-8')
-    storeContentType = 'image/svg+xml'
-  } else if (kind === 'png') {
-    storeContentType = 'image/png'
-  } else if (kind === 'ico') {
-    storeContentType = 'image/x-icon'
   }
 
+  const storeContentType = FAVICON_CONTENT_TYPES[kind]
   const targetPath = FAVICON_PATHS[kind]
 
   try {

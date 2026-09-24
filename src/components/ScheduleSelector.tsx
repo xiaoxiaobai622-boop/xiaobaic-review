@@ -33,6 +33,9 @@ const DAY_KEYS = [
   { value: 6, key: 'saturday', shortKey: 'sat' },
 ]
 
+const TIME_FULL_PATTERN = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
+const TIME_PARTIAL_PATTERN = /^([0-1]?[0-9]|2[0-3]):?[0-5]?[0-9]?$/
+
 export function ScheduleSelector({
   schedule,
   time,
@@ -46,6 +49,39 @@ export function ScheduleSelector({
   const t = useTranslations('settings.schedule')
   const effectiveLabel = label ?? t('title')
   const effectiveDescription = description ?? t('description')
+
+  // DAILY and WEEKLY share the same time picker; only one of them renders at a time
+  const timePickerFields = (
+    <>
+      <Label htmlFor="time" className="text-sm font-medium">{t('sendTime')}</Label>
+      <Input
+        type="text"
+        id="time"
+        value={time}
+        onChange={(e) => {
+          const value = e.target.value
+          if (value === '' || TIME_FULL_PATTERN.test(value) || TIME_PARTIAL_PATTERN.test(value)) {
+            onTimeChange(value)
+          }
+        }}
+        onBlur={(e) => {
+          const value = e.target.value
+          if (value && !value.includes(':')) {
+            if (value.length === 1 || value.length === 2) {
+              onTimeChange(value.padStart(2, '0') + ':00')
+            }
+          } else if (value && value.split(':')[1]?.length === 1) {
+            const [h, m] = value.split(':')
+            onTimeChange(h.padStart(2, '0') + ':' + m + '0')
+          }
+        }}
+        placeholder="16:00"
+        maxLength={5}
+        className="font-mono text-base"
+      />
+      <p className="text-xs text-muted-foreground">{t('sendTimeHint')}</p>
+    </>
+  )
 
   return (
     <div className="space-y-4">
@@ -95,37 +131,7 @@ export function ScheduleSelector({
       {/* Daily Time Picker */}
       {schedule === 'DAILY' && (
         <div className="space-y-2 pt-2">
-          <Label htmlFor="time" className="text-sm font-medium">{t('sendTime')}</Label>
-          <Input
-            type="text"
-            id="time"
-            value={time}
-            onChange={(e) => {
-              const value = e.target.value
-              if (value === '' || /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(value)) {
-                onTimeChange(value)
-              } else if (/^([0-1]?[0-9]|2[0-3]):?[0-5]?[0-9]?$/.test(value)) {
-                onTimeChange(value)
-              }
-            }}
-            onBlur={(e) => {
-              const value = e.target.value
-              if (value && !value.includes(':')) {
-                if (value.length === 1 || value.length === 2) {
-                  onTimeChange(value.padStart(2, '0') + ':00')
-                }
-              } else if (value && value.split(':')[1]?.length === 1) {
-                const [h, m] = value.split(':')
-                onTimeChange(h.padStart(2, '0') + ':' + m + '0')
-              }
-            }}
-            placeholder="16:00"
-            maxLength={5}
-            className="font-mono text-base"
-          />
-          <p className="text-xs text-muted-foreground">
-            {t('sendTimeHint')}
-          </p>
+          {timePickerFields}
         </div>
       )}
 
@@ -155,37 +161,7 @@ export function ScheduleSelector({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="time" className="text-sm font-medium">{t('sendTime')}</Label>
-            <Input
-              type="text"
-              id="time"
-              value={time}
-              onChange={(e) => {
-                const value = e.target.value
-                if (value === '' || /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(value)) {
-                  onTimeChange(value)
-                } else if (/^([0-1]?[0-9]|2[0-3]):?[0-5]?[0-9]?$/.test(value)) {
-                  onTimeChange(value)
-                }
-              }}
-              onBlur={(e) => {
-                const value = e.target.value
-                if (value && !value.includes(':')) {
-                  if (value.length === 1 || value.length === 2) {
-                    onTimeChange(value.padStart(2, '0') + ':00')
-                  }
-                } else if (value && value.split(':')[1]?.length === 1) {
-                  const [h, m] = value.split(':')
-                  onTimeChange(h.padStart(2, '0') + ':' + m + '0')
-                }
-              }}
-              placeholder="16:00"
-              maxLength={5}
-              className="font-mono text-base"
-            />
-            <p className="text-xs text-muted-foreground">
-              {t('sendTimeHint')}
-            </p>
+            {timePickerFields}
           </div>
         </div>
       )}

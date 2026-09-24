@@ -29,6 +29,54 @@ interface VideoAssetUploadItemProps {
   onRetry: () => void
 }
 
+const FILE_ICON_CLASS = 'h-5 w-5 text-muted-foreground flex-shrink-0'
+
+const STATUS_TEXT_CLASS: Record<QueuedUpload['status'], string> = {
+  queued: 'text-muted-foreground',
+  uploading: 'text-muted-foreground',
+  paused: 'text-warning',
+  completed: 'text-success',
+  error: 'text-destructive',
+}
+
+function getFileIcon(file: File, category: string) {
+  const fileName = file.name.toLowerCase()
+  const fileType = file.type.toLowerCase()
+  const categoryKey = category?.toLowerCase() || ''
+
+  if (categoryKey === 'thumbnail' || fileType.startsWith('image/')) {
+    return <FileImage className={FILE_ICON_CLASS} />
+  }
+
+  if (categoryKey === 'video' || fileType.startsWith('video/')) {
+    return <FileVideo className={FILE_ICON_CLASS} />
+  }
+
+  if (categoryKey === 'audio' || fileType.startsWith('audio/')) {
+    return <FileMusic className={FILE_ICON_CLASS} />
+  }
+
+  if (
+    fileType === 'application/zip' ||
+    fileType === 'application/x-zip-compressed' ||
+    fileName.endsWith('.zip')
+  ) {
+    return <FileArchive className={FILE_ICON_CLASS} />
+  }
+
+  if (
+    categoryKey === 'subtitle' ||
+    fileName.endsWith('.srt') ||
+    fileName.endsWith('.vtt') ||
+    fileName.endsWith('.txt') ||
+    fileName.endsWith('.md')
+  ) {
+    return <FileText className={FILE_ICON_CLASS} />
+  }
+
+  return <File className={FILE_ICON_CLASS} />
+}
+
 export function VideoAssetUploadItem({
   upload,
   onPause,
@@ -38,44 +86,6 @@ export function VideoAssetUploadItem({
   onRetry
 }: VideoAssetUploadItemProps) {
   const t = useTranslations('videos')
-
-  const getFileIcon = () => {
-    const fileName = upload.file.name.toLowerCase()
-    const fileType = upload.file.type.toLowerCase()
-    const category = upload.category?.toLowerCase() || ''
-
-    if (category === 'thumbnail' || fileType.startsWith('image/')) {
-      return <FileImage className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-    }
-
-    if (category === 'video' || fileType.startsWith('video/')) {
-      return <FileVideo className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-    }
-
-    if (category === 'audio' || fileType.startsWith('audio/')) {
-      return <FileMusic className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-    }
-
-    if (
-      fileType === 'application/zip' ||
-      fileType === 'application/x-zip-compressed' ||
-      fileName.endsWith('.zip')
-    ) {
-      return <FileArchive className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-    }
-
-    if (
-      category === 'subtitle' ||
-      fileName.endsWith('.srt') ||
-      fileName.endsWith('.vtt') ||
-      fileName.endsWith('.txt') ||
-      fileName.endsWith('.md')
-    ) {
-      return <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-    }
-
-    return <File className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-  }
 
   const getCategoryLabel = (category: string) => {
     if (!category) return t('other')
@@ -120,7 +130,7 @@ export function VideoAssetUploadItem({
     <div className="flex items-start gap-3 p-3 rounded-md border bg-card">
       {/* File icon */}
       <div className="mt-0.5">
-        {getFileIcon()}
+        {getFileIcon(upload.file, upload.category)}
       </div>
 
       {/* File info and progress */}
@@ -139,12 +149,7 @@ export function VideoAssetUploadItem({
           {/* Status badge */}
           <div className="flex items-center gap-1 text-xs font-medium">
             {getStatusIcon()}
-            <span className={
-              upload.status === 'error' ? 'text-destructive' :
-              upload.status === 'completed' ? 'text-success' :
-              upload.status === 'paused' ? 'text-warning' :
-              'text-muted-foreground'
-            }>
+            <span className={STATUS_TEXT_CLASS[upload.status]}>
               {getStatusText()}
             </span>
           </div>

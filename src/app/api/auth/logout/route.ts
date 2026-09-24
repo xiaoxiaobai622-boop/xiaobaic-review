@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const authMessages = messages?.auth || {}
 
+  const logoutFailedResponse = () => NextResponse.json(
+    { error: authMessages.logoutFailed || 'Logout failed. Please try again.' },
+    { status: 503 }
+  )
+
   try {
     const rateLimitResult = await rateLimit(request, {
       windowMs: 60 * 1000,
@@ -40,19 +45,13 @@ export async function POST(request: NextRequest) {
       await revokePresentedTokens({ accessToken, refreshToken })
     } catch (revokeError) {
       logError('Logout token revocation failed:', revokeError)
-      return NextResponse.json(
-        { error: authMessages.logoutFailed || 'Logout failed. Please try again.' },
-        { status: 503 }
-      )
+      return logoutFailedResponse()
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
     logError('Logout error:', error)
-    return NextResponse.json(
-      { error: authMessages.logoutFailed || 'Logout failed. Please try again.' },
-      { status: 503 }
-    )
+    return logoutFailedResponse()
   }
 }
 

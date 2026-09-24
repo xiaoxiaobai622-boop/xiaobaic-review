@@ -1,9 +1,8 @@
 import crypto from 'crypto'
 import { getRedis, consumeTokenAtomically } from './redis'
 import { prisma } from './db'
-import { sendEmail, getEmailSettings, getEmailBrand, renderEmailShell, escapeHtml, renderEmailButton, buildBrandingLogoUrl, type EmailHeaderStyle } from './email'
+import { sendEmail, getEmailSettings, getEmailBrand, renderEmailShell, escapeHtml, renderEmailButton, buildBrandingLogoUrl, getRecipientLocale, type EmailHeaderStyle } from './email'
 import { loadLocaleMessages } from '@/i18n/locale'
-import { getRecipientLocale } from './email'
 
 const TOKEN_PREFIX = 'portal_link:'
 const PORTAL_LINK_TTL_SECONDS = 5 * 60

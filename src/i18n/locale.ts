@@ -64,14 +64,10 @@ export async function getConfiguredLocale(): Promise<string> {
   })()
 
   configuredLocaleInflight = loadPromise
-  void loadPromise.then(
-    () => {
-      if (configuredLocaleInflight === loadPromise) configuredLocaleInflight = null
-    },
-    () => {
-      if (configuredLocaleInflight === loadPromise) configuredLocaleInflight = null
-    },
-  )
+  const clearInflight = () => {
+    if (configuredLocaleInflight === loadPromise) configuredLocaleInflight = null
+  }
+  void loadPromise.then(clearInflight, clearInflight)
   return loadPromise
 }
 

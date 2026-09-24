@@ -181,6 +181,18 @@ function getMediaCacheControl(key: string): string | undefined {
   return undefined
 }
 
+async function putSingleObject(
+  key: string,
+  input: { Body: Readable | Buffer; ContentType: string; ContentLength?: number; CacheControl?: string }
+): Promise<void> {
+  try {
+    await getS3Client().send(new PutObjectCommand({ Bucket: getS3Bucket(), Key: key, ...input }))
+    markS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
+  } catch (err) {
+    throw formatS3Error('PUT', key, err)
+  }
+}
+
 export async function s3UploadFile(
   key: string,
   body: Readable | Buffer,
@@ -191,50 +203,34 @@ export async function s3UploadFile(
   // before starting so an in-flight check cannot repopulate stale state.
   invalidateS3FileExistsCache(key)
 
+  const cacheControl = getMediaCacheControl(key)
+
   if (Buffer.isBuffer(body)) {
     if (body.length >= MULTIPART_THRESHOLD) {
-      return s3UploadFileMultipart(key, body, contentType, body.length, PART_SIZE)
+      return s3UploadFileMultipart(key, body, contentType)
     }
-    try {
-      await getS3Client().send(
-        new PutObjectCommand({
-          Bucket: getS3Bucket(),
-          Key: key,
-          Body: body,
-          ContentType: contentType,
-          ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
-        })
-      )
-      markS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
-    } catch (err) {
-      throw formatS3Error('PUT', key, err)
-    }
+    await putSingleObject(key, {
+      Body: body,
+      ContentType: contentType,
+      ...(cacheControl && { CacheControl: cacheControl }),
+    })
     return
   }
 
   // Known size and below threshold → single PUT (SDK handles streaming the body)
   if (size !== undefined && size < MULTIPART_THRESHOLD) {
-    try {
-      await getS3Client().send(
-        new PutObjectCommand({
-          Bucket: getS3Bucket(),
-          Key: key,
-          Body: body,
-          ContentType: contentType,
-          ContentLength: size,
-          ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
-        })
-      )
-      markS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
-    } catch (err) {
-      throw formatS3Error('PUT', key, err)
-    }
+    await putSingleObject(key, {
+      Body: body,
+      ContentType: contentType,
+      ContentLength: size,
+      ...(cacheControl && { CacheControl: cacheControl }),
+    })
     return
   }
 
   // Known-large or unknown-size stream → multipart, streaming chunk-by-chunk.
   // No upfront buffering; memory use stays bounded to ~PART_SIZE × concurrency.
-  return s3UploadFileMultipart(key, body, contentType, size ?? 0, PART_SIZE)
+  return s3UploadFileMultipart(key, body, contentType)
 }
 
 const SERVER_MULTIPART_CONCURRENCY = (() => {
@@ -247,8 +243,7 @@ async function s3UploadFileMultipart(
   key: string,
   body: Readable | Buffer,
   contentType: string,
-  totalSize: number,
-  partSize: number = 25 * 1024 * 1024 // 25MB default (matches presign endpoint)
+  partSize: number = PART_SIZE // matches the part size the presign endpoint hands out
 ): Promise<void> {
   let uploadId: string | undefined
   const completedParts: CompletedPart[] = []
@@ -273,7 +268,6 @@ async function s3UploadFileMultipart(
     if (Buffer.isBuffer(body)) {
       // Pre-known size — slice into part chunks and parallelise.
       const partCount = Math.ceil(body.length / partSize)
-      let nextPart = 1
       const queue = Array.from({ length: partCount }, (_, i) => i + 1)
 
       const workers = Array.from(
@@ -287,7 +281,6 @@ async function s3UploadFileMultipart(
           }
         }
       )
-      void nextPart
       await Promise.all(workers)
     } else {
       // Stream input — read part-sized chunks sequentially, then dispatch
@@ -469,12 +462,13 @@ export async function s3InitiateMultipartUpload(
   key: string,
   contentType: string = 'application/octet-stream'
 ): Promise<string> {
+  const cacheControl = getMediaCacheControl(key)
   const res = await getS3Client().send(
     new CreateMultipartUploadCommand({
       Bucket: getS3Bucket(),
       Key: key,
       ContentType: contentType,
-      ...(getMediaCacheControl(key) ? { CacheControl: getMediaCacheControl(key) } : {}),
+      ...(cacheControl && { CacheControl: cacheControl }),
     })
   )
   if (!res.UploadId) throw new Error('Failed to initiate multipart upload')

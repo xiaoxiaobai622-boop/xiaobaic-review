@@ -70,6 +70,13 @@ interface RateLimitEntry {
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 const DEFAULT_PAGE_SIZE = 10
 
+const SEVERITY_STYLES = {
+  CRITICAL: { className: 'text-destructive', icon: XCircle },
+  WARNING: { className: 'text-warning', icon: AlertTriangle },
+  INFO: { className: 'text-primary', icon: Info },
+}
+const DEFAULT_SEVERITY_STYLE = SEVERITY_STYLES.INFO
+
 export default function SecurityEventsClient() {
   const t = useTranslations('security')
   const tc = useTranslations('common')
@@ -219,12 +226,9 @@ export default function SecurityEventsClient() {
   }
 
   const handleDeleteOld = async (days: number) => {
-    let confirmMessage
-    if (days === 0) {
-      confirmMessage = t('deleteAllConfirm')
-    } else {
-      confirmMessage = t('deleteOlderConfirm', { days })
-    }
+    const confirmMessage = days === 0
+      ? t('deleteAllConfirm')
+      : t('deleteOlderConfirm', { days })
 
     if (!await appConfirm(confirmMessage)) {
       return
@@ -370,10 +374,9 @@ export default function SecurityEventsClient() {
               <div className="divide-y">
                 {events.map((event) => {
                   const isExpanded = expandedDetails.has(event.id)
-                  const severityColor = event.severity === 'CRITICAL' ? 'text-destructive' :
-                                       event.severity === 'WARNING' ? 'text-warning' : 'text-primary'
-                  const SeverityIcon = event.severity === 'CRITICAL' ? XCircle :
-                                      event.severity === 'WARNING' ? AlertTriangle : Info
+                  const severityStyle = SEVERITY_STYLES[event.severity as keyof typeof SEVERITY_STYLES] ?? DEFAULT_SEVERITY_STYLE
+                  const severityColor = severityStyle.className
+                  const SeverityIcon = severityStyle.icon
 
                   return (
                     <div

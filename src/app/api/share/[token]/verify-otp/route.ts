@@ -17,12 +17,9 @@ import { resolveShareMetadata, isShareLinkActive, linkPermissions } from '@/lib/
 
 export const runtime = 'nodejs'
 
-
-
-
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 
-function getIdentifier(request: NextRequest, token: string, email: string): string{
+function getIdentifier(request: NextRequest, token: string, email: string): string {
   const ip = getClientIpAddress(request)
 
   const hash = crypto
@@ -41,8 +38,8 @@ export async function POST(
   try {
     const configuredLocale = await getConfiguredLocale()
     const messages = await loadLocaleMessages(configuredLocale)
-  const shareMessages = messages?.share || {}
-  const notificationsText = messages?.notificationsText || {}
+    const shareMessages = messages?.share || {}
+    const notificationsText = messages?.notificationsText || {}
 
     const { token } = await params
     const parsed = await safeParseBody(request)
@@ -71,14 +68,7 @@ export async function POST(
       )
     }
 
-    if (code.length > 10) {
-      return NextResponse.json(
-        { error: shareMessages.invalidCode || 'Invalid code' },
-        { status: 400 }
-      )
-    }
-
-    if (!/^\d+$/.test(code.trim())) {
+    if (code.length > 10 || !/^\d+$/.test(code.trim())) {
       return NextResponse.json(
         { error: shareMessages.invalidCode || 'Invalid code' },
         { status: 400 }
@@ -126,7 +116,7 @@ export async function POST(
 
     if (!project) {
       return NextResponse.json(
-  { error: shareMessages.accessDenied || 'Access denied' },
+        { error: shareMessages.accessDenied || 'Access denied' },
         { status: 403 }
       )
     }
@@ -153,13 +143,13 @@ export async function POST(
       let firstAttempt = now
 
       if (existingData) {
-        const parsed = JSON.parse(existingData)
-        if (now - parsed.firstAttempt > RATE_LIMIT_WINDOW_MS) {
+        const previousEntry = JSON.parse(existingData)
+        if (now - previousEntry.firstAttempt > RATE_LIMIT_WINDOW_MS) {
           count = 1
           firstAttempt = now
         } else {
-          count = parsed.count + 1
-          firstAttempt = parsed.firstAttempt
+          count = previousEntry.count + 1
+          firstAttempt = previousEntry.firstAttempt
         }
       }
 

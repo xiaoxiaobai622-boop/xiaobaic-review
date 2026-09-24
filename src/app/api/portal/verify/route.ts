@@ -37,6 +37,13 @@ function renderErrorPage(heading: string, message: string, retryHref: string, re
 </div></div></body></html>`
 }
 
+function htmlPage(body: string, status: number): NextResponse {
+  return new NextResponse(body, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  })
+}
+
 function renderSuccessPage(token: string): string {
   // Token is base64url-encoded JWT — safe to embed inside a JSON.stringify wrapper.
   return `<!DOCTYPE html>
@@ -79,14 +86,14 @@ export async function GET(request: NextRequest) {
         details: { scope: 'verify-ip' },
         wasBlocked: true,
       })
-      return new NextResponse(
+      return htmlPage(
         renderErrorPage(
           portalMessages.tooManyRequestsTitle || 'Too many attempts',
           portalMessages.tooManyRequests || 'Too many requests. Please try again later.',
           '/portal',
           portalMessages.backToPortal || 'Back to sign-in'
         ),
-        { status: 429, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        429
       )
     }
 
@@ -101,10 +108,7 @@ export async function GET(request: NextRequest) {
     )
 
     if (!token || token.length > 256) {
-      return new NextResponse(linkExpiredHtml, {
-        status: 400,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      })
+      return htmlPage(linkExpiredHtml, 400)
     }
 
     const ua = request.headers.get('user-agent') || ''
@@ -122,19 +126,13 @@ export async function GET(request: NextRequest) {
         details: { email: result.email },
         wasBlocked: true,
       })
-      return new NextResponse(linkExpiredHtml, {
-        status: 400,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      })
+      return htmlPage(linkExpiredHtml, 400)
     }
 
     if (result.status === 'invalid') {
       // Expired / never-existed / lost-the-race. Don't log — would flood the audit
       // log on every benign expired-link click.
-      return new NextResponse(linkExpiredHtml, {
-        status: 400,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      })
+      return htmlPage(linkExpiredHtml, 400)
     }
 
     const session = await signPortalSession(result.record.email)
@@ -158,14 +156,14 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     logError('[PORTAL] verify error:', error)
-    return new NextResponse(
+    return htmlPage(
       renderErrorPage(
         'Sign-in failed',
         'Something went wrong while signing you in. Please request a new link.',
         '/portal',
         'Back to sign-in'
       ),
-      { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      500
     )
   }
 }

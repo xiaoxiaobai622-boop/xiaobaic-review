@@ -3,10 +3,18 @@
  * Clean, minimal, and easy to scan
  */
 
-import { escapeHtml, renderEmailButton, renderEmailShell, renderUnsubscribeSection, getEmailBrand, buildTimecodeDeepLink, buildAdminTimecodeDeepLink, renderTimecodePill } from './email'
-import { getEmailTemplate, replacePlaceholders } from './email-template-system'
-import { processTemplateContent } from './email'
-import { loadEmailMessages } from './email-template-system'
+import {
+  escapeHtml,
+  renderEmailButton,
+  renderEmailShell,
+  renderUnsubscribeSection,
+  getEmailBrand,
+  buildTimecodeDeepLink,
+  buildAdminTimecodeDeepLink,
+  renderTimecodePill,
+  processTemplateContent,
+} from './email'
+import { getEmailTemplate, replacePlaceholders, loadEmailMessages } from './email-template-system'
 
 interface NotificationData {
   type: 'CLIENT_COMMENT' | 'ADMIN_REPLY' | 'VIDEO_APPROVED' | 'VIDEO_UNAPPROVED' | 'PROJECT_APPROVED'

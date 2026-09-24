@@ -9,13 +9,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Building2, FolderKanban, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle } from 'lucide-react'
+import { Building2, FolderKanban, FolderTree, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
 import ProjectsFilterChips from '@/components/projects/ProjectsFilterChips'
 import ProjectsSavedViews, { type SavedView } from '@/components/projects/ProjectsSavedViews'
-import { apiFetch, apiPost } from '@/lib/api-client'
+import ProjectsSearchBar from '@/components/projects/ProjectsSearchBar'
+import ProjectsDashboard, { ProjectsStats } from '@/components/projects/ProjectsDashboard'
+import ProjectsFolderTree from '@/components/projects/ProjectsFolderTree'
+import { apiFetch, apiPatch, apiPost, apiDelete } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
 import { useTranslations } from 'next-intl'
 import { SharePasswordRequirements } from '@/components/SharePasswordRequirements'
@@ -24,10 +27,12 @@ import { generateSecurePassword } from '@/lib/password-utils'
 import type { ViewMode } from '@/components/ViewModeToggle'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { getActiveTeamId } from '@/lib/team-store'
+import { folderPath, type FolderNode } from '@/lib/project-folders'
 import {
   applyProjectsQuery,
   clientLabelFor,
   clientKeyFor,
+  countProjectsByGroup,
   deserializeFilterState,
   emptyFilterState,
   filterStateFromParams,
@@ -36,6 +41,8 @@ import {
   getDistinctYears,
   isFilterActive,
   serializeFilterState,
+  scopeProjectsToFolder,
+  NO_GROUP_KEY,
   type ProjectListItem,
   type ProjectsFilterState,
   type SerializedFilterState,
@@ -87,6 +94,12 @@ export default function AdminPage() {
     loadInitialFilters(new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''))
   )
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
+  const [folders, setFolders] = useState<FolderNode[]>([])
+  const [foldersLoaded, setFoldersLoaded] = useState(false)
+  const [openFolderId, setOpenFolderId] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('folder') : null
+  )
+  const [folderDrawer, setFolderDrawer] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>(loadInitialViewMode)
 
   // New Project Modal state
@@ -120,13 +133,40 @@ export default function AdminPage() {
     return () => { cancelled = true }
   }, [])
 
+  // Load project folders from API
+  const loadFolders = async () => {
+    try {
+      const res = await apiFetch('/api/studio/project-groups')
+      if (!res.ok) return
+      const data = await res.json()
+      setFolders(data.groups || [])
+      setFoldersLoaded(true)
+    } catch {
+      // non-fatal: the grid works without folders, they just stay unfiled
+    }
+  }
+
+  useEffect(() => {
+    void loadFolders()
+  }, [])
+
+  // A folder id can outlive its folder (a link opened after it was deleted), and an
+  // unknown folder would read as "this folder is empty" with no way back out.
+  useEffect(() => {
+    if (!foldersLoaded || !openFolderId || openFolderId === NO_GROUP_KEY) return
+    if (!folders.some((f) => f.id === openFolderId)) setOpenFolderId(null)
+  }, [foldersLoaded, openFolderId, folders])
+
   // Persist filters to localStorage and sync to URL
   useEffect(() => {
     localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(serializeFilterState(filters)))
     if (!pathname) return
-    const qs = filterStateToParams(filters).toString()
+    const params = filterStateToParams(filters)
+    // Which folder is open is navigation, not a filter, so it never lands in a saved view.
+    if (openFolderId) params.set('folder', openFolderId)
+    const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
-  }, [filters, pathname, router])
+  }, [filters, openFolderId, pathname, router])
 
   useEffect(() => {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode)
@@ -148,7 +188,7 @@ export default function AdminPage() {
           ? '没有权限读取项目列表，请确认当前团队已激活'
           : `项目列表加载失败（HTTP ${projectsRes.status}）`)
       }
-    } catch (error) {
+    } catch {
       setProjects([])
       setLoadError('项目列表加载失败，请检查网络后重试')
     } finally {
@@ -160,23 +200,35 @@ export default function AdminPage() {
     loadProjects()
   }, [])
 
-  // Derive options + filtered list
-  const { clientOptions, yearOptions, filteredProjects, clientLabels } = useMemo(() => {
+  // Options and badges are derived from everything the caller can see under the
+  // current filters, then the grid keeps only the open folder's direct contents — so
+  // a folder's badge always equals what clicking it brings up.
+  const { clientOptions, yearOptions, visibleProjects, filteredProjects, clientLabels, folderCounts } = useMemo(() => {
     const list = projects || []
-    const clientOpts = getDistinctClients(list)
     const labels: Record<string, string> = {}
     for (const p of list) {
       const k = clientKeyFor(p)
       const l = clientLabelFor(p)
       if (l) labels[k] = l
     }
+    const visible = applyProjectsQuery(list, filters)
     return {
-      clientOptions: clientOpts,
+      clientOptions: getDistinctClients(list),
       yearOptions: getDistinctYears(list),
-      filteredProjects: applyProjectsQuery(list, filters),
+      visibleProjects: visible,
+      filteredProjects: scopeProjectsToFolder(visible, openFolderId),
       clientLabels: labels,
+      folderCounts: countProjectsByGroup(visible),
     }
-  }, [projects, filters])
+  }, [projects, filters, openFolderId])
+
+  const breadcrumbs = useMemo(() => {
+    if (!openFolderId) return []
+    if (openFolderId === NO_GROUP_KEY) {
+      return [{ id: NO_GROUP_KEY, name: t('folderUnfiled'), parentId: null }]
+    }
+    return folderPath(folders, openFolderId)
+  }, [openFolderId, folders, t])
 
   // Saved view handlers — persist to DB
   const handleSaveView = async (name: string) => {
@@ -221,6 +273,56 @@ export default function AdminPage() {
 
   const handleClearAll = () => setFilters(emptyFilterState())
 
+  const openFolder = (folderId: string | null) => {
+    setOpenFolderId(folderId)
+    setFolderDrawer(false)
+  }
+
+  // Folder handlers let errors throw: ProjectsFolderTree keeps the editor open and
+  // shows the server's reason inline, which is what makes a duplicate name fixable.
+  const handleCreateFolder = async (name: string, parentId: string | null) => {
+    await apiPost('/api/studio/project-groups', { name, parentId })
+    await loadFolders()
+  }
+
+  const handleRenameFolder = async (id: string, name: string) => {
+    await apiPatch(`/api/studio/project-groups/${id}`, { name })
+    await loadFolders()
+  }
+
+  const handleMoveFolder = async (id: string, parentId: string | null) => {
+    await apiPatch(`/api/studio/project-groups/${id}`, { parentId })
+    await loadFolders()
+  }
+
+  const handleDeleteFolder = async (id: string) => {
+    await apiDelete(`/api/studio/project-groups/${id}`)
+    await loadFolders()
+    // Whatever was inside the folder (and its subfolders) falls back to "未归类"
+    // server-side, so the counts have to be re-read rather than patched locally.
+    await loadProjects()
+  }
+
+  // One PATCH per project, the way batch status changes already work. Every write is
+  // attempted before reporting, and the list is re-read either way, so a half-done
+  // move never leaves the sidebar counts lying about where the projects are.
+  const handleMoveProjects = async (projectIds: string[], folderId: string | null) => {
+    // A project already filed where it is being dropped has nothing to write: sending
+    // the PATCH anyway reloads the grid to show the same thing.
+    const toMove = projectIds.filter((id) => {
+      const current = (projects ?? []).find((p) => p.id === id)
+      return !current || (current.groupId || null) !== folderId
+    })
+    if (!toMove.length) return
+    const results = await Promise.allSettled(
+      toMove.map((id) => apiPatch(`/api/projects/${id}`, { groupId: folderId }))
+    )
+    await loadProjects()
+    for (const result of results) {
+      if (result.status === 'rejected') throw result.reason
+    }
+  }
+
   // Password helpers
   function handleGeneratePassword() {
     setSharePassword(generateSecurePassword())
@@ -255,8 +357,7 @@ export default function AdminPage() {
       return
     }
 
-    const needsPasswordForMode = passwordProtected
-    if (needsPasswordForMode && !sharePassword.trim()) {
+    if (passwordProtected && !sharePassword.trim()) {
       setFormError(t('passwordRequired'))
       return
     }
@@ -294,8 +395,6 @@ export default function AdminPage() {
       setCreating(false)
     }
   }
-
-  const needsPassword = passwordProtected
 
   function renderNewProjectModal() {
     return (
@@ -384,61 +483,57 @@ export default function AdminPage() {
                       {t('passwordOnly')}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {authMode === 'PASSWORD' && t('passwordDescription')}
-
+                      {t('passwordDescription')}
                     </p>
-
                   </div>
 
-                  {needsPassword && (
-                    <div className="space-y-2">
-                      <Label htmlFor="sharePassword">{t('sharePassword')}</Label>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1 min-w-0">
-                          <Input
-                            id="sharePassword"
-                            value={sharePassword}
-                            onChange={(e) => setSharePassword(e.target.value)}
-                            type={showPassword ? 'text' : 'password'}
-                            className="pr-10 font-mono text-sm"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          >
-                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        <Button
+                  <div className="space-y-2">
+                    <Label htmlFor="sharePassword">{t('sharePassword')}</Label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1 min-w-0">
+                        <Input
+                          id="sharePassword"
+                          value={sharePassword}
+                          onChange={(e) => setSharePassword(e.target.value)}
+                          type={showPassword ? 'text' : 'password'}
+                          className="pr-10 font-mono text-sm"
+                        />
+                        <button
                           type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={handleGeneratePassword}
-                          title={t('generatePassword')}
-                          className="flex-shrink-0"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                         >
-                          <RefreshCw className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={handleCopyPassword}
-                          title={t('copyPassword')}
-                          className="flex-shrink-0"
-                        >
-                          {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-                        </Button>
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                       </div>
-                      {sharePassword && (
-                        <SharePasswordRequirements password={sharePassword} />
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        {t('savePasswordWarning')}
-                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={handleGeneratePassword}
+                        title={t('generatePassword')}
+                        className="flex-shrink-0"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={handleCopyPassword}
+                        title={t('copyPassword')}
+                        className="flex-shrink-0"
+                      >
+                        {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                      </Button>
                     </div>
-                  )}
+                    {sharePassword && (
+                      <SharePasswordRequirements password={sharePassword} />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {t('savePasswordWarning')}
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -589,6 +684,31 @@ export default function AdminPage() {
     )
   }
 
+  const isAdmin = user?.role === 'ADMIN'
+
+  // Only an untouched, genuinely empty folder gets the drag-here guidance; an empty
+  // result from the filters is a different problem and keeps the generic copy.
+  const folderEmptyMessage =
+    openFolderId && openFolderId !== NO_GROUP_KEY && !isFilterActive(filters)
+      ? t('folderEmpty')
+      : undefined
+
+  const folderTree = (
+    <ProjectsFolderTree
+      folders={folders}
+      counts={folderCounts}
+      total={visibleProjects.length}
+      openFolderId={openFolderId}
+      isAdmin={isAdmin}
+      onOpen={openFolder}
+      onCreate={handleCreateFolder}
+      onRename={handleRenameFolder}
+      onMoveFolder={handleMoveFolder}
+      onDeleteFolder={handleDeleteFolder}
+      onDropProjects={handleMoveProjects}
+    />
+  )
+
   return (
     <div className="flex-1 min-h-0 bg-background">
       <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
@@ -600,41 +720,125 @@ export default function AdminPage() {
             </h1>
             <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('dashboardDescription')}</p>
           </div>
-          {user?.role === 'ADMIN' && <Button variant="default" size="default" onClick={openNewProjectModal}>
+          {isAdmin && <Button variant="default" size="default" onClick={openNewProjectModal}>
             <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">{t('newProject')}</span>
           </Button>}
         </div>
 
-        <ProjectsSavedViews
-          views={savedViews}
-          filters={filters}
-          onSelect={handleSelectView}
-          onSave={handleSaveView}
-          onDelete={handleDeleteView}
-        />
+        <div className="flex items-start gap-4">
+          <aside className="hidden lg:block w-[236px] flex-shrink-0 sticky top-3 max-h-[calc(100vh-5rem)] overflow-y-auto scrollbar-hidden pb-4">
+            {folderTree}
+          </aside>
 
-        <ProjectsToolbar
-          filters={filters}
-          onChange={setFilters}
-          clientOptions={clientOptions}
-          yearOptions={yearOptions}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-        />
+          <div className="flex-1 min-w-0">
+            {/* On desktop this row only holds the breadcrumb, so it must not reserve
+                height while no folder is open. On mobile it holds the folder trigger. */}
+            <div className={`flex items-center gap-2 flex-wrap mb-2 ${openFolderId ? 'min-h-[32px]' : 'lg:hidden'}`}>
+              <Button variant="outline" size="sm" className="lg:hidden px-2.5 text-[12.5px]" onClick={() => setFolderDrawer(true)}>
+                <FolderTree className="w-3.5 h-3.5 mr-1" />
+                {breadcrumbs[breadcrumbs.length - 1]?.name || t('folder')}
+              </Button>
 
-        <ProjectsFilterChips
-          filters={filters}
-          onChange={setFilters}
-          clientLabels={clientLabels}
-          onClearAll={handleClearAll}
-        />
+              {openFolderId && (
+                // Under lg the drawer button above already says which folder this is,
+                // and the tree it opens is the way back up — the full path would just
+                // repeat it on a screen two crumbs wide.
+                <nav aria-label={t('folder')} className="hidden lg:flex items-center gap-1 text-[13px] min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => openFolder(null)}
+                    className="text-muted-foreground hover:text-foreground rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {t('statAll')}
+                  </button>
+                  {breadcrumbs.map((folder, i) => (
+                    <span key={folder.id} className="flex items-center gap-1 min-w-0">
+                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" aria-hidden />
+                      {i === breadcrumbs.length - 1 ? (
+                        <span className="font-semibold truncate max-w-[200px]" title={folder.name}>{folder.name}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openFolder(folder.id)}
+                          title={folder.name}
+                          className="text-muted-foreground hover:text-foreground truncate max-w-[140px] rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {folder.name}
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </nav>
+              )}
+            </div>
 
-        <ProjectsList
-          projects={filteredProjects}
-          viewMode={viewMode}
-        />
+            {/* One toolbar row: saved views and filters on the left, search docked to the right end. */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <ProjectsSavedViews
+                views={savedViews}
+                filters={filters}
+                onSelect={handleSelectView}
+                onSave={handleSaveView}
+                onDelete={handleDeleteView}
+              />
+
+              <ProjectsToolbar
+                filters={filters}
+                onChange={setFilters}
+                clientOptions={clientOptions}
+                yearOptions={yearOptions}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+              />
+
+              <ProjectsSearchBar
+                value={filters.q}
+                onChange={(q) => setFilters({ ...filters, q })}
+              />
+            </div>
+
+            <ProjectsFilterChips
+              filters={filters}
+              onChange={setFilters}
+              clientLabels={clientLabels}
+              onClearAll={handleClearAll}
+            />
+
+            <ProjectsStats projects={filteredProjects} />
+
+            {viewMode === 'grid' ? (
+              <ProjectsDashboard
+                projects={filteredProjects}
+                isAdmin={isAdmin}
+                folders={folders}
+                showFolderChip={openFolderId === null}
+                emptyMessage={folderEmptyMessage}
+                onMoveProjects={handleMoveProjects}
+                onMutated={() => void loadProjects()}
+              />
+            ) : (
+              <ProjectsList
+                projects={filteredProjects}
+                viewMode={viewMode}
+                folders={folders}
+                showFolderColumn={openFolderId === null}
+                emptyMessage={folderEmptyMessage}
+              />
+            )}
+          </div>
+        </div>
       </div>
+
+      <Dialog open={folderDrawer} onOpenChange={setFolderDrawer}>
+        <DialogContent className="lg:hidden max-w-xs p-4">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">{t('folder')}</DialogTitle>
+          </DialogHeader>
+          {folderTree}
+        </DialogContent>
+      </Dialog>
+
       {renderNewProjectModal()}
     </div>
   )

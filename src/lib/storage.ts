@@ -1,7 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { Readable } from 'stream'
-import { ReadStream } from 'fs'
 import { pipeline } from 'stream/promises'
 import { mkdir } from 'fs/promises'
 import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl, s3FileExists } from './s3-storage'
@@ -11,6 +10,35 @@ const STORAGE_ROOT = process.env.STORAGE_ROOT || '/app/uploads'
 /** True when STORAGE_PROVIDER=s3 is set. */
 export function isS3Mode(): boolean {
   return process.env.STORAGE_PROVIDER === 's3'
+}
+
+/**
+ * Rename into `destPath`, falling back to copy + unlink when the source lives on
+ * a different filesystem (`EXDEV`, e.g. a separate temp mount).
+ */
+async function renameAcrossDevices(sourcePath: string, destPath: string): Promise<void> {
+  try {
+    await fs.promises.rename(sourcePath, destPath)
+  } catch (err: any) {
+    if (err?.code !== 'EXDEV') throw err
+    // Cross-device — copy then unlink
+    await fs.promises.copyFile(sourcePath, destPath)
+    await fs.promises.unlink(sourcePath).catch(() => {})
+  }
+}
+
+/**
+ * Guard against truncated uploads: a size mismatch deletes the half-written
+ * file and reports the same corruption error from both write paths.
+ */
+async function verifyWrittenSize(fullPath: string, size: number): Promise<void> {
+  const stats = await fs.promises.stat(fullPath)
+  if (stats.size === size) return
+  await fs.promises.unlink(fullPath).catch(() => {})
+  throw new Error(
+    `File size mismatch: expected ${size} bytes, got ${stats.size} bytes. ` +
+    `Upload may have been corrupted.`
+  )
 }
 
 /**
@@ -90,14 +118,7 @@ export async function uploadFile(
   const writeStream = fs.createWriteStream(fullPath)
   await pipeline(inputStream, writeStream)
 
-  const stats = await fs.promises.stat(fullPath)
-  if (stats.size !== size) {
-    await fs.promises.unlink(fullPath).catch(() => {})
-    throw new Error(
-      `File size mismatch: expected ${size} bytes, got ${stats.size} bytes. ` +
-      `Upload may have been corrupted.`
-    )
-  }
+  await verifyWrittenSize(fullPath, size)
 }
 
 /**
@@ -132,23 +153,8 @@ export async function moveFile(
   const fullPath = validatePath(finalPath)
   await mkdir(path.dirname(fullPath), { recursive: true })
 
-  try {
-    await fs.promises.rename(tempPath, fullPath)
-  } catch (err: any) {
-    if (err?.code !== 'EXDEV') throw err
-    // Cross-device — copy then unlink
-    await fs.promises.copyFile(tempPath, fullPath)
-    await fs.promises.unlink(tempPath).catch(() => {})
-  }
-
-  const stats = await fs.promises.stat(fullPath)
-  if (stats.size !== size) {
-    await fs.promises.unlink(fullPath).catch(() => {})
-    throw new Error(
-      `File size mismatch: expected ${size} bytes, got ${stats.size} bytes. ` +
-      `Upload may have been corrupted.`
-    )
-  }
+  await renameAcrossDevices(tempPath, fullPath)
+  await verifyWrittenSize(fullPath, size)
 }
 
 /**
@@ -170,13 +176,7 @@ export async function moveStorageFile(
   const destFull = validatePath(finalPath)
   await mkdir(path.dirname(destFull), { recursive: true })
 
-  try {
-    await fs.promises.rename(sourceFull, destFull)
-  } catch (err: any) {
-    if (err?.code !== 'EXDEV') throw err
-    await fs.promises.copyFile(sourceFull, destFull)
-    await fs.promises.unlink(sourceFull).catch(() => {})
-  }
+  await renameAcrossDevices(sourceFull, destFull)
 }
 
 export async function downloadFile(filePath: string): Promise<Readable> {
@@ -261,7 +261,7 @@ export function getVideoContentType(filename: string): string {
  * (BYOB) stream which adds per-chunk overhead in the Next.js response
  * pipeline and was measurably slower behind a Cloudflare tunnel.
  */
-export function createWebReadableStream(fileStream: ReadStream): ReadableStream {
+export function createWebReadableStream(fileStream: fs.ReadStream): ReadableStream {
   let closed = false
   return new ReadableStream({
     start(controller) {

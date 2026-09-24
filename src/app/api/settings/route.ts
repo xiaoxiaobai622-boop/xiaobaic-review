@@ -6,6 +6,7 @@ import { encrypt, decrypt } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSmtpConfigured } from '@/lib/settings'
 import { getFilePath } from '@/lib/storage'
+import { ACCENT_PRESET_KEYS, accentCacheKey, isValidAccentColor } from '@/lib/accent'
 import { flushPendingAdminNotifications } from '@/lib/notifications'
 import { invalidateEmailSettingsCache } from '@/lib/email'
 import { getConfiguredLocale, invalidateConfiguredLocaleCache, loadLocaleMessages, SUPPORTED_LOCALES } from '@/i18n/locale'
@@ -158,15 +159,12 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // SECURITY: Validate accent color
-    if (accentColor !== undefined) {
-      const validColors = ['blue', 'purple', 'green', 'orange', 'red', 'pink', 'teal', 'amber', 'stone', 'gold']
-      if (!validColors.includes(accentColor)) {
-        return NextResponse.json(
-          { error: settingsMessages.invalidAccentColor || 'Invalid accent color.' },
-          { status: 400 }
-        )
-      }
+    // SECURITY: Validate accent color (preset key or a custom #rrggbb)
+    if (accentColor !== undefined && !isValidAccentColor(accentColor)) {
+      return NextResponse.json(
+        { error: settingsMessages.invalidAccentColor || 'Invalid accent color.' },
+        { status: 400 }
+      )
     }
 
     // SECURITY: Validate email header style
@@ -505,8 +503,9 @@ export async function PATCH(request: NextRequest) {
     // If accent color changed, invalidate cached default logo PNGs
     if (accentColor !== undefined) {
       const defaultCachePrefix = 'branding/default-logo-'
-      const validColors = ['blue', 'purple', 'green', 'orange', 'red', 'pink', 'teal', 'amber', 'stone', 'gold']
-      for (const color of validColors) {
+      // Presets are enumerable; a custom colour is not, so drop its own key too.
+      const staleCaches = new Set<string>([...ACCENT_PRESET_KEYS, accentCacheKey(accentColor)])
+      for (const color of staleCaches) {
         try {
           await fs.unlink(getFilePath(`${defaultCachePrefix}${color}.png`))
         } catch {

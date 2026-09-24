@@ -2,7 +2,7 @@ import { Job } from 'bullmq'
 import sharp from 'sharp'
 import { prisma } from '../lib/db'
 import { downloadFile, uploadFile } from '../lib/storage'
-import { ALLOWED_PHOTO_TYPES } from '../lib/file-validation'
+import { ALLOWED_PHOTO_TYPES, markInvalidFileType } from '../lib/file-validation'
 import { PhotoProcessingJob } from '../lib/queue'
 import fs from 'fs'
 import path from 'path'
@@ -15,6 +15,38 @@ const THUMBNAIL_SIZE = 512 // longest edge in pixels
 const THUMBNAIL_QUALITY = 75
 const PREVIEW_SIZE = 2048 // longest edge — lightbox rendition, originals are download-only
 const PREVIEW_QUALITY = 82
+
+interface PhotoRenditions {
+  thumbnail: Buffer
+  preview: Buffer
+}
+
+/**
+ * Decode both web renditions from the stored file.
+ *
+ * This is the only step that can tell a real image from a file that merely has
+ * image magic bytes and parseable headers — `fileType` and `sharp.metadata()`
+ * both pass a permanently undecodable PNG. A failure here is deterministic, so
+ * the caller records it on the row instead of leaving it as "still processing".
+ */
+async function decodeRenditions(sourcePath: string): Promise<PhotoRenditions> {
+  const image = sharp(sourcePath)
+
+  // Animated GIFs keep their first frame; .rotate() applies EXIF orientation
+  const thumbnail = await image
+    .rotate()
+    .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, { fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: THUMBNAIL_QUALITY })
+    .toBuffer()
+
+  const preview = await image
+    .rotate()
+    .resize(PREVIEW_SIZE, PREVIEW_SIZE, { fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: PREVIEW_QUALITY })
+    .toBuffer()
+
+  return { thumbnail, preview }
+}
 
 /**
  * Process uploaded photo - validate magic bytes, extract dimensions,
@@ -51,38 +83,39 @@ export async function processPhoto(job: Job<PhotoProcessingJob>) {
     const fileType = await fileTypeFromFile(tempFilePath)
 
     if (!fileType || !ALLOWED_PHOTO_TYPES.mimeTypes.includes(fileType.mime)) {
+      const detected = fileType?.mime || 'unknown'
       await prisma.photo.update({
         where: { id: photoId },
-        data: { fileType: 'INVALID - ' + (fileType?.mime || 'unknown') },
+        data: { fileType: markInvalidFileType(detected) },
       })
-      throw new Error(`File content is not an allowed photo type. Detected: ${fileType?.mime || 'unknown'}`)
+      throw new Error(`File content is not an allowed photo type. Detected: ${detected}`)
     }
 
-    // Extract dimensions and generate renditions (animated GIFs keep first frame)
-    const image = sharp(tempFilePath)
-    const metadata = await image.metadata()
+    // Dimensions come from headers; renditions come from a real decode. Decoding
+    // up front keeps an undecodable file from leaving half-written objects.
+    const metadata = await sharp(tempFilePath).metadata()
 
-    const thumbnailBuffer = await image
-      .rotate() // apply EXIF orientation
-      .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: THUMBNAIL_QUALITY })
-      .toBuffer()
+    let renditions: PhotoRenditions
+    try {
+      renditions = await decodeRenditions(tempFilePath)
+    } catch (error) {
+      await prisma.photo.update({
+        where: { id: photoId },
+        data: { fileType: markInvalidFileType(fileType.mime) },
+      })
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`Photo content cannot be decoded. Detected: ${fileType.mime}. ${detail}`)
+    }
 
     const project = await prisma.project.findUnique({ where: { id: photo.album.projectId }, select: { teamId: true } })
     if (!project) throw new Error(`Project not found: ${photo.album.projectId}`)
     const thumbnailPath = teamProjectStorageKey(project.teamId, photo.album.projectId, 'photos', photo.album.id, 'thumbs', `${photoId}.webp`)
-    await uploadFile(thumbnailPath, thumbnailBuffer, thumbnailBuffer.length, 'image/webp')
+    await uploadFile(thumbnailPath, renditions.thumbnail, renditions.thumbnail.length, 'image/webp')
 
     // Web-sized preview for the lightbox — large originals (25-90 MB PNGs)
     // are far too slow to view inline; they remain available for download
-    const previewBuffer = await image
-      .rotate()
-      .resize(PREVIEW_SIZE, PREVIEW_SIZE, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: PREVIEW_QUALITY })
-      .toBuffer()
-
     const previewPath = teamProjectStorageKey(project.teamId, photo.album.projectId, 'photos', photo.album.id, 'previews', `${photoId}.webp`)
-    await uploadFile(previewPath, previewBuffer, previewBuffer.length, 'image/webp')
+    await uploadFile(previewPath, renditions.preview, renditions.preview.length, 'image/webp')
 
     // EXIF orientation 5-8 swaps width/height for display
     const orientationSwaps = (metadata.orientation || 1) >= 5

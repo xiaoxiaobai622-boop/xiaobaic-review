@@ -8,6 +8,20 @@ import { logError, logMessage } from '../lib/logging'
 const REDIS_KEY = 'due_date_reminder:last_check'
 let firstRun = true
 
+function findProjectsDueOn(from: Date, dueReminder: 'DAY_BEFORE' | 'WEEK_BEFORE') {
+  return prisma.project.findMany({
+    where: {
+      dueDate: {
+        gte: from,
+        lt: new Date(from.getTime() + 86400000),
+      },
+      dueReminder,
+      status: { notIn: ['APPROVED', 'ARCHIVED'] },
+    },
+    select: { id: true, title: true, dueDate: true },
+  })
+}
+
 export async function processDueDateReminders() {
   const redis = getRedis()
 
@@ -37,31 +51,8 @@ export async function processDueDateReminders() {
   const nextWeek = new Date(now)
   nextWeek.setDate(nextWeek.getDate() + 7)
 
-  // Find projects due tomorrow with DAY_BEFORE reminder
-  const dayBeforeProjects = await prisma.project.findMany({
-    where: {
-      dueDate: {
-        gte: tomorrow,
-        lt: new Date(tomorrow.getTime() + 86400000),
-      },
-      dueReminder: 'DAY_BEFORE',
-      status: { notIn: ['APPROVED', 'ARCHIVED'] },
-    },
-    select: { id: true, title: true, dueDate: true },
-  })
-
-  // Find projects due in 7 days with WEEK_BEFORE reminder
-  const weekBeforeProjects = await prisma.project.findMany({
-    where: {
-      dueDate: {
-        gte: nextWeek,
-        lt: new Date(nextWeek.getTime() + 86400000),
-      },
-      dueReminder: 'WEEK_BEFORE',
-      status: { notIn: ['APPROVED', 'ARCHIVED'] },
-    },
-    select: { id: true, title: true, dueDate: true },
-  })
+  const dayBeforeProjects = await findProjectsDueOn(tomorrow, 'DAY_BEFORE')
+  const weekBeforeProjects = await findProjectsDueOn(nextWeek, 'WEEK_BEFORE')
 
   const allReminders = [
     ...dayBeforeProjects.map(p => ({ ...p, reminderType: 'tomorrow' })),

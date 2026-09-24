@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
-import { validateAssetFile, sanitizeFilename, isSuspiciousFilename } from '@/lib/file-validation'
+import { validateAssetFile, sanitizeFilename, sanitizeDisplayFilename, isSuspiciousFilename } from '@/lib/file-validation'
 import { initStorage, deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -139,6 +139,7 @@ export async function POST(
       data: {
         videoId,
         fileName: finalFileName,
+        originalFileName: sanitizeDisplayFilename(fileName),
         fileSize: BigInt(fileSize),
         fileType: mimeType,
         storagePath,
@@ -151,7 +152,8 @@ export async function POST(
 
     return NextResponse.json({
       assetId: asset.id,
-      fileName: finalFileName,
+      // This echo is only ever shown back to the uploader, so it carries their own name.
+      fileName: asset.originalFileName || finalFileName,
       fileSize: fileSize.toString(),
       fileType: mimeType,
       category,
@@ -231,6 +233,7 @@ export async function GET(
       id: asset.id,
       videoId: asset.videoId,
       fileName: asset.fileName,
+      originalFileName: asset.originalFileName,
       fileSize: asset.fileSize.toString(),
       fileType: asset.fileType,
       category: asset.category,

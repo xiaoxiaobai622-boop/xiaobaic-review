@@ -16,19 +16,19 @@ export function generateICalFeed(projects: CalendarProject[], domain: string): s
     nextDay.setDate(nextDay.getDate() + 1)
     const dtend = formatICalDate(nextDay)
     const dtstamp = formatICalDateTime(new Date(project.updatedAt))
-    const lastModified = dtstamp
 
-    const summary = project.status === 'APPROVED'
-      ? `✓ ${project.title}`
-      : project.status === 'ARCHIVED'
-        ? `✗ ${project.title}`
-        : project.title
+    let summary = project.title
+    if (project.status === 'APPROVED') {
+      summary = `✓ ${project.title}`
+    } else if (project.status === 'ARCHIVED') {
+      summary = `✗ ${project.title}`
+    }
 
     return [
       'BEGIN:VEVENT',
       `UID:${project.id}@${host}`,
       `DTSTAMP:${dtstamp}`,
-      `LAST-MODIFIED:${lastModified}`,
+      `LAST-MODIFIED:${dtstamp}`,
       `DTSTART;VALUE=DATE:${dtstart}`,
       `DTEND;VALUE=DATE:${dtend}`,
       `SUMMARY:${escapeICalText(summary)}`,
@@ -58,13 +58,10 @@ function formatICalDate(date: Date): string {
 }
 
 function formatICalDateTime(date: Date): string {
-  const y = date.getUTCFullYear()
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(date.getUTCDate()).padStart(2, '0')
   const h = String(date.getUTCHours()).padStart(2, '0')
   const min = String(date.getUTCMinutes()).padStart(2, '0')
   const s = String(date.getUTCSeconds()).padStart(2, '0')
-  return `${y}${m}${d}T${h}${min}${s}Z`
+  return `${formatICalDate(date)}T${h}${min}${s}Z`
 }
 
 function escapeICalText(text: string): string {

@@ -41,7 +41,6 @@ export async function POST(
       sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
       authMode: resolved.policy?.authMode ?? resolved.project.authMode,
       allowAssetDownload: resolved.policy ? resolved.policy.permissions.includes('download') : false,
-      title: resolved.project.title,
     } : null
 
     if (!project) {

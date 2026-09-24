@@ -1,24 +1,31 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
 import { X, ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
 import VideoComparisonControls from './VideoComparisonControls'
 import VideoComparisonSlider from './VideoComparisonSlider'
+import AnnotationOverlay, { type AnnotationAuthorMeta } from './AnnotationOverlay'
 import { useHlsSource } from '@/hooks/useHlsSource'
+import { ComparisonSide, useDualVideoSync } from '@/hooks/useDualVideoSync'
+import { formatCommentTimestamp } from '@/lib/timecode'
+import type { AnnotationData } from '@/types/annotations'
 
 export interface VideoComparisonComment {
   id: string
   videoId?: string | null
   timecode: string
+  timecodeEnd?: string | null
   content: string
   authorName?: string | null
   avatarUrl?: string | null
   user?: { avatarUrl?: string | null } | null
   isInternal?: boolean
   resolved?: boolean
+  /** Shape payload as stored on the comment; validated by the overlay itself. */
+  annotations?: unknown
 }
 
 interface VideoComparisonTimelineComment extends VideoComparisonComment {
@@ -69,38 +76,14 @@ export default function VideoComparison({
   const [versionAIndex, setVersionAIndex] = useState(Math.max(0, initialA))
   const [versionBIndex, setVersionBIndex] = useState(Math.max(0, initialB))
   const [mode, setMode] = useState<'side-by-side' | 'slider'>('side-by-side')
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [videoDuration, setVideoDuration] = useState(0)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const [audioSide, setAudioSide] = useState<'none' | ComparisonSide>('none')
   const [showSelectorA, setShowSelectorA] = useState(false)
   const [showSelectorB, setShowSelectorB] = useState(false)
 
   const videoRefA = useRef<HTMLVideoElement | null>(null)
   const videoRefB = useRef<HTMLVideoElement | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const currentTimeRef = useRef(0)
-  const videoFpsRef = useRef(24)
-  const videoDurationRef = useRef(0)
-  const stepFrameRef = useRef<(direction: 'forward' | 'backward') => void>((direction) => {
-    const a = videoRefA.current
-    const b = videoRefB.current
-
-    if (a && !a.paused) a.pause()
-    if (b && !b.paused) b.pause()
-    setIsPlaying(false)
-
-    const frameDuration = 1 / videoFpsRef.current
-    const current = a?.currentTime ?? currentTimeRef.current
-    const newTime = direction === 'forward'
-      ? Math.min(videoDurationRef.current, current + frameDuration)
-      : Math.max(0, current - frameDuration)
-
-    if (a) a.currentTime = newTime
-    if (b) b.currentTime = newTime
-    currentTimeRef.current = newTime
-    setCurrentTime(newTime)
-  })
 
   const versionA = sorted[versionAIndex]
   const versionB = sorted[versionBIndex]
@@ -121,133 +104,85 @@ export default function VideoComparison({
     fallbackUrl: videoUrlB,
     attachmentKey: `${mode}:${versionB?.id ?? 'none'}`,
   })
+
   const videoFps = versionA?.fps || versionB?.fps || 24
-  const timelineComments = comments.flatMap<VideoComparisonTimelineComment>((comment) => {
-    const avatarUrl = comment.avatarUrl ?? comment.user?.avatarUrl ?? null
-    if (comment.videoId === versionA?.id) {
-      return [{
-        ...comment,
-        avatarUrl,
-        comparisonSide: 'A' as const,
-        versionLabel: versionA.versionLabel || `v${versionA.version}`,
-      }]
-    }
-    if (comment.videoId === versionB?.id && versionB?.id !== versionA?.id) {
-      return [{
-        ...comment,
-        avatarUrl,
-        comparisonSide: 'B' as const,
-        versionLabel: versionB.versionLabel || `v${versionB.version}`,
-      }]
-    }
-    return []
+  const {
+    isPlaying,
+    currentTime,
+    duration: videoDuration,
+    waitingSide,
+    toggle: togglePlayPause,
+    seekTo: handleSeek,
+    stepFrame,
+    setSpeed,
+  } = useDualVideoSync({
+    videoRefA,
+    videoRefB,
+    fps: videoFps,
+    speed: playbackSpeed,
+    attachmentKey: `${mode}:${versionA?.id ?? 'none'}:${versionB?.id ?? 'none'}`,
   })
 
-  useEffect(() => {
-    videoFpsRef.current = videoFps
-  }, [videoFps])
+  const timelineComments = useMemo(
+    () => comments.flatMap<VideoComparisonTimelineComment>((comment) => {
+      const avatarUrl = comment.avatarUrl ?? comment.user?.avatarUrl ?? null
+      if (comment.videoId === versionA?.id) {
+        return [{
+          ...comment,
+          avatarUrl,
+          comparisonSide: 'A' as const,
+          versionLabel: versionA.versionLabel || `v${versionA.version}`,
+        }]
+      }
+      if (comment.videoId === versionB?.id && versionB?.id !== versionA?.id) {
+        return [{
+          ...comment,
+          avatarUrl,
+          comparisonSide: 'B' as const,
+          versionLabel: versionB.versionLabel || `v${versionB.version}`,
+        }]
+      }
+      return []
+    }),
+    [comments, versionA, versionB],
+  )
 
-  useEffect(() => {
-    videoDurationRef.current = videoDuration
-  }, [videoDuration])
-
-  // --- Synced playback ---
-  // No continuous sync — just align B to A on user actions (play/pause/seek).
-  // Browsers keep two videos playing at the same rate with negligible drift.
-
-  const handleSeek = (time: number) => {
-    const a = videoRefA.current
-    const b = videoRefB.current
-    if (a) a.currentTime = time
-    if (b) b.currentTime = time
-    currentTimeRef.current = time
-    setCurrentTime(time)
-  }
-
-  const handleSpeedChange = useCallback((speed: number) => {
-    setPlaybackSpeed(speed)
-    if (videoRefA.current) videoRefA.current.playbackRate = speed
-    if (videoRefB.current) videoRefB.current.playbackRate = speed
-  }, [])
-
-  const togglePlayPause = useCallback(() => {
-    const a = videoRefA.current
-    const b = videoRefB.current
-    if (!a || !b) return
-
-    if (isPlaying) {
-      a.pause()
-      b.pause()
-      setIsPlaying(false)
-    } else {
-      b.currentTime = a.currentTime
-      Promise.all([a.play(), b.play()]).catch(() => {})
-      setIsPlaying(true)
-    }
-  }, [isPlaying])
-
-  const stepFrame = useCallback((direction: 'forward' | 'backward') => {
-    stepFrameRef.current(direction)
-  }, [])
-
-  // A's timeupdate drives the UI timeline only — no sync logic
-  useEffect(() => {
-    const a = videoRefA.current
-    if (!a) return
-
-    const onTimeUpdate = () => {
-      currentTimeRef.current = a.currentTime
-      setCurrentTime(a.currentTime)
-    }
-
-    const onPlay = () => {
-      setIsPlaying(true)
-      const b = videoRefB.current
-      if (b && b.paused) {
-        b.currentTime = a.currentTime
-        b.play().catch(() => {})
+  // Drawings and author badges belong to the version the comment was made on,
+  // so each side gets its own overlay input.
+  const annotationsBySide = useMemo(() => {
+    const forSide = (side: 'A' | 'B') => {
+      const list = timelineComments.filter((comment) => comment.comparisonSide === side)
+      return {
+        comments: list.map(({ id, timecode, timecodeEnd, annotations }) => ({
+          id, timecode, timecodeEnd,
+          annotations: (annotations ?? null) as AnnotationData | null,
+        })),
+        authors: new Map<string, AnnotationAuthorMeta>(list.map((comment) => [
+          comment.id,
+          {
+            name: comment.authorName || t('anonymousReviewer'),
+            avatarUrl: comment.avatarUrl ?? null,
+            isInternal: comment.isInternal,
+            timecode: formatCommentTimestamp({
+              timecode: comment.timecode,
+              fps: videoFps,
+              videoDurationSeconds: videoDuration,
+              mode: timestampDisplayMode,
+            }),
+            content: comment.content,
+          },
+        ])),
       }
     }
 
-    const onPause = () => {
-      setIsPlaying(false)
-      const b = videoRefB.current
-      if (b) {
-        b.pause()
-        b.currentTime = a.currentTime
-      }
-    }
+    return { A: forSide('A'), B: forSide('B') }
+  }, [timelineComments, timestampDisplayMode, t, videoDuration, videoFps])
 
-    const onEnded = () => {
-      setIsPlaying(false)
-      videoRefB.current?.pause()
-    }
-
-    // Use the native timeupdate for sync (fires ~4x/sec, low overhead)
-    a.addEventListener('timeupdate', onTimeUpdate)
-    a.addEventListener('play', onPlay)
-    a.addEventListener('pause', onPause)
-    a.addEventListener('ended', onEnded)
-
-    return () => {
-      a.removeEventListener('timeupdate', onTimeUpdate)
-      a.removeEventListener('play', onPlay)
-      a.removeEventListener('pause', onPause)
-      a.removeEventListener('ended', onEnded)
-    }
-  }, [mode, versionA?.id])
-
-  // Handle metadata load — set duration, apply speed
-  const handleLoadedMetadata = useCallback(() => {
-    const a = videoRefA.current
-    const b = videoRefB.current
-    const dur = a?.duration || b?.duration || 0
-    if (dur && dur !== Infinity) {
-      setVideoDuration(dur)
-    }
-    if (a) a.playbackRate = playbackSpeed
-    if (b) b.playbackRate = playbackSpeed
-  }, [playbackSpeed])
+  // The hook layers catch-up adjustments on top of the user's speed, so both
+  // elements only ever get the base rate from here.
+  useEffect(() => {
+    setSpeed(playbackSpeed)
+  }, [playbackSpeed, setSpeed])
 
   // Keyboard shortcuts — match the main player exactly (Ctrl+ prefix)
   useEffect(() => {
@@ -270,12 +205,7 @@ export default function VideoComparison({
       if (e.ctrlKey && (e.code === 'Comma' || e.key === '<')) {
         e.preventDefault()
         e.stopPropagation()
-        setPlaybackSpeed(prev => {
-          const next = Math.max(0.25, prev - 0.25)
-          if (videoRefA.current) videoRefA.current.playbackRate = next
-          if (videoRefB.current) videoRefB.current.playbackRate = next
-          return next
-        })
+        setPlaybackSpeed(prev => Math.max(0.25, prev - 0.25))
         return
       }
 
@@ -283,12 +213,7 @@ export default function VideoComparison({
       if (e.ctrlKey && (e.code === 'Period' || e.key === '>')) {
         e.preventDefault()
         e.stopPropagation()
-        setPlaybackSpeed(prev => {
-          const next = Math.min(2.0, prev + 0.25)
-          if (videoRefA.current) videoRefA.current.playbackRate = next
-          if (videoRefB.current) videoRefB.current.playbackRate = next
-          return next
-        })
+        setPlaybackSpeed(prev => Math.min(2.0, prev + 0.25))
         return
       }
 
@@ -297,8 +222,6 @@ export default function VideoComparison({
         e.preventDefault()
         e.stopPropagation()
         setPlaybackSpeed(1.0)
-        if (videoRefA.current) videoRefA.current.playbackRate = 1.0
-        if (videoRefB.current) videoRefB.current.playbackRate = 1.0
         return
       }
 
@@ -306,7 +229,7 @@ export default function VideoComparison({
       if (e.ctrlKey && e.code === 'KeyJ') {
         e.preventDefault()
         e.stopPropagation()
-        stepFrameRef.current('backward')
+        stepFrame('backward')
         return
       }
 
@@ -314,7 +237,7 @@ export default function VideoComparison({
       if (e.ctrlKey && e.code === 'KeyL') {
         e.preventDefault()
         e.stopPropagation()
-        stepFrameRef.current('forward')
+        stepFrame('forward')
         return
       }
     }
@@ -322,30 +245,27 @@ export default function VideoComparison({
     // Use capture phase like the main player
     window.addEventListener('keydown', handleKeyboard, { capture: true })
     return () => window.removeEventListener('keydown', handleKeyboard, { capture: true })
-  }, [onClose, togglePlayPause])
+  }, [onClose, stepFrame, togglePlayPause])
 
-  // Pause on unmount
-  useEffect(() => {
-    const videoA = videoRefA.current
-    const videoB = videoRefB.current
-
-    return () => {
-      videoA?.pause()
-      videoB?.pause()
-    }
-  }, [])
-
-  // Reset time and reload videos when versions or mode change
-  useEffect(() => {
-    const a = videoRefA.current
-    const b = videoRefB.current
-    if (a) { a.pause(); a.currentTime = 0 }
-    if (b) { b.pause(); b.currentTime = 0 }
-    setCurrentTime(0)
-    currentTimeRef.current = 0
-    setVideoDuration(0)
-    setIsPlaying(false)
-  }, [versionAIndex, versionBIndex, mode])
+  // Both layers sit inside the respective picture box, so they letterbox with it.
+  const overlayA = (
+    <AnnotationOverlay
+      comments={annotationsBySide.A.comments}
+      authors={annotationsBySide.A.authors}
+      currentTime={currentTime}
+      videoFps={videoFps}
+      videoRef={videoRefA}
+    />
+  )
+  const overlayB = (
+    <AnnotationOverlay
+      comments={annotationsBySide.B.comments}
+      authors={annotationsBySide.B.authors}
+      currentTime={currentTime}
+      videoFps={videoFps}
+      videoRef={videoRefB}
+    />
+  )
 
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col">
@@ -448,9 +368,10 @@ export default function VideoComparison({
                     crossOrigin="anonymous"
                     playsInline
                     preload="auto"
-                    onLoadedMetadata={handleLoadedMetadata}
+                    muted={audioSide !== 'A'}
                     onClick={togglePlayPause}
                   />
+                  {overlayA}
                 </div>
               </div>
 
@@ -470,9 +391,10 @@ export default function VideoComparison({
                     crossOrigin="anonymous"
                     playsInline
                     preload="auto"
-                    onLoadedMetadata={handleLoadedMetadata}
+                    muted={audioSide !== 'B'}
                     onClick={togglePlayPause}
                   />
+                  {overlayB}
                 </div>
               </div>
             </div>
@@ -487,7 +409,10 @@ export default function VideoComparison({
                   labelB={`版本 B · ${versionB?.versionLabel}`}
                   posterA={(versionA as any)?.thumbnailUrl}
                   posterB={(versionB as any)?.thumbnailUrl}
-                  onLoadedMetadata={handleLoadedMetadata}
+                  mutedA={audioSide !== 'A'}
+                  mutedB={audioSide !== 'B'}
+                  overlayA={overlayA}
+                  overlayB={overlayB}
                 />
               </div>
             </div>
@@ -506,9 +431,12 @@ export default function VideoComparison({
             mode={mode}
             onModeChange={setMode}
             playbackSpeed={playbackSpeed}
-            onSpeedChange={handleSpeedChange}
+            onSpeedChange={setPlaybackSpeed}
             videoFps={videoFps}
             timestampDisplayMode={timestampDisplayMode}
+            waitingSide={waitingSide}
+            audioSide={audioSide}
+            onAudioChange={setAudioSide}
             comments={timelineComments}
           />
         </div>

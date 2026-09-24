@@ -28,8 +28,7 @@ const securitySettingsCache: CachedValue<SecuritySettingsResult> = {
     trackSecurityLogs: true,
     trackAnalytics: true
   },
-  expiresAt: 0,
-  version: undefined
+  expiresAt: 0
 }
 
 const TOKEN_CACHE_TTL_MS = 10_000
@@ -164,15 +163,15 @@ export async function verifyVideoAccessToken(
   const isAdminSession = tokenData.isAdmin === true
 
   if (tokenData.sessionId !== sessionId) {
-      await logSecurityEvent({
-        type: 'TOKEN_SESSION_MISMATCH',
-        severity: 'WARNING',
-        projectId: tokenData.projectId,
-        videoId: tokenData.videoId,
-        sessionId,
-        ipAddress: getClientIpAddress(request),
-        details: { expectedSession: tokenData.sessionId }
-      })
+    await logSecurityEvent({
+      type: 'TOKEN_SESSION_MISMATCH',
+      severity: 'WARNING',
+      projectId: tokenData.projectId,
+      videoId: tokenData.videoId,
+      sessionId,
+      ipAddress: getClientIpAddress(request),
+      details: { expectedSession: tokenData.sessionId }
+    })
 
     return null
   }
@@ -251,7 +250,7 @@ export async function detectHotlinking(
       const refererUrl = new URL(referer)
       const refererHost = refererUrl.hostname
 
-      if (host && !refererHost.includes(host) && !host.includes(refererHost)) {
+      if (!refererHost.includes(host) && !host.includes(refererHost)) {
         const blockedDomains = await getBlockedDomains()
         if (blockedDomains.some(domain => refererHost.includes(domain))) {
           return {
@@ -342,7 +341,7 @@ export async function trackVideoAccess(params: {
   assetIds?: string[] // Multiple assets downloaded as ZIP
   isAdmin?: boolean
 }) {
-  const { videoId, projectId, bandwidth: _bandwidth, eventType, sessionId, assetId, assetIds, isAdmin } = params
+  const { videoId, projectId, eventType, assetId, assetIds, isAdmin } = params
 
   const settings = await getSecuritySettings()
   if (!settings.trackAnalytics) {
@@ -434,8 +433,7 @@ export async function getSecuritySettings() {
       sessionRateLimit: true,
       shareSessionRateLimit: true,
       trackSecurityLogs: true,
-      trackAnalytics: true,
-      updatedAt: true
+      trackAnalytics: true
     }
   })
 
@@ -450,7 +448,6 @@ export async function getSecuritySettings() {
 
   securitySettingsCache.value = value
   securitySettingsCache.expiresAt = now + SECURITY_SETTINGS_CACHE_TTL_MS
-  securitySettingsCache.version = settings?.updatedAt?.toISOString()
 
   await redis.setex(REDIS_KEY, 300, JSON.stringify(value))
 

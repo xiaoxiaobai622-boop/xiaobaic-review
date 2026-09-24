@@ -8,14 +8,14 @@ import { Button } from '@/components/ui/button'
 import { Phone } from 'lucide-react'
 
 interface Props {
-  onSubmitted: (email: string) => void
   onAuthenticated: (token: string) => void
 }
 
 const PHONE_REGEX = /^1[3-9]\d{9}$/
 
-export default function PortalLogin({ onSubmitted: _onSubmitted, onAuthenticated }: Props) {
+export default function PortalLogin({ onAuthenticated }: Props) {
   const t = useTranslations('portal')
+  const tAuth = useTranslations('auth')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
@@ -26,7 +26,7 @@ export default function PortalLogin({ onSubmitted: _onSubmitted, onAuthenticated
   async function handleSendCode() {
     setError('')
     if (!PHONE_REGEX.test(phone)) {
-      setError('请输入正确的 11 位手机号')
+      setError(tAuth('invalidPhone'))
       return
     }
     setSendingCode(true)
@@ -37,10 +37,10 @@ export default function PortalLogin({ onSubmitted: _onSubmitted, onAuthenticated
         body: JSON.stringify({ phone }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || '验证码发送失败')
+      if (!res.ok) throw new Error(data.error || tAuth('smsSendFailed'))
       setCodeSent(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '验证码发送失败')
+      setError(err instanceof Error ? err.message : tAuth('smsSendFailed'))
     } finally {
       setSendingCode(false)
     }
@@ -50,7 +50,7 @@ export default function PortalLogin({ onSubmitted: _onSubmitted, onAuthenticated
     event.preventDefault()
     setError('')
     if (!/^\d{6}$/.test(code)) {
-      setError('请输入 6 位验证码')
+      setError(tAuth('invalidCode'))
       return
     }
     setLoading(true)
@@ -61,10 +61,10 @@ export default function PortalLogin({ onSubmitted: _onSubmitted, onAuthenticated
         body: JSON.stringify({ phone, code }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.token) throw new Error(data.error || '登录失败')
+      if (!res.ok || !data.token) throw new Error(data.error || tAuth('loginFailed'))
       onAuthenticated(data.token)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '登录失败')
+      setError(err instanceof Error ? err.message : tAuth('loginFailed'))
     } finally {
       setLoading(false)
     }
@@ -82,22 +82,22 @@ export default function PortalLogin({ onSubmitted: _onSubmitted, onAuthenticated
       <CardContent className="space-y-4">
         <form onSubmit={handlePhoneSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label htmlFor="portal-phone" className="text-sm font-medium text-foreground">手机号</label>
-            <Input id="portal-phone" type="tel" inputMode="numeric" autoComplete="tel" maxLength={11} placeholder="请输入手机号" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, ''))} autoFocus />
+            <label htmlFor="portal-phone" className="text-sm font-medium text-foreground">{tAuth('phone')}</label>
+            <Input id="portal-phone" type="tel" inputMode="numeric" autoComplete="tel" maxLength={11} placeholder={tAuth('phonePlaceholder')} value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, ''))} autoFocus />
           </div>
           {codeSent && (
             <div className="space-y-2">
-              <label htmlFor="portal-code" className="text-sm font-medium text-foreground">验证码</label>
-              <Input id="portal-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="请输入 6 位验证码" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} />
+              <label htmlFor="portal-code" className="text-sm font-medium text-foreground">{tAuth('verificationCode')}</label>
+              <Input id="portal-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder={tAuth('verificationCodePlaceholder')} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} />
             </div>
           )}
           {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
           {!codeSent ? (
-            <Button type="button" onClick={handleSendCode} disabled={sendingCode || phone.length !== 11} className="w-full">{sendingCode ? '正在发送...' : '获取验证码'}</Button>
+            <Button type="button" onClick={handleSendCode} disabled={sendingCode || phone.length !== 11} className="w-full">{sendingCode ? tAuth('sendingCode') : tAuth('sendCode')}</Button>
           ) : (
             <div className="flex gap-2">
-              <Button type="submit" disabled={loading || code.length !== 6} className="flex-1">{loading ? '正在登录...' : '登录'}</Button>
-              <Button type="button" variant="outline" onClick={handleSendCode} disabled={sendingCode}>{sendingCode ? '发送中' : '重新发送'}</Button>
+              <Button type="submit" disabled={loading || code.length !== 6} className="flex-1">{loading ? tAuth('signingIn') : tAuth('signIn')}</Button>
+              <Button type="button" variant="outline" onClick={handleSendCode} disabled={sendingCode}>{sendingCode ? tAuth('sendingCode') : tAuth('resendCode')}</Button>
             </div>
           )}
         </form>

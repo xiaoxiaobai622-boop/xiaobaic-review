@@ -29,6 +29,9 @@ interface ClientCompany {
   }
 }
 
+const FORM_ERROR_BANNER_CLASS_NAME = 'p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2'
+const FORM_ERROR_BANNER_WITH_MARGIN_CLASS_NAME = 'mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2'
+
 export default function ClientsPage() {
   const t = useTranslations('clients')
   const tc = useTranslations('common')
@@ -88,6 +91,24 @@ export default function ClientsPage() {
     }, 300)
     return () => clearTimeout(timer)
   }, [searchQuery, loadCompanies])
+
+  function renderFormError(bannerClassName: string) {
+    if (!error) return null
+    return (
+      <div className={bannerClassName}>
+        <AlertCircle className="w-4 h-4 text-destructive" />
+        <span className="text-sm text-destructive">{error}</span>
+      </div>
+    )
+  }
+
+  async function refreshSelectedCompany(companyId: string) {
+    const response = await apiFetch(`/api/clients/${companyId}`)
+    if (response.ok) {
+      const data = await response.json()
+      setSelectedCompany(data.company)
+    }
+  }
 
   async function handleAddCompany() {
     if (!newCompanyName.trim()) {
@@ -160,11 +181,7 @@ export default function ClientsPage() {
       await loadCompanies()
 
       // Reload selected company contacts
-      const response = await apiFetch(`/api/clients/${selectedCompany.id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setSelectedCompany(data.company)
-      }
+      await refreshSelectedCompany(selectedCompany.id)
 
       setNewContactName('')
       setNewContactEmail('')
@@ -194,11 +211,7 @@ export default function ClientsPage() {
       })
 
       // Reload selected company contacts
-      const response = await apiFetch(`/api/clients/${selectedCompany.id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setSelectedCompany(data.company)
-      }
+      await refreshSelectedCompany(selectedCompany.id)
 
       setNewContactName('')
       setNewContactEmail('')
@@ -229,11 +242,7 @@ export default function ClientsPage() {
       } else if (selectedCompany) {
         await apiDelete(`/api/clients/${selectedCompany.id}/contacts/${deleteTarget.id}`)
         // Reload selected company contacts
-        const response = await apiFetch(`/api/clients/${selectedCompany.id}`)
-        if (response.ok) {
-          const data = await response.json()
-          setSelectedCompany(data.company)
-        }
+        await refreshSelectedCompany(selectedCompany.id)
       }
       
       setDeleteTarget(null)
@@ -459,12 +468,7 @@ export default function ClientsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {error && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-destructive" />
-                <span className="text-sm text-destructive">{error}</span>
-              </div>
-            )}
+            {renderFormError(FORM_ERROR_BANNER_CLASS_NAME)}
             <div className="space-y-2">
               <Label htmlFor="companyName">{t('companyName')}</Label>
               <Input
@@ -507,12 +511,7 @@ export default function ClientsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {error && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-destructive" />
-                <span className="text-sm text-destructive">{error}</span>
-              </div>
-            )}
+            {renderFormError(FORM_ERROR_BANNER_CLASS_NAME)}
             <div className="space-y-2">
               <Label htmlFor="editCompanyName">{t('companyName')}</Label>
               <Input
@@ -554,12 +553,7 @@ export default function ClientsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            {error && (
-              <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-destructive" />
-                <span className="text-sm text-destructive">{error}</span>
-              </div>
-            )}
+            {renderFormError(FORM_ERROR_BANNER_WITH_MARGIN_CLASS_NAME)}
             
             <div className="flex justify-between items-center mb-3">
               <span className="text-sm font-medium">{t('contacts')}</span>
@@ -645,12 +639,7 @@ export default function ClientsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {error && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-destructive" />
-                <span className="text-sm text-destructive">{error}</span>
-              </div>
-            )}
+            {renderFormError(FORM_ERROR_BANNER_CLASS_NAME)}
             <div className="space-y-2">
               <Label htmlFor="contactName">{t('contactName')}</Label>
               <Input
@@ -727,12 +716,7 @@ export default function ClientsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {error && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-destructive" />
-                <span className="text-sm text-destructive">{error}</span>
-              </div>
-            )}
+            {renderFormError(FORM_ERROR_BANNER_CLASS_NAME)}
             <div className="space-y-2">
               <Label htmlFor="editContactName">{t('contactName')}</Label>
               <Input
@@ -809,12 +793,7 @@ export default function ClientsPage() {
               }
             </DialogDescription>
           </DialogHeader>
-          {error && (
-            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-destructive" />
-              <span className="text-sm text-destructive">{error}</span>
-            </div>
-          )}
+          {renderFormError(FORM_ERROR_BANNER_CLASS_NAME)}
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">{tc('cancel')}</Button>

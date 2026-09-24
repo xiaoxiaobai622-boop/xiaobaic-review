@@ -1,7 +1,8 @@
 import { Job } from 'bullmq'
+import sharp from 'sharp'
 import { prisma } from '../lib/db'
 import { downloadFile } from '../lib/storage'
-import { ALLOWED_ASSET_TYPES } from '../lib/file-validation'
+import { ALLOWED_ASSET_TYPES, markInvalidFileType } from '../lib/file-validation'
 import fs from 'fs'
 import path from 'path'
 import { pipeline } from 'stream/promises'
@@ -14,6 +15,40 @@ export interface AssetProcessingJob {
   assetId: string
   storagePath: string
   expectedCategory?: string
+}
+
+/**
+ * Categories where every allowed MIME is something sharp can raster, so a decode
+ * failure is proof of a broken file rather than of an unsupported format.
+ */
+const DECODABLE_ASSET_CATEGORIES = new Set(['image', 'thumbnail'])
+
+/**
+ * Force a real pixel decode. Magic bytes and headers both pass a file that is
+ * truncated or corrupt mid-stream, and unlike photos an asset has no rendition
+ * pass, so nothing else in the pipeline would ever notice.
+ */
+async function assertDecodable(filePath: string): Promise<void> {
+  await sharp(filePath).resize(1, 1, { fit: 'inside' }).png().toBuffer()
+}
+
+/**
+ * Mark the asset record as holding unexpected content and build the rejection
+ * error. The thrown message is what the queue stores as the job failure, so the
+ * log line and the error share one wording. Callers must `throw` the result —
+ * returning it here would leave TypeScript unable to see the abort.
+ */
+async function rejectAsset(assetId: string, mime: string, reason: string): Promise<Error> {
+  logError(`[WORKER ERROR] ${reason}`)
+
+  await prisma.videoAsset.update({
+    where: { id: assetId },
+    data: {
+      fileType: markInvalidFileType(mime)
+    }
+  })
+
+  return new Error(reason)
 }
 
 /**
@@ -88,16 +123,11 @@ export async function processAsset(job: Job<AssetProcessingJob>) {
         logMessage(`[WORKER] Asset MIME type ${fileType.mime} is compatible with expected category '${expectedCategory}'`)
       } else {
         // Expected category doesn't support this MIME type - validation failed
-        logMessage(`[WORKER ERROR] File MIME type '${fileType.mime}' is not compatible with expected category '${expectedCategory}'`)
-
-        await prisma.videoAsset.update({
-          where: { id: assetId },
-          data: {
-            fileType: 'INVALID - ' + fileType.mime
-          }
-        })
-
-        throw new Error(`File MIME type '${fileType.mime}' is not compatible with expected category '${expectedCategory}'`)
+        throw await rejectAsset(
+          assetId,
+          fileType.mime,
+          `File MIME type '${fileType.mime}' is not compatible with expected category '${expectedCategory}'`
+        )
       }
     } else {
       // No expected category - auto-detect from MIME type
@@ -111,22 +141,30 @@ export async function processAsset(job: Job<AssetProcessingJob>) {
       }
 
       if (!detectedCategory) {
-        logMessage(`[WORKER ERROR] File content does not match any allowed asset type. Detected: ${fileType.mime}`)
-
-        await prisma.videoAsset.update({
-          where: { id: assetId },
-          data: {
-            fileType: 'INVALID - ' + fileType.mime
-          }
-        })
-
-        throw new Error(`File content does not match any allowed asset type. Detected: ${fileType.mime}`)
+        throw await rejectAsset(
+          assetId,
+          fileType.mime,
+          `File content does not match any allowed asset type. Detected: ${fileType.mime}`
+        )
       }
 
       finalCategory = detectedCategory
     }
 
     logMessage(`[WORKER] Asset magic byte validation passed - type: ${fileType.mime}, category: ${finalCategory}`)
+
+    if (DECODABLE_ASSET_CATEGORIES.has(finalCategory)) {
+      try {
+        await assertDecodable(tempFilePath)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw await rejectAsset(
+          assetId,
+          fileType.mime,
+          `Image content cannot be decoded. Detected: ${fileType.mime}. ${detail}`
+        )
+      }
+    }
 
     // Update asset with detected file type and final category
     await prisma.videoAsset.update({

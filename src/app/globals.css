@@ -150,6 +150,62 @@
     --logo-panel: #f5f7fb; /* slit matches background */
     --logo-wedge: #0b1220;
   }
+
+  /*
+   * Mint — the third choice in the theme toggle (`<html data-theme='mint'>`).
+   * A light theme, so no `.dark` class.
+   *
+   * Palette taken from a reference gradient the owner picked: leaf green
+   * hsl(130 30% 63%) fading through desaturated sage hsl(95 18% 78%) into warm
+   * white hsl(40 30% 92%). The gradient maps onto UI roles rather than being
+   * applied uniformly: the warm end is the canvas, the grey-green middle is
+   * chrome (nav rails, hover, inset rows, hairlines), the saturated green is
+   * kept for selection and the primary, and the type carries the deep sage.
+   * Distribution matters more than the values — dyeing --background the same
+   * green as the rail turns the whole app into glass.
+   *
+   * The admin's accent colour normally reaches --primary, --ring,
+   * --accent-foreground and --primary-visible as inline styles on <html>, which
+   * would outrank these rules; AccentColorProvider stops writing them while
+   * data-theme is 'mint' so the stylesheet wins. --primary is the reference
+   * green darkened (its literal #7fbb8a gives white labels only 2.1:1), which
+   * puts every text pair here at or above AA: white on primary 4.58, accent
+   * label on the selected pill 5.19, primary on --primary-visible 4.02,
+   * body on canvas 10.80, muted text on card 5.78.
+   */
+  :root[data-theme='mint'] {
+    color-scheme: light;
+
+    --background: 40 33% 97%; /* #faf8f5 — warm end, a whisper not a wash */
+    --foreground: 128 24% 20%; /* #273f2a — the tint lives in the type */
+
+    --card: 0 0% 100%;
+    --card-foreground: 128 24% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 128 24% 20%;
+
+    --primary: 128 27% 40%; /* #4a8252 — reference green, darkened for white labels */
+    --primary-foreground: 0 0% 100%;
+    --primary-visible: 125 34% 93%; /* #e7f3e8 */
+
+    --secondary: 100 18% 88%; /* #dfe6db — grey-green middle: chrome, hover, inset rows */
+    --secondary-foreground: 128 24% 20%;
+
+    --muted: 100 18% 88%;
+    --muted-foreground: 100 8% 38%; /* #5e6959 */
+
+    --accent: 125 26% 84%; /* #cce1cd — selection keeps the real green */
+    --accent-foreground: 128 26% 30%; /* #39603e */
+
+    --border: 100 14% 82%; /* #cfd8cb */
+    --input: 100 14% 82%;
+    --ring: 128 27% 40%;
+
+    /* The pure blue bleeding through the mint block (it is text and icons only
+     * here; --info-visible is left alone and still comes from :root). */
+    --info: 155 36% 91%; /* #dff0e9 */
+  }
 }
 
 @layer base {

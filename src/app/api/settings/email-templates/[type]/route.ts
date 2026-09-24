@@ -27,6 +27,22 @@ interface RouteParams {
   params: Promise<{ type: string }>
 }
 
+// The acting platform admin's configured language drives both the template body
+// and every message returned below.
+async function resolveTemplateLocale() {
+  const settings = await prisma.settings.findFirst({ select: { language: true } })
+  const locale = settings?.language || 'en'
+  const messages = await loadLocaleMessages(locale).catch(() => null)
+  return { locale, templateMessages: messages?.settings?.emailTemplates }
+}
+
+function invalidTemplateTypeResponse(templateMessages: Record<string, any> | undefined) {
+  return NextResponse.json(
+    { error: templateMessages?.invalidTemplateType || 'Invalid template type' },
+    { status: 400 }
+  )
+}
+
 /**
  * GET /api/settings/email-templates/[type]
  */
@@ -38,10 +54,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
   const { type } = await params
 
-  const settings = await prisma.settings.findFirst({ select: { language: true } })
-  const locale = settings?.language || 'en'
-  const messages = await loadLocaleMessages(locale).catch(() => null)
-  const templateMessages = messages?.settings?.emailTemplates
+  const { locale, templateMessages } = await resolveTemplateLocale()
 
   const rateLimitResult = await rateLimit(
     request,
@@ -51,10 +64,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   if (rateLimitResult) return rateLimitResult
 
   if (!Object.keys(EMAIL_TEMPLATE_TYPES).includes(type)) {
-    return NextResponse.json(
-      { error: templateMessages?.invalidTemplateType || 'Invalid template type' },
-      { status: 400 }
-    )
+    return invalidTemplateTypeResponse(templateMessages)
   }
 
   const templateType = type as EmailTemplateType
@@ -117,10 +127,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 
   const { type } = await params
-  const settings = await prisma.settings.findFirst({ select: { language: true } })
-  const locale = settings?.language || 'en'
-  const messages = await loadLocaleMessages(locale).catch(() => null)
-  const templateMessages = messages?.settings?.emailTemplates
+  const { templateMessages } = await resolveTemplateLocale()
 
   const rateLimitResult = await rateLimit(
     request,
@@ -130,10 +137,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   if (rateLimitResult) return rateLimitResult
 
   if (!Object.keys(EMAIL_TEMPLATE_TYPES).includes(type)) {
-    return NextResponse.json(
-      { error: templateMessages?.invalidTemplateType || 'Invalid template type' },
-      { status: 400 }
-    )
+    return invalidTemplateTypeResponse(templateMessages)
   }
 
   const templateType = type as EmailTemplateType
@@ -195,10 +199,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   }
 
   const { type } = await params
-  const settings = await prisma.settings.findFirst({ select: { language: true } })
-  const locale = settings?.language || 'en'
-  const messages = await loadLocaleMessages(locale).catch(() => null)
-  const templateMessages = messages?.settings?.emailTemplates
+  const { locale, templateMessages } = await resolveTemplateLocale()
 
   const rateLimitResult = await rateLimit(
     request,
@@ -208,10 +209,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   if (rateLimitResult) return rateLimitResult
 
   if (!Object.keys(EMAIL_TEMPLATE_TYPES).includes(type)) {
-    return NextResponse.json(
-      { error: templateMessages?.invalidTemplateType || 'Invalid template type' },
-      { status: 400 }
-    )
+    return invalidTemplateTypeResponse(templateMessages)
   }
 
   const templateType = type as EmailTemplateType
@@ -263,10 +261,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const { type } = await params
-  const settings = await prisma.settings.findFirst({ select: { language: true } })
-  const locale = settings?.language || 'en'
-  const messages = await loadLocaleMessages(locale).catch(() => null)
-  const templateMessages = messages?.settings?.emailTemplates
+  const { templateMessages } = await resolveTemplateLocale()
 
   const rateLimitResult = await rateLimit(
     request,
@@ -276,10 +271,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (rateLimitResult) return rateLimitResult
 
   if (!Object.keys(EMAIL_TEMPLATE_TYPES).includes(type)) {
-    return NextResponse.json(
-      { error: templateMessages?.invalidTemplateType || 'Invalid template type' },
-      { status: 400 }
-    )
+    return invalidTemplateTypeResponse(templateMessages)
   }
 
   try {

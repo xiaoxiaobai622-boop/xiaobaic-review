@@ -9,6 +9,7 @@ import { formatFileSize } from '@/lib/utils'
 interface CommentAsset {
   id: string
   fileName: string
+  originalFileName: string | null
   fileSize: string
   fileType: string
   category: string | null
@@ -92,7 +93,7 @@ export default function CommentAttachments({
             className="flex items-center gap-2 px-2.5 py-1.5 bg-muted/40 border border-border/50 rounded-md text-sm hover:bg-muted/60 transition-colors w-full text-left group"
           >
             <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <span className="truncate flex-1 text-foreground">{asset.fileName}</span>
+            <span className="truncate flex-1 text-foreground">{asset.originalFileName || asset.fileName}</span>
             <span className="text-xs text-muted-foreground flex-shrink-0">
               {formatFileSize(Number(asset.fileSize))}
             </span>

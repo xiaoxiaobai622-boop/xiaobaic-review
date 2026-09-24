@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { logError, logMessage } from '../lib/logging'
 
-const TEMP_DIR = '/tmp/vitransfer'
+export const TEMP_DIR = '/tmp/vitransfer'
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000
 
 /**
@@ -41,5 +41,3 @@ export function ensureTempDir() {
     fs.mkdirSync(TEMP_DIR, { recursive: true })
   }
 }
-
-export { TEMP_DIR }

@@ -22,6 +22,8 @@ type ViewMode = 'calendar' | 'gantt'
 type CalendarScale = 'day' | 'week' | 'month' | 'year'
 type GanttRange = 'all' | '1m' | '3m' | '6m' | '1y'
 
+const GANTT_RANGE_MONTHS: Record<string, number> = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 }
+
 export default function CalendarPage() {
   const t = useTranslations('calendar')
   const tc = useTranslations('common')
@@ -253,7 +255,7 @@ export default function CalendarPage() {
                 className={`min-h-[120px] border-r border-b border-border p-1.5 ${today ? 'bg-primary/5' : ''}`}
               >
                 <div className={`text-xs mb-1 ${today ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
-                  <span className="block">{[t('sun'), t('mon'), t('tue'), t('wed'), t('thu'), t('fri'), t('sat')][day.getDay()]}</span>
+                  <span className="block">{weekdayLabels[day.getDay()]}</span>
                   <span className="text-sm font-semibold">{day.getDate()}</span>
                 </div>
                 <div className="space-y-0.5">
@@ -289,7 +291,7 @@ export default function CalendarPage() {
         </div>
 
         <div className="grid grid-cols-7">
-          {[t('sun'), t('mon'), t('tue'), t('wed'), t('thu'), t('fri'), t('sat')].map((day, i) => (
+          {weekdayLabels.map((day, i) => (
             <div key={i} className="px-2 py-2 text-xs font-medium text-muted-foreground text-center border-b border-border">
               {day}
             </div>
@@ -358,7 +360,7 @@ export default function CalendarPage() {
                 </button>
                 <div className="grid grid-cols-7 gap-px">
                   {/* Day headers */}
-                  {[t('sun'), t('mon'), t('tue'), t('wed'), t('thu'), t('fri'), t('sat')].map((d, i) => (
+                  {weekdayLabels.map((d, i) => (
                     <div key={i} className="text-[8px] text-muted-foreground text-center">{d.charAt(0)}</div>
                   ))}
                   {/* Empty cells */}
@@ -401,7 +403,6 @@ export default function CalendarPage() {
 
   // ── Gantt helpers ──
   const allGanttProjects = projects.filter(p => p.dueDate)
-  const ganttRangeMonths: Record<string, number> = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 }
 
   // Compute viewport based on selected range
   function getGanttViewport(): { start: Date; end: Date } {
@@ -417,7 +418,7 @@ export default function CalendarPage() {
       return { start, end }
     }
 
-    const months = ganttRangeMonths[ganttRange] || 3
+    const months = GANTT_RANGE_MONTHS[ganttRange] || 3
     const start = new Date(ganttCenter)
     start.setMonth(start.getMonth() - Math.floor(months / 2))
     start.setDate(1)
@@ -488,7 +489,7 @@ export default function CalendarPage() {
   }
 
   function navigateGantt(direction: 'prev' | 'next') {
-    const step = ganttRangeMonths[ganttRange] || 3
+    const step = GANTT_RANGE_MONTHS[ganttRange] || 3
     const d = new Date(ganttCenter)
     d.setMonth(d.getMonth() + (direction === 'next' ? step : -step))
     setGanttCenter(d)
@@ -505,6 +506,8 @@ export default function CalendarPage() {
   const todayGanttOffset = ((new Date().getTime() - ganttStart.getTime()) / (1000 * 60 * 60 * 24) / ganttTotalDays) * 100
 
   // ── Render ──
+  const weekdayLabels = [t('sun'), t('mon'), t('tue'), t('wed'), t('thu'), t('fri'), t('sat')]
+
   if (loading) {
     return (
       <div className="flex-1 min-h-0 bg-background">
@@ -584,7 +587,7 @@ export default function CalendarPage() {
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {t(scale as 'day' | 'week' | 'month' | 'year')}
+                    {t(scale)}
                   </button>
                 ))}
               </div>

@@ -6,6 +6,15 @@ import { getTeamQuota, getTeamUsage, TRIAL_QUOTA } from '@/lib/platform-access'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// maxProjects/maxVideos accept 0: readers treat a non-positive allowance as
+// "unlimited" (lib/platform-access isUnlimitedQuota).
+const QUOTA_MINIMUMS: Record<string, number> = {
+  maxMembers: 1,
+  maxProjects: 0,
+  maxVideos: 0,
+  maxStorageGB: 1,
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -28,10 +37,9 @@ export async function PATCH(
   const body = await request.json().catch(() => null)
 
   const data: Record<string, number> = {}
-  for (const key of ['maxMembers', 'maxProjects', 'maxVideos', 'maxStorageGB']) {
+  for (const [key, minimum] of Object.entries(QUOTA_MINIMUMS)) {
     const value = body?.[key]
-    if (typeof value === 'number' && (key === 'maxProjects' || key === 'maxVideos') && value >= 0) data[key] = Math.floor(value)
-    else if (typeof value === 'number' && value >= 1) data[key] = Math.floor(value)
+    if (typeof value === 'number' && value >= minimum) data[key] = Math.floor(value)
   }
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
 

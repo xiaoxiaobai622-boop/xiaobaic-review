@@ -3,7 +3,6 @@
 import { useTranslations } from 'next-intl'
 import FilterDropdown from '@/components/FilterDropdown'
 import ViewModeToggle, { type ViewMode } from '@/components/ViewModeToggle'
-import ProjectsSearchBar from './ProjectsSearchBar'
 import ProjectsSortMenu from './ProjectsSortMenu'
 import type { ClientOption, DueBucket, ProjectsFilterState } from '@/lib/projects-filter'
 import { DUE_BUCKETS, NO_CLIENT_KEY } from '@/lib/projects-filter'
@@ -34,24 +33,23 @@ export default function ProjectsToolbar({
     onChange({ ...filters, [key]: value })
   }
 
-  return (
-    <div className="flex flex-wrap items-center gap-2 mb-3">
-      <ProjectsSearchBar value={filters.q} onChange={(q) => setField('q', q)} />
+  const statusLabels: Record<string, string> = {
+    IN_REVIEW: t('statusInReview'),
+    APPROVED: t('statusApproved'),
+    SHARE_ONLY: t('statusShareOnly'),
+    ARCHIVED: t('statusArchived'),
+  }
 
-      <div className="flex flex-wrap items-center gap-2 ml-auto">
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <FilterDropdown
           width="w-[260px]"
           groups={[
             {
               key: 'status',
               label: tc('status'),
-              options: STATUS_OPTIONS.map(v => ({
-                value: v,
-                label: v === 'IN_REVIEW' ? t('statusInReview')
-                  : v === 'APPROVED' ? t('statusApproved')
-                  : v === 'SHARE_ONLY' ? t('statusShareOnly')
-                  : t('statusArchived'),
-              })),
+              options: STATUS_OPTIONS.map(v => ({ value: v, label: statusLabels[v] })),
               selected: filters.statuses,
               onChange: (s) => setField('statuses', s),
             },

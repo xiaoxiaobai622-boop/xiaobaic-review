@@ -7,7 +7,10 @@ import { StorageConfigProvider, type StorageProvider } from "@/components/Storag
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { prisma } from "@/lib/db";
+import { headers } from "next/headers";
 import { AppDialogProvider } from "@/components/AppDialogProvider";
+import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/theme'
+import { BRAND } from '@/lib/marketing/brand'
 
 // Force Node.js runtime across the app to allow use of Node APIs (e.g., crypto).
 export const runtime = 'nodejs';
@@ -45,8 +48,9 @@ export async function generateMetadata(): Promise<Metadata> {
       }
 
   return {
-    title: "逐帧审阅",
-    description: "专业视频审阅、版本管理与素材收录平台",
+    title: { default: BRAND.zh, template: BRAND.titleTemplate },
+    description: BRAND.description,
+    robots: { index: true, follow: true },
     manifest: '/manifest.json',
     icons,
     appleWebApp: {
@@ -73,10 +77,16 @@ export default async function RootLayout({
   const locale = await getLocale()
   const messages = await getMessages()
   const storageProvider = (process.env.STORAGE_PROVIDER === 's3' ? 's3' : 'local') as StorageProvider
+  // src/proxy.ts publishes this request's CSP nonce; without it the pre-paint
+  // theme script is blocked, and a saved dark/mint choice never survives reload.
+  const cspNonce = (await headers()).get('x-nonce') ?? undefined
 
   return (
     <html lang={locale} suppressHydrationWarning>
       <body className="min-h-dvh overflow-x-clip font-sans flex flex-col">
+        {/* Parser-blocking and first in the document, so the theme is on <html>
+            before any content is painted — no flash of the default theme. */}
+        <script nonce={cspNonce} dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
         <NextIntlClientProvider messages={messages}>
           <StorageConfigProvider provider={storageProvider}>
             <AppDialogProvider>

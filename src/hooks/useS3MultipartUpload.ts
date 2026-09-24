@@ -49,6 +49,17 @@ interface PauseGate {
   resolve: () => void
 }
 
+// Every upload endpoint call identifies the object with the same four ids; the
+// presign / abort / complete requests must agree on them.
+function targetIds(target: S3UploadTarget) {
+  return {
+    videoId: target.videoId,
+    assetId: target.assetId,
+    projectUploadId: target.projectUploadId,
+    photoId: target.photoId,
+  }
+}
+
 /**
  * Hook that manages direct browser-to-S3 multipart uploads.
  *
@@ -60,7 +71,6 @@ export function useS3MultipartUpload() {
   const activeUploadsRef = useRef<Map<string, ActiveUpload>>(new Map())
   const pauseGatesRef = useRef<Map<string, PauseGate>>(new Map())
 
-  // Best-effort abort on S3 to free incomplete multipart storage
   const getAuthInit = useCallback((target: S3UploadTarget): RequestInit => {
     const headers: Record<string, string> = {}
     if (target.bearerToken) headers.Authorization = `Bearer ${target.bearerToken}`
@@ -68,17 +78,12 @@ export function useS3MultipartUpload() {
     return Object.keys(headers).length > 0 ? { headers } : {}
   }, [])
 
+  // Best-effort abort on S3 to free incomplete multipart storage
   const abortOnServer = useCallback(async (uploadId: string, target: S3UploadTarget): Promise<void> => {
     try {
       await apiPost(
         '/api/uploads/s3/abort',
-        {
-          uploadId,
-          videoId: target.videoId,
-          assetId: target.assetId,
-          projectUploadId: target.projectUploadId,
-          photoId: target.photoId,
-        },
+        { uploadId, ...targetIds(target) },
         getAuthInit(target)
       )
     } catch (err) {
@@ -116,6 +121,7 @@ export function useS3MultipartUpload() {
       const { onProgress, onSuccess, onError } = callbacks
       const abortController = new AbortController()
       const { signal } = abortController
+      const contentType = file.type || 'application/octet-stream'
 
       try {
         // ── 1. Request presigned part URLs ─────────────────────────────────────
@@ -134,12 +140,9 @@ export function useS3MultipartUpload() {
         const presignRes: PresignResponse = await apiPost(
           '/api/uploads/s3/presign',
           {
-            videoId: target.videoId,
-            assetId: target.assetId,
-            projectUploadId: target.projectUploadId,
-            photoId: target.photoId,
+            ...targetIds(target),
             filename: file.name,
-            contentType: file.type || 'application/octet-stream',
+            contentType,
             fileSize: file.size,
           },
           authInit
@@ -154,11 +157,10 @@ export function useS3MultipartUpload() {
         }
 
         // ── 2. Upload parts directly to S3 ────────────────────────────────────
-        const { uploadId, partSize: serverPartSize, parts } = presignRes
-        if (!serverPartSize || serverPartSize < MIN_PART_SIZE) {
-          throw new Error(`Server returned invalid partSize: ${serverPartSize}`)
+        const { uploadId, partSize, parts } = presignRes
+        if (!partSize || partSize < MIN_PART_SIZE) {
+          throw new Error(`Server returned invalid partSize: ${partSize}`)
         }
-        const partSize = serverPartSize
         const completedParts: Array<{ partNumber: number; etag: string }> = []
 
         // Per-part progress tracking. `partProgress[partNumber-1]` holds bytes
@@ -304,13 +306,10 @@ export function useS3MultipartUpload() {
           '/api/uploads/s3/complete',
           {
             uploadId,
-            videoId: target.videoId,
-            assetId: target.assetId,
-            projectUploadId: target.projectUploadId,
-            photoId: target.photoId,
+            ...targetIds(target),
             parts: completedParts,
             fileSize: file.size,
-            contentType: file.type || 'application/octet-stream',
+            contentType,
           },
           authInit
         )
@@ -340,9 +339,9 @@ export function useS3MultipartUpload() {
   /** Pause an in-progress upload. Takes effect between part batches. */
   const pauseUpload = useCallback((uploadKey: string): void => {
     if (pauseGatesRef.current.has(uploadKey)) return
-    let resolve: () => void
+    let resolve!: () => void
     const promise = new Promise<void>((r) => { resolve = r })
-    pauseGatesRef.current.set(uploadKey, { promise, resolve: resolve! })
+    pauseGatesRef.current.set(uploadKey, { promise, resolve })
   }, [])
 
   /** Resume a paused upload. */

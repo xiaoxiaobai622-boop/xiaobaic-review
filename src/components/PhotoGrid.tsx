@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { CheckSquare, Square, ImageIcon, Loader2, Trash2 } from 'lucide-react'
+import { CheckSquare, Square, ImageIcon, ImageOff, Loader2, Trash2 } from 'lucide-react'
 
 export interface GalleryPhoto {
   id: string
@@ -10,6 +10,8 @@ export interface GalleryPhoto {
   width: number | null
   height: number | null
   hasThumbnail: boolean
+  /** Worker proved the bytes are not a decodable image — no thumbnail will ever arrive. */
+  isInvalid: boolean
 }
 
 interface PhotoGridProps {
@@ -63,6 +65,14 @@ export default function PhotoGrid({
                   className="w-full h-full object-cover"
                 />
               </button>
+            ) : photo.isInvalid ? (
+              <div
+                className="w-full h-full flex flex-col items-center justify-center gap-1.5 border border-dashed border-destructive/40 text-destructive"
+                title={t('corruptPhotoHint')}
+              >
+                <ImageOff className="w-6 h-6" />
+                <span className="text-xs w-full px-1 truncate text-center">{t('corruptPhoto')}</span>
+              </div>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 text-muted-foreground">
                 <ImageIcon className="w-6 h-6" />

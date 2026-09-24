@@ -3,7 +3,6 @@ import { prisma } from '@/lib/db'
 export const TRIAL_PLAN = 'TRIAL'
 export const MONTHLY_PLAN = 'MONTHLY'
 export const UNACTIVATED_PLAN = 'UNACTIVATED'
-export const LEGACY_PLAN = 'LEGACY'
 
 export const TRIAL_QUOTA = {
   maxMembers: 2,

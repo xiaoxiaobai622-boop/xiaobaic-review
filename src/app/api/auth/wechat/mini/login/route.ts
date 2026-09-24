@@ -137,9 +137,7 @@ export async function POST(request: NextRequest) {
         where: { id: identity.id },
         data: { userId: adminUser.id },
       })
-    }
 
-    if (qrId && /^[A-Za-z0-9_-]{16,64}$/.test(qrId)) {
       const redis = getRedis()
       await redis.set(
         getWechatQrKey(qrId),

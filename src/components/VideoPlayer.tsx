@@ -3,10 +3,10 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video, ProjectStatus, Comment } from '@prisma/client'
-import { Button } from './ui/button'
-import { CheckCircle2, ChevronLeft, ChevronRight, GitCompareArrows, LoaderCircle, Play, Pause, SkipBack, SkipForward } from 'lucide-react'
+import { ChevronLeft, ChevronRight, LoaderCircle, Play, Pause, SkipBack, SkipForward } from 'lucide-react'
 import CustomVideoControls from './CustomVideoControls'
 import VideoComparison from './VideoComparison'
+import { getFiniteDuration, isTimeBuffered } from '@/lib/media-buffer'
 import ProjectInfo from './ProjectInfo'
 import AnnotationOverlay from './AnnotationOverlay'
 import AnnotationCanvas from './AnnotationCanvas'
@@ -96,34 +96,7 @@ function resolvePlaybackSource(
 
 const POSITION_EVENT_INTERVAL_MS = 200
 const SEEK_RESUME_DEBOUNCE_MS = 180
-const BUFFER_TAIL_TOLERANCE_SECONDS = 0.15
 const MEDIA_END_EPSILON_SECONDS = 0.15
-
-function isTimeBuffered(video: HTMLVideoElement, time: number): boolean {
-  const duration = getFiniteDuration(video)
-  const isAtMediaEnd = duration !== null && time >= duration - 0.05
-
-  for (let index = 0; index < video.buffered.length; index += 1) {
-    const start = video.buffered.start(index)
-    const end = video.buffered.end(index)
-    const rangeLength = Math.max(0, end - start)
-    const tailTolerance = Math.min(BUFFER_TAIL_TOLERANCE_SECONDS, Math.max(0.02, rangeLength / 4))
-    // A timestamp at the exact end of a range can still stall while the next
-    // HLS fragment is fetched. Leave a small tail unless the target is the
-    // actual end of the media.
-    if (
-      time >= start &&
-      (time < end - tailTolerance || (isAtMediaEnd && end >= (duration ?? 0) - 0.05))
-    ) {
-      return true
-    }
-  }
-  return false
-}
-
-function getFiniteDuration(video: HTMLVideoElement): number | null {
-  return Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null
-}
 
 function clampMediaTime(video: HTMLVideoElement, time: number): number {
   if (!Number.isFinite(time)) return 0
@@ -164,7 +137,7 @@ interface VideoPlayerProps {
   videos: Video[]
   projectId: string
   projectStatus: ProjectStatus
-  defaultQuality?: '720p' | '1080p' | '2160p' // Default quality from settings
+  defaultQuality?: PlaybackQuality // Default quality from settings
   onApprove?: () => void // Optional approval callback
   authenticatedEmail?: string | null // Email of OTP-authenticated user
   authenticatedName?: string | null // Name of OTP-authenticated user
@@ -212,7 +185,6 @@ interface VideoPlayerProps {
 export default function VideoPlayer({
   videos,
   projectId,
-  projectStatus: _projectStatus,
   defaultQuality = '720p',
   onApprove,
   projectTitle,
@@ -266,7 +238,7 @@ export default function VideoPlayer({
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [videoLoadFailure, setVideoLoadFailure] = useState<PlaybackFailureInfo | null>(null)
   const streamAuthRetryForRef = useRef<string | null>(null)
-  const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<'720p' | '1080p' | '2160p'>(defaultQuality)
+  const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<PlaybackQuality>(defaultQuality)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const [videoDuration, setVideoDuration] = useState(0)
   const [currentTimeState, setCurrentTimeState] = useState(0)
@@ -444,7 +416,8 @@ export default function VideoPlayer({
 
   // Keep every ready version available. Approval only controls the current
   // version's actions; it must not make older versions impossible to review.
-  const displayVideos = useMemo(() => videos, [videos])
+  // Same array reference as the prop, so effects keyed on it behave identically.
+  const displayVideos = videos
 
   const explicitVideoIndex = selectedVideoId
     ? displayVideos.findIndex((video) => video.id === selectedVideoId)
@@ -1113,10 +1086,6 @@ export default function VideoPlayer({
     }
   }, [])
 
-  const handlePlayPause = useCallback(() => {
-    togglePlayback()
-  }, [togglePlayback])
-
   const handleVolumeChange = useCallback((newVolume: number) => {
     if (videoRef.current) {
       videoRef.current.volume = newVolume
@@ -1279,12 +1248,7 @@ export default function VideoPlayer({
       // while the user still intends to play. Explicit pausePlayback() clears
       // the intent before calling pause(), so preserve it here when present.
     }
-    const handleWaiting = () => {
-      if (playIntentRef.current || !video.paused) {
-        setIsBuffering(true)
-      }
-    }
-    const handleStalled = () => {
+    const handleWaitingOrStalled = () => {
       if (playIntentRef.current || !video.paused) {
         setIsBuffering(true)
       }
@@ -1392,8 +1356,8 @@ export default function VideoPlayer({
     video.addEventListener('play', handlePlay)
     video.addEventListener('playing', handlePlaying)
     video.addEventListener('pause', handlePause)
-    video.addEventListener('waiting', handleWaiting)
-    video.addEventListener('stalled', handleStalled)
+    video.addEventListener('waiting', handleWaitingOrStalled)
+    video.addEventListener('stalled', handleWaitingOrStalled)
     video.addEventListener('seeking', handleSeeking)
     video.addEventListener('seeked', handleSeeked)
     video.addEventListener('canplay', handleCanPlay)
@@ -1406,8 +1370,8 @@ export default function VideoPlayer({
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('playing', handlePlaying)
       video.removeEventListener('pause', handlePause)
-      video.removeEventListener('waiting', handleWaiting)
-      video.removeEventListener('stalled', handleStalled)
+      video.removeEventListener('waiting', handleWaitingOrStalled)
+      video.removeEventListener('stalled', handleWaitingOrStalled)
       video.removeEventListener('seeking', handleSeeking)
       video.removeEventListener('seeked', handleSeeked)
       video.removeEventListener('canplay', handleCanPlay)
@@ -1530,47 +1494,6 @@ export default function VideoPlayer({
 
   return (
     <div className={`flex flex-col ${fillContainer ? 'min-h-0 lg:h-full' : 'space-y-4 max-h-full'}`}>
-      {/* Version Selector - Show ABOVE video on mobile, BELOW on desktop */}
-      {false && displayVideos.length > 1 && (
-        <div data-tutorial="version-selector" className={`flex gap-2 overflow-x-auto py-2 px-2 flex-shrink-0 ${fillContainer ? '' : 'lg:order-2'}`}>
-          {displayVideos.map((video, index) => {
-            const videoApproved = (video as any).approved === true
-            return (
-              <Button
-                key={video.id}
-                onClick={() => setSelectedVideoId(video.id)}
-                variant={selectedVideoIndex === index ? 'default' : 'outline'}
-                size="sm"
-                className="whitespace-nowrap relative"
-              >
-                {videoApproved && (
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-success" />
-                )}
-                {videoApproved ? t('approvedVersion') : video.versionLabel}
-              </Button>
-            )
-          })}
-          {displayVideos.length >= 2 && (
-            <Button
-              onClick={() => {
-                // Pause current video before opening comparison
-                if (videoRef.current && !videoRef.current.paused) {
-                  videoRef.current.pause()
-                  setIsPlaying(false)
-                }
-                setShowComparison(true)
-              }}
-              variant="outline"
-              size="sm"
-              className="whitespace-nowrap ml-auto"
-            >
-              <GitCompareArrows className="w-3.5 h-3.5 mr-1.5" />
-              Compare
-            </Button>
-          )}
-        </div>
-      )}
-
       {/* Video Player Container */}
       <div
         ref={containerRef}
@@ -1603,7 +1526,7 @@ export default function VideoPlayer({
                 onLoadedMetadata={handleLoadedMetadata}
                 onDurationChange={handleDurationChange}
                 onContextMenu={!isAdmin ? (e) => e.preventDefault() : undefined}
-                onClick={isDrawingMode ? undefined : handlePlayPause}
+                onClick={isDrawingMode ? undefined : togglePlayback}
                 crossOrigin={videoCrossOrigin || undefined}
                 playsInline
                 loop={isLooping}
@@ -1721,7 +1644,7 @@ export default function VideoPlayer({
                     </button>
                     <button
                       type="button"
-                      onClick={handlePlayPause}
+                      onClick={togglePlayback}
                       className="pointer-events-auto flex items-center justify-center w-12 h-12 rounded-full bg-black/50 active:bg-black/70 touch-manipulation"
                       aria-label={isPlaying ? tControls('pauseVideo') : tControls('playVideo')}
                     >
@@ -1755,7 +1678,7 @@ export default function VideoPlayer({
                     volume={volume}
                     isMuted={isMuted}
                     isFullscreen={isFullscreen}
-                    onPlayPause={handlePlayPause}
+                    onPlayPause={togglePlayback}
                     onSeek={handleTimelineSeek}
                     onVolumeChange={handleVolumeChange}
                     onToggleMute={handleToggleMute}

@@ -8,7 +8,6 @@ import BrandLogo from '@/components/BrandLogo'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import PortalLogin from './PortalLogin'
-import PortalCheckEmail from './PortalCheckEmail'
 import PortalDashboard from './PortalDashboard'
 import PortalSessionMonitor from './PortalSessionMonitor'
 import {
@@ -17,14 +16,13 @@ import {
   getPortalSessionExpSeconds,
 } from './portalSession'
 
-type View = 'loading' | 'login' | 'check-email' | 'dashboard'
+type View = 'loading' | 'login' | 'dashboard'
 
 export default function PortalClient() {
   const t = useTranslations('portal')
   const searchParams = useSearchParams()
   const [view, setView] = useState<View>('loading')
   const [token, setToken] = useState<string | null>(null)
-  const [submittedEmail, setSubmittedEmail] = useState('')
   const [expiredNotice, setExpiredNotice] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const noticeShownRef = useRef(false)
@@ -78,11 +76,6 @@ export default function PortalClient() {
     setView('login')
   }, [])
 
-  const handleSubmitted = useCallback((email: string) => {
-    setSubmittedEmail(email)
-    setView('check-email')
-  }, [])
-
   const handleAuthenticated = useCallback((newToken: string) => {
     savePortalSession(newToken)
     setToken(newToken)
@@ -134,16 +127,7 @@ export default function PortalClient() {
 
         {view === 'login' && (
           <div className="w-full max-w-md">
-            <PortalLogin onSubmitted={handleSubmitted} onAuthenticated={handleAuthenticated} />
-          </div>
-        )}
-
-        {view === 'check-email' && (
-          <div className="w-full max-w-md">
-            <PortalCheckEmail
-              email={submittedEmail}
-              onBack={() => setView('login')}
-            />
+            <PortalLogin onAuthenticated={handleAuthenticated} />
           </div>
         )}
 

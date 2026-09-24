@@ -47,12 +47,12 @@ export async function POST(request: NextRequest) {
 
     if (result.success) {
       return NextResponse.json({ success: true })
-    } else {
-      return NextResponse.json(
-        { error: result.error || webPushMessages.failedToSendTestNotification || 'Failed to send test notification' },
-        { status: 500 }
-      )
     }
+
+    return NextResponse.json(
+      { error: result.error || webPushMessages.failedToSendTestNotification || 'Failed to send test notification' },
+      { status: 500 }
+    )
   } catch (error) {
     logError('[API] Failed to send test notification:', error)
     return NextResponse.json(

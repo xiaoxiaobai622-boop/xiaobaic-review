@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { createReadStream, existsSync, statSync } from 'fs'
 import { getFilePath, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
 import { contentDispositionAttachment } from '@/lib/download-names'
+import { sanitizeContentType } from '@/lib/file-validation'
 import { s3GetPresignedDownloadUrl, s3GetPresignedStreamUrl, s3FileExists, s3DownloadFile } from '@/lib/s3-storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { getClientIpAddress } from '@/lib/utils'
@@ -548,8 +549,9 @@ export async function GET(
       }
 
       filePath = asset.storagePath
-      filename = asset.fileName
-      contentType = asset.fileType
+      filename = asset.originalFileName || asset.fileName
+      // Rejected uploads store 'INVALID - <mime>', which is not a legal header value
+      contentType = sanitizeContentType(asset.fileType)
     } else {
       if (verifiedToken.quality === 'thumbnail') {
         filePath = video.thumbnailPath

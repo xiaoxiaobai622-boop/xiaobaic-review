@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { downloadFile } from '@/lib/storage'
-import { contentDispositionAttachment } from '@/lib/download-names'
+import { contentDispositionAttachment, zipSafeName } from '@/lib/download-names'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis, consumeTokenAtomically } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
@@ -154,7 +154,7 @@ export async function GET(
         const folder = scope === 'project'
           ? `${photo.album.name.replace(/[/\\:]/g, '_')}/`
           : ''
-        const entryName = uniqueEntryName(`${folder}${photo.fileName}`)
+        const entryName = uniqueEntryName(`${folder}${zipSafeName(photo.originalFileName, photo.fileName)}`)
         const fileStream = await downloadFile(photo.storagePath)
         archive.append(fileStream, { name: entryName })
         appendedCount += 1

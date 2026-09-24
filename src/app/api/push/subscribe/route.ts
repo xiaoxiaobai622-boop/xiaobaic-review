@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     const existing = await prisma.pushSubscription.findUnique({
       where: { endpoint },
-      select: { userId: true, deviceName: true },
+      select: { userId: true },
     })
 
     if (existing && existing.userId !== authResult.id) {

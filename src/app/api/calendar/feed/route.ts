@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     })
 
     const feed = generateICalFeed(
-      projects.filter(p => p.dueDate).map(p => ({
+      projects.map(p => ({
         id: p.id,
         title: p.title,
         dueDate: p.dueDate!,

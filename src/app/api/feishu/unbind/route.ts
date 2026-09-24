@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     logMessage(`User ${user.id} unbound Feishu account`)
 
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: 'Failed to unbind Feishu account' },
       { status: 500 }

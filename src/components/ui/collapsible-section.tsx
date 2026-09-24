@@ -34,10 +34,11 @@ export function CollapsibleSection({
 }: CollapsibleSectionProps) {
   const contentId = React.useId()
   const isOpen = collapsible ? open : true
+  const Chevron = isOpen ? ChevronUp : ChevronDown
 
-  const toggle = React.useCallback(() => {
+  function toggle() {
     if (collapsible) onOpenChange(!open)
-  }, [collapsible, onOpenChange, open])
+  }
 
   return (
     <Card className={className}>
@@ -61,11 +62,7 @@ export function CollapsibleSection({
             {description ? <CardDescription>{description}</CardDescription> : null}
           </div>
           {collapsible && (
-            isOpen ? (
-              <ChevronUp className={cn("w-5 h-5 text-muted-foreground flex-shrink-0", iconClassName)} />
-            ) : (
-              <ChevronDown className={cn("w-5 h-5 text-muted-foreground flex-shrink-0", iconClassName)} />
-            )
+            <Chevron className={cn("w-5 h-5 text-muted-foreground flex-shrink-0", iconClassName)} />
           )}
         </div>
       </CardHeader>

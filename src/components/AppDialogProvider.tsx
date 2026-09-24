@@ -140,25 +140,30 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
   }
 
   const tone = request ? inferTone(request) : "info"
-  const Icon = request?.kind === "prompt"
-    ? MessageSquareText
-    : tone === "success"
-      ? CheckCircle2
-      : tone === "error" || tone === "destructive"
-        ? AlertCircle
-        : request?.kind === "confirm"
-          ? CircleHelp
-          : Info
 
-  const title = request?.title || (
-    request?.kind === "prompt"
-      ? t("inputTitle")
-      : request?.kind === "confirm"
-        ? t("confirmationTitle")
-        : tone === "error"
-          ? t("error")
-          : t("noticeTitle")
-  )
+  let Icon = Info
+  if (request?.kind === "prompt") {
+    Icon = MessageSquareText
+  } else if (tone === "success") {
+    Icon = CheckCircle2
+  } else if (tone === "error" || tone === "destructive") {
+    Icon = AlertCircle
+  } else if (request?.kind === "confirm") {
+    Icon = CircleHelp
+  }
+
+  let title = request?.title
+  if (!title) {
+    if (request?.kind === "prompt") {
+      title = t("inputTitle")
+    } else if (request?.kind === "confirm") {
+      title = t("confirmationTitle")
+    } else if (tone === "error") {
+      title = t("error")
+    } else {
+      title = t("noticeTitle")
+    }
+  }
 
   return (
     <>

@@ -62,15 +62,13 @@ function validateAndSanitizeWatermarkText(text: string): string {
   // Allow Unicode letters/numbers (including Chinese) and safe punctuation.
   const invalidChars = getInvalidWatermarkCharacters(text)
   if (invalidChars.length > 0) {
-    const uniqueInvalid = invalidChars.join(', ')
-    throw new Error(`Watermark text contains invalid characters: ${uniqueInvalid}`)
+    throw new Error(`Watermark text contains invalid characters: ${invalidChars.join(', ')}`)
   }
 
   // Defense-in-depth; validation above should already have rejected these.
   const sanitized = stripInvalidWatermarkCharacters(text)
 
-  // Escape for FFmpeg drawtext filter (defense-in-depth)
-  // Escape all special characters that FFmpeg might interpret
+  // Escape all characters that FFmpeg drawtext filter syntax might interpret
   return sanitized
     .replace(/\\/g, '\\\\')  // Backslash first (prevents double-escaping)
     .replace(/'/g, "\\'")    // Single quote

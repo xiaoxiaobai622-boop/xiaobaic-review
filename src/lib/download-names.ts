@@ -38,6 +38,15 @@ export function contentDispositionAttachment(filename: string): string {
 const ZIP_UNSAFE_CHARS = /[\\/:*?"<>|\x00-\x1f]/g
 
 /**
+ * Name of an entry inside a ZIP, from the display name the uploader chose.
+ * Flattens separators so a name can never add folders or escape the archive.
+ */
+export function zipSafeName(name: string | null | undefined, fallback: string): string {
+  const cleaned = (name || '').replace(ZIP_UNSAFE_CHARS, '_').trim()
+  return cleaned || fallback
+}
+
+/**
  * Build a ZIP entry name that is safe to extract on Windows and macOS, and that
  * stays unique inside the archive. `taken` is mutated so callers can share one
  * set across all entries of a single ZIP.

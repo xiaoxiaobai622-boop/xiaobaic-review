@@ -21,7 +21,7 @@ export async function GET() {
       brandingLogoPath: settings?.brandingLogoPath || null,
       companyName: settings?.companyName || '工作室',
     })
-  } catch (error) {
+  } catch {
     // Default values on error
     return NextResponse.json({ defaultTheme: 'auto', accentColor: 'blue', brandingLogoPath: null, companyName: '工作室' })
   }

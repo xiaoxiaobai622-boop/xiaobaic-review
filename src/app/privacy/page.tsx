@@ -1,7 +1,7 @@
 import { LegalDoc } from '@/components/LegalDoc'
 
 export const metadata = {
-  title: '隐私政策 - 逐帧审阅',
+  title: '隐私政策',
 }
 
 export default function PrivacyPage() {

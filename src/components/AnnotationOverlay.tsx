@@ -1,14 +1,24 @@
 'use client'
 
-import { memo, useMemo, useState, useEffect, RefObject } from 'react'
+import { memo, useMemo, useRef, useState, useEffect, RefObject } from 'react'
 import { AnnotationData, Shape } from '@/types/annotations'
 import { timecodeToSeconds } from '@/lib/timecode'
 import { useMediaPosition } from '@/hooks/useMediaPosition'
+import AnnotationBadges, { AnnotationBadgeItem } from './AnnotationBadges'
 
 interface PendingAnnotation {
   annotations: AnnotationData
   timecode: string
   timecodeEnd?: string | null
+}
+
+/** Author metadata for one comment, keyed by comment id. */
+export interface AnnotationAuthorMeta {
+  name: string
+  avatarUrl?: string | null
+  isInternal?: boolean
+  timecode: string
+  content: string
 }
 
 interface AnnotationOverlayProps {
@@ -20,11 +30,17 @@ interface AnnotationOverlayProps {
   }>
   currentTime: number
   videoFps: number
-  containerRef: RefObject<HTMLDivElement | null>
+  /**
+   * Box the video is letterboxed inside. Omit it to measure an own
+   * `absolute inset-0` wrapper, which is what the comparison views need.
+   */
+  containerRef?: RefObject<HTMLDivElement | null>
   videoRef: RefObject<HTMLVideoElement | null>
   videoKey?: string
   hidden?: boolean
   pendingAnnotation?: PendingAnnotation | null
+  /** Pass to hang hoverable author badges on the drawn shapes. */
+  authors?: Map<string, AnnotationAuthorMeta>
 }
 
 interface TimedAnnotation {
@@ -120,6 +136,37 @@ function getVideoRect(
   return { offsetX: ox, offsetY: oy, width: rw, height: rh }
 }
 
+/** Half of the badge disc: keeps a corner-anchored badge inside the picture. */
+const BADGE_EDGE_PX = 14
+
+const EMPTY_BADGES: AnnotationBadgeItem[] = []
+
+/**
+ * Top-left of the shape bounding box in normalized coordinates — the anchor
+ * for the author badge, so it sits at the corner the reviewer drew.
+ */
+function shapesAnchor(shapes: Shape[]): { x: number; y: number } | null {
+  let x = Number.POSITIVE_INFINITY
+  let y = Number.POSITIVE_INFINITY
+
+  const visit = (px: number, py: number) => {
+    if (!Number.isFinite(px) || !Number.isFinite(py)) return
+    if (px < x) x = px
+    if (py < y) y = py
+  }
+
+  for (const shape of shapes) {
+    if (shape.type === 'freehand') {
+      for (const point of shape.points) visit(point.x, point.y)
+    } else {
+      visit(shape.start.x, shape.start.y)
+      visit(shape.end.x, shape.end.y)
+    }
+  }
+
+  return Number.isFinite(x) ? { x, y } : null
+}
+
 interface AnnotationShapesProps {
   visibleShapes: VisibleAnnotation[]
   renderWidth: number
@@ -186,14 +233,17 @@ function AnnotationOverlay({
   videoKey,
   hidden = false,
   pendingAnnotation = null,
+  authors,
 }: AnnotationOverlayProps) {
   const mediaCurrentTime = useMediaPosition(videoRef, currentTime, videoKey)
   const [rect, setRect] = useState<{ offsetX: number; offsetY: number; width: number; height: number } | null>(null)
+  const ownContainerRef = useRef<HTMLDivElement | null>(null)
+  const measureRef = containerRef ?? ownContainerRef
 
   useEffect(() => {
     const recalc = () => {
       const video = videoRef.current
-      const container = containerRef.current
+      const container = measureRef.current
       if (!video || !container) return
       const r = getVideoRect(video, container)
       if (r) {
@@ -211,7 +261,7 @@ function AnnotationOverlay({
 
     recalc()
 
-    const container = containerRef.current
+    const container = measureRef.current
     if (!container) return
 
     const observer = new ResizeObserver(recalc)
@@ -226,7 +276,7 @@ function AnnotationOverlay({
       observer.disconnect()
       if (video) video.removeEventListener('loadedmetadata', recalc)
     }
-  }, [containerRef, videoKey, videoRef])
+  }, [measureRef, videoKey, videoRef])
 
   const renderWidth = rect?.width || 0
   const renderHeight = rect?.height || 0
@@ -298,16 +348,66 @@ function AnnotationOverlay({
     return result
   }, [mediaCurrentTime, pendingAnnotation, renderHeight, renderWidth, timedAnnotations])
 
-  if (!renderWidth || !renderHeight || visibleShapes.length === 0 || hidden) return null
+  const badgeItems = useMemo<AnnotationBadgeItem[]>(() => {
+    if (!authors || !renderWidth || !renderHeight) return EMPTY_BADGES
+
+    const items: AnnotationBadgeItem[] = []
+    for (const { commentId, shapes } of visibleShapes) {
+      const author = authors.get(commentId)
+      if (!author) continue
+      const anchor = shapesAnchor(shapes)
+      if (!anchor) continue
+      items.push({
+        commentId,
+        x: Math.min(Math.max(anchor.x * renderWidth, BADGE_EDGE_PX), renderWidth - BADGE_EDGE_PX),
+        y: Math.min(Math.max(anchor.y * renderHeight, BADGE_EDGE_PX), renderHeight - BADGE_EDGE_PX),
+        name: author.name,
+        avatarUrl: author.avatarUrl,
+        isInternal: author.isInternal,
+        timecode: author.timecode,
+        content: author.content,
+      })
+    }
+
+    return items
+  }, [authors, renderHeight, renderWidth, visibleShapes])
+
+  if (!renderWidth || !renderHeight || visibleShapes.length === 0 || hidden) {
+    // Without a caller container this wrapper is the only box the measuring
+    // effect can read, so it has to stay mounted even when nothing is drawn.
+    return containerRef
+      ? null
+      : <div ref={ownContainerRef} className="pointer-events-none absolute inset-0" />
+  }
+
+  const shapeLayers = (
+    <>
+      <AnnotationShapes
+        visibleShapes={visibleShapes}
+        renderWidth={renderWidth}
+        renderHeight={renderHeight}
+        offsetX={offsetX}
+        offsetY={offsetY}
+      />
+      {badgeItems.length > 0 && (
+        <div
+          className="pointer-events-none absolute z-20"
+          style={{ left: offsetX, top: offsetY, width: renderWidth, height: renderHeight }}
+        >
+          <AnnotationBadges items={badgeItems} width={renderWidth} height={renderHeight} />
+        </div>
+      )}
+    </>
+  )
+
+  // Without a caller-provided container the overlay measures itself: the wrapper
+  // spans the same box the video is letterboxed inside.
+  if (containerRef) return shapeLayers
 
   return (
-    <AnnotationShapes
-      visibleShapes={visibleShapes}
-      renderWidth={renderWidth}
-      renderHeight={renderHeight}
-      offsetX={offsetX}
-      offsetY={offsetY}
-    />
+    <div ref={ownContainerRef} className="pointer-events-none absolute inset-0">
+      {shapeLayers}
+    </div>
   )
 }
 

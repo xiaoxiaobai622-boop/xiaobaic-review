@@ -88,6 +88,18 @@ interface AnalyticsData {
 
 const ACTIVITY_PER_PAGE = 10
 
+function getActivityIcon(event: Activity) {
+  if (event.type === 'AUTH') {
+    if (event.accessMethod === 'OTP') return Mail
+    if (event.accessMethod === 'PASSWORD') return Lock
+    if (event.accessMethod === 'GUEST') return UserCircle
+    return Globe
+  }
+  if (event.type === 'PHOTO_DOWNLOAD') return Images
+  if (event.type === 'CLIENT_UPLOAD') return FolderUp
+  return Download
+}
+
 export default function AnalyticsClient({ id }: { id: string }) {
   const t = useTranslations('analytics')
   const tc = useTranslations('common')
@@ -99,7 +111,6 @@ export default function AnalyticsClient({ id }: { id: string }) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [expandedVideos, setExpandedVideos] = useState<Set<string>>(new Set())
   const [activityPage, setActivityPage] = useState(1)
-  const activityPerPage = ACTIVITY_PER_PAGE
 
   const toggleExpand = (itemId: string) => {
     setExpandedItems(prev => {
@@ -130,14 +141,11 @@ export default function AnalyticsClient({ id }: { id: string }) {
       try {
         const response = await apiFetch(`/api/analytics/${id}`)
         if (!response.ok) {
-          if (response.status === 404) {
-            setError(true)
-          }
           throw new Error('Failed to load analytics')
         }
         const analyticsData = await response.json()
         setData(analyticsData)
-      } catch (error) {
+      } catch {
         setError(true)
       } finally {
         setLoading(false)
@@ -334,13 +342,9 @@ export default function AnalyticsClient({ id }: { id: string }) {
                 <p className="text-center text-muted-foreground py-4 text-sm">{t('noActivity')}</p>
               ) : (
                 <div className="divide-y">
-                  {activity.slice((activityPage - 1) * activityPerPage, activityPage * activityPerPage).map((event) => {
+                  {activity.slice((activityPage - 1) * ACTIVITY_PER_PAGE, activityPage * ACTIVITY_PER_PAGE).map((event) => {
                     const isExpanded = expandedItems.has(event.id)
-                    const ActivityIcon = event.type === 'AUTH'
-                      ? (event.accessMethod === 'OTP' ? Mail : event.accessMethod === 'PASSWORD' ? Lock : event.accessMethod === 'GUEST' ? UserCircle : Globe)
-                      : event.type === 'PHOTO_DOWNLOAD' ? Images
-                      : event.type === 'CLIENT_UPLOAD' ? FolderUp
-                      : Download
+                    const ActivityIcon = getActivityIcon(event)
                     const iconColor = event.type === 'AUTH' ? 'text-primary' : event.type === 'CLIENT_UPLOAD' ? 'text-info' : 'text-success'
 
                     return (
@@ -487,7 +491,7 @@ export default function AnalyticsClient({ id }: { id: string }) {
               )}
 
               {/* Pagination Controls */}
-              {activity.length > activityPerPage && (
+              {activity.length > ACTIVITY_PER_PAGE && (
                 <div className="flex items-center justify-between px-3 py-2 border-t">
                   <Button
                     variant="outline"
@@ -498,13 +502,13 @@ export default function AnalyticsClient({ id }: { id: string }) {
                     {tc('previous')}
                   </Button>
                   <span className="text-xs text-muted-foreground">
-                    {tc('pageOf', { page: activityPage, pages: Math.ceil(activity.length / activityPerPage) })}
+                    {tc('pageOf', { page: activityPage, pages: Math.ceil(activity.length / ACTIVITY_PER_PAGE) })}
                   </span>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={(e) => { e.stopPropagation(); setActivityPage(p => Math.min(Math.ceil(activity.length / activityPerPage), p + 1)) }}
-                    disabled={activityPage >= Math.ceil(activity.length / activityPerPage)}
+                    onClick={(e) => { e.stopPropagation(); setActivityPage(p => Math.min(Math.ceil(activity.length / ACTIVITY_PER_PAGE), p + 1)) }}
+                    disabled={activityPage >= Math.ceil(activity.length / ACTIVITY_PER_PAGE)}
                   >
                     {tc('next')}
                   </Button>

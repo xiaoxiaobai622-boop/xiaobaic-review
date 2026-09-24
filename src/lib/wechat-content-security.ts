@@ -16,6 +16,28 @@ export interface WechatContentCheckResult {
   error?: string
 }
 
+interface SecCheckResponse {
+  errcode?: number
+  errmsg?: string
+  result?: { suggest?: string }
+}
+
+// Fail closed: a non-zero errcode that is not the violation code means the
+// check never ran, so callers must not treat it as clean content.
+function interpretSecCheckResponse(
+  data: SecCheckResponse,
+  checkName: string,
+): WechatContentCheckResult {
+  if (data.errcode === 87014 || data.result?.suggest === 'risky') {
+    return { passed: false, error: CONTENT_VIOLATION_MESSAGE }
+  }
+  if (data.errcode && data.errcode !== 0) {
+    logWarn(`Wechat ${checkName} failed:`, data.errcode, data.errmsg)
+    return { passed: false, error: CONTENT_SECURITY_ERROR }
+  }
+  return { passed: true }
+}
+
 /** 获取用户绑定的小程序 openid，仅小程序用户参与文本安全检测。 */
 export async function findWechatMiniOpenid(userId?: string | null): Promise<string | null> {
   if (!userId) return null
@@ -68,20 +90,9 @@ export async function checkWechatImage(
         cache: 'no-store',
       },
     )
-    const data = (await response.json().catch(() => ({}))) as {
-      errcode?: number
-      errmsg?: string
-      result?: { suggest?: string }
-    }
+    const data = (await response.json().catch(() => ({}))) as SecCheckResponse
 
-    if (data.errcode === 87014 || data.result?.suggest === 'risky') {
-      return { passed: false, error: CONTENT_VIOLATION_MESSAGE }
-    }
-    if (data.errcode && data.errcode !== 0) {
-      logWarn('Wechat img_sec_check failed:', data.errcode, data.errmsg)
-      return { passed: false, error: CONTENT_SECURITY_ERROR }
-    }
-    return { passed: true }
+    return interpretSecCheckResponse(data, 'img_sec_check')
   } catch (error) {
     logError('Wechat image security check failed:', error)
     return { passed: false, error: CONTENT_SECURITY_ERROR }
@@ -123,20 +134,9 @@ export async function checkWechatText(
         cache: 'no-store',
       },
     )
-    const data = (await response.json().catch(() => ({}))) as {
-      errcode?: number
-      errmsg?: string
-      result?: { suggest?: string }
-    }
+    const data = (await response.json().catch(() => ({}))) as SecCheckResponse
 
-    if (data.errcode === 87014 || data.result?.suggest === 'risky') {
-      return { passed: false, error: CONTENT_VIOLATION_MESSAGE }
-    }
-    if (data.errcode && data.errcode !== 0) {
-      logWarn('Wechat msg_sec_check failed:', data.errcode, data.errmsg)
-      return { passed: false, error: CONTENT_SECURITY_ERROR }
-    }
-    return { passed: true }
+    return interpretSecCheckResponse(data, 'msg_sec_check')
   } catch (error) {
     logError('Wechat text security check failed:', error)
     return { passed: false, error: CONTENT_SECURITY_ERROR }

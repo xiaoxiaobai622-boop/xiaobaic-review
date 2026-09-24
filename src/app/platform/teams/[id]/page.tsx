@@ -24,6 +24,14 @@ type Quota = {
   maxStorageGB: number
 }
 
+function authHeaders(json = false) {
+  const token = getPlatformAccessToken()
+  return {
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+}
+
 export default function PlatformTeamDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -36,13 +44,10 @@ export default function PlatformTeamDetailPage() {
   useEffect(() => {
     if (!params?.id) return
     ;(async () => {
-      const token = getPlatformAccessToken()
-      const headers: Record<string, string> = {}
-      if (token) headers.Authorization = `Bearer ${token}`
       const [teamsRes, grantsRes, quotaRes] = await Promise.all([
-        fetch('/api/platform/teams', { headers }),
-        fetch(`/api/platform/teams/${params.id}/grants`, { headers }),
-        fetch(`/api/platform/teams/${params.id}/quota`, { headers }),
+        fetch('/api/platform/teams', { headers: authHeaders() }),
+        fetch(`/api/platform/teams/${params.id}/grants`, { headers: authHeaders() }),
+        fetch(`/api/platform/teams/${params.id}/quota`, { headers: authHeaders() }),
       ])
       if (teamsRes.ok) {
         const teamsData = await teamsRes.json()
@@ -77,12 +82,9 @@ export default function PlatformTeamDetailPage() {
     if (!params?.id) return
     setSaving(true)
     setMessage('')
-    const token = getPlatformAccessToken()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (token) headers.Authorization = `Bearer ${token}`
     const response = await fetch(`/api/platform/teams/${params.id}/grants`, {
       method: 'PATCH',
-      headers,
+      headers: authHeaders(true),
       body: JSON.stringify({ grants: grants.map((grant) => ({ featureKey: grant.featureKey, enabled: grant.enabled })) }),
     })
     setMessage(response.ok ? '功能授权已保存' : '保存失败')
@@ -93,12 +95,9 @@ export default function PlatformTeamDetailPage() {
     if (!params?.id || !quota) return
     setSaving(true)
     setMessage('')
-    const token = getPlatformAccessToken()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (token) headers.Authorization = `Bearer ${token}`
     const response = await fetch(`/api/platform/teams/${params.id}/quota`, {
       method: 'PATCH',
-      headers,
+      headers: authHeaders(true),
       body: JSON.stringify(quota),
     })
     setMessage(response.ok ? '配额已保存' : '保存失败')

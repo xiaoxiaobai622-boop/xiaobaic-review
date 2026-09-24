@@ -225,11 +225,13 @@ export function formatTimecodeDisplay(timecode: string): string {
   return `${hours}:${minutes}:${seconds}${separator}${frames}`
 }
 
-function formatClockTime(secondsTotal: number, _includeHours: boolean): string {
+function formatClockTime(secondsTotal: number, includeHours: boolean): string {
   const safeSeconds = Number.isFinite(secondsTotal) && secondsTotal > 0 ? Math.floor(secondsTotal) : 0
-  const minutes = Math.floor(safeSeconds / 60)
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
   const seconds = safeSeconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  const clock = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return includeHours ? `${String(hours).padStart(2, '0')}:${clock}` : clock
 }
 
 export function formatCommentTimestamp(params: {

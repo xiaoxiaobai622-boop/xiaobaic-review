@@ -10,9 +10,6 @@ import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 
-
-
-
 const addRecipientSchema = z.object({
   email: z.string().email('INVALID_EMAIL_FORMAT').nullable().optional(),
   phone: z.string().regex(/^1[3-9]\d{9}$/, 'INVALID_PHONE_FORMAT').nullable().optional(),
@@ -88,11 +85,12 @@ export async function POST(
     const validation = addRecipientSchema.safeParse(body)
     if (!validation.success) {
       const message = validation.error.errors[0].message
-      const localizedError = message === 'INVALID_EMAIL_FORMAT'
-        ? (recipientMessages.invalidEmail || 'Please enter a valid email address')
-        : message === 'RECIPIENT_NAME_OR_EMAIL_REQUIRED'
-          ? (recipientMessages.enterNameOrEmail || 'Please enter at least a name or email address')
-          : message
+      let localizedError = message
+      if (message === 'INVALID_EMAIL_FORMAT') {
+        localizedError = recipientMessages.invalidEmail || 'Please enter a valid email address'
+      } else if (message === 'RECIPIENT_NAME_OR_EMAIL_REQUIRED') {
+        localizedError = recipientMessages.enterNameOrEmail || 'Please enter at least a name or email address'
+      }
 
       return NextResponse.json(
         { error: localizedError },

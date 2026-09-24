@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer'
 import { prisma } from './db'
 import { decrypt } from './encryption'
+import { accentToHex } from './accent'
 import { formatTimecodeDisplay, timecodeToSeekSeconds } from './timecode'
 import {
   getEmailTemplate,
@@ -11,20 +12,6 @@ import { htmlToText } from 'html-to-text'
 import { logError } from './logging'
 
 export type EmailHeaderStyle = 'NONE' | 'LOGO_ONLY' | 'NAME_ONLY' | 'LOGO_AND_NAME'
-
-// Accent color presets (must match AppearanceSection.tsx)
-const ACCENT_COLOR_HEX: Record<string, string> = {
-  blue: '#007AFF',
-  purple: '#8B5CF6',
-  green: '#22C55E',
-  orange: '#F97316',
-  red: '#EF4444',
-  pink: '#EC4899',
-  teal: '#14B8A6',
-  amber: '#F59E0B',
-  stone: '#9d9487',
-  gold: '#DEC091',
-}
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -75,8 +62,7 @@ const EMAIL_BRAND: EmailBrandColors = {
 
 // Get dynamic email brand colors based on admin accent color setting
 export function getEmailBrand(accentColor?: string | null): EmailBrandColors {
-  const accentKey = accentColor || 'blue'
-  const accentHex = ACCENT_COLOR_HEX[accentKey] || ACCENT_COLOR_HEX.blue
+  const accentHex = accentToHex(accentColor)
   const softColors = getAccentSoftColors(accentHex)
 
   // Generate a slightly darker shade for gradient start
@@ -301,7 +287,7 @@ function sanitizePlaceholderValues(values: Record<string, string>): Record<strin
  */
 export function buildBrandingLogoUrl(settings: EmailSettings): string {
   const base = settings.appDomain?.replace(/\/$/, '') || ''
-  return base ? `${base}/api/branding/logo-png` : '/api/branding/logo-png'
+  return `${base}/api/branding/logo-png`
 }
 
 export function renderEmailButton({
@@ -655,24 +641,14 @@ async function createTransporter(customConfig?: any) {
   }
 
   const secureOption = settings.smtpSecure || 'STARTTLS'
-  let secure = false
-  let requireTLS = false
-
-  if (secureOption === 'TLS') {
-    secure = true
-  } else if (secureOption === 'STARTTLS') {
-    secure = false
-    requireTLS = true
-  } else {
-    secure = false
-    requireTLS = false
-  }
+  const secure = secureOption === 'TLS'
+  const requireTLS = secureOption === 'STARTTLS'
 
   return nodemailer.createTransport({
     host: settings.smtpServer,
     port: settings.smtpPort,
-    secure: secure,
-    requireTLS: requireTLS,
+    secure,
+    requireTLS,
     auth: {
       user: settings.smtpUsername,
       pass: settings.smtpPassword,
@@ -711,6 +687,46 @@ export async function sendEmail({
   } catch (error) {
     logError('Error sending email:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+}
+
+/**
+ * Templates that omit {{UNSUBSCRIBE_SECTION}} still have to carry the section, so
+ * it is appended to the rendered body instead of being substituted in place.
+ */
+function appendUnsubscribeSection(
+  bodyContent: string,
+  templateBodyContent: string,
+  unsubscribeUrl: string | undefined,
+  brand: EmailBrandColors,
+  emailMessages: Record<string, any>,
+): string {
+  if (unsubscribeUrl && !templateBodyContent.includes('{{UNSUBSCRIBE_SECTION}}')) {
+    return bodyContent + renderUnsubscribeSection(unsubscribeUrl, brand, emailMessages)
+  }
+  return bodyContent
+}
+
+/**
+ * One SMTP submission per admin address; a single failure never rejects.
+ * `sendEmail` swallows its own errors and reports them in its return value, so a
+ * settled promise says nothing about delivery — only `success` does.
+ */
+async function sendEmailToAdmins(adminEmails: string[], subject: string, html: string): Promise<{ success: boolean; message: string }> {
+  const promises = adminEmails.map(email =>
+    sendEmail({
+      to: email,
+      subject,
+      html,
+    })
+  )
+
+  const results = await Promise.allSettled(promises)
+  const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length
+
+  return {
+    success: successCount > 0,
+    message: `Sent to ${successCount}/${adminEmails.length} admins`,
   }
 }
 
@@ -766,9 +782,7 @@ export async function sendNewVersionEmail({
     '{{UNSUBSCRIBE_SECTION}}': unsubscribeSection,
   }, brand, brandingLogoUrl)
 
-  if (unsubscribeUrl && !template.bodyContent.includes('{{UNSUBSCRIBE_SECTION}}')) {
-    bodyContent += renderUnsubscribeSection(unsubscribeUrl, brand, emailMessages)
-  }
+  bodyContent = appendUnsubscribeSection(bodyContent, template.bodyContent, unsubscribeUrl, brand, emailMessages)
 
   if (isPasswordProtected) {
     const protectedLabel = emailMessages.common?.protectedProject || 'Protected project:'
@@ -890,9 +904,7 @@ export async function sendProjectApprovedEmail({
     '{{UNSUBSCRIBE_SECTION}}': unsubscribeSection,
   }, brand, brandingLogoUrl)
 
-  if (unsubscribeUrl && !template.bodyContent.includes('{{UNSUBSCRIBE_SECTION}}')) {
-    bodyContent += renderUnsubscribeSection(unsubscribeUrl, brand, emailMessages)
-  }
+  bodyContent = appendUnsubscribeSection(bodyContent, template.bodyContent, unsubscribeUrl, brand, emailMessages)
 
   const html = renderEmailShell({
     companyName,
@@ -985,9 +997,7 @@ export async function sendCommentNotificationEmail({
     '{{UNSUBSCRIBE_SECTION}}': unsubscribeSection,
   }, brand, brandingLogoUrl)
 
-  if (unsubscribeUrl && !template.bodyContent.includes('{{UNSUBSCRIBE_SECTION}}')) {
-    bodyContent += renderUnsubscribeSection(unsubscribeUrl, brand, emailMessages)
-  }
+  bodyContent = appendUnsubscribeSection(bodyContent, template.bodyContent, unsubscribeUrl, brand, emailMessages)
 
   const shellTitle = emailMessages.commentNotification?.title || 'New Comment'
   const html = renderEmailShell({
@@ -1092,22 +1102,7 @@ export async function sendAdminCommentNotificationEmail({
     bodyContent,
   })
 
-  // Send to all admin emails
-  const promises = adminEmails.map(email =>
-    sendEmail({
-      to: email,
-      subject,
-      html,
-    })
-  )
-
-  const results = await Promise.allSettled(promises)
-  const successCount = results.filter(r => r.status === 'fulfilled').length
-
-  return {
-    success: successCount > 0,
-    message: `Sent to ${successCount}/${adminEmails.length} admins`
-  }
+  return sendEmailToAdmins(adminEmails, subject, html)
 }
 
 /** Email template: Project approved by client (to admin) */
@@ -1191,22 +1186,7 @@ export async function sendAdminProjectApprovedEmail({
     bodyContent,
   })
 
-  // Send to all admin emails
-  const promises = adminEmails.map(email =>
-    sendEmail({
-      to: email,
-      subject,
-      html,
-    })
-  )
-
-  const results = await Promise.allSettled(promises)
-  const successCount = results.filter(r => r.status === 'fulfilled').length
-
-  return {
-    success: successCount > 0,
-    message: `Sent to ${successCount}/${adminEmails.length} admins`
-  }
+  return sendEmailToAdmins(adminEmails, subject, html)
 }
 
 /** Email template: General project notification */
@@ -1281,9 +1261,7 @@ export async function sendProjectGeneralNotificationEmail({
     '{{UNSUBSCRIBE_SECTION}}': unsubscribeSection,
   }, brand, brandingLogoUrl)
 
-  if (unsubscribeUrl && !template.bodyContent.includes('{{UNSUBSCRIBE_SECTION}}')) {
-    bodyContent += renderUnsubscribeSection(unsubscribeUrl, brand, emailMessages)
-  }
+  bodyContent = appendUnsubscribeSection(bodyContent, template.bodyContent, unsubscribeUrl, brand, emailMessages)
 
   const shellTitle = emailMessages.projectGeneral?.title || 'Ready for Review'
   const html = renderEmailShell({
@@ -1347,9 +1325,7 @@ export async function sendPasswordEmail({
     '{{UNSUBSCRIBE_SECTION}}': unsubscribeSection,
   }, brand, brandingLogoUrl)
 
-  if (unsubscribeUrl && !template.bodyContent.includes('{{UNSUBSCRIBE_SECTION}}')) {
-    bodyContent += renderUnsubscribeSection(unsubscribeUrl, brand, emailMessages)
-  }
+  bodyContent = appendUnsubscribeSection(bodyContent, template.bodyContent, unsubscribeUrl, brand, emailMessages)
 
   const shellTitle = emailMessages.password?.title || 'Project Password'
   const html = renderEmailShell({
@@ -1474,22 +1450,7 @@ export async function sendDueDateReminderEmail({
     bodyContent,
   })
 
-  // Send to all admin emails
-  const promises = adminEmails.map(email =>
-    sendEmail({
-      to: email,
-      subject,
-      html,
-    })
-  )
-
-  const results = await Promise.allSettled(promises)
-  const successCount = results.filter(r => r.status === 'fulfilled').length
-
-  return {
-    success: successCount > 0,
-    message: `Sent to ${successCount}/${adminEmails.length} admins`
-  }
+  return sendEmailToAdmins(adminEmails, subject, html)
 }
 
 /**
@@ -1501,9 +1462,9 @@ export async function testEmailConnection(testEmail: string, customConfig?: any)
     const transporter = await createTransporter(customConfig)
     const brand = getEmailBrand(settings.accentColor)
     const brandingLogoUrl = buildBrandingLogoUrl(settings)
-  const locale = settings.language || 'en'
-  const emailMessages = await loadEmailMessages(locale).catch(() => null)
-  const smtpTestMessages = emailMessages?.smtpTest || {}
+    const locale = settings.language || 'en'
+    const emailMessages = await loadEmailMessages(locale).catch(() => null)
+    const smtpTestMessages = emailMessages?.smtpTest || {}
 
     await transporter.verify()
 
@@ -1626,15 +1587,5 @@ export async function sendAdminClientUploadEmail({
     bodyContent,
   })
 
-  const promises = adminEmails.map(email =>
-    sendEmail({ to: email, subject, html })
-  )
-
-  const results = await Promise.allSettled(promises)
-  const successCount = results.filter(r => r.status === 'fulfilled').length
-
-  return {
-    success: successCount > 0,
-    message: `Sent to ${successCount}/${adminEmails.length} admins`,
-  }
+  return sendEmailToAdmins(adminEmails, subject, html)
 }

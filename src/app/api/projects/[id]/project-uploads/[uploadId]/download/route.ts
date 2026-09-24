@@ -34,9 +34,7 @@ export async function GET(
   const inline = url.searchParams.get('inline') === '1'
   const thumb = url.searchParams.get('thumb') === '1'
 
-  let projectId: string
-  let uploadId: string
-  ;({ id: projectId, uploadId } = await params)
+  const { id: projectId, uploadId } = await params
 
   if (dlt) {
     // Token path — verify token then stream. Same rate limit applies.
@@ -89,7 +87,6 @@ export async function GET(
   }
 
   try {
-
     const upload = await prisma.projectUpload.findFirst({
       where: { id: uploadId, projectId },
       select: {

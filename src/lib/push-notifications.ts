@@ -148,12 +148,8 @@ async function sendToSubscription(
       },
     }
 
-    // web-push statusCode: 201 = Created (success), 200 = OK (success)
-    const response = await webpush.sendNotification(pushSubscription, JSON.stringify(payload))
-
-    if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300) {
-      return { success: true }
-    }
+    // Non-2xx pushes reject with a WebPushError, handled in the catch below.
+    await webpush.sendNotification(pushSubscription, JSON.stringify(payload))
 
     return { success: true }
   } catch (error) {

@@ -108,18 +108,17 @@ export function useCommentManagement({
   const comments = [...mergedComments, ...optimisticTopLevel]
 
   const cleanupAttachmentAsset = useCallback(async (attachment: PendingAttachment) => {
+    const url = `/api/videos/${attachment.videoId}/client-assets?assetId=${attachment.assetId}`
     try {
       if (shareToken) {
-        await fetch(`/api/videos/${attachment.videoId}/client-assets?assetId=${attachment.assetId}`, {
+        await fetch(url, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${shareToken}` },
         })
       } else if (useAdminAuth) {
-        await apiDelete(`/api/videos/${attachment.videoId}/client-assets?assetId=${attachment.assetId}`)
+        await apiDelete(url)
       } else {
-        await fetch(`/api/videos/${attachment.videoId}/client-assets?assetId=${attachment.assetId}`, {
-          method: 'DELETE',
-        })
+        await fetch(url, { method: 'DELETE' })
       }
     } catch {
       // Best-effort cleanup only. Ignore errors for now.
@@ -426,21 +425,18 @@ export function useCommentManagement({
     // Read the player synchronously at send time. The timestamp captured when
     // typing starts is only used to position the draft handles.
     let playerTime: number | null = null
-    let playerVideoId: string | null = null
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('getCurrentTime', {
           detail: {
-            callback: (time: number, videoId: string) => {
+            callback: (time: number) => {
               if (typeof time === 'number') playerTime = time
-              if (videoId) playerVideoId = videoId
             },
           },
         }),
       )
     }
 
-    const commentVideoId = playerVideoId === validatedVideoId ? playerVideoId : validatedVideoId
     const commentTimestamp = !rangeWasAdjustedRef.current && playerTime !== null
       ? playerTime
       : selectedTimestamp
@@ -448,22 +444,23 @@ export function useCommentManagement({
 
     // OPTIMISTIC UPDATE
     const isInternalComment = useAdminAuth || !!adminUser
-    const selectedVideo = videos.find(v => v.id === commentVideoId)
-    const fps = selectedVideo?.fps || 24 // Default to 24fps if not available
+    const commentVideo = videos.find(v => v.id === validatedVideoId)
+    const fps = commentVideo?.fps || 24
     const timecode = commentTimestamp !== null ? secondsToTimecode(commentTimestamp, fps) : '00:00:00:00'
+    const commentAuthorName = isInternalComment
+      ? (adminUser!.name || adminUser!.phone || adminUser!.email)
+      : (authenticatedName || authorName)
 
     const optimisticComment: CommentWithReplies = {
       id: `temp-${Date.now()}`,
       projectId,
-      videoId: commentVideoId,
-      videoVersion: videos.find(v => v.id === commentVideoId)?.version || null,
+      videoId: validatedVideoId,
+      videoVersion: commentVideo?.version || null,
       timecode,
       timecodeEnd: commentTimecodeEnd || null,
       annotations: (annotationForComment as Prisma.JsonValue) || null,
       content: commentContent,
-      authorName: isInternalComment
-        ? (adminUser!.name || adminUser!.phone || adminUser!.email)
-        : (authenticatedName || authorName),
+      authorName: commentAuthorName,
       authorEmail: isInternalComment ? adminUser?.email || null : null,
       category: selectedCategory,
       isInternal: isInternalComment,
@@ -496,15 +493,10 @@ export function useCommentManagement({
     setPendingAttachments(prev => prev.filter(a => !commentAssetIds.includes(a.assetId)))
 
     try {
-      // Convert timestamp to timecode for API
-      const commentVideo = videos.find(v => v.id === commentVideoId)
-      const fps = commentVideo?.fps || 24
-      const commentTimecode = commentTimestamp !== null ? secondsToTimecode(commentTimestamp, fps) : '00:00:00:00'
-
       const requestBody: any = {
         projectId,
-        videoId: commentVideoId,
-        timecode: commentTimecode,
+        videoId: validatedVideoId,
+        timecode,
         content: commentContent,
         category: selectedCategory,
       }
@@ -516,11 +508,7 @@ export function useCommentManagement({
         requestBody.timecodeEnd = commentTimecodeEnd
       }
 
-      if (isInternalComment) {
-        requestBody.authorName = adminUser!.name || adminUser!.phone || adminUser!.email
-      } else {
-        requestBody.authorName = authenticatedName || authorName
-      }
+      requestBody.authorName = commentAuthorName
 
       if (commentParentId) {
         requestBody.parentId = commentParentId
@@ -550,7 +538,7 @@ export function useCommentManagement({
       setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
       setNewComment(commentContent)
       setSelectedTimestamp(commentTimestamp)
-      setSelectedVideoId(commentVideoId)
+      setSelectedVideoId(validatedVideoId)
       setPendingAnnotation(annotationForComment)
       setAttachmentError(error instanceof Error ? error.message : 'Failed to submit comment')
       setPendingAttachments(prev => {

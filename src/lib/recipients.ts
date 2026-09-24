@@ -1,3 +1,4 @@
+import type { ProjectRecipient } from '@prisma/client'
 import { prisma } from './db'
 import { syncRecipientToDirectory } from './client-directory-sync'
 import { logError } from './logging'
@@ -9,6 +10,18 @@ export interface Recipient {
   name: string | null
   isPrimary: boolean
   receiveNotifications: boolean
+}
+
+/** Field-by-field on purpose: a recipient row also carries projectId/createdAt, which callers must not receive. */
+function toRecipient(recipient: ProjectRecipient): Recipient {
+  return {
+    id: recipient.id,
+    email: recipient.email,
+    phone: recipient.phone,
+    name: recipient.name,
+    isPrimary: recipient.isPrimary,
+    receiveNotifications: recipient.receiveNotifications
+  }
 }
 
 /**
@@ -23,14 +36,7 @@ export async function getProjectRecipients(projectId: string): Promise<Recipient
     ]
   })
 
-  return recipients.map(r => ({
-    id: r.id,
-    email: r.email,
-    phone: r.phone,
-    name: r.name,
-    isPrimary: r.isPrimary,
-    receiveNotifications: r.receiveNotifications
-  }))
+  return recipients.map(toRecipient)
 }
 
 /**
@@ -43,14 +49,7 @@ export async function getPrimaryRecipient(projectId: string): Promise<Recipient 
   })
 
   if (primary) {
-    return {
-      id: primary.id,
-      email: primary.email,
-      phone: primary.phone,
-      name: primary.name,
-      isPrimary: primary.isPrimary,
-      receiveNotifications: primary.receiveNotifications
-    }
+    return toRecipient(primary)
   }
 
   // Fallback: if no primary, get first recipient by creation date
@@ -63,14 +62,7 @@ export async function getPrimaryRecipient(projectId: string): Promise<Recipient 
     return null
   }
 
-  return {
-    id: fallback.id,
-    email: fallback.email,
-    phone: fallback.phone,
-    name: fallback.name,
-    isPrimary: fallback.isPrimary,
-    receiveNotifications: fallback.receiveNotifications
-  }
+  return toRecipient(fallback)
 }
 
 /**
@@ -106,14 +98,7 @@ export async function addRecipient(
     logError('Failed to sync recipient to client directory:', err)
   })
 
-  return {
-    id: recipient.id,
-    email: recipient.email,
-    phone: recipient.phone,
-    name: recipient.name,
-    isPrimary: recipient.isPrimary,
-    receiveNotifications: recipient.receiveNotifications
-  }
+  return toRecipient(recipient)
 }
 
 /**
@@ -154,14 +139,7 @@ export async function updateRecipient(
     })
   }
 
-  return {
-    id: recipient.id,
-    email: recipient.email,
-    phone: recipient.phone,
-    name: recipient.name,
-    isPrimary: recipient.isPrimary,
-    receiveNotifications: recipient.receiveNotifications
-  }
+  return toRecipient(recipient)
 }
 
 /**

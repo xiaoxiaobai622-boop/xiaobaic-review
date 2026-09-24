@@ -72,15 +72,22 @@ export async function proxy(request: NextRequest) {
   // remains nonce-based without unsafe-eval.
   const developmentScriptSource = process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''
 
+  // Env-derived origins are appended to both media-facing directives, in the
+  // same order, so the two lists can never drift apart.
+  const extraMediaOrigins = [mediaCdnOrigin, s3Origin, s3BucketOrigin]
+    .filter(Boolean)
+    .map((origin) => ` ${origin}`)
+    .join('')
+
   const cspDirectives = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'${developmentScriptSource} https://static.cloudflareinsights.com`,
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com ${NEURALYN_ORIGIN}${mediaCdnOrigin ? ` ${mediaCdnOrigin}` : ''}${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
+    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com ${NEURALYN_ORIGIN}${extraMediaOrigins}`,
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
-    `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN} ${NEURALYN_ORIGIN}${mediaCdnOrigin ? ` ${mediaCdnOrigin}` : ''}${s3Origin ? ` ${s3Origin}` : ''}${s3BucketOrigin ? ` ${s3BucketOrigin}` : ''}`,
+    `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN} ${NEURALYN_ORIGIN}${extraMediaOrigins}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

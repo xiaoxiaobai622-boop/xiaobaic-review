@@ -349,15 +349,16 @@ export function buildLocalizedDefaultTemplate(
   messages: Record<string, any>
 ): DefaultTemplate | undefined {
   const defaults = getEmailTemplateLocaleDefaults(messages)
-  const { common } = defaults
-  const greeting = common.greeting
-  const questionsFooter = common.questionsFooter
-  const projectLabel = common.projectLabel
-  const deliverableLabel = common.deliverableLabel
-  const deliverablesLabel = common.deliverablesLabel
-  const passwordLabel = common.passwordLabel
-  const securityNoticeLabel = common.securityNoticeLabel
-  const dueDateLabel = common.dueDateLabel
+  const {
+    greeting,
+    questionsFooter,
+    projectLabel,
+    deliverableLabel,
+    deliverablesLabel,
+    passwordLabel,
+    securityNoticeLabel,
+    dueDateLabel,
+  } = defaults.common
 
   const meta = TEMPLATE_METADATA.find(m => m.type === type)
   if (!meta) return undefined
@@ -849,14 +850,17 @@ export async function setEmailTemplateEnabled(
   type: EmailTemplateType,
   enabled: boolean
 ): Promise<void> {
+  const metadata = TEMPLATE_METADATA.find(t => t.type === type)
+  const defaultTemplate = getDefaultTemplate(type)
+
   await (prisma as any).emailTemplate?.upsert({
     where: { type },
     create: {
       type,
-      name: TEMPLATE_METADATA.find(t => t.type === type)?.name || type,
-      description: TEMPLATE_METADATA.find(t => t.type === type)?.description || null,
-      subject: getDefaultTemplate(type)?.subject || '',
-      bodyContent: getDefaultTemplate(type)?.bodyContent || '',
+      name: metadata?.name || type,
+      description: metadata?.description || null,
+      subject: defaultTemplate?.subject || '',
+      bodyContent: defaultTemplate?.bodyContent || '',
       isCustom: false,
       enabled,
     },

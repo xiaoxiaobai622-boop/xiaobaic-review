@@ -269,48 +269,34 @@ export async function PATCH(request: NextRequest) {
       ? process.env.HTTPS_ENABLED === 'true' || process.env.HTTPS_ENABLED === '1'
       : (httpsEnabled ?? false)
 
+    const securityValues = {
+      httpsEnabled: effectiveHttpsEnabled,
+      hotlinkProtection: hotlinkProtection ?? 'LOG_ONLY',
+      ipRateLimit: ipRateLimit ? parseInt(ipRateLimit, 10) : 1000,
+      sessionRateLimit: sessionRateLimit ? parseInt(sessionRateLimit, 10) : 600,
+      shareSessionRateLimit: shareSessionRateLimit ? parseInt(shareSessionRateLimit, 10) : 300,
+      shareTokenTtlSeconds: shareTokenTtlSeconds ? parseInt(shareTokenTtlSeconds, 10) : null,
+      passwordAttempts: passwordAttempts ? parseInt(passwordAttempts, 10) : 5,
+      sessionTimeoutValue: sessionTimeoutValue ? parseInt(sessionTimeoutValue, 10) : 15,
+      sessionTimeoutUnit: sessionTimeoutUnit || 'MINUTES',
+      adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 7,
+      adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'DAYS',
+      trackAnalytics: trackAnalytics ?? true,
+      trackSecurityLogs: trackSecurityLogs ?? true,
+      viewSecurityEvents: viewSecurityEvents ?? false,
+    }
+
     const settings = await prisma.securitySettings.upsert({
       where: { id: 'default' },
-      update: {
-        httpsEnabled: effectiveHttpsEnabled,
-        hotlinkProtection: hotlinkProtection ?? 'LOG_ONLY',
-        ipRateLimit: ipRateLimit ? parseInt(ipRateLimit, 10) : 1000,
-        sessionRateLimit: sessionRateLimit ? parseInt(sessionRateLimit, 10) : 600,
-        shareSessionRateLimit: shareSessionRateLimit ? parseInt(shareSessionRateLimit, 10) : 300,
-        shareTokenTtlSeconds: shareTokenTtlSeconds ? parseInt(shareTokenTtlSeconds, 10) : null,
-        passwordAttempts: passwordAttempts ? parseInt(passwordAttempts, 10) : 5,
-        sessionTimeoutValue: sessionTimeoutValue ? parseInt(sessionTimeoutValue, 10) : 15,
-        sessionTimeoutUnit: sessionTimeoutUnit || 'MINUTES',
-        adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 7,
-        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'DAYS',
-        trackAnalytics: trackAnalytics ?? true,
-        trackSecurityLogs: trackSecurityLogs ?? true,
-        viewSecurityEvents: viewSecurityEvents ?? false,
-      },
-      create: {
-        id: 'default',
-        httpsEnabled: effectiveHttpsEnabled,
-        hotlinkProtection: hotlinkProtection ?? 'LOG_ONLY',
-        ipRateLimit: ipRateLimit ? parseInt(ipRateLimit, 10) : 1000,
-        sessionRateLimit: sessionRateLimit ? parseInt(sessionRateLimit, 10) : 600,
-        shareSessionRateLimit: shareSessionRateLimit ? parseInt(shareSessionRateLimit, 10) : 300,
-        shareTokenTtlSeconds: shareTokenTtlSeconds ? parseInt(shareTokenTtlSeconds, 10) : null,
-        passwordAttempts: passwordAttempts ? parseInt(passwordAttempts, 10) : 5,
-        sessionTimeoutValue: sessionTimeoutValue ? parseInt(sessionTimeoutValue, 10) : 15,
-        sessionTimeoutUnit: sessionTimeoutUnit || 'MINUTES',
-        adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 7,
-        adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'DAYS',
-        trackAnalytics: trackAnalytics ?? true,
-        trackSecurityLogs: trackSecurityLogs ?? true,
-        viewSecurityEvents: viewSecurityEvents ?? false,
-      },
+      update: securityValues,
+      create: { id: 'default', ...securityValues },
     })
 
     await invalidateSecuritySettingsCache()
     await invalidateVideoAccessSecurityCache()
 
     // SECURITY: Invalidate sessions when security settings change
-    let invalidationLog: string[] = []
+    const invalidationLog: string[] = []
 
     // 1. Session timeout changed → Invalidate ALL share sessions globally
     //    Reason: Existing sessions may exceed new timeout

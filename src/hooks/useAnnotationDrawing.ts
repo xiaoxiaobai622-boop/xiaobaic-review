@@ -14,10 +14,6 @@ import {
   LineShape,
 } from '@/types/annotations'
 
-/**
- * Ramer-Douglas-Peucker path simplification
- * Reduces freehand point count while preserving shape
- */
 function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
   const dx = lineEnd.x - lineStart.x
   const dy = lineEnd.y - lineStart.y
@@ -37,6 +33,10 @@ function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): 
   return Math.sqrt(ddx * ddx + ddy * ddy)
 }
 
+/**
+ * Ramer-Douglas-Peucker path simplification
+ * Reduces freehand point count while preserving shape
+ */
 function simplifyPath(points: Point[], epsilon: number): Point[] {
   if (points.length <= 2) return points
 
@@ -109,7 +109,6 @@ export function useAnnotationDrawing() {
   const finishShape = useCallback(() => {
     const current = activeShapeRef.current
     if (!current) {
-      activeShapeRef.current = null
       setActiveShape(null)
       return
     }

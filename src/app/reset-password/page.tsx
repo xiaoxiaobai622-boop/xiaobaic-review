@@ -78,7 +78,7 @@ export default function ResetPasswordPage() {
         setStatus('error')
         setMessage(data.error || t('resetFailed'))
       }
-    } catch (error) {
+    } catch {
       setStatus('error')
       setMessage(t('unableToProcess'))
     }

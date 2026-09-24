@@ -159,7 +159,7 @@ export async function processProjectUpload(job: Job<ProjectUploadProcessingJob>)
         data: {
           fileType: 'ERROR',
           transcodeStatus: 'ERROR',
-          transcodeError: error instanceof Error ? error.message : '处理失败',
+          transcodeError: error instanceof Error ? error.message : 'Unknown error',
         }
       })
     } catch (updateError) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { downloadFile } from '@/lib/storage'
-import { contentDispositionAttachment } from '@/lib/download-names'
+import { contentDispositionAttachment, zipSafeName } from '@/lib/download-names'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { ZipArchive } from 'archiver'
@@ -117,7 +117,7 @@ export async function POST(
     for (const asset of assets) {
       try {
         const fileStream = await downloadFile(asset.storagePath)
-        archive.append(fileStream, { name: asset.fileName })
+        archive.append(fileStream, { name: zipSafeName(asset.originalFileName, asset.fileName) })
       } catch (error) {
         logError(`Error adding file ${asset.fileName} to archive:`, error)
         // Continue with other files

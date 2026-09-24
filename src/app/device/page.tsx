@@ -118,7 +118,6 @@ function DeviceAuthForm() {
 
       if (!response.ok) {
         if (response.status === 403 && data.passkeyRequired) {
-          setLoading(false)
           handlePasskeyLogin()
           return
         }

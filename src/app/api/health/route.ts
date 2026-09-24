@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getRedis } from '@/lib/redis'
+
 export const runtime = 'nodejs'
-
-
-
-
-// Prevent static generation for this route
 export const dynamic = 'force-dynamic'
+
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-cache, no-store, must-revalidate',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+}
 
 /**
  * Health Check Endpoint
@@ -28,30 +30,9 @@ export async function GET() {
     const redis = getRedis()
     await redis.ping()
 
-    // All checks passed
-    return NextResponse.json(
-      { status: 'ok' },
-      {
-        status: 200,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        }
-      }
-    )
-  } catch (error) {
+    return NextResponse.json({ status: 'ok' }, { status: 200, headers: NO_STORE_HEADERS })
+  } catch {
     // Service unhealthy - return 503 Service Unavailable
-    return NextResponse.json(
-      { status: 'error' },
-      {
-        status: 503,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        }
-      }
-    )
+    return NextResponse.json({ status: 'error' }, { status: 503, headers: NO_STORE_HEADERS })
   }
 }

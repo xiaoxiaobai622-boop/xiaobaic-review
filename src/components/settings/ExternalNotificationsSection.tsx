@@ -1,13 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PasswordInput } from '@/components/ui/password-input'
-import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import { ChevronDown, ChevronUp, Plus, Send, Trash2, Save } from 'lucide-react'
 import { apiDelete, apiFetch, apiPatch, apiPost } from '@/lib/api-client'
 import { NOTIFICATION_EVENT_TYPES, type NotificationEventType } from '@/lib/external-notifications/constants'
@@ -27,9 +26,11 @@ interface DestinationRow {
   updatedAt: string
 }
 
-interface ExternalNotificationsSectionProps {
-  show: boolean
-  setShow: (value: boolean) => void
+const PROVIDER_HELP_KEYS: Record<Provider, string> = {
+  GOTIFY: 'gotifyHint',
+  NTFY: 'ntfyHint',
+  PUSHOVER: 'pushoverHint',
+  TELEGRAM: 'telegramHint',
 }
 
 const EVENT_LABEL_KEYS: Record<NotificationEventType, string> = {
@@ -100,20 +101,7 @@ export function ExternalNotificationsContent({ active, showIntro = true }: { act
     }
   }, [active, loadDestinations])
 
-  const providerHelp = useMemo(() => {
-    switch (newProvider) {
-      case 'GOTIFY':
-        return t('gotifyHint')
-      case 'NTFY':
-        return t('ntfyHint')
-      case 'PUSHOVER':
-        return t('pushoverHint')
-      case 'TELEGRAM':
-        return t('telegramHint')
-      default:
-        return ''
-    }
-  }, [newProvider, t])
+  const providerHelp = t(PROVIDER_HELP_KEYS[newProvider])
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -459,22 +447,6 @@ export function ExternalNotificationsContent({ active, showIntro = true }: { act
       </div>
 
     </div>
-  )
-}
-
-export function ExternalNotificationsSection({ show, setShow }: ExternalNotificationsSectionProps) {
-  const t = useTranslations('settings.externalNotifications')
-  return (
-    <CollapsibleSection
-      className="border-border"
-      title={t('title')}
-      description={t('description')}
-      open={show}
-      onOpenChange={setShow}
-      contentClassName="space-y-6 border-t pt-4"
-    >
-      <ExternalNotificationsContent active={show} />
-    </CollapsibleSection>
   )
 }
 

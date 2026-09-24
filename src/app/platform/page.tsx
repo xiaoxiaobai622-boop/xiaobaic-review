@@ -6,10 +6,20 @@ import { Ban, CheckCircle2, ShieldCheck, Users, Clock3 } from 'lucide-react'
 import { usePlatformAuth } from '@/components/PlatformAuthProvider'
 import { getPlatformAccessToken } from '@/lib/platform-token-store'
 
+function formatExpiry(team: any, now: number) {
+  if (team.status === 'DISABLED') return '已停用'
+  if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
+  if (!team.subscriptionExpiresAt) return '长期有效'
+  const remaining = new Date(team.subscriptionExpiresAt).getTime() - now
+  if (remaining <= 0) return '已到期'
+  return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
+}
+
 export default function PlatformDashboardPage() {
   const { user } = usePlatformAuth()
-  const [stats, setStats] = useState({ teams: 0, activeTeams: 0, disabledTeams: 0 })
   const [teams, setTeams] = useState<any[]>([])
+  const activeTeams = teams.filter((team) => team.status === 'ACTIVE').length
+  const disabledTeams = teams.filter((team) => team.status === 'DISABLED').length
 
   useEffect(() => {
     ;(async () => {
@@ -19,24 +29,10 @@ export default function PlatformDashboardPage() {
       const response = await fetch('/api/platform/teams', { headers })
       if (!response.ok) return
       const data = await response.json()
-      const teams = (data.teams || []).map((team: any) => ({ ...team, expiryLabel: formatExpiry(team, Date.now()) }))
-      setTeams(teams)
-      setStats({
-        teams: teams.length,
-        activeTeams: teams.filter((team: any) => team.status === 'ACTIVE').length,
-        disabledTeams: teams.filter((team: any) => team.status === 'DISABLED').length,
-      })
+      const now = Date.now()
+      setTeams((data.teams || []).map((team: any) => ({ ...team, expiryLabel: formatExpiry(team, now) })))
     })()
   }, [])
-
-  const formatExpiry = (team: any, now: number) => {
-    if (team.status === 'DISABLED') return '已停用'
-    if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
-    if (!team.subscriptionExpiresAt) return '长期有效'
-    const remaining = new Date(team.subscriptionExpiresAt).getTime() - now
-    if (remaining <= 0) return '已到期'
-    return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
-  }
 
   return (
     <div className="space-y-6">
@@ -58,21 +54,21 @@ export default function PlatformDashboardPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-sm text-muted-foreground">团队总数</p>
-          <p className="mt-2 text-2xl font-semibold">{stats.teams}</p>
+          <p className="mt-2 text-2xl font-semibold">{teams.length}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
             <p className="text-sm text-muted-foreground">正常团队</p>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-emerald-600">{stats.activeTeams}</p>
+          <p className="mt-2 text-2xl font-semibold text-emerald-600">{activeTeams}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2">
             <Ban className="h-4 w-4 text-destructive" />
             <p className="text-sm text-muted-foreground">已停用团队</p>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-destructive">{stats.disabledTeams}</p>
+          <p className="mt-2 text-2xl font-semibold text-destructive">{disabledTeams}</p>
         </div>
       </div>
 

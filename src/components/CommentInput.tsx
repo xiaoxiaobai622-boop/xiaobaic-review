@@ -24,7 +24,6 @@ interface CommentInputProps {
 
   // Timestamp
   selectedTimestamp: number | null
-  onClearTimestamp: () => void
   selectedVideoFps: number // FPS of the currently selected video
   selectedVideoDurationSeconds?: number | null
   timestampDisplayMode?: 'TIMECODE' | 'AUTO'
@@ -33,7 +32,6 @@ interface CommentInputProps {
   selectedTimecodeEnd?: string | null
   isSelectingTimecodeEnd?: boolean
   onSetTimecodeEnd?: () => void
-  onClearTimecodeEnd?: () => void
 
   // Reply state
   replyingToComment: Comment | null
@@ -73,13 +71,11 @@ export default function CommentInput({
   selectedCategory = null,
   onCategoryChange,
   selectedTimestamp,
-  onClearTimestamp,
   selectedVideoFps,
   selectedVideoDurationSeconds = null,
   timestampDisplayMode = 'TIMECODE',
   selectedTimecodeEnd = null,
   onSetTimecodeEnd,
-  onClearTimecodeEnd,
   replyingToComment,
   onCancelReply,
   currentVideoRestricted,

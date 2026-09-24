@@ -41,19 +41,19 @@ export async function POST(request: NextRequest) {
     return rateLimitResult
   }
 
+  // Always return success to prevent email enumeration
+  const successResponse = NextResponse.json({
+    success: true,
+    message: authMessages.passwordResetEmailSentGeneric || 'If an account exists with this email, you will receive password reset instructions.',
+  })
+
   try {
     const parsed = await safeParseBodyTolerant(request)
     if (!parsed.success) return parsed.response
     const body = parsed.data
     const email = typeof body?.email === 'string' ? body.email.trim() : ''
 
-    // Always return success to prevent email enumeration
-    const successResponse = NextResponse.json({
-      success: true,
-      message: authMessages.passwordResetEmailSentGeneric || 'If an account exists with this email, you will receive password reset instructions.',
-    })
-
-    if (!email || email.length === 0) {
+    if (!email) {
       return successResponse
     }
 
@@ -193,9 +193,6 @@ export async function POST(request: NextRequest) {
     return successResponse
   } catch (error) {
     logError('[PASSWORD_RESET] Error:', error)
-    return NextResponse.json({
-      success: true,
-      message: authMessages.passwordResetEmailSentGeneric || 'If an account exists with this email, you will receive password reset instructions.',
-    })
+    return successResponse
   }
 }

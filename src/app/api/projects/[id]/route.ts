@@ -17,11 +17,20 @@ import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
 import {
   checkWechatText,
-  CONTENT_SECURITY_ERROR,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
 
 export const runtime = 'nodejs'
+
+// Comments and replies must hydrate the same author fields: sanitizeComment gates
+// which of them a non-admin sees, and it cannot do that for a differently shaped reply author.
+const COMMENT_USER_SELECT = {
+  id: true,
+  name: true,
+  username: true,
+  email: true,
+  avatarUrl: true,
+} as const
 
 export async function GET(
   request: NextRequest,
@@ -80,26 +89,10 @@ export async function GET(
           comments: {
             where: { parentId: null, ...LIVE_COMMENT },
             include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  username: true,
-                  email: true,
-                  avatarUrl: true,
-                }
-              },
+              user: { select: COMMENT_USER_SELECT },
               replies: {
                 include: {
-                  user: {
-                    select: {
-                      id: true,
-                      name: true,
-                      username: true,
-                      email: true,
-                      avatarUrl: true,
-                    }
-                  }
+                  user: { select: COMMENT_USER_SELECT },
                 },
                 orderBy: { createdAt: 'asc' },
               },
@@ -260,6 +253,27 @@ export async function PATCH(
       updateData.clientCompanyId = validatedBody.clientCompanyId || null
     }
 
+    if (validatedBody.groupId !== undefined) {
+      const teamId = authResult.authorizedTeamId
+      // requireApiAdmin guarantees a team, but an undefined teamId inside the filter below
+      // would match *any* team's folder, so the write is refused rather than guessed at.
+      if (!teamId) {
+        return NextResponse.json({ error: 'You do not belong to a team' }, { status: 403 })
+      }
+      // null means "take it out of the folder". A real id must belong to this team, or the
+      // project would be filed somewhere nobody in the console can reach.
+      if (validatedBody.groupId) {
+        const folder = await prisma.projectGroup.findFirst({
+          where: { id: validatedBody.groupId, teamId },
+          select: { id: true },
+        })
+        if (!folder) {
+          return NextResponse.json({ error: projectMessages.folderNotFound }, { status: 400 })
+        }
+      }
+      updateData.groupId = validatedBody.groupId
+    }
+
     if (validatedBody.status !== undefined) {
       updateData.status = validatedBody.status
 
@@ -417,7 +431,7 @@ export async function PATCH(
         }
 
         const newAuthMode = validatedBody.authMode
-        const newPassword = validatedBody.sharePassword !== undefined ? validatedBody.sharePassword : undefined
+        const newPassword = validatedBody.sharePassword
 
         if (newPassword === undefined && (newAuthMode === 'PASSWORD' || newAuthMode === 'BOTH')) {
           const currentPassword = currentProject?.sharePassword ? decrypt(currentProject.sharePassword) : null

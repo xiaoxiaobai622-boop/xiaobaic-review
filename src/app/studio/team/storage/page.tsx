@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Database, FolderKanban, HardDrive } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiFetch } from '@/lib/api-client'
 import { useSearchParams } from 'next/navigation'
@@ -14,8 +15,26 @@ export default function TeamStoragePage() {
   const tab = searchParams?.get('tab') || 'report'
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
-  useEffect(() => { ;(async () => { try { const center = await apiFetch('/api/team-center'); const centerData = await center.json(); const id = centerData.activeTeamId || centerData.teams?.[0]?.team.id; if (!id) return; const response = await apiFetch(`/api/teams/${id}/overview`); if (response.ok) setData(await response.json()) } finally { setLoading(false) } })() }, [])
+  const [error, setError] = useState('')
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const center = await apiFetch('/api/team-center', { cache: 'no-store' })
+      if (!center.ok) throw new Error('无法加载团队信息')
+      const centerData = await center.json()
+      const id = centerData.activeTeamId || centerData.teams?.[0]?.team.id
+      if (!id) return
+      const response = await apiFetch(`/api/teams/${id}/overview`, { cache: 'no-store' })
+      if (!response.ok) throw new Error('无法加载团队容量数据')
+      setData(await response.json())
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '团队容量数据加载失败')
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { void load() }, [])
   if (loading) return <div className="py-12 text-sm text-muted-foreground">正在加载容量管理...</div>
+  if (error && !data) return <Card><CardContent className="py-16 text-center" role="alert"><p className="text-sm font-medium text-destructive">{error}</p><p className="mt-1 text-sm text-muted-foreground">容量数据仍在服务器上，恢复连接后重试即可。</p><Button variant="outline" className="mt-4" onClick={() => void load()}>重试</Button></CardContent></Card>
   if (!data) return <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">暂无团队容量数据。</CardContent></Card>
   const bin = Number(data.usage.recycleBinBytes); const used = Number(data.usage.usedBytes) + bin; const total = data.quota.maxStorageGB * 1024 ** 3; const percent = total ? Math.min(100, used / total * 100) : 0
   return <div className="space-y-5"><div><h1 className="text-2xl font-semibold tracking-normal">容量管理</h1><p className="mt-1 text-sm text-muted-foreground">查看团队空间、项目占用和资源库使用情况。</p></div><div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-5"><div className="flex items-center gap-2 text-sm text-muted-foreground"><HardDrive className="h-4 w-4 text-primary" />已使用容量</div><p className="mt-2 text-2xl font-semibold">{formatBytes(used)}</p></CardContent></Card><Card><CardContent className="p-5"><div className="flex items-center gap-2 text-sm text-muted-foreground"><Database className="h-4 w-4 text-primary" />剩余可用</div><p className="mt-2 text-2xl font-semibold">{formatBytes(Math.max(0, total - used))}</p></CardContent></Card><Card><CardContent className="p-5"><div className="flex items-center gap-2 text-sm text-muted-foreground"><FolderKanban className="h-4 w-4 text-primary" />项目占用</div><p className="mt-2 text-2xl font-semibold">{data.usage.projects} 个项目</p></CardContent></Card></div>{tab === 'report' && <Card><CardHeader><CardTitle className="text-base">空间报表</CardTitle></CardHeader><CardContent><div className="flex items-center justify-between text-sm"><span>团队容量使用率</span><span className="tabular-nums text-muted-foreground">{percent.toFixed(1)}%</span></div><div className="mt-3 h-2 rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} /></div><div className="mt-3 grid gap-3 text-xs text-muted-foreground sm:grid-cols-4"><span>视频原片 {formatBytes(data.usage.bySource.videos)}</span><span>收录文件 {formatBytes(data.usage.bySource.uploads)}</span><span>批注素材与照片 {formatBytes(Number(data.usage.bySource.assets) + Number(data.usage.bySource.photos))}</span><span>回收站（7 天内可恢复） {formatBytes(bin)}</span></div><p className="mt-3 text-xs text-muted-foreground">按已上传的素材文件计算，转码切片与封面不占额度，所以对象存储的实际占用会更高。</p></CardContent></Card>}{tab === 'projects' && <Card><CardHeader><CardTitle className="text-base">项目容量</CardTitle></CardHeader><CardContent className="overflow-x-auto p-0"><table className="w-full min-w-[600px] text-sm"><thead><tr className="border-y border-border bg-muted/40 text-left text-xs text-muted-foreground"><th className="px-5 py-3 font-medium">项目名称</th><th className="px-3 py-3 font-medium">已用容量</th><th className="px-3 py-3 font-medium">最后变更</th></tr></thead><tbody>{data.projects.map((project) => <tr key={project.id} className="border-b border-border last:border-0"><td className="px-5 py-3 font-medium">{project.title}</td><td className="px-3 py-3 tabular-nums">{formatBytes(project.sizeBytes)}</td><td className="px-3 py-3 text-muted-foreground">{new Date(project.updatedAt).toLocaleDateString('zh-CN')}</td></tr>)}</tbody></table></CardContent></Card>}{(tab === 'team' || tab === 'personal') && <Card><CardHeader><CardTitle className="text-base">{tab === 'team' ? '团队资源库' : '个人资源库'}</CardTitle></CardHeader><CardContent><div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-4"><Database className="h-5 w-5 text-primary" /><div><p className="text-sm font-medium">{tab === 'team' ? '收录文件占用' : '个人资源库暂未开放'}</p><p className="mt-1 text-sm text-muted-foreground">{tab === 'team' ? `当前占用 ${formatBytes(data.usage.bySource.uploads)}，已计入团队容量。` : '个人资源库尚未上线，不占用团队容量。'}</p></div></div></CardContent></Card>}</div>

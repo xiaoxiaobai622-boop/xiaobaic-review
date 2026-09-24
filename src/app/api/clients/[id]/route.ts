@@ -104,11 +104,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // The unique index on `name` is the source of truth — let Prisma race-detect duplicates
     // via P2002 instead of a separate findFirst (which would have a TOCTOU window).
-    const company = await prisma.clientCompany.findFirst({
+    const scopedCompany = await prisma.clientCompany.findFirst({
       where: { id, teamId },
       select: { id: true },
     })
-    if (!company) {
+    if (!scopedCompany) {
       return NextResponse.json({ error: clientsMessages.clientCompanyNotFound || 'Client company not found' }, { status: 404 })
     }
 

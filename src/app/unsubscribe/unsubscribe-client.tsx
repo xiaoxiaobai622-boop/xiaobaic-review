@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, CheckCircle2, MailX } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,7 +13,7 @@ export function UnsubscribeClient({ token }: { token: string }) {
   const t = useTranslations('unsubscribe')
   const tc = useTranslations('common')
   const [effectiveToken, setEffectiveToken] = useState(token)
-  const hasToken = useMemo(() => effectiveToken.trim().length > 0, [effectiveToken])
+  const hasToken = effectiveToken.trim().length > 0
   const [status, setStatus] = useState<Status>('idle')
 
   useEffect(() => {

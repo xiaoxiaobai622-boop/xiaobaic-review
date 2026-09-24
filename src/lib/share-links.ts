@@ -133,8 +133,7 @@ export function isShareLinkActive(link: ShareValidity | null): boolean {
 
 export async function incrementShareLinkView(linkId: string): Promise<boolean> {
   const current = await prisma.shareLink.findUnique({ where: { id: linkId }, select: { status: true, expiresAt: true, maxViews: true, viewCount: true } })
-  if (!current || current.status !== 'ACTIVE' || (current.expiresAt && current.expiresAt.getTime() <= Date.now())) return false
-  if (current.maxViews !== null && current.viewCount >= current.maxViews) return false
+  if (!current || !isShareLinkActive(current)) return false
   const result = await prisma.shareLink.updateMany({
     where: { id: linkId, status: 'ACTIVE', viewCount: current.viewCount },
     data: { viewCount: { increment: 1 } },
@@ -228,4 +227,19 @@ export function linkPermissions(policy: SharePolicy | null): string[] {
   if (!policy) return ['view']
   if (policy.type === 'COLLECT') return policy.permissions.includes('upload') ? ['upload'] : []
   return policy.permissions.length > 0 ? policy.permissions : ['view']
+}
+
+/**
+ * The one writer of the stored `permissions` array. A link is judged by what is
+ * in that column, so it must never end up empty: an empty array means a URL that
+ * opens and can do nothing, which reads as a broken share rather than as a
+ * deliberate setting. Both create and update fall back to the link type's
+ * defaults so neither path can produce that state.
+ */
+export function sanitizeSharePermissions(value: unknown, type: string): string[] {
+  const allowed = type === 'COLLECT' ? ['upload'] : ['view', 'comment', 'download', 'approve']
+  const cleaned = Array.from(new Set(
+    (Array.isArray(value) ? value : []).map(String).filter(item => allowed.includes(item)),
+  ))
+  return cleaned.length ? cleaned : type === 'COLLECT' ? ['upload'] : ['view', 'comment']
 }

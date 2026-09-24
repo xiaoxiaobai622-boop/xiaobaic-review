@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, Camera, Check, KeyRound, LogOut, MessageCircle, MessageSquare, RefreshCw, Save, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
@@ -305,7 +305,7 @@ function ProfileContent() {
     return () => { active = false }
   }, [user?.id])
 
-  const displayName = useMemo(() => form.name || form.phone || '团队成员', [form])
+  const displayName = form.name || form.phone || '团队成员'
   const visibleReturnUrl = returnUrl?.startsWith('/studio/') && user?.role !== 'ADMIN'
     ? null
     : returnUrl

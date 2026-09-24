@@ -44,6 +44,8 @@ const DEFAULTS: TeamSettingsData = {
   autoApproveProject: true,
 }
 
+const SELECT_CLASS_NAME = 'h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm'
+
 function Toggle({
   label,
   description,
@@ -103,11 +105,9 @@ export default function TeamSettingsPage() {
   }, [])
 
   useEffect(() => {
-    if (!user) return
-    if (user && user.teamRole !== 'OWNER' && user.teamRole !== 'ADMIN') {
-      router.replace('/studio/team')
-    }
-  }, [router, user])
+    if (!canEdit) return
+    router.replace('/studio/team')
+  }, [router, canEdit])
 
   useEffect(() => {
     if (!canEdit) {
@@ -139,7 +139,7 @@ export default function TeamSettingsPage() {
     return <div className="p-6 text-sm text-muted-foreground" role="status" aria-live="polite">正在加载视频设置…</div>
   }
 
-  if (!user || (user.teamRole !== 'OWNER' && user.teamRole !== 'ADMIN')) {
+  if (!canEdit) {
     return (
       <div className="mx-auto w-full max-w-2xl p-6 text-center">
         <h1 className="text-lg font-semibold">无权访问视频设置</h1>
@@ -165,7 +165,7 @@ export default function TeamSettingsPage() {
           <h1 className="text-2xl font-semibold">视频设置</h1>
           <p className="mt-1 text-sm text-muted-foreground">这些默认值只影响当前团队新建的项目。</p>
         </div>
-        <Button type="button" onClick={save} disabled={saving || !loaded}>
+        <Button type="button" onClick={save} disabled={saving}>
           {saving ? '保存中…' : '保存设置'}
         </Button>
       </div>
@@ -181,7 +181,7 @@ export default function TeamSettingsPage() {
             <select
               value={settings.defaultTimestampDisplay}
               onChange={(event) => update('defaultTimestampDisplay', event.target.value)}
-              className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              className={SELECT_CLASS_NAME}
             >
               <option value="TIMECODE">时码</option>
               <option value="AUTO">自动</option>
@@ -201,7 +201,7 @@ export default function TeamSettingsPage() {
             <select
               value={settings.defaultWatermarkPositions}
               onChange={(event) => update('defaultWatermarkPositions', event.target.value)}
-              className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              className={SELECT_CLASS_NAME}
             >
               <option value="center">居中</option>
               <option value="top-left">左上</option>
@@ -232,7 +232,7 @@ export default function TeamSettingsPage() {
             <select
               value={settings.defaultWatermarkFontSize}
               onChange={(event) => update('defaultWatermarkFontSize', event.target.value)}
-              className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              className={SELECT_CLASS_NAME}
             >
               <option value="small">小</option>
               <option value="medium">中</option>

@@ -38,6 +38,11 @@ const VALID_VIDEO_TYPES = [
   'video/mpeg'
 ] as const
 
+// Log-only number formatting: byte counts and elapsed milliseconds.
+const toMB = (bytes: number) => bytes / 1024 / 1024
+const formatMB = (bytes: number) => toMB(bytes).toFixed(2)
+const formatSeconds = (ms: number) => (ms / 1000).toFixed(2)
+
 // Types
 export interface TempFiles {
   input?: string
@@ -97,7 +102,7 @@ export async function downloadAndValidateVideo(
   await pipeline(downloadStream, fs.createWriteStream(tempInputPath))
   const downloadTime = Date.now() - downloadStart
 
-  logMessage(`[WORKER] Downloaded original file for video ${videoId} in ${(downloadTime / 1000).toFixed(2)}s`)
+  logMessage(`[WORKER] Downloaded original file for video ${videoId} in ${formatSeconds(downloadTime)}s`)
 
   const stats = fs.statSync(tempInputPath)
   if (stats.size === 0) {
@@ -105,10 +110,10 @@ export async function downloadAndValidateVideo(
   }
 
   const fileSize = stats.size
-  logMessage(`[WORKER] Downloaded file size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`)
+  logMessage(`[WORKER] Downloaded file size: ${formatMB(fileSize)} MB`)
 
   debugLog('File verification passed')
-  debugLog('Download speed:', (fileSize / 1024 / 1024 / (downloadTime / 1000)).toFixed(2) + ' MB/s')
+  debugLog('Download speed:', (toMB(fileSize) / (downloadTime / 1000)).toFixed(2) + ' MB/s')
 
   // Validate file content (magic bytes)
   debugLog('Validating magic bytes...')
@@ -133,7 +138,7 @@ export async function downloadAndValidateVideo(
   const metadataTime = Date.now() - metadataStart
 
   logMessage(`[WORKER] Video metadata:`, metadata)
-  debugLog('Metadata extraction took:', (metadataTime / 1000).toFixed(2) + ' s')
+  debugLog('Metadata extraction took:', formatSeconds(metadataTime) + ' s')
 
   return {
     path: tempInputPath,
@@ -206,7 +211,14 @@ export function calculateOutputDimensions(
   const isSquareOrNearSquare = Math.abs(metadata.width - metadata.height) / Math.max(metadata.width, metadata.height) < 0.2
   const aspectRatio = metadata.width / metadata.height
 
-  logMessage(`[WORKER] Video orientation: ${isVertical ? 'vertical' : isSquareOrNearSquare ? 'square' : 'horizontal'} (${metadata.width}x${metadata.height}, ratio: ${aspectRatio.toFixed(2)})`)
+  let orientation = 'horizontal'
+  if (isVertical) {
+    orientation = 'vertical'
+  } else if (isSquareOrNearSquare) {
+    orientation = 'square'
+  }
+
+  logMessage(`[WORKER] Video orientation: ${orientation} (${metadata.width}x${metadata.height}, ratio: ${aspectRatio.toFixed(2)})`)
 
   const preset = RESOLUTION_PRESETS[resolution as keyof typeof RESOLUTION_PRESETS] || RESOLUTION_PRESETS['720p']
 
@@ -319,10 +331,10 @@ export async function processPreview(
   })
 
   const transcodeTime = Date.now() - transcodeStart
-  logMessage(`[WORKER] Generated ${resolution} preview for video ${videoId} in ${(transcodeTime / 1000).toFixed(2)}s`)
+  logMessage(`[WORKER] Generated ${resolution} preview for video ${videoId} in ${formatSeconds(transcodeTime)}s`)
 
   const transcodeStats = fs.statSync(tempPreviewPath)
-  debugLog('Transcoded file size:', (transcodeStats.size / 1024 / 1024).toFixed(2) + ' MB')
+  debugLog('Transcoded file size:', formatMB(transcodeStats.size) + ' MB')
 
   const previewPath = teamProjectStorageKey(teamId, projectId, 'videos', videoId, `preview-${resolution}.mp4`)
 
@@ -337,8 +349,8 @@ export async function processPreview(
   )
   const uploadTime = Date.now() - uploadStart
 
-  debugLog('Preview uploaded in:', (uploadTime / 1000).toFixed(2) + ' s')
-  debugLog('Upload speed:', (transcodeStats.size / 1024 / 1024 / (uploadTime / 1000)).toFixed(2) + ' MB/s')
+  debugLog('Preview uploaded in:', formatSeconds(uploadTime) + ' s')
+  debugLog('Upload speed:', (toMB(transcodeStats.size) / (uploadTime / 1000)).toFixed(2) + ' MB/s')
 
   return previewPath
 }
@@ -359,7 +371,6 @@ export async function processThumbnail(
   duration: number,
   tempFiles: TempFiles
 ): Promise<string | null> {
-  // Calculate thumbnail timestamp using constants
   const timestamp = Math.min(
     Math.max(duration * THUMBNAIL_CONFIG.percentage, THUMBNAIL_CONFIG.min),
     THUMBNAIL_CONFIG.max
@@ -376,7 +387,7 @@ export async function processThumbnail(
     await generateThumbnail(inputPath, tempThumbnailPath, timestamp)
     const thumbTime = Date.now() - thumbStart
 
-    logMessage(`[WORKER] Generated thumbnail for video ${videoId} in ${(thumbTime / 1000).toFixed(2)}s`)
+    logMessage(`[WORKER] Generated thumbnail for video ${videoId} in ${formatSeconds(thumbTime)}s`)
 
     const thumbnailPath = teamProjectStorageKey(teamId, projectId, 'videos', videoId, 'thumbnail.jpg')
     const statsThumbnail = fs.statSync(tempThumbnailPath)
@@ -393,7 +404,7 @@ export async function processThumbnail(
     )
     const uploadTime = Date.now() - uploadStart
 
-    debugLog('Thumbnail uploaded in:', (uploadTime / 1000).toFixed(2) + ' s')
+    debugLog('Thumbnail uploaded in:', formatSeconds(uploadTime) + ' s')
 
     return thumbnailPath
   } catch (error) {
@@ -507,7 +518,7 @@ export async function cleanupTempFiles(tempFiles: TempFiles): Promise<void> {
         const fileStats = fs.statSync(file)
         await fs.promises.unlink(file)
         logMessage(`[WORKER] Cleaned up temp file: ${path.basename(file)}`)
-        debugLog('Freed disk space:', (fileStats.size / 1024 / 1024).toFixed(2) + ' MB')
+        debugLog('Freed disk space:', formatMB(fileStats.size) + ' MB')
       }
     } catch (cleanupError) {
       logError(`[WORKER ERROR] Failed to cleanup temp file ${path.basename(file)}:`, cleanupError)

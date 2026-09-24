@@ -16,7 +16,7 @@ interface ViewModeToggleProps {
 export default function ViewModeToggle({ value, onChange, className }: ViewModeToggleProps) {
   const t = useTranslations('controls')
   return (
-    <div className={cn('inline-flex items-center rounded-md border bg-card p-0.5', className)}>
+    <div className={cn('inline-flex items-center rounded-lg border bg-card p-0.5', className)}>
       <Button
         type="button"
         variant="ghost"
@@ -24,7 +24,7 @@ export default function ViewModeToggle({ value, onChange, className }: ViewModeT
         onClick={() => onChange('grid')}
         aria-pressed={value === 'grid'}
         className={cn(
-          'h-8 w-8 text-muted-foreground hover:bg-accent hover:text-foreground',
+          'h-[30px] w-[30px] rounded-md text-muted-foreground hover:bg-accent hover:text-foreground',
           value === 'grid' && 'bg-accent text-foreground'
         )}
         title={t('gridView')}
@@ -39,7 +39,7 @@ export default function ViewModeToggle({ value, onChange, className }: ViewModeT
         onClick={() => onChange('table')}
         aria-pressed={value === 'table'}
         className={cn(
-          'h-8 w-8 text-muted-foreground hover:bg-accent hover:text-foreground',
+          'h-[30px] w-[30px] rounded-md text-muted-foreground hover:bg-accent hover:text-foreground',
           value === 'table' && 'bg-accent text-foreground'
         )}
         title={t('tableView')}

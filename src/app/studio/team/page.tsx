@@ -49,6 +49,14 @@ function formatTeamExpiry(team: Pick<TeamData, 'status' | 'subscriptionPlan' | '
   return `${days} 天后到期`
 }
 
+function describeSubscriptionPlan(team: Pick<TeamData, 'status' | 'subscriptionPlan' | 'subscriptionExpiresAt'>) {
+  if (team.status !== 'ACTIVE') return '当前团队已停用'
+  if (team.subscriptionPlan === 'TRIAL') return `当前为 3 天试用 · ${formatTeamExpiry(team)}`
+  if (team.subscriptionPlan === 'MONTHLY') return `当前为月卡 · ${formatTeamExpiry(team)}`
+  if (team.subscriptionPlan === 'LEGACY') return '当前为长期方案 · 长期有效'
+  return '当前团队尚未激活'
+}
+
 function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }) {
   const [name, setName] = useState(team.name)
   const [editing, setEditing] = useState(false)
@@ -105,7 +113,7 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
       <div className="sm:col-span-2"><p className="text-xs text-muted-foreground">团队加入链接</p><div className="mt-2 flex max-w-xl items-center gap-2"><code className="min-w-0 flex-1 truncate rounded-md bg-muted px-3 py-2 text-xs">{window.location.origin}/studio/team/join?q={team.slug}</code><Button variant="outline" size="sm" onClick={copyLink}><Copy className="h-3.5 w-3.5" />{copied ? '已复制' : '复制链接'}</Button></div></div>
     </CardContent></Card>
     <Card><CardHeader><CardTitle className="text-base">团队规模</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4"><div><p className="text-xs text-muted-foreground">成员</p><p className="mt-1 text-xl font-semibold">{team._count?.members ?? 0}</p></div><div><p className="text-xs text-muted-foreground">项目</p><p className="mt-1 text-xl font-semibold">{team._count?.projects ?? 0}</p></div><div><p className="text-xs text-muted-foreground">创建时间</p><p className="mt-1 text-sm">{new Date(team.createdAt).toLocaleDateString('zh-CN')}</p></div><div><p className="text-xs text-muted-foreground">团队有效期</p><p className={`mt-1 text-sm font-medium ${team.status !== 'ACTIVE' || team.subscriptionPlan === 'UNACTIVATED' || formatTeamExpiry(team) === '已到期' ? 'text-destructive' : 'text-primary'}`}>{formatTeamExpiry(team)}</p></div></CardContent></Card>
-    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4 text-primary" />卡密激活</CardTitle></CardHeader><CardContent><div className="flex items-start gap-3 rounded-md border border-primary/20 bg-primary-visible p-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-sm font-medium">{team.status !== 'ACTIVE' ? '当前团队已停用' : team.subscriptionPlan === 'TRIAL' ? `当前为 3 天试用 · ${formatTeamExpiry(team)}` : team.subscriptionPlan === 'MONTHLY' ? `当前为月卡 · ${formatTeamExpiry(team)}` : team.subscriptionPlan === 'LEGACY' ? '当前为长期方案 · 长期有效' : '当前团队尚未激活'}</p><p className="mt-1 text-xs text-muted-foreground">月卡：30 天、10 名成员、50 GB 存储，项目和视频数量不限。</p></div></div>{role === 'OWNER' && <div className="mt-4 flex flex-col gap-2 sm:flex-row"><input value={cardCode} onChange={(event) => setCardCode(event.target.value)} placeholder="输入月卡卡密" className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary" /><Button onClick={activate} disabled={activating || !cardCode.trim()}><KeyRound className="h-4 w-4" />{activating ? '激活中...' : '激活团队'}</Button></div>}{activationMessage && <p className="mt-2 text-sm text-muted-foreground" role="status">{activationMessage}</p>}</CardContent></Card>
+    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4 text-primary" />卡密激活</CardTitle></CardHeader><CardContent><div className="flex items-start gap-3 rounded-md border border-primary/20 bg-primary-visible p-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-sm font-medium">{describeSubscriptionPlan(team)}</p><p className="mt-1 text-xs text-muted-foreground">月卡：30 天、10 名成员、50 GB 存储，项目和视频数量不限。</p></div></div>{role === 'OWNER' && <div className="mt-4 flex flex-col gap-2 sm:flex-row"><input value={cardCode} onChange={(event) => setCardCode(event.target.value)} placeholder="输入月卡卡密" className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary" /><Button onClick={activate} disabled={activating || !cardCode.trim()}><KeyRound className="h-4 w-4" />{activating ? '激活中...' : '激活团队'}</Button></div>}{activationMessage && <p className="mt-2 text-sm text-muted-foreground" role="status">{activationMessage}</p>}</CardContent></Card>
   </div>
 }
 

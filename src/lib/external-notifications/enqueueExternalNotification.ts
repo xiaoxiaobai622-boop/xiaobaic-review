@@ -20,6 +20,20 @@ interface ExtendedNotificationJob extends ExternalNotificationJob {
   }
 }
 
+type BodyDerivedPushField = 'projectTitle' | 'videoName' | 'email' | 'authorName' | 'content'
+
+/** Most callers pass only a text body, so the fields the template needs are scraped out of it. */
+function fillPushFieldFromBody(
+  pushData: NonNullable<ExtendedNotificationJob['pushData']>,
+  field: BodyDerivedPushField,
+  body: string | undefined,
+  pattern: RegExp,
+): void {
+  if (pushData[field] || !body) return
+  const match = body.match(pattern)
+  if (match) pushData[field] = match[1].trim()
+}
+
 export async function enqueueExternalNotification(job: ExtendedNotificationJob): Promise<void> {
   // Send push notifications in parallel with queue (fire and forget)
   const sendPush = async () => {
@@ -29,27 +43,11 @@ export async function enqueueExternalNotification(job: ExtendedNotificationJob):
       // Parse data from body if pushData not provided
       let pushData = job.pushData || {}
 
-      // Try to extract info from body for common patterns
-      if (!pushData.projectTitle && job.body) {
-        const projectMatch = job.body.match(/Project:\s*(.+?)(?:\n|$)/)
-        if (projectMatch) pushData.projectTitle = projectMatch[1].trim()
-      }
-      if (!pushData.videoName && job.body) {
-        const videoMatch = job.body.match(/Video:\s*(.+?)(?:\n|$)/)
-        if (videoMatch) pushData.videoName = videoMatch[1].trim()
-      }
-      if (!pushData.email && job.body) {
-        const emailMatch = job.body.match(/(?:Email|Client):\s*(.+?)(?:\n|$)/)
-        if (emailMatch) pushData.email = emailMatch[1].trim()
-      }
-      if (!pushData.authorName && job.body) {
-        const authorMatch = job.body.match(/Client:\s*([^(]+?)(?:\s*\(|$|\n)/)
-        if (authorMatch) pushData.authorName = authorMatch[1].trim()
-      }
-      if (!pushData.content && job.body) {
-        const commentMatch = job.body.match(/Comment:\s*(.+?)(?:\n|$)/)
-        if (commentMatch) pushData.content = commentMatch[1].trim()
-      }
+      fillPushFieldFromBody(pushData, 'projectTitle', job.body, /Project:\s*(.+?)(?:\n|$)/)
+      fillPushFieldFromBody(pushData, 'videoName', job.body, /Video:\s*(.+?)(?:\n|$)/)
+      fillPushFieldFromBody(pushData, 'email', job.body, /(?:Email|Client):\s*(.+?)(?:\n|$)/)
+      fillPushFieldFromBody(pushData, 'authorName', job.body, /Client:\s*([^(]+?)(?:\s*\(|$|\n)/)
+      fillPushFieldFromBody(pushData, 'content', job.body, /Comment:\s*(.+?)(?:\n|$)/)
 
       const payload = await createNotificationPayload(eventType, {
         projectTitle: pushData.projectTitle,

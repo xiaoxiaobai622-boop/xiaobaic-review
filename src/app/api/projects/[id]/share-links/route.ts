@@ -6,7 +6,7 @@ import { requireApiAdmin } from '@/lib/auth'
 import { canAdministerProject } from '@/lib/project-access'
 import { encrypt } from '@/lib/encryption'
 import { getAppUrl, generateShareUrl } from '@/lib/url'
-import { projectMasterPolicy } from '@/lib/share-links'
+import { projectMasterPolicy, sanitizeSharePermissions } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,12 +28,6 @@ function cleanScopeType(value: unknown) {
 
 function cleanType(value: unknown) {
   return value === 'COLLECT' ? 'COLLECT' : value === 'DELIVERY' ? 'DELIVERY' : 'REVIEW'
-}
-
-function cleanPermissions(value: unknown, type: string) {
-  const allowed = type === 'COLLECT' ? ['upload'] : ['view', 'comment', 'download', 'approve']
-  const list = Array.isArray(value) ? value.filter(item => allowed.includes(String(item))).map(String) : []
-  return list.length ? Array.from(new Set(list)) : type === 'COLLECT' ? ['upload'] : ['view', 'comment']
 }
 
 async function assertScope(projectId: string, scopeType: string, scopeId: string | null) {
@@ -121,7 +115,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         type,
         scopeType,
         scopeId,
-        permissions: cleanPermissions(body.permissions, type),
+        permissions: sanitizeSharePermissions(body.permissions, type),
         authMode,
         sharePassword: password ? encrypt(password) : null,
         expiresAt,

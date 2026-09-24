@@ -105,6 +105,7 @@ export async function POST(
           data: {
             videoId: targetVideoId,
             fileName: asset.fileName,
+            originalFileName: asset.originalFileName,
             fileSize: asset.fileSize,
             fileType: asset.fileType,
             storagePath: asset.storagePath, // Same storage path (symlink approach)

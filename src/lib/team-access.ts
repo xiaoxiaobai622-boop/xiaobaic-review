@@ -6,17 +6,22 @@ export const TEAM_HEADER = 'x-team-id'
 
 export type TeamRoleName = 'OWNER' | 'ADMIN' | 'MEMBER'
 
+// Both membership queries must return the same shape: authorization reads
+// `role`, `status` and the nested `team.status`, so a narrower select would
+// silently turn a valid membership into a rejection.
+const TEAM_MEMBERSHIP_SELECT = {
+  id: true,
+  role: true,
+  status: true,
+  teamId: true,
+  userId: true,
+  team: { select: { status: true } },
+} as const
+
 export async function getTeamMember(teamId: string, userId: string) {
   return prisma.teamMember.findUnique({
     where: { teamId_userId: { teamId, userId } },
-    select: {
-      id: true,
-      role: true,
-      status: true,
-      teamId: true,
-      userId: true,
-      team: { select: { status: true } },
-    },
+    select: TEAM_MEMBERSHIP_SELECT,
   })
 }
 
@@ -43,14 +48,7 @@ export async function getActiveTeamMembership(user: AuthUser, requestedTeamId?: 
       team: { status: 'ACTIVE' },
     },
     orderBy: { createdAt: 'asc' },
-    select: {
-      id: true,
-      role: true,
-      status: true,
-      teamId: true,
-      userId: true,
-      team: { select: { status: true } },
-    },
+    select: TEAM_MEMBERSHIP_SELECT,
   })
 }
 
@@ -105,10 +103,4 @@ export async function canAccessTeamProject(
     select: { id: true },
   })
   return Boolean(project)
-}
-
-export function teamProjectWhere(user: AuthUser, teamId: string) {
-  return {
-    teamId,
-  }
 }

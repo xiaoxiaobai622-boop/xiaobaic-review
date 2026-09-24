@@ -12,6 +12,11 @@ const FEISHU_IMAGE_HOSTS = new Set([
   'sf3-sg.feishucdn.com',
 ])
 
+/** Every rejection answers as the same bare 404, so probes cannot tell why it failed. */
+function avatarUnavailable(): NextResponse {
+  return new NextResponse(null, { status: 404 })
+}
+
 /** Proxy the OAuth-provided Feishu avatar through our own origin for CSP. */
 export async function GET(
   request: NextRequest,
@@ -25,26 +30,26 @@ export async function GET(
     where: { userId },
     select: { avatarUrl: true },
   })
-  if (!binding?.avatarUrl) return new NextResponse(null, { status: 404 })
+  if (!binding?.avatarUrl) return avatarUnavailable()
 
   let avatarUrl: URL
   try {
     avatarUrl = new URL(binding.avatarUrl)
   } catch {
-    return new NextResponse(null, { status: 404 })
+    return avatarUnavailable()
   }
   const isFeishuCdn = avatarUrl.hostname.endsWith('.feishucdn.com')
     || avatarUrl.hostname.endsWith('.larksuitecdn.com')
   if (avatarUrl.protocol !== 'https:' || (!FEISHU_IMAGE_HOSTS.has(avatarUrl.hostname) && !isFeishuCdn)) {
-    return new NextResponse(null, { status: 404 })
+    return avatarUnavailable()
   }
 
   try {
     const response = await fetch(avatarUrl, { cache: 'no-store', redirect: 'manual' })
-    if (!response.ok) return new NextResponse(null, { status: 404 })
+    if (!response.ok) return avatarUnavailable()
 
     const contentType = response.headers.get('content-type') || ''
-    if (!contentType.startsWith('image/')) return new NextResponse(null, { status: 404 })
+    if (!contentType.startsWith('image/')) return avatarUnavailable()
 
     return new NextResponse(response.body, {
       status: 200,
@@ -54,6 +59,6 @@ export async function GET(
       },
     })
   } catch {
-    return new NextResponse(null, { status: 404 })
+    return avatarUnavailable()
   }
 }

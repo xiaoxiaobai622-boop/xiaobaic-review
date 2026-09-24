@@ -190,14 +190,14 @@ export default function ThumbnailGrid({
           )}
         </div>
 
-        {videoCount === 0 ? (
+        {videoCount === 0 && (
           <Card>
             <CardContent className="py-10 text-center space-y-3">
               <Film className="w-8 h-8 mx-auto text-muted-foreground" />
               <p className="text-sm text-muted-foreground">{tv('noVideosYet')}</p>
             </CardContent>
           </Card>
-        ) : null}
+        )}
 
         {viewMode === 'list' ? (
           <div className="space-y-2">

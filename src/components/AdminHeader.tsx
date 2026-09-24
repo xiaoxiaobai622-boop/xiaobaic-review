@@ -42,7 +42,7 @@ function TeamExpiryBadge() {
   }, [])
 
   if (!label) return null
-  return <Link href="/studio/team?tab=team" className={`hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium sm:inline-flex ${danger ? 'border-destructive/30 bg-destructive-visible text-destructive' : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'}`} title="查看团队有效期"><Clock3 className="h-3.5 w-3.5" />团队 {label}</Link>
+  return <Link href="/studio/team?tab=team" className={`hidden h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium sm:inline-flex ${danger ? 'border-destructive/30 bg-destructive-visible text-destructive' : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground'}`} title="查看团队有效期"><Clock3 className="h-3.5 w-3.5" />团队 {label}</Link>
 }
 
 export default function AdminHeader() {
@@ -113,7 +113,7 @@ export default function AdminHeader() {
 
           <div className="flex items-center gap-2 sm:gap-3">
             <TeamExpiryBadge />
-            <ThemeToggle className="h-11 w-11 shrink-0 rounded-lg shadow-sm" />
+            <ThemeToggle className="h-11 shrink-0 rounded-lg px-3 shadow-sm sm:[&>select]:text-sm" />
             <a
               href="https://scnqe74t5owc.feishu.cn/wiki/UOxownMcRiBLeekZwcEc3BBAnc2?from=from_copylink"
               target="_blank"

@@ -4,7 +4,6 @@ import { getCurrentUserFromRequest, requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import {
   checkWechatText,
-  CONTENT_SECURITY_ERROR,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
 
@@ -32,34 +31,34 @@ export async function GET(
     team = await prisma.team.findUnique({
       where: { id },
       select: {
-      id: true,
-      name: true,
-      slug: true,
-      avatarUrl: true,
-      status: true,
-      createdAt: true,
-      createdById: true,
-      subscriptionPlan: true,
-      subscriptionStartedAt: true,
-      subscriptionExpiresAt: true,
-      members: {
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          role: true,
-          status: true,
-          teamNickname: true,
-          teamProfession: true,
-          department: true,
-          bio: true,
+        id: true,
+        name: true,
+        slug: true,
+        avatarUrl: true,
+        status: true,
+        createdAt: true,
+        createdById: true,
+        subscriptionPlan: true,
+        subscriptionStartedAt: true,
+        subscriptionExpiresAt: true,
+        members: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            role: true,
+            status: true,
+            teamNickname: true,
+            teamProfession: true,
+            department: true,
+            bio: true,
             createdAt: true,
             updatedAt: true,
             user: {
-            select: { id: true, name: true, email: true, phone: true, avatarUrl: true, updatedAt: true },
+              select: { id: true, name: true, email: true, phone: true, avatarUrl: true, updatedAt: true },
+            },
           },
         },
-      },
-      _count: { select: { projects: true, members: true } },
+        _count: { select: { projects: true, members: true } },
       },
     })
   } catch {

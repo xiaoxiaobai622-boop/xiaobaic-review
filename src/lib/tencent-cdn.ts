@@ -32,17 +32,32 @@ async function readPlaylist(manifestUrl: string): Promise<string[]> {
   return urls
 }
 
+/**
+ * Read-modify-write of the daily counter in one Lua script, so two prefatches
+ * running at the same time cannot both see the same headroom and overspend the
+ * account's daily quota. Returns the number of URLs actually reserved.
+ */
+const RESERVE_SCRIPT = `
+  local used = tonumber(redis.call('GET', KEYS[1]) or '0') or 0
+  local room = tonumber(ARGV[1]) - used
+  if room <= 0 then
+    return 0
+  end
+  local wanted = tonumber(ARGV[2])
+  if room > wanted then
+    room = wanted
+  end
+  redis.call('INCRBY', KEYS[1], room)
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
+  return room
+`
+
 async function reserveFromDailyBudget(urlCount: number): Promise<number> {
   const limit = Math.max(0, Number(process.env.MEDIA_CDN_PREFETCH_DAILY_LIMIT || DAILY_URL_LIMIT))
   const key = `cdn_prefetch:${new Date().toISOString().slice(0, 10)}`
   const redis = getRedis()
-  const used = Number(await redis.get(key) || '0')
-  const room = Math.max(0, Math.min(limit - used, urlCount))
-  if (room > 0) {
-    await redis.incrby(key, room)
-    await redis.expire(key, 26 * 60 * 60)
-  }
-  return room
+  const reserved = await redis.eval(RESERVE_SCRIPT, 1, key, String(limit), String(urlCount), String(26 * 60 * 60))
+  return Math.max(0, Number(reserved) || 0)
 }
 
 /**

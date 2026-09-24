@@ -16,6 +16,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
 import { getDisplayEmail } from '@/lib/user-contact'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { getAccessToken } from '@/lib/token-store'
 
 interface UserData {
   id: string
@@ -35,6 +36,20 @@ interface ProjectOption {
   id: string
   title: string
   projectCode: string
+}
+
+// Shared initial/reset value handed straight to state: never mutate projectIds in place.
+const EMPTY_NEW_USER = {
+  email: '',
+  phone: '',
+  username: '',
+  name: '',
+  password: '',
+  confirmPassword: '',
+  role: 'MEMBER',
+  isPlatformAdmin: false,
+  projectAccessScope: 'ALL_PROJECTS',
+  projectIds: [] as string[],
 }
 
 export default function UsersPage() {
@@ -58,18 +73,7 @@ export default function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<UserData | null>(null)
 
   // New user form
-  const [newUserData, setNewUserData] = useState({
-    email: '',
-    phone: '',
-    username: '',
-    name: '',
-    password: '',
-    confirmPassword: '',
-    role: 'MEMBER',
-    isPlatformAdmin: false,
-    projectAccessScope: 'ALL_PROJECTS',
-    projectIds: [] as string[],
-  })
+  const [newUserData, setNewUserData] = useState(EMPTY_NEW_USER)
 
   // Edit user form
   const [editFormData, setEditFormData] = useState({
@@ -116,7 +120,7 @@ export default function UsersPage() {
 
   const fetchLoggedInUser = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/auth/session')
+      const res = await apiFetch('/api/platform/auth/session')
       if (res.ok) {
         const data = await res.json()
         setLoggedInUser(data.user)
@@ -154,10 +158,16 @@ export default function UsersPage() {
     fetchUsers()
     fetchLoggedInUser()
     fetchPasskeyStatus()
-    apiFetch('/api/projects')
-      .then((response) => response.ok ? response.json() : { projects: [] })
-      .then((data) => setProjects((data.projects || []).map((project: ProjectOption) => ({ id: project.id, title: project.title, projectCode: project.projectCode }))))
-      .catch(() => setProjects([]))
+    // Project assignment reads team-scoped data, so this call names the studio
+    // credential itself instead of the platform token apiFetch would attach here.
+    // With no studio session there is nothing to list, so skip rather than 401.
+    const teamToken = getAccessToken()
+    if (teamToken) {
+      apiFetch('/api/projects', { headers: { Authorization: `Bearer ${teamToken}` } })
+        .then((response) => response.ok ? response.json() : { projects: [] })
+        .then((data) => setProjects((data.projects || []).map((project: ProjectOption) => ({ id: project.id, title: project.title, projectCode: project.projectCode }))))
+        .catch(() => setProjects([]))
+    }
   }, [fetchUsers, fetchLoggedInUser, fetchPasskeyStatus])
 
   // Filter users by search
@@ -229,7 +239,7 @@ export default function UsersPage() {
         projectIds: newUserData.projectIds,
       })
       await fetchUsers()
-      setNewUserData({ email: '', phone: '', username: '', name: '', password: '', confirmPassword: '', role: 'MEMBER', isPlatformAdmin: false, projectAccessScope: 'ALL_PROJECTS', projectIds: [] })
+      setNewUserData(EMPTY_NEW_USER)
       setShowAddUserModal(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('failedToCreateUser'))
@@ -426,7 +436,7 @@ export default function UsersPage() {
             variant="default"
             size="default"
             onClick={() => {
-              setNewUserData({ email: '', phone: '', username: '', name: '', password: '', confirmPassword: '', role: 'MEMBER', isPlatformAdmin: false, projectAccessScope: 'ALL_PROJECTS', projectIds: [] })
+              setNewUserData(EMPTY_NEW_USER)
               setShowPassword(false)
               setShowConfirmPassword(false)
               setError('')

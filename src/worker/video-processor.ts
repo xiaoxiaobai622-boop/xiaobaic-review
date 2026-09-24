@@ -124,16 +124,16 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
       projectId,
       project.teamId,
       videoInfo.path,
-        videoInfo.metadata.duration,
-        tempFiles
-      )
+      videoInfo.metadata.duration,
+      tempFiles
+    )
 
     await finalizeVideo(
-        videoId,
-        previewPaths,
-        thumbnailPath,
-        videoInfo.metadata
-      )
+      videoId,
+      previewPaths,
+      thumbnailPath,
+      videoInfo.metadata
+    )
 
     const totalTime = Date.now() - processingStart
     logMessage(`[WORKER] Successfully processed video ${videoId} in ${(totalTime / 1000).toFixed(2)}s`)

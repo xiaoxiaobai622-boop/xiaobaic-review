@@ -9,7 +9,6 @@ import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 
-
 export const runtime = 'nodejs'
 
 const downloadZipTokenSchema = z.object({
@@ -31,16 +30,14 @@ export async function POST(
 
   const { id: videoId } = await params
 
-  // Rate limit ZIP token generation
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 10,
-  message: videoMessages.tooManyAssetZipTokenRequests || 'Too many asset download requests. Please slow down.',
+    message: videoMessages.tooManyAssetZipTokenRequests || 'Too many asset download requests. Please slow down.',
   }, `asset-zip-token:${videoId}`)
   if (rateLimitResult) return rateLimitResult
 
   try {
-    // Parse request body for selected asset IDs
     const body = await request.json()
     const parsed = downloadZipTokenSchema.safeParse(body)
     if (!parsed.success) {
@@ -48,19 +45,27 @@ export async function POST(
     }
     const { assetIds, includeVideo } = parsed.data
 
-    // Get video with project info
     const video = await prisma.video.findUnique({
       where: { id: videoId },
-      include: { project: true },
+      select: {
+        approved: true,
+        project: {
+          select: {
+            id: true,
+            sharePassword: true,
+            authMode: true,
+            allowAssetDownload: true,
+          },
+        },
+      },
     })
 
     if (!video) {
-  return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
+      return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
 
     const project = video.project
 
-    // SECURITY: Verify user has access to this project (admin OR valid share session)
     const accessCheck = await verifyProjectAccess(
       request,
       project.id,
@@ -73,10 +78,9 @@ export async function POST(
     )
 
     if (!accessCheck.authorized) {
-  return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
 
-    // For non-admins, verify asset download settings and video approval
     if (!accessCheck.isAdmin) {
       if (!project.allowAssetDownload) {
         return NextResponse.json(
@@ -93,27 +97,26 @@ export async function POST(
       }
     }
 
-    // Verify all asset IDs belong to this video
+    // Every requested asset must belong to this video and be fully uploaded.
     const assets = await prisma.videoAsset.findMany({
       where: {
         id: { in: assetIds },
         videoId,
         uploadCompletedAt: { not: null },
       },
+      select: { id: true },
     })
 
     if (assets.length === 0) {
-  return NextResponse.json({ error: messages?.share?.noValidAssetsFound || 'No valid assets found' }, { status: 404 })
+      return NextResponse.json({ error: messages?.share?.noValidAssetsFound || 'No valid assets found' }, { status: 404 })
     }
 
     if (assets.length !== assetIds.length) {
-  return NextResponse.json({ error: videoMessages.someAssetsInvalid || 'Some assets are invalid' }, { status: 400 })
+      return NextResponse.json({ error: videoMessages.someAssetsInvalid || 'Some assets are invalid' }, { status: 400 })
     }
 
-    // Generate secure token
     const token = crypto.randomBytes(32).toString('base64url')
 
-    // Store token in Redis with asset IDs and metadata (15 minute TTL)
     const redis = getRedis()
     // Stable admin session id so repeated downloads reuse the cached token
     const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${project.id}` : `guest:${Date.now()}`)
@@ -141,7 +144,6 @@ export async function POST(
       JSON.stringify(tokenData)
     )
 
-    // Return download URL
     return NextResponse.json({
       url: `/api/content/zip/${token}`,
     })

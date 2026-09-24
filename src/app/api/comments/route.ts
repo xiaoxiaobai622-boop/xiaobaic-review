@@ -9,7 +9,6 @@ import { sanitizeComment } from '@/lib/comment-sanitization'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import {
   checkWechatText,
-  CONTENT_SECURITY_ERROR,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
 import {
@@ -88,6 +87,7 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         fileName: true,
+        originalFileName: true,
         fileSize: true,
         fileType: true,
         category: true,
@@ -412,9 +412,9 @@ export async function POST(request: NextRequest) {
     if (assetIds && assetIds.length > 0) {
       const linkedAssets = await prisma.videoAsset.findMany({
         where: { commentId: comment.id },
-        select: { fileName: true },
+        select: { fileName: true, originalFileName: true },
       })
-      attachmentNames = linkedAssets.map(a => a.fileName)
+      attachmentNames = linkedAssets.map(a => a.originalFileName || a.fileName)
     }
 
     await handleCommentNotifications({

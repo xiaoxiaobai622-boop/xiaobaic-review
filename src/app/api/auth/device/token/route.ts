@@ -14,6 +14,10 @@ import { logError } from '@/lib/logging'
 import crypto from 'crypto'
 
 
+function badRequest(error: string): NextResponse {
+  return NextResponse.json({ error }, { status: 400 })
+}
+
 /**
  * POST /api/auth/device/token
  *
@@ -58,10 +62,7 @@ export async function POST(request: NextRequest) {
     const { deviceCode, clientId } = parsed.data
 
     if (!deviceCode || !clientId) {
-      return NextResponse.json(
-        { error: 'device_code and client_id are required' },
-        { status: 400 }
-      )
+      return badRequest('device_code and client_id are required')
     }
 
     const tooFast = await checkPollRate(deviceCode)
@@ -75,52 +76,29 @@ export async function POST(request: NextRequest) {
     const codeData = await getDeviceCodeStatus(deviceCode)
 
     if (!codeData) {
-      return NextResponse.json(
-        { error: 'expired_token' },
-        { status: 400 }
-      )
+      return badRequest('expired_token')
     }
 
     if (codeData.clientId !== clientId) {
-      return NextResponse.json(
-        { error: 'invalid_client' },
-        { status: 400 }
-      )
+      return badRequest('invalid_client')
     }
 
     switch (codeData.status) {
       case 'pending':
-        return NextResponse.json(
-          { error: 'authorization_pending' },
-          { status: 400 }
-        )
+        return badRequest('authorization_pending')
 
       case 'denied':
-        return NextResponse.json(
-          { error: 'access_denied' },
-          { status: 400 }
-        )
+        return badRequest('access_denied')
 
       case 'expired':
-        return NextResponse.json(
-          { error: 'expired_token' },
-          { status: 400 }
-        )
-
       case 'consumed':
-        return NextResponse.json(
-          { error: 'expired_token' },
-          { status: 400 }
-        )
+        return badRequest('expired_token')
 
       case 'authorized': {
         // Consume the device code (one-time use)
         const result = await consumeDeviceCode(deviceCode)
         if (!result) {
-          return NextResponse.json(
-            { error: 'expired_token' },
-            { status: 400 }
-          )
+          return badRequest('expired_token')
         }
 
         const user = await prisma.user.findUnique({
@@ -129,10 +107,7 @@ export async function POST(request: NextRequest) {
         })
 
         if (!user) {
-          return NextResponse.json(
-            { error: 'access_denied' },
-            { status: 400 }
-          )
+          return badRequest('access_denied')
         }
 
         const fingerprint = crypto.createHash('sha256').update(`device-code\n${clientId}`).digest('base64url')
@@ -166,10 +141,7 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        return NextResponse.json(
-          { error: 'authorization_pending' },
-          { status: 400 }
-        )
+        return badRequest('authorization_pending')
     }
   } catch (error) {
     logError('[Device Token] Error polling device token:', error)

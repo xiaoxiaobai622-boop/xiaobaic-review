@@ -71,9 +71,39 @@ const SSRF_DENY_HOSTS = new Set([
   'metadata',
 ])
 
+/**
+ * The dotted-quad a hostname states about itself, or null.
+ *
+ * `new URL()` already rewrites decimal/octal/hex IPv4 and every IPv6
+ * abbreviation into one canonical form, so the deny list sees those as plain
+ * addresses. Two syntaxes still hide an address inside something else: the
+ * IPv4-mapped IPv6 literal, and the wildcard-DNS services that answer for
+ * whatever address their own name embeds.
+ */
+function selfDeclaredIpv4(hostname: string): string | null {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+
+  const mapped = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+  if (mapped) {
+    const high = Number.parseInt(mapped[1], 16)
+    const low = Number.parseInt(mapped[2], 16)
+    return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`
+  }
+
+  const embedded = host.match(/^(.+?)\.(?:nip\.io|sslip\.io)$/)
+  if (!embedded) return null
+  try {
+    return new URL(`http://${embedded[1].replace(/-/g, '.')}/`).hostname
+  } catch {
+    return null
+  }
+}
+
 function isMetadataServiceHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  return SSRF_DENY_HOSTS.has(h)
+  const plain = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (SSRF_DENY_HOSTS.has(plain)) return true
+  const declared = selfDeclaredIpv4(hostname)
+  return declared !== null && SSRF_DENY_HOSTS.has(declared)
 }
 
 // URL schema for outbound notification destinations: format-validated AND blocks
@@ -267,6 +297,8 @@ export const updateProjectSchema = z.object({
     .nullable()
     .optional(),
   clientCompanyId: z.string().cuid().optional().nullable(), // Optional link to client directory
+  // null moves the project back to "未归类"; the route checks the folder belongs to this team
+  groupId: cuidSchema.nullable().optional(),
   status: z.enum(['IN_REVIEW', 'APPROVED', 'SHARE_ONLY', 'ARCHIVED']).optional(),
 
   // Revision settings
@@ -529,6 +561,22 @@ const savedViewStateSchema = z.object({
 export const createSavedViewSchema = z.object({
   name: safeStringSchema(1, 100),
   state: savedViewStateSchema,
+})
+
+export const projectGroupNameSchema = safeStringSchema(1, 60)
+
+// Omitting parentId creates a root folder; null on an update moves a folder back to the root too.
+export const createProjectGroupSchema = z.object({
+  name: projectGroupNameSchema,
+  parentId: cuidSchema.nullable().optional(),
+})
+
+// Renaming and moving are one call, but either half on its own is a valid request.
+export const updateProjectGroupSchema = z.object({
+  name: projectGroupNameSchema.optional(),
+  parentId: cuidSchema.nullable().optional(),
+}).refine((data) => data.name !== undefined || data.parentId !== undefined, {
+  message: 'Nothing to update',
 })
 
 /**

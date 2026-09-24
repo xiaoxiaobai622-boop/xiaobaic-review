@@ -41,7 +41,6 @@ interface FileItem {
   status: 'pending' | 'uploading' | 'completed' | 'error'
   progress: number
   error?: string
-  uploadId?: string
 }
 
 interface ReverseShareUploadPanelProps {
@@ -153,7 +152,7 @@ export default function ReverseShareUploadPanel({
   const retryFile = useCallback((id: string) => {
     setAllDone(false)
     setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: 'pending', error: undefined, progress: 0, uploadId: undefined } : i))
+      prev.map((i) => (i.id === id ? { ...i, status: 'pending', error: undefined, progress: 0 } : i))
     )
   }, [])
 
@@ -194,14 +193,14 @@ export default function ReverseShareUploadPanel({
               setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, progress: pct } : i)))
             },
             onSuccess: () => {
-              setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'completed', progress: 100, uploadId } : i)))
+              setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'completed', progress: 100 } : i)))
               s3AbortKeysRef.current.delete(item.id)
               clearFileContext(item.file)
               clearUploadMetadata(item.file)
               resolve(true)
             },
             onError: (err) => {
-              setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: err.message, uploadId } : i)))
+              setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: err.message } : i)))
               s3AbortKeysRef.current.delete(item.id)
               clearUploadMetadata(item.file)
               apiFetch(`/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
@@ -239,7 +238,7 @@ export default function ReverseShareUploadPanel({
         },
 
         onSuccess: () => {
-          setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'completed', progress: 100, uploadId } : i)))
+          setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'completed', progress: 100 } : i)))
           tusUploadsRef.current.delete(item.id)
           resetTusAuthRetry(uploadRef.current)
           clearFileContext(item.file)
@@ -250,7 +249,7 @@ export default function ReverseShareUploadPanel({
 
         onError: (error) => {
           const errorMessage = getTusUploadErrorMessage(error)
-          setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: errorMessage, uploadId } : i)))
+          setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: errorMessage } : i)))
           tusUploadsRef.current.delete(item.id)
           resetTusAuthRetry(uploadRef.current)
           clearUploadMetadata(item.file)

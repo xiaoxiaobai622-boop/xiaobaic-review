@@ -33,9 +33,13 @@ function calculatePartSize(fileSize: number): number {
   return Math.max(DEFAULT_PART_SIZE, sizeForLimit, MIN_PART_SIZE)
 }
 
+function badRequest(error: string): NextResponse {
+  return NextResponse.json({ error }, { status: 400 })
+}
+
 export async function POST(request: NextRequest) {
   if (!isS3Mode()) {
-    return NextResponse.json({ error: 'S3 storage is not enabled' }, { status: 400 })
+    return badRequest('S3 storage is not enabled')
   }
 
   let initiatedMultipart: { key: string; uploadId: string } | null = null
@@ -53,17 +57,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (!videoId && !assetId && !projectUploadId && !photoId) {
-      return NextResponse.json(
-        { error: 'Missing required field: videoId, assetId, projectUploadId, or photoId' },
-        { status: 400 }
-      )
+      return badRequest('Missing required field: videoId, assetId, projectUploadId, or photoId')
     }
 
     // ── Authentication & ownership ──────────────────────────────────────────────
     const authResult = await verifyS3UploadAccess(request, { videoId, assetId, projectUploadId, photoId }, { requireUploadPermission: true })
     if (authResult.errorResponse) return authResult.errorResponse
 
-    // ── Rate limit: 30 presign requests per minute per client ─────────────────
+    // ── Rate limit ──────────────────────────────────────────────────────────────
     const rateLimitResult = await rateLimit(request, {
       windowMs: 60 * 1000,
       maxRequests: 30,
@@ -72,33 +73,25 @@ export async function POST(request: NextRequest) {
     if (rateLimitResult) return rateLimitResult
 
     // ── Input validation ──────────────────────────────────────────────────────
-    // Sanitize filename: reject null bytes, path separators, and excessively long names
     if (!filename || typeof filename !== 'string') {
-      return NextResponse.json({ error: 'Missing required field: filename' }, { status: 400 })
+      return badRequest('Missing required field: filename')
     }
     const sanitizedFilename = filename.replace(/[\x00/\\]/g, '').trim()
     if (!sanitizedFilename || sanitizedFilename.length > 255) {
-      return NextResponse.json({ error: 'Invalid filename' }, { status: 400 })
+      return badRequest('Invalid filename')
     }
 
     if (!contentType || typeof contentType !== 'string' || contentType.length > 256) {
-      return NextResponse.json({ error: 'Missing or invalid required field: contentType' }, { status: 400 })
+      return badRequest('Missing or invalid required field: contentType')
     }
     const sanitizedContentType = sanitizeContentType(contentType)
     if (sanitizedContentType === 'application/octet-stream' && contentType !== 'application/octet-stream') {
-      return NextResponse.json({ error: 'Invalid content type format' }, { status: 400 })
+      return badRequest('Invalid content type format')
     }
 
-    if (
-      !fileSize ||
-      !Number.isFinite(fileSize) ||
-      !Number.isInteger(fileSize) ||
-      fileSize <= 0
-    ) {
-      return NextResponse.json(
-        { error: 'Missing or invalid required field: fileSize (must be a positive integer)' },
-        { status: 400 }
-      )
+    // Number.isInteger also rejects NaN, Infinity and non-numbers from the request body.
+    if (!Number.isInteger(fileSize) || fileSize <= 0) {
+      return badRequest('Missing or invalid required field: fileSize (must be a positive integer)')
     }
 
     if (fileSize > ABSOLUTE_MAX_UPLOAD_SIZE) {
@@ -122,25 +115,14 @@ export async function POST(request: NextRequest) {
     const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'))
     if (videoId) {
       if (!FILE_LIMITS.ALLOWED_EXTENSIONS.includes(ext)) {
-        return NextResponse.json(
-          { error: `Invalid video format: ${ext}. Allowed: ${FILE_LIMITS.ALLOWED_EXTENSIONS.join(', ')}` },
-          { status: 400 }
-        )
+        return badRequest(`Invalid video format: ${ext}. Allowed: ${FILE_LIMITS.ALLOWED_EXTENSIONS.join(', ')}`)
       }
     } else if (photoId) {
       if (!ALLOWED_PHOTO_TYPES.extensions.includes(ext)) {
-        return NextResponse.json(
-          { error: `Invalid photo format: ${ext}. Allowed: ${ALLOWED_PHOTO_TYPES.extensions.join(', ')}` },
-          { status: 400 }
-        )
+        return badRequest(`Invalid photo format: ${ext}. Allowed: ${ALLOWED_PHOTO_TYPES.extensions.join(', ')}`)
       }
-    } else {
-      if (!ALL_ALLOWED_EXTENSIONS.includes(ext)) {
-        return NextResponse.json(
-          { error: `Invalid file type: ${ext}` },
-          { status: 400 }
-        )
-      }
+    } else if (!ALL_ALLOWED_EXTENSIONS.includes(ext)) {
+      return badRequest(`Invalid file type: ${ext}`)
     }
 
     // ── Resolve S3 key from DB ─────────────────────────────────────────────────
@@ -150,9 +132,7 @@ export async function POST(request: NextRequest) {
     if (videoId) {
       const video = await prisma.video.findUnique({ where: { id: videoId }, select: { status: true, originalStoragePath: true } })
       if (!video) return NextResponse.json({ error: 'Video record not found' }, { status: 404 })
-      if (video.status !== 'UPLOADING') {
-        return NextResponse.json({ error: 'Video is not in UPLOADING state' }, { status: 400 })
-      }
+      if (video.status !== 'UPLOADING') return badRequest('Video is not in UPLOADING state')
       s3Key = video.originalStoragePath
     }
 

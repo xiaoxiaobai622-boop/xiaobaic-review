@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     })
 
     return NextResponse.json({ projects: projectsWithAnalytics })
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: analyticsMessages.unableToProcessRequest || 'Unable to process request' },
       { status: 500 }

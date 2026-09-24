@@ -1,7 +1,7 @@
 import { LegalDoc } from '@/components/LegalDoc'
 
 export const metadata = {
-  title: '用户服务协议 - 逐帧审阅',
+  title: '用户服务协议',
 }
 
 export default function TermsPage() {

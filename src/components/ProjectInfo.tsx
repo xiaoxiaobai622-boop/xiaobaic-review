@@ -50,7 +50,6 @@ interface ProjectInfoProps {
 
 function ProjectInfo({
   selectedVideo,
-  displayLabel: _displayLabel,
   isVideoApproved,
   projectId,
   projectTitle,
@@ -79,7 +78,6 @@ function ProjectInfo({
   const [loading, setLoading] = useState(false)
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [hasAssets, setHasAssets] = useState(false)
-  const [_checkingAssets, setCheckingAssets] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
   const canManageApproval = Boolean(onApprove && !isGuest && isAdmin)
 
@@ -123,9 +121,7 @@ function ProjectInfo({
   const handleDownload = async () => {
     let downloadUrl = (selectedVideo as any).downloadUrl as string | null | undefined
     if (!downloadUrl && onDownloadToken) {
-      setCheckingAssets(true)
       downloadUrl = await onDownloadToken(selectedVideo.id)
-      setCheckingAssets(false)
     }
     if (!downloadUrl) {
       appAlert(t('downloadApprovedOnly'))
@@ -133,8 +129,6 @@ function ProjectInfo({
     }
 
     if (allowAssetDownload && !isGuest && !isAdmin) {
-      setCheckingAssets(true)
-
       const authHeaders = buildAuthHeaders(shareToken)
       fetch(`/api/videos/${selectedVideo.id}/assets`, {
         headers: authHeaders,
@@ -145,7 +139,6 @@ function ProjectInfo({
             if (data.assets && data.assets.length > 0) {
               setHasAssets(true)
               setShowDownloadModal(true)
-              setCheckingAssets(false)
               return true
             }
           }
@@ -155,7 +148,6 @@ function ProjectInfo({
           return false
         })
         .then((hasAssets) => {
-          setCheckingAssets(false)
           if (!hasAssets) {
             triggerDownload(downloadUrl)
           }
@@ -202,13 +194,15 @@ function ProjectInfo({
 
       window.location.reload()
     } catch (error) {
-      appAlert(
-        error instanceof Error
-          ? error.message
-          : isVideoApproved
-            ? t('failedToUnapproveVideo')
-            : t('failedToApproveVideo')
-      )
+      let message: string
+      if (error instanceof Error) {
+        message = error.message
+      } else if (isVideoApproved) {
+        message = t('failedToUnapproveVideo')
+      } else {
+        message = t('failedToApproveVideo')
+      }
+      appAlert(message)
       setLoading(false)
       setShowApprovalConfirm(false)
     }
@@ -225,6 +219,13 @@ function ProjectInfo({
       window.removeEventListener('openShortcutsDialog', handleOpenShortcuts)
     }
   }, [])
+
+  let approvalActionLabel: string
+  if (loading) {
+    approvalActionLabel = isVideoApproved ? t('unapproving') : t('approving')
+  } else {
+    approvalActionLabel = isVideoApproved ? t('unapprove') : t('approve')
+  }
 
   return (
     <div className="pointer-events-none fixed right-[500px] top-2 z-40 hidden h-10 items-center bg-transparent text-card-foreground xl:flex 2xl:right-[568px]">
@@ -455,9 +456,7 @@ function ProjectInfo({
                 className="flex-1 font-semibold"
               >
                 {loading && <LoaderCircle className="animate-spin" />}
-                {loading
-                  ? isVideoApproved ? t('unapproving') : t('approving')
-                  : isVideoApproved ? t('unapprove') : t('approve')}
+                {approvalActionLabel}
               </Button>
               <Button
                 onClick={() => setShowApprovalConfirm(false)}

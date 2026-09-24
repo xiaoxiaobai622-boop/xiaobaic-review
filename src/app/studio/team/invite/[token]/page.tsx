@@ -24,6 +24,9 @@ export default function InviteAcceptPage() {
         const response = await apiFetch(`/api/team-invitations/${params.token}`)
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || '邀请不存在')
+        // A payload without the team display name would crash the render below,
+        // so treat it the same way as an unknown/expired token.
+        if (!data.invite?.team?.name) throw new Error('邀请不存在')
         if (!cancelled) setInvite(data.invite)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : '邀请加载失败')
