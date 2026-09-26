@@ -23,7 +23,7 @@ import { logError } from '@/lib/logging'
 import { useTranslations } from 'next-intl'
 import { SharePasswordRequirements } from '@/components/SharePasswordRequirements'
 import { ClientSelector } from '@/components/ClientSelector'
-import { generateSecurePassword } from '@/lib/password-utils'
+import { generateSharePasscode } from '@/lib/password-utils'
 import type { ViewMode } from '@/components/ViewModeToggle'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { getActiveTeamId } from '@/lib/team-store'
@@ -106,7 +106,7 @@ export default function AdminPage() {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
   const [creating, setCreating] = useState(false)
   const [isShareOnly, setIsShareOnly] = useState(false)
-  const [passwordProtected, setPasswordProtected] = useState(true)
+  const [passwordProtected, setPasswordProtected] = useState(false)
   const [sharePassword, setSharePassword] = useState('')
   const [showPassword, setShowPassword] = useState(true)
   const [copied, setCopied] = useState(false)
@@ -325,7 +325,7 @@ export default function AdminPage() {
 
   // Password helpers
   function handleGeneratePassword() {
-    setSharePassword(generateSecurePassword())
+    setSharePassword(generateSharePasscode())
     setCopied(false)
   }
 
@@ -343,8 +343,8 @@ export default function AdminPage() {
     setClientCompanyId(null)
     setRecipientName('')
     setIsShareOnly(false)
-    setPasswordProtected(true)
-    setSharePassword(generateSecurePassword())
+    setPasswordProtected(false)
+    setSharePassword('')
     setShowPassword(true)
     setCopied(false)
     setFormError('')
@@ -462,15 +462,19 @@ export default function AdminPage() {
                   <Label htmlFor="passwordProtected" className="text-sm font-semibold">
                     {t('requireAuth')}
                   </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {t('requireAuthDescription')}
+                  <p className={`text-xs ${passwordProtected ? 'text-muted-foreground' : 'font-medium text-foreground'}`}>
+                    {passwordProtected ? t('requireAuthDescription') : t('noAuthWarning')}
                   </p>
                 </div>
                 <input
                   id="passwordProtected"
                   type="checkbox"
                   checked={passwordProtected}
-                  onChange={(e) => setPasswordProtected(e.target.checked)}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                    setPasswordProtected(next)
+                    if (next && !sharePassword.trim()) setSharePassword(generateSharePasscode())
+                  }}
                   className="h-5 w-5 rounded border-border text-primary focus:ring-primary mt-1"
                 />
               </div>
@@ -534,15 +538,6 @@ export default function AdminPage() {
                       {t('savePasswordWarning')}
                     </p>
                   </div>
-                </div>
-              )}
-
-              {!passwordProtected && (
-                <div className="flex items-start gap-2 p-2 bg-warning-visible border-2 border-warning-visible rounded-md">
-                  <span className="text-warning text-sm font-bold">!</span>
-                  <p className="text-xs text-warning font-medium">
-                    {t('noAuthWarning')}
-                  </p>
                 </div>
               )}
             </div>

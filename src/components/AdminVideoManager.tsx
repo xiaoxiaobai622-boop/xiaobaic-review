@@ -1119,13 +1119,7 @@ export default function AdminVideoManager({
                               <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName}>
                                 <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
                               </button>
-                              {shareTypeMenuGroup === groupName && <div role="menu" aria-label={`${groupName} 分享类型`} className="fixed z-[100] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl" style={{
-                                left: Math.max(8, Math.min(
-                                  window.innerWidth - 168,
-                                  actionMenuPosition.submenuSide === 'left' ? actionMenuPosition.left - 160 : actionMenuPosition.left + 208,
-                                )),
-                                top: Math.max(8, Math.min(window.innerHeight - 96, actionMenuPosition.top + 4)),
-                              }}>
+                              {shareTypeMenuGroup === groupName && <div role="menu" aria-label={`${groupName} 分享类型`} className={cn('absolute top-0 z-[100] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')}>
                                 <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
                                 <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
                               </div>}

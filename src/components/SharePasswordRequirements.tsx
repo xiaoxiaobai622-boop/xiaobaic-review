@@ -14,15 +14,7 @@ export function SharePasswordRequirements({ password, className = '' }: SharePas
   const results = [
     {
       label: t('sharePasswordMinChars'),
-      passed: password.length >= 8,
-    },
-    {
-      label: t('sharePasswordLetter'),
-      passed: /[A-Za-z]/.test(password),
-    },
-    {
-      label: t('sharePasswordNumber'),
-      passed: /[0-9]/.test(password),
+      passed: password.length >= 4,
     },
   ]
 

@@ -43,6 +43,22 @@ const COMMENT_REFRESH_INTERVAL_MS = 30_000
 // timeout, and that clock keeps sliding solely while the URL is being fetched.
 // Treat a cached one as stale before it can lapse into a 403 on the player.
 const STREAM_TOKEN_MAX_AGE_MS = 10 * 60_000
+// The share bearer itself hard-expires 45 minutes after it was claimed, while a
+// review tab stays open far longer than that. The server answers a mint made
+// against a dead one with 401 and a SecurityEvent row; retiring it locally
+// skips that doomed round trip instead of paying for the refusal.
+const SHARE_BEARER_MIN_LIFE_MS = 15_000
+
+// Only `exp` is read here, and only to decide whether the request can possibly
+// be honoured — the client never has the secret, so this is not verification.
+function bearerExpiresAt(jwt: string): number | null {
+  try {
+    const payload = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload?.exp === 'number' ? payload.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
 
 function getVideoCatalogSignature(projectData: any): string {
   const videos = Array.isArray(projectData?.videos) ? projectData.videos : []
@@ -215,6 +231,9 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const [viewMode, setViewMode] = useState<ShareViewMode>('grid')
   const [albumCount, setAlbumCount] = useState(0)
   const [reviewAuthenticated, setReviewAuthenticated] = useState(false)
+  // Account-login contact for uploads. Kept apart from authenticatedEmail, which
+  // the OTP recipient lookup and comment notifications already own.
+  const [accountEmail, setAccountEmail] = useState<string | null>(null)
   const [loginOpenSignal, setLoginOpenSignal] = useState(0)
 
   const sharePermissions = Array.isArray(project?.sharePermissions)
@@ -228,16 +247,18 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   // broadening the guest project metadata response.
   const commentProjectId = project?.id || comments.find((comment: any) => typeof comment?.projectId === 'string')?.projectId || ''
 
-  const handleWechatIdentity = useCallback((identity: { name: string | null } | null) => {
+  const handleWechatIdentity = useCallback((identity: { name: string | null; email: string | null } | null) => {
     setReviewAuthenticated(Boolean(identity))
     if (identity?.name) setAuthenticatedName(identity.name)
+    setAccountEmail(identity?.email ?? null)
   }, [])
 
   useEffect(() => {
     const handleReviewAuthChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ authenticated?: boolean; name?: string | null }>).detail
+      const detail = (event as CustomEvent<{ authenticated?: boolean; name?: string | null; email?: string | null }>).detail
       setReviewAuthenticated(detail?.authenticated === true)
       if (detail?.authenticated && detail.name) setAuthenticatedName(detail.name)
+      setAccountEmail(detail?.authenticated ? detail.email ?? null : null)
     }
     window.addEventListener('review-auth-changed', handleReviewAuthChange)
     return () => window.removeEventListener('review-auth-changed', handleReviewAuthChange)
@@ -706,6 +727,15 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     // and a mint holding the previous one is rejected long before its TTL ends.
     const authToken = shareTokenRef.current
     if (!authToken) return ''
+
+    const expiresAt = bearerExpiresAt(authToken)
+    if (expiresAt !== null && expiresAt - Date.now() < SHARE_BEARER_MIN_LIFE_MS) {
+      if (shareTokenRef.current === authToken) {
+        saveShareToken(storageKey, null)
+        setShareToken(null)
+      }
+      return ''
+    }
 
     const requestKey = `${authToken}:${videoId}:${quality}`
     const inFlight = inFlightTokenRequestsRef.current.get(requestKey)
@@ -1400,6 +1430,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           variant="embedded"
           isReviewAuthenticated={reviewAuthenticated}
           onRequireLogin={requireReviewLogin}
+          authorName={authenticatedName}
+          authorEmail={accountEmail}
         />
       </div>
     )
@@ -1434,6 +1466,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 triggerLabel={t('uploadLink')}
                 isReviewAuthenticated={reviewAuthenticated}
                 onRequireLogin={requireReviewLogin}
+                authorName={authenticatedName}
+                authorEmail={accountEmail}
               />
             )}
             <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} onOpenChange={handleLoginOpenChange} />

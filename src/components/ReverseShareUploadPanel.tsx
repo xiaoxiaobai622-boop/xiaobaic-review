@@ -53,6 +53,8 @@ interface ReverseShareUploadPanelProps {
   triggerLabel?: string
   isReviewAuthenticated?: boolean
   onRequireLogin?: () => void
+  authorName?: string | null
+  authorEmail?: string | null
 }
 
 const DEFAULT_MAX_FILES = 10
@@ -67,6 +69,8 @@ export default function ReverseShareUploadPanel({
   triggerLabel,
   isReviewAuthenticated = true,
   onRequireLogin,
+  authorName = null,
+  authorEmail = null,
 }: ReverseShareUploadPanelProps) {
   const t = useTranslations('share')
   const tc = useTranslations('common')
@@ -163,7 +167,16 @@ export default function ReverseShareUploadPanel({
       const response = await apiFetch(`/api/share/${shareSlug}/project-uploads`, {
         method: 'POST',
         headers: accountShareHeaders(true),
-        body: JSON.stringify({ fileName: item.file.name, fileSize: item.file.size }),
+        // Only OTP-bound share tokens carry a recipient the server can look up,
+        // so a WeChat/phone visitor's identity has to travel with the request.
+        // The route caps these at 100 and 254 chars and rejects an overlong or
+        // malformed value, which would fail the upload outright.
+        body: JSON.stringify({
+          fileName: item.file.name,
+          fileSize: item.file.size,
+          ...(authorName ? { authorName: authorName.slice(0, 100) } : {}),
+          ...(authorEmail ? { authorEmail: authorEmail.slice(0, 254) } : {}),
+        }),
       })
 
       if (!response.ok) {

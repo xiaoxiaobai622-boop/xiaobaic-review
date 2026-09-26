@@ -65,10 +65,26 @@ async function apiJson<T = any>(
     const details = Array.isArray(error.details)
       ? error.details.filter((detail: unknown): detail is string => typeof detail === 'string' && detail.length > 0)
       : []
-    throw new Error(details.length > 0 ? `${baseMessage}: ${details.join('; ')}` : baseMessage)
+    throw new ApiError(details.length > 0 ? `${baseMessage}: ${details.join('; ')}` : baseMessage, typeof error.code === 'string' ? error.code : undefined)
   }
 
   return response.json()
+}
+
+/**
+ * 非 2xx 的统一异常。`message` 的拼法与改动前逐字一致（`error.error` → `HTTP <status>`，
+ * 有 `details` 时再拼 `: a; b`），所以只看 `error.message` 的既有调用方行为不变。
+ * 多带一枚 `code` 是为了 F-3：服务端写闸门发的 `{ error, code }` 里那枚机器可读码过去在
+ * 这一层被压成纯文本，四语界面拿不到它就只能把裸中文贴给客户看。
+ */
+export class ApiError extends Error {
+  readonly code?: string
+
+  constructor(message: string, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = code
+  }
 }
 
 export async function apiPost<T = any>(

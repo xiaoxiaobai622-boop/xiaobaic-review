@@ -43,6 +43,15 @@ export function generateSecurePassword(): string {
 }
 
 /**
+ * Passcode for a project's master link: 4 digits, same shape as the in-project
+ * share dialog. Leading zeros are kept — the field and the verify endpoint both
+ * treat it as a string.
+ */
+export function generateSharePasscode(): string {
+  return String(getSecureRandomInt(10000)).padStart(4, '0')
+}
+
+/**
  * Generate a URL-safe random slug
  */
 export function generateRandomSlug(): string {

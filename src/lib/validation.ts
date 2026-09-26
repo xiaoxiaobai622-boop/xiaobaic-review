@@ -261,14 +261,14 @@ export const createProjectSchema = z.object({
   clientCompanyId: z.string().cuid().optional().nullable(), // Optional link to client directory
   recipientEmail: emailSchema.optional().nullable().or(z.literal('')), // Optional recipient email (will create ProjectRecipient if provided)
   recipientName: safeStringSchema(0, 255).optional().nullable(), // Optional recipient name
+  // A 4-digit passcode is the intended shape (same as the in-project share dialog).
+  // Guesses are capped in api/share/[token]/verify: 5 per IP and 50 per link per 15 min.
   sharePassword: z.union([
     z.literal(''), // Allow empty string for non-password auth modes
     z.null(), // Allow null
     z.string()
-      .min(8, 'Share password must be at least 8 characters')
+      .min(4, 'Share password must be at least 4 characters')
       .max(255, 'Share password must not exceed 255 characters')
-      .regex(/[A-Za-z]/, 'Share password must contain at least one letter')
-      .regex(/[0-9]/, 'Share password must contain at least one number')
   ]).optional(),
   authMode: z.enum(['PASSWORD', 'OTP', 'BOTH', 'NONE']).optional(),
   enableRevisions: z.boolean().optional(),
@@ -347,11 +347,11 @@ export const updateProjectSchema = z.object({
   showClientTutorial: z.boolean().optional(),
 
   // Authentication settings
+  // Mirrors createProjectSchema: the settings page re-submits the stored
+  // password on every save, so a tighter rule here would 400 existing projects.
   sharePassword: z.string()
-    .min(8, 'Share password must be at least 8 characters')
+    .min(4, 'Share password must be at least 4 characters')
     .max(200, 'Share password must not exceed 200 characters')
-    .regex(/[A-Za-z]/, 'Share password must contain at least one letter')
-    .regex(/[0-9]/, 'Share password must contain at least one number')
     .nullable()
     .optional()
     .or(z.literal('')),

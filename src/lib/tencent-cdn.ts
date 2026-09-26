@@ -6,7 +6,7 @@ const SERVICE = 'cdn'
 const VERSION = '2018-06-06'
 const HOST = 'cdn.tencentcloudapi.com'
 const URLS_PER_TASK = 500
-const DAILY_URL_LIMIT = 900
+const DAILY_URL_LIMIT = 9000
 
 function required(name: string): string {
   const value = process.env[name]?.trim()
@@ -66,9 +66,10 @@ async function reserveFromDailyBudget(urlCount: number): Promise<number> {
  * once cached, and reviewers read that gap as stutter and as a failed seek when
  * they jump to a comment.
  *
- * The account allows 1000 prefetched URLs a day and every segment counts against
- * that, so a bulk re-transcode is capped instead of allowed to starve later
- * uploads. Playlists are expanded here because the API only warms exact URLs.
+ * The account allows 10000 prefetched URLs a day and every segment counts against
+ * that, so the app keeps its own share below the quota (override with
+ * MEDIA_CDN_PREFETCH_DAILY_LIMIT) instead of letting a bulk re-transcode starve
+ * later uploads. Playlists are expanded here because the API only warms exact URLs.
  */
 export async function prefetchHlsRendition(hlsPath: string): Promise<{ submitted: number; skipped: number; taskId?: string }> {
   const manifestUrl = getCdnObjectUrl(hlsPath)
@@ -93,4 +94,24 @@ export async function prefetchHlsRendition(hlsPath: string): Promise<{ submitted
     taskId = response?.TaskId ?? taskId
   }
   return { submitted: allowed.length, skipped: urls.length - allowed.length, taskId }
+}
+
+/**
+ * Warm a batch of renditions for an operator backfill. This is the only safe
+ * entry point for bulk prewarming because every URL goes through the same daily
+ * budget the transcode path uses: a hand-rolled caller spends the account's
+ * quota while the app's counter stays asleep, and the uploads after it find no
+ * headroom. Stops at the first rendition the budget refuses instead of asking
+ * once per remaining file, and reports how many were left for the next day.
+ */
+export async function prefetchRenditions(hlsPaths: string[]): Promise<{ attempted: number; submitted: number; left: number }> {
+  let attempted = 0
+  let submitted = 0
+  for (const hlsPath of hlsPaths) {
+    const result = await prefetchHlsRendition(hlsPath)
+    attempted += 1
+    submitted += result.submitted
+    if (result.submitted === 0) break
+  }
+  return { attempted, submitted, left: hlsPaths.length - attempted }
 }

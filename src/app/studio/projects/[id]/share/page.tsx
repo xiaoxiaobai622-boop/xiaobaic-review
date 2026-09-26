@@ -25,6 +25,10 @@ const MAX_TOKEN_FETCH_ATTEMPTS = 2
 const TOKEN_FETCH_RETRY_BASE_MS = 120
 const TOKEN_FETCH_RETRY_MAX_MS = 400
 const COMMENT_REFRESH_INTERVAL_MS = 30_000
+// A stream token dies at SecuritySettings.sessionTimeoutValue (15 min idle), so
+// a mint older than this is refused by /api/content even though the cache still
+// hands the player a URL.
+const STREAM_TOKEN_MAX_AGE_MS = 10 * 60_000
 
 const QUALITY_PROBE_ORDER: Record<'720p' | '1080p' | '2160p', Array<'720p' | '1080p' | '2160p'>> = {
   '720p': ['720p', '1080p', '2160p'],
@@ -170,6 +174,7 @@ export default function AdminSharePage() {
   const [sessionId] = useState<string>(() => `project:${id}`)
   const sessionIdRef = useRef<string>(sessionId)
   const inFlightTokenRequestsRef = useRef<Map<string, { promise: Promise<string>; signal?: AbortSignal }>>(new Map())
+  const activeVideosRawRef = useRef<any[]>([])
   const tokenFetchTelemetryRef = useRef({
     firstAttemptFailures: 0,
     retrySuccesses: 0,
@@ -392,8 +397,8 @@ export default function AdminSharePage() {
 
       // Preserve tokens for unchanged videos, especially the one currently
       // playing. Only invalidate entries whose source disappeared/changed.
-      for (const [cacheKey, tokenizedVideo] of tokenCacheRef.current.entries()) {
-        const videoId = tokenizedVideo?.id
+      for (const [cacheKey, cached] of tokenCacheRef.current.entries()) {
+        const videoId = cached?.video?.id
         if (!videoId || changedSourceIds.has(videoId) || !nextSources.has(videoId)) {
           tokenCacheRef.current.delete(cacheKey)
         }
@@ -455,15 +460,19 @@ export default function AdminSharePage() {
 
       const cacheKey = `${sessionId}:${video.id}:${defaultQuality}`
       const cached = tokenCacheRef.current.get(cacheKey)
-      // In S3 mode HLS is the primary playback path. Do not reuse a partial
-      // MP4-only result from a transient HLS token failure, otherwise the
-      // player can silently remain on the progressive fallback for the rest
-      // of the session.
-      if (cached && (!supportsHls || cached.hlsUrl720p)) {
-        tokenizedById.set(video.id, cached)
-        return
+      if (cached && Date.now() - cached.mintedAt >= STREAM_TOKEN_MAX_AGE_MS) {
+        tokenCacheRef.current.delete(cacheKey)
+      } else if (cached) {
+        // In S3 mode HLS is the primary playback path. Do not reuse a partial
+        // MP4-only result from a transient HLS token failure, otherwise the
+        // player can silently remain on the progressive fallback for the rest
+        // of the session.
+        if (!supportsHls || cached.video.hlsUrl720p) {
+          tokenizedById.set(video.id, cached.video)
+          return
+        }
+        tokenCacheRef.current.delete(cacheKey)
       }
-      if (cached) tokenCacheRef.current.delete(cacheKey)
 
       try {
         const qualityOrder = QUALITY_PROBE_ORDER[defaultQuality]
@@ -518,7 +527,7 @@ export default function AdminSharePage() {
           ? Boolean(tokenized.hlsUrl720p)
           : Boolean(tokenized.streamUrl720p || tokenized.streamUrl1080p || tokenized.streamUrl2160p)
         if (hasCacheablePlayback) {
-          tokenCacheRef.current.set(cacheKey, tokenized)
+          tokenCacheRef.current.set(cacheKey, { video: tokenized, mintedAt: Date.now() })
         }
         tokenizedById.set(video.id, tokenized)
       } catch {
@@ -528,6 +537,49 @@ export default function AdminSharePage() {
 
     return videos.map((video: any) => tokenizedById.get(video.id) || video)
   }, [defaultQuality, fetchAdminVideoTokenWithRetry, supportsHls])
+
+  useEffect(() => {
+    activeVideosRawRef.current = activeVideosRaw
+  }, [activeVideosRaw])
+
+  // A stream URL the server has already let lapse is not something the reviewer
+  // can fix by reloading: drop this video's cached mint and sign a fresh one so
+  // the player remounts on its own. Returning false hands the refusal back to
+  // the player, which then says so.
+  const recoverStreamAuth = useCallback(async (videoId: string) => {
+    tokenCacheRef.current.delete(`${sessionIdRef.current}:${videoId}:${defaultQuality}`)
+    const video = activeVideosRawRef.current.find((item: any) => item.id === videoId)
+    if (!video) return false
+
+    const [refreshed] = await fetchTokensForVideos([video], 1)
+    if (!refreshed || refreshed === video) return false
+    if (!refreshed.hlsUrl720p && !refreshed.streamUrl720p &&
+        !refreshed.streamUrl1080p && !refreshed.streamUrl2160p) return false
+
+    setActiveVideos((current: any[]) => current.map((item: any) => (
+      item.id === videoId ? refreshed : item
+    )))
+    return true
+  }, [defaultQuality, fetchTokensForVideos])
+
+  // Choosing another version is handled inside the player, which points straight
+  // at the URL minted when the page loaded. After the tab has sat idle past the
+  // media session timeout that URL is already refused, so the reviewer gets a
+  // failure on a click that should simply work. Re-sign it as the selection
+  // lands, one round trip ahead of the player's own manifest request.
+  useEffect(() => {
+    const ensureSelectedStreamFresh = (event: Event) => {
+      const videoId = (event as CustomEvent<{ videoId?: string }>).detail?.videoId
+      if (!videoId) return
+      const cached = tokenCacheRef.current.get(`${sessionIdRef.current}:${videoId}:${defaultQuality}`)
+      if (!cached || Date.now() - cached.mintedAt < STREAM_TOKEN_MAX_AGE_MS) return
+      void recoverStreamAuth(videoId)
+    }
+    window.addEventListener('reviewVersionChanged', ensureSelectedStreamFresh as EventListener)
+    return () => {
+      window.removeEventListener('reviewVersionChanged', ensureSelectedStreamFresh as EventListener)
+    }
+  }, [defaultQuality, recoverStreamAuth])
 
   // Load project data, settings, and admin user
   useEffect(() => {
@@ -1030,6 +1082,7 @@ export default function AdminSharePage() {
                 shareToken={null}
                 onApprove={canManageApproval ? refreshProject : undefined}
                 onVideoStateChange={setActiveVideoState}
+                onStreamAuthExpired={recoverStreamAuth}
                 hideDownloadButton={true}
                 hideApprovalAction={true}
                 allowComparison={canManageApproval}

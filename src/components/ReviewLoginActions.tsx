@@ -15,7 +15,7 @@ import { apiFetch } from '@/lib/api-client'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import Link from 'next/link'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
-import { getDisplayEmail } from '@/lib/user-contact'
+import { getContactEmail } from '@/lib/user-contact'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
 import { cn } from '@/lib/utils'
 
@@ -26,7 +26,7 @@ interface WechatSession {
 }
 
 interface ReviewLoginActionsProps {
-  onIdentityChange?: (identity: { name: string | null } | null) => void
+  onIdentityChange?: (identity: { name: string | null; email: string | null } | null) => void
   compact?: boolean
   openSignal?: number
   onOpenChange?: (open: boolean) => void
@@ -34,10 +34,16 @@ interface ReviewLoginActionsProps {
 
 const PHONE_REGEX = /^1[3-9]\d{9}$/
 
-function notifyReviewAuth(authenticated: boolean, name: string | null = null) {
+/** Placeholder emails are internal identifiers, not contact info, so they never reach the UI. */
+function contactNameOf(user: { name?: string | null; phone?: string | null; email?: string | null }): string | null {
+  const email = getContactEmail(user.email)
+  return user.name || user.phone || email || (user.email ? '微信用户' : null)
+}
+
+function notifyReviewAuth(authenticated: boolean, name: string | null = null, email: string | null = null) {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent('review-auth-changed', {
-    detail: { authenticated, name },
+    detail: { authenticated, name, email },
   }))
 }
 
@@ -91,18 +97,19 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         if (authData?.authenticated && authData.user) {
           setPasswordUser({
             id: authData.user.id,
-            name: authData.user.name || authData.user.phone || getDisplayEmail(authData.user.email) || null,
+            name: contactNameOf(authData.user),
             email: authData.user.email,
             phone: authData.user.phone,
             role: authData.user.role,
             avatarUrl: authData.user.avatarUrl,
           })
-          const name = authData.user.name || authData.user.phone || getDisplayEmail(authData.user.email) || null
-          onIdentityChange?.({ name })
-          notifyReviewAuth(true, name)
+          const name = contactNameOf(authData.user)
+          const email = getContactEmail(authData.user.email) || null
+          onIdentityChange?.({ name, email })
+          notifyReviewAuth(true, name, email)
         } else if (wechatData.authenticated && wechatData.user) {
           const name = wechatData.user.name || null
-          onIdentityChange?.({ name })
+          onIdentityChange?.({ name, email: null })
           notifyReviewAuth(true, name)
         } else {
           setPasswordUser(null)
@@ -160,10 +167,11 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         window.location.href = `/onboarding?returnUrl=${encodeURIComponent(currentReturnUrl())}`
         return
       }
-      const identity = { id: data.user?.id || '', name: data.user?.name || data.user?.phone || getDisplayEmail(data.user?.email) || null, email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
+      const identity = { id: data.user?.id || '', name: contactNameOf(data.user), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
       setPasswordUser(identity)
-      onIdentityChange?.({ name: identity.name })
-      notifyReviewAuth(true, identity.name)
+      const email = getContactEmail(identity.email) || null
+      onIdentityChange?.({ name: identity.name, email })
+      notifyReviewAuth(true, identity.name, email)
       updateOpen(false)
       setPassword('')
     } catch (loginError) {
@@ -234,10 +242,11 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         window.location.href = `/onboarding?returnUrl=${encodeURIComponent(currentReturnUrl())}`
         return
       }
-      const identity = { id: data.user?.id || '', name: data.user?.name || data.user?.phone || getDisplayEmail(data.user?.email) || null, email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
+      const identity = { id: data.user?.id || '', name: contactNameOf(data.user), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
       setPasswordUser(identity)
-      onIdentityChange?.({ name: identity.name })
-      notifyReviewAuth(true, identity.name)
+      const email = getContactEmail(identity.email) || null
+      onIdentityChange?.({ name: identity.name, email })
+      notifyReviewAuth(true, identity.name, email)
       updateOpen(false)
       setCode('')
       setCodeSent(false)
@@ -272,7 +281,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
   const profileHref = currentUser?.id
     ? `/profile?returnUrl=${encodeURIComponent(typeof window === 'undefined' ? '/' : currentReturnUrl())}`
     : '/profile'
-  const secondaryContact = currentUser?.phone || getDisplayEmail(currentUser?.email)
+  const secondaryContact = currentUser?.phone || getContactEmail(currentUser?.email)
 
   return (
     <>

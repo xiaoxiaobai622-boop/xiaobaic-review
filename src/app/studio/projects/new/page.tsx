@@ -2,7 +2,7 @@
 
 import { appAlert } from '@/components/AppDialogProvider'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -12,10 +12,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Eye, EyeOff, RefreshCw, Copy, Check, Plus, X, Calendar } from 'lucide-react'
-import { apiPost } from '@/lib/api-client'
+import { apiPost, ApiError } from '@/lib/api-client'
 import { SharePasswordRequirements } from '@/components/SharePasswordRequirements'
 import { ClientSelector } from '@/components/ClientSelector'
-import { generateSecurePassword } from '@/lib/password-utils'
+import { generateSharePasscode } from '@/lib/password-utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
 
 export default function NewProjectPage() {
@@ -24,7 +24,7 @@ export default function NewProjectPage() {
   const tc = useTranslations('common')
   const [loading, setLoading] = useState(false)
   const [isShareOnly, setIsShareOnly] = useState(false)
-  const [passwordProtected, setPasswordProtected] = useState(true)
+  const [passwordProtected, setPasswordProtected] = useState(false)
   const [sharePassword, setSharePassword] = useState('')
   const [showPassword, setShowPassword] = useState(true)
   const [copied, setCopied] = useState(false)
@@ -41,13 +41,8 @@ export default function NewProjectPage() {
   const [clientCompanyId, setClientCompanyId] = useState<string | null>(null)
   const [recipientName, setRecipientName] = useState('')
 
-  // Generate password on mount
-  useEffect(() => {
-    setSharePassword(generateSecurePassword())
-  }, [])
-
   function handleGeneratePassword() {
-    setSharePassword(generateSecurePassword())
+    setSharePassword(generateSharePasscode())
     setCopied(false)
   }
 
@@ -82,7 +77,16 @@ export default function NewProjectPage() {
       const project = await apiPost('/api/projects', data)
       router.push(`/studio/projects/${project.id}`)
     } catch (error) {
-      appAlert(t('failedToCreateProject'))
+      // 服务端的人话必须透出：`apiJson` 非 2xx 时抛的是 `ApiError(message)`，消息拼法与改动前逐字一致
+      // （`src/lib/api-client.ts`）。与 `studio/projects/page.tsx:390` 的写法对齐。
+      // 唯一的新意是 F-3 那一支：写闸门（`src/lib/team-writeable.ts` 的 `TeamWriteBlockCode`）给的
+      // `TEAM_EXPIRED` / `TEAM_DISABLED` 现在带着码走到这里，命中就说本页语言的句子 —— 四语界面
+      // 不再贴服务端裸中文。码缺失/认不出（含别的 4xx）照旧显示服务端原文。
+      const code = error instanceof ApiError ? error.code : undefined
+      const message = code === 'TEAM_EXPIRED' ? t('teamExpired')
+        : code === 'TEAM_DISABLED' ? t('teamDisabled')
+          : error instanceof Error && error.message ? error.message : t('failedToCreateProject')
+      appAlert(message)
     } finally {
       setLoading(false)
     }
@@ -173,17 +177,21 @@ export default function NewProjectPage() {
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
                     <Label htmlFor="passwordProtected" className="text-base font-semibold">
-                      {t('requireAuthRecommended')}
+                      {t('requireAuth')}
                     </Label>
-                    <p className="text-sm text-muted-foreground">
-                      {t('requireAuthDescriptionLong')}
+                    <p className={`text-sm ${passwordProtected ? 'text-muted-foreground' : 'font-medium text-foreground'}`}>
+                      {passwordProtected ? t('requireAuthDescription') : t('noAuthWarning')}
                     </p>
                   </div>
                   <input
                     id="passwordProtected"
                     type="checkbox"
                     checked={passwordProtected}
-                    onChange={(e) => setPasswordProtected(e.target.checked)}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                      setPasswordProtected(next)
+                      if (next && !sharePassword.trim()) setSharePassword(generateSharePasscode())
+                    }}
                     className="h-5 w-5 rounded border-border text-primary focus:ring-primary mt-1"
                   />
                 </div>
@@ -248,15 +256,6 @@ export default function NewProjectPage() {
                         {t('savePasswordWarningLong')}
                       </p>
                     </div>
-                  </div>
-                )}
-
-                {!passwordProtected && (
-                  <div className="flex items-start gap-2 p-3 bg-warning-visible border-2 border-warning-visible rounded-md">
-                    <span className="text-warning text-sm font-bold">!</span>
-                    <p className="text-sm text-warning font-medium">
-                      {t('noAuthWarningLong')}
-                    </p>
                   </div>
                 )}
               </div>

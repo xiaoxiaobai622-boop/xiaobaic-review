@@ -16,7 +16,7 @@ import { ScheduleSelector } from '@/components/ScheduleSelector'
 import { SharePasswordRequirements } from '@/components/SharePasswordRequirements'
 import { CompanyNameInput } from '@/components/CompanyNameInput'
 import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
-import { sanitizeSlug, generateRandomSlug, generateSecurePassword } from '@/lib/password-utils'
+import { sanitizeSlug, generateRandomSlug, generateSharePasscode } from '@/lib/password-utils'
 import { logError } from '@/lib/logging'
 import Link from 'next/link'
 import { ArrowLeft, Save, RefreshCw, Copy, Check, Calendar, FileText, Users, Share2, Video, Shield } from 'lucide-react'
@@ -1201,7 +1201,7 @@ export default function ProjectSettingsPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setSharePassword(generateSecurePassword())}
+                      onClick={() => setSharePassword(generateSharePasscode())}
                       title={t('generatePassword')}
                       className="h-10 w-10 p-0 flex-shrink-0"
                     >

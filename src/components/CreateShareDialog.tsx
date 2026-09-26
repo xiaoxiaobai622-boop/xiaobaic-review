@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { generateSharePasscode } from '@/lib/password-utils'
 
 export type SharePreset = 'REVIEW' | 'DELIVERY'
 export type ShareTarget = { scopeType: 'FOLDER' | 'VIDEO'; scopeId: string; name: string }
@@ -27,12 +28,6 @@ function ToggleRow({ checked, onChange, icon: Icon, title, description }: { chec
     <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{title}</span><span className="block text-xs leading-5 text-muted-foreground">{description}</span></span>
     <button type="button" role="switch" aria-checked={checked} onClick={(event) => { event.preventDefault(); onChange(!checked) }} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : 'translate-x-0'}`} /></button>
   </label>
-}
-
-function generateSharePassword(): string {
-  const values = new Uint32Array(1)
-  crypto.getRandomValues(values)
-  return String(values[0] % 10000).padStart(4, '0')
 }
 
 export default function CreateShareDialog({ projectId, open, preset, target, onOpenChange, onCreated }: CreateShareDialogProps) {
@@ -74,7 +69,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
     setError('')
     try {
       const permissions = ['view', ...(allowComment ? ['comment'] : []), ...(allowDownload ? ['download'] : [])]
-      const effectivePassword = passwordEnabled ? (password.trim() || generateSharePassword()) : ''
+      const effectivePassword = passwordEnabled ? (password.trim() || generateSharePasscode()) : ''
       if (passwordEnabled && !password.trim()) setPassword(effectivePassword)
       const response = await apiFetch(`/api/projects/${projectId}/share-links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), type: preset, scopeType: target.scopeType, scopeId: target.scopeId, permissions, authMode: passwordEnabled ? 'PASSWORD' : 'NONE', password: effectivePassword, expiresAt: expiryEnabled ? new Date(expiresAt).toISOString() : null, maxViews: limitEnabled ? Number(maxViews) : null }) })
       const data = await response.json().catch(() => ({}))
@@ -104,7 +99,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
           <div className="mt-5 divide-y divide-border border-y border-border">
             <ToggleRow checked={allowDownload} onChange={setAllowDownload} icon={Download} title="允许下载" description={preset === 'DELIVERY' ? '接收方可以下载交付文件' : '审阅者可以下载视频文件'} />
             <ToggleRow checked={allowComment} onChange={setAllowComment} icon={MessageSquare} title="允许批注" description="接收方可以添加时间点和画面批注" />
-            <ToggleRow checked={passwordEnabled} onChange={(value) => { setPasswordEnabled(value); setPassword(value ? (password || generateSharePassword()) : '') }} icon={ShieldCheck} title="密码保护" description="打开链接时需要输入访问密码" />
+            <ToggleRow checked={passwordEnabled} onChange={(value) => { setPasswordEnabled(value); setPassword(value ? (password || generateSharePasscode()) : '') }} icon={ShieldCheck} title="密码保护" description="打开链接时需要输入访问密码" />
           </div>
           {passwordEnabled && <label className="mt-4 block text-sm font-medium">密码<input type="text" value={password} onChange={event => setPassword(event.target.value)} placeholder="输入访问密码" className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" /></label>}
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
