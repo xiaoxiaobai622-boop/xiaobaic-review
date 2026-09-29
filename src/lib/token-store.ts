@@ -78,8 +78,14 @@ async function withLocalStorageRefreshLock<T>(task: () => Promise<T>): Promise<T
           try {
             return await task()
           } finally {
-            const latest = JSON.parse(window.localStorage.getItem(REFRESH_LOCK_KEY) || 'null') as RefreshLockRecord | null
-            if (latest?.owner === owner) window.localStorage.removeItem(REFRESH_LOCK_KEY)
+            // 解锁这段自己不能抛：它在外层那个 catch 的 try 里，一抛就把 task() 的原始错误
+            // 盖掉，还会跳过 removeItem，让所有标签页白等满 20 秒租约。
+            try {
+              const latest = JSON.parse(window.localStorage.getItem(REFRESH_LOCK_KEY) || 'null') as RefreshLockRecord | null
+              if (latest?.owner === owner) window.localStorage.removeItem(REFRESH_LOCK_KEY)
+            } catch {
+              // 值读不成也留着不动：认领那侧本来就把坏值读成「没有锁」，下一枚到点就能抢。
+            }
           }
         }
       } catch {

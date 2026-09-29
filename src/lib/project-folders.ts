@@ -58,7 +58,12 @@ export function subtreeDepth(folders: FolderNode[], rootIds: string[]): number {
   }
 
   let deepest = 0
+  // 一枚文件夹只走一次：wouldCreateCycle 只挡得住从界面发起的移动，库里一旦有父子成环的
+  // 行（手工改过数据），没有这枚 visited 就是无限递归直接爆栈。
+  const visited = new Set<string>()
   const walk = (id: string, depth: number) => {
+    if (visited.has(id)) return
+    visited.add(id)
     deepest = Math.max(deepest, depth)
     for (const child of childrenOf.get(id) || []) walk(child, depth + 1)
   }
