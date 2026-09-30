@@ -33,8 +33,8 @@
 | 开发分支 | `codex/manual-production-deploy` |
 | 生产分支 | `main` |
 | Actions 工作流 | `.github/workflows/xiaobaic-ci-deploy.yml` |
-| 生产网站 | `https://mle6.cn` |
-| 服务器地址 | `111.229.35.33`，也可以使用 `mle6.cn` |
+| 生产网站 | `https://vidx.cn` |
+| 服务器地址 | `111.229.35.33`，也可以使用 `vidx.cn` |
 | SSH 用户 | `root` |
 | 服务器应用目录 | `/opt/vitransfer/vitransfer-test` |
 | GHCR 镜像 | `ghcr.io/xiaoxiaobai622-boop/xiaobaic-review:<提交 SHA>` |
@@ -226,12 +226,12 @@ GitHub Actions 使用 SSH 连接服务器，然后执行：
 - app 和 worker 都使用本次新镜像；
 - worker 中的腾讯云 MPS 模板 ID 为 `1796772`；
 - 上述状态连续稳定 30 秒；
-- `https://mle6.cn/api/health` 请求成功。
+- `https://vidx.cn/api/health` 请求成功。
 
 生产网站入口：
 
 ```text
-https://mle6.cn
+https://vidx.cn
 ```
 
 ## 10. 自动回滚
@@ -333,7 +333,7 @@ npm run build
 
 GitHub Actions 显示全部绿色后，执行以下检查：
 
-1. 打开 `https://mle6.cn`；
+1. 打开 `https://vidx.cn`；
 2. 登录生产账号；
 3. 检查本次修改的页面和功能；
 4. 检查视频播放、拖动进度条、分享等相关功能；
@@ -346,7 +346,7 @@ cd /opt/vitransfer/vitransfer-test
 docker compose ps
 docker inspect -f '{{.State.Health.Status}}' vitransfer-app
 docker inspect -f '{{.State.Health.Status}}' vitransfer-worker
-curl --fail https://mle6.cn/api/health
+curl --fail https://vidx.cn/api/health
 ```
 
 ## 15. 本次成功部署参考

@@ -9,7 +9,7 @@ export default function PrivacyPage() {
     <LegalDoc
       title="隐私政策"
       updatedAt="2026年8月17日"
-      intro="逐帧审阅平台（mle6.cn）重视您的个人信息保护。本政策说明我们在您使用平台服务时如何收集、使用、存储和保护您的个人信息。"
+      intro="逐帧审阅平台（vidx.cn）重视您的个人信息保护。本政策说明我们在您使用平台服务时如何收集、使用、存储和保护您的个人信息。"
       sections={[
         {
           heading: '一、我们收集的信息',

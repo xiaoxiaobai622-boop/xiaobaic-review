@@ -29,7 +29,7 @@ export interface DeepLinkParams {
  * Build a deep link URL for Feishu message card button.
  */
 export function buildDeepLink(params: DeepLinkParams): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'https://mle6.cn'
+  const base = process.env.NEXT_PUBLIC_APP_URL || 'https://vidx.cn'
 
   if (params.videoId) {
     // The review page resolves `video` against videosByName, so use the name

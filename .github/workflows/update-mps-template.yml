@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 10
     environment:
       name: production
-      url: https://mle6.cn
+      url: https://vidx.cn
     env:
       TEMPLATE_ID: ${{ inputs.template_id }}
     steps:

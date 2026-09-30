@@ -2,7 +2,7 @@
 
 **交接日期**：2026-08-31
 **当前上线版本**：`f44c0e3`（本地、GitHub main、生产服务器三方一致）
-**生产地址**：https://mle6.cn
+**生产地址**：https://vidx.cn
 
 ---
 
@@ -94,26 +94,26 @@
 ```
 FEISHU_APP_ID=cli_aa1e85152d789be0
 FEISHU_APP_SECRET=<已配置>
-FEISHU_OAUTH_REDIRECT_URI=https://mle6.cn/api/auth/feishu/callback
+FEISHU_OAUTH_REDIRECT_URI=https://vidx.cn/api/auth/feishu/callback
 ```
 
 `docker-compose.yml` 的 app 和 worker 服务都已在 `environment:` 段声明这三个变量。
 
 **重要**：该文件的 `environment:` 是白名单机制，只有显式列出的变量才会传进容器。以后新增环境变量必须同时改 `.env` 和 `docker-compose.yml`，否则容器读不到。
 
-`NEXT_PUBLIC_APP_URL` 未设置，代码走兜底值 `https://mle6.cn`，结果正确。
+`NEXT_PUBLIC_APP_URL` 未设置，代码走兜底值 `https://vidx.cn`，结果正确。
 
 ### 飞书开放平台
 
-应用后台已把 `https://mle6.cn/api/auth/feishu/callback` 加入重定向 URL 白名单。
+应用后台已把 `https://vidx.cn/api/auth/feishu/callback` 加入重定向 URL 白名单。
 
 ### 本地开发的已知问题
 
-本地 `.env` 的 `FEISHU_OAUTH_REDIRECT_URI` 也指向 `https://mle6.cn/...`。这意味着**在本地点「绑定飞书」，授权后会跳转到生产环境，绑定关系写进生产数据库**。
+本地 `.env` 的 `FEISHU_OAUTH_REDIRECT_URI` 也指向 `https://vidx.cn/...`。这意味着**在本地点「绑定飞书」，授权后会跳转到生产环境，绑定关系写进生产数据库**。
 
 若要本地独立测试绑定流程，需要两步：
 1. 本地 `.env` 改为 `http://localhost:3000/api/auth/feishu/callback`
-2. 飞书后台把这个地址也加进白名单（可与 mle6.cn 并存）
+2. 飞书后台把这个地址也加进白名单（可与 vidx.cn 并存）
 
 ---
 
@@ -135,7 +135,7 @@ FEISHU_OAUTH_REDIRECT_URI=https://mle6.cn/api/auth/feishu/callback
 
 **原因**：回调里用 `new URL(path, request.url)` 构造重定向地址，容器内 `request.url` 解析为 `http://localhost:4321`，用户浏览器打不开。
 
-**解法**：改用 `NEXT_PUBLIC_APP_URL`（兜底 `https://mle6.cn`）拼接绝对地址。
+**解法**：改用 `NEXT_PUBLIC_APP_URL`（兜底 `https://vidx.cn`）拼接绝对地址。
 
 ### 4. 预览接口 404
 

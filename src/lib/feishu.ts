@@ -15,7 +15,7 @@ import { logError, logMessage } from './logging'
 
 const FEISHU_APP_ID = process.env.FEISHU_APP_ID
 const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET
-const FEISHU_OAUTH_REDIRECT_URI = process.env.FEISHU_OAUTH_REDIRECT_URI || 'https://mle6.cn/api/auth/feishu/callback'
+const FEISHU_OAUTH_REDIRECT_URI = process.env.FEISHU_OAUTH_REDIRECT_URI || 'https://vidx.cn/api/auth/feishu/callback'
 
 if (!FEISHU_APP_ID || !FEISHU_APP_SECRET) {
   logError('FEISHU_APP_ID and FEISHU_APP_SECRET must be set in environment variables')

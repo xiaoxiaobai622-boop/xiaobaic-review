@@ -189,7 +189,7 @@ console.log(`✅ PR 创建成功: ${pr.url}`)
 5. ✅ 合并到 main 分支
 6. ✅ 手动触发 GitHub Actions 部署工作流
 7. ⏳ 等待约 9 分钟部署完成
-8. ✅ 访问 https://mle6.cn 验证
+8. ✅ 访问 https://vidx.cn 验证
 
 ---
 

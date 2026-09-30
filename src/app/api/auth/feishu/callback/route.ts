@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
  * cannot reach.
  */
 function redirectTo(path: string): NextResponse {
-  const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://mle6.cn').replace(/\/$/, '')
+  const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://vidx.cn').replace(/\/$/, '')
   return NextResponse.redirect(`${base}${path}`)
 }
 

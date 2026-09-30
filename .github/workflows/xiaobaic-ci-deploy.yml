@@ -111,7 +111,7 @@ jobs:
       cancel-in-progress: false
     environment:
       name: production
-      url: https://mle6.cn
+      url: https://vidx.cn
     env:
       DEPLOY_SHA: ${{ github.sha }}
       DEPLOY_IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
@@ -439,7 +439,7 @@ jobs:
                  [ "$worker_image_id" = "$deployed_image_id" ]; then
                 healthy_streak=$((healthy_streak + 1))
                 if [ "$healthy_streak" -ge 6 ]; then
-                  curl --fail --silent --show-error https://mle6.cn/api/health
+                  curl --fail --silent --show-error https://vidx.cn/api/health
                   trap - ERR
                   echo "Deployment completed successfully after 30 seconds stable: $DEPLOY_IMAGE"
                   exit 0

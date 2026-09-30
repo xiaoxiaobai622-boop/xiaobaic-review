@@ -225,7 +225,7 @@ npx tsc --noEmit
 ```bash
 FEISHU_APP_ID=your_feishu_app_id_here
 FEISHU_APP_SECRET=your_feishu_app_secret_here
-FEISHU_OAUTH_REDIRECT_URI=https://mle6.cn/api/auth/feishu/callback
+FEISHU_OAUTH_REDIRECT_URI=https://vidx.cn/api/auth/feishu/callback
 ```
 
 **使用方法**:
@@ -334,7 +334,7 @@ FEISHU_OAUTH_REDIRECT_URI=https://mle6.cn/api/auth/feishu/callback
 2. ✅ 配置环境变量: 添加 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_OAUTH_REDIRECT_URI`
 3. ✅ 重启应用服务
 4. ⚠️ 飞书开放平台配置:
-   - 添加 OAuth 回调 URL: `https://mle6.cn/api/auth/feishu/callback`
+   - 添加 OAuth 回调 URL: `https://vidx.cn/api/auth/feishu/callback`
    - 开通权限: `im:message`（发送消息）、`contact:user.base`（获取用户基础信息）
    - 发布应用并获取 `app_id` 和 `app_secret`
 

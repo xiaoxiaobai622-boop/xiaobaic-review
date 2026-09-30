@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 const DANGEROUS_PROTOCOL = /^(javascript|data|vbscript):/i
-const PUBLIC_MEDIA_ORIGIN = 'https://mle6.cn'
+const PUBLIC_MEDIA_ORIGIN = 'https://vidx.cn'
 const NEURALYN_ORIGIN = 'https://d8j0ntlcm91z4.cloudfront.net'
 
 export async function proxy(request: NextRequest) {
