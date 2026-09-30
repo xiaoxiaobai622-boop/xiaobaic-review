@@ -173,6 +173,8 @@ jobs:
             image_tar="/tmp/xiaobaic-review-$DEPLOY_SHA.tar"
             auth_dir="/tmp/xiaobaic-review-ghcr-auth-$DEPLOY_SHA"
             env_backup="/tmp/xiaobaic-review-env-$DEPLOY_SHA"
+            puller="/tmp/xiaobaic-layer-pull-$DEPLOY_SHA.sh"
+            pull_work="/tmp/ghcr-layer-work-$DEPLOY_SHA"
             target_mps_template_id="$TENCENT_MPS_TEMPLATE_ID"
 
             if [ -z "$target_mps_template_id" ]; then
@@ -197,7 +199,7 @@ jobs:
             echo "Deploy phase: proxy node selection"
             proxy_config=/etc/sing-box/ghcr-hk.json
             proxy_backup=$(mktemp)
-            trap 'sudo systemctl stop sing-box-ghcr >/dev/null 2>&1 || true; sudo rm -f "$proxy_backup" "$image_tar"; sudo rm -rf "$auth_dir"; sudo rm -f "$env_backup"' EXIT
+            trap 'sudo systemctl stop sing-box-ghcr >/dev/null 2>&1 || true; sudo rm -f "$proxy_backup" "$image_tar" "$puller"; sudo rm -rf "$auth_dir" "$pull_work"; sudo rm -f "$env_backup"' EXIT
             sudo cp "$proxy_config" "$proxy_backup"
             # The subscription hands out a fresh random set of Cloudflare fronting IPs on every
             # fetch, and on 2026-09-30 the spread measured inside one minute ran from 13 KB/s to
@@ -242,29 +244,144 @@ jobs:
               proxy_url=
               echo "Pulling GHCR without a proxy"
             fi
-            for pull_attempt in $(seq 1 3); do
-              sudo rm -f "$image_tar"
-              echo "GHCR pull attempt $pull_attempt/3"
-              # ghcr-pull on older servers hard-codes /root/.docker and can
-              # ignore the temporary GITHUB_TOKEN login above. Pull directly
-              # with crane so this deployment always uses auth_dir.
-              if timeout 20m sudo env \
-                DOCKER_CONFIG="$auth_dir" \
+            # crane moves the whole archive over a single connection. This server's only route to
+            # ghcr.io is a Cloudflare Worker fronting that was measured (2026-09-30) severing
+            # in-flight connections at random: 172,943,872 bytes in, 'unexpected EOF', nothing in the
+            # proxy log. Betting 525 MB on one connection is a lottery that retrying does not win.
+            # So fetch one blob per connection and resume each blob from the bytes already on disk.
+            # No connection gets a time or rate cap; it runs as long as it keeps delivering data,
+            # and only a closed connection triggers a reconnect.
+            cat > "$puller" <<'PULLER'
+            #!/usr/bin/env bash
+            # 逐层断点续传拉取 GHCR 镜像，产出 docker load 可用的 tar。
+            # 连接只要还在出数据就一直跑，不设任何时长/速率上限；对端掐断后从已落地字节继续。
+            set -uo pipefail
+
+            ref="${1:?usage: ghcr-layer-pull.sh <image-ref> <output-tar>}"
+            out="${2:?usage: ghcr-layer-pull.sh <image-ref> <output-tar>}"
+
+            host="ghcr.io"
+            path_tag="${ref#"$host"/}"
+            tag="${path_tag##*:}"
+            repo="${path_tag%:*}"
+            auth_dir="${GHCR_PULL_DOCKER_CONFIG:-$HOME/.docker}"
+            if [ -n "${GHCR_PULL_WORK:-}" ]; then
+              work="$GHCR_PULL_WORK"
+              mkdir -p "$work"
+              cleanup() { :; }
+            else
+              work="$(mktemp -d /tmp/ghcr-layer-pull.XXXXXX)"
+              cleanup() { rm -rf "$work"; }
+            fi
+            trap cleanup EXIT
+
+            b64auth="$(jq -r --arg h "$host" '.auths[$h].auth // empty' "$auth_dir/config.json" 2>/dev/null)"
+            auth_args=()
+            if [ -n "$b64auth" ]; then auth_args=(-H "Authorization: Basic $b64auth"); fi
+
+            token="$(curl -fsS "${auth_args[@]}" "https://$host/token?service=$host&scope=repository:$repo:pull" | jq -r '.token // empty')"
+            if [ -z "$token" ]; then
+              echo "ERROR: no pull token for $repo" >&2
+              exit 1
+            fi
+            bear=(-H "Authorization: Bearer $token")
+
+            acc='Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+            mkdir -p "$work/oci/blobs/sha256"
+
+            curl -fsS "${bear[@]}" -H "$acc" "https://$host/v2/$repo/manifests/$tag" -o "$work/index.json" || { echo "ERROR: manifest fetch failed" >&2; exit 1; }
+
+            child="$(jq -r '[.manifests[]? | select(.platform.os=="linux" and .platform.architecture=="amd64" and ((.platform.variant // "v8")=="v8"))][0].digest // empty' "$work/index.json")"
+            if [ -n "$child" ]; then
+              curl -fsS "${bear[@]}" -H "$acc" "https://$host/v2/$repo/manifests/$child" -o "$work/manifest.json" || { echo "ERROR: child manifest fetch failed" >&2; exit 1; }
+            else
+              cp "$work/index.json" "$work/manifest.json"
+            fi
+
+            config_dgst="$(jq -r '.config.digest' "$work/manifest.json")"
+            jq -r '.layers[] | "\(.digest) \(.size)"' "$work/manifest.json" > "$work/layers.txt"
+
+            total_bytes="$(awk '{s+=$2} END {print s}' "$work/layers.txt")"
+            config_size="$(jq -r '.config.size' "$work/manifest.json")"
+            echo "pull plan: $(wc -l < "$work/layers.txt") layers + config, ${total_bytes} + ${config_size} bytes"
+
+            fetch_blob() {
+              local dgst="$1" want="$2" dst="$3"
+              local hex="${dgst#sha256:}"
+              local stall=0 have prev rc=0 tries=0
+              while :; do
+                have="$(stat -c %s "$dst" 2>/dev/null || echo 0)"
+                if [ "$have" -ge "$want" ]; then break; fi
+                rc=0
+                if [ "$have" -gt 0 ]; then
+                  echo "  resume $hex from $have/$want ($(( tries + 1 ))th try)"
+                  curl -fsSL -C "$have" "${bear[@]}" -o "$dst" "https://$host/v2/$repo/blobs/$dgst" || rc=$?
+                else
+                  curl -fsSL "${bear[@]}" -o "$dst" "https://$host/v2/$repo/blobs/$dgst" || rc=$?
+                fi
+                tries=$(( tries + 1 ))
+                have="$(stat -c %s "$dst" 2>/dev/null || echo 0)"
+                if [ "$have" -le "${prev:--1}" ]; then
+                  stall=$(( stall + 1 ))
+                  if [ "$stall" -ge 5 ]; then
+                    echo "ERROR: $hex delivered no new bytes on $stall consecutive connections ($have/$want)" >&2
+                    return 1
+                  fi
+                  echo "  connection closed early (curl rc=${rc:-0}), $have/$want landed; reconnecting"
+                  sleep 2
+                else
+                  stall=0
+                fi
+                prev="$have"
+              done
+              local got
+              got="$(sha256sum "$dst" | cut -d' ' -f1)"
+              if [ "$got" != "$hex" ]; then
+                echo "ERROR: digest mismatch for $hex (got $got), re-downloading from scratch" >&2
+                rm -f "$dst"
+                fetch_blob "$dgst" "$want" "$dst" && return 0 || return 1
+              fi
+              return 0
+            }
+
+            confhex="${config_dgst#sha256:}"
+
+            if ! fetch_blob "$config_dgst" "$config_size" "$work/oci/$confhex.json"; then exit 1; fi
+
+            n=0
+            while read -r dgst size; do
+              n=$(( n + 1 ))
+              echo "[$n] layer ${dgst#sha256:} ($size bytes)"
+              if ! fetch_blob "$dgst" "$size" "$work/oci/blobs/sha256/${dgst#sha256:}"; then exit 1; fi
+            done < "$work/layers.txt"
+
+            jq -n --arg cfg "$confhex" --arg ref "$ref" --slurpfile m "$work/manifest.json" \
+              '[{Config: ($cfg + ".json"), RepoTags: [$ref], Layers: ($m[0].layers | map("blobs/sha256/" + (.digest | sub("^sha256:"; ""))))}]' \
+              > "$work/oci/manifest.json" || { echo "ERROR: manifest.json build failed" >&2; exit 1; }
+
+            tar -cf "$out" -C "$work/oci" . || { echo "ERROR: tar assembly failed" >&2; exit 1; }
+            echo "assembled $out ($(stat -c %s "$out") bytes)"
+            PULLER
+            sudo chmod 755 "$puller"
+            for pull_attempt in $(seq 1 5); do
+              echo "GHCR pull attempt $pull_attempt: one connection per layer, resuming from disk"
+              if sudo env \
+                GHCR_PULL_DOCKER_CONFIG="$auth_dir" \
+                GHCR_PULL_WORK="$pull_work" \
                 HTTP_PROXY="$proxy_url" HTTPS_PROXY="$proxy_url" ALL_PROXY="$proxy_url" \
                 http_proxy="$proxy_url" https_proxy="$proxy_url" all_proxy="$proxy_url" \
-                NO_PROXY="127.0.0.1,localhost" no_proxy="127.0.0.1,localhost" \
-                /usr/local/bin/crane pull --platform linux/amd64 "$DEPLOY_IMAGE" "$image_tar"; then
+                bash "$puller" "$DEPLOY_IMAGE" "$image_tar"; then
                 pull_succeeded=1
                 break
               fi
-              echo "GHCR pull attempt $pull_attempt failed; retrying after a clean proxy restart"
+              echo "GHCR pull attempt $pull_attempt failed; $(sudo du -sb "$pull_work" 2>/dev/null | cut -f1) bytes are already on disk and will be reused"
               if [ "$proxy_ready" -eq 1 ]; then
                 sudo systemctl restart sing-box-ghcr
               fi
               sleep 3
             done
             if [ "$pull_succeeded" -ne 1 ]; then
-              echo "GHCR image pull failed after 3 attempts"
+              echo "GHCR image pull failed after 5 attempts"
               exit 1
             fi
             echo "Deploy phase: Docker load and application restart"
