@@ -176,6 +176,7 @@ jobs:
             env_backup="/tmp/xiaobaic-review-env-$DEPLOY_SHA"
             puller="/tmp/xiaobaic-layer-pull-$DEPLOY_SHA.sh"
             pull_work="/tmp/ghcr-layer-work-$DEPLOY_SHA"
+            diag_log="/tmp/xiaobaic-deploy-diag-$DEPLOY_SHA.log"
             target_mps_template_id="$TENCENT_MPS_TEMPLATE_ID"
 
             if [ -z "$target_mps_template_id" ]; then
@@ -395,6 +396,16 @@ jobs:
             rollback() {
               trap - ERR
               echo "Deployment health check failed; restoring $rollback_tag"
+              {
+                echo "===== deploy diagnostics $DEPLOY_SHA ====="
+                date -u
+                docker inspect -f '{{.Name}} exit={{.State.ExitCode}} restarts={{.RestartCount}} health={{if .State.Health}}{{.State.Health.Status}} {{json .State.Health.Log}}{{else}}none{{end}}' vitransfer-app vitransfer-worker || true
+                for failed_container in vitransfer-worker vitransfer-app; do
+                  echo "----- docker logs $failed_container -----"
+                  docker logs --tail 200 "$failed_container" 2>&1 || true
+                done
+              } >> "$diag_log" 2>&1 || true
+              echo "Deploy diagnostics written on server: $diag_log"
               cp "$env_backup" .env
               docker tag "$rollback_tag" "$live_tag"
               docker compose up -d --no-deps --force-recreate app worker
@@ -408,6 +419,7 @@ jobs:
             fi
             docker tag "$DEPLOY_IMAGE" "$live_tag"
             deployed_image_id=$(docker image inspect -f '{{.Id}}' "$live_tag")
+            : > "$diag_log"
             docker compose up -d --no-deps --force-recreate app worker
 
             healthy_streak=0
@@ -418,7 +430,7 @@ jobs:
               app_image_id=$(docker inspect -f '{{.Image}}' vitransfer-app 2>/dev/null || true)
               worker_image_id=$(docker inspect -f '{{.Image}}' vitransfer-worker 2>/dev/null || true)
               worker_template_id=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' vitransfer-worker 2>/dev/null | sed -n 's/^TENCENT_MPS_TEMPLATE_ID=//p' || true)
-              echo "Health check $attempt: app=$app_status worker=$worker_status worker_restarts=$worker_restart_count stable=$healthy_streak/6"
+              echo "Health check $attempt: app=$app_status worker=$worker_status worker_restarts=$worker_restart_count stable=$healthy_streak/6" | tee -a "$diag_log"
               if [ "$app_status" = healthy ] && \
                  [ "$worker_status" = healthy ] && \
                  [ "$worker_restart_count" = 0 ] && \
