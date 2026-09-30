@@ -49,7 +49,7 @@ function formatTeamExpiry(team: TeamItem['team']) {
   return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
 }
 
-export default function TeamSwitcher() {
+export default function TeamSwitcher({ compact = false }: { compact?: boolean } = {}) {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [teams, setTeams] = useState<TeamItem[]>([])
@@ -131,23 +131,33 @@ export default function TeamSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-11 w-48 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-xs sm:px-3 sm:text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent sm:w-56"
+        className={compact
+          // 窄栏只有图标，键盘落点必须看得见，且 offset 要跟栏的 bg-card 同色。
+          ? 'relative flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card'
+          : 'flex min-h-11 w-48 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-xs sm:px-3 sm:text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent sm:w-56'}
         aria-label="团队中心"
+        title={compact ? (activeTeam?.team.name || '团队中心') : undefined}
       >
-        <Building2 className="h-4 w-4 shrink-0 text-primary" />
-        <span className="min-w-0 flex-1 truncate text-left">
-          {activeTeam?.team.name || (teams.length === 0 ? '创建 / 加入团队' : '团队中心')}
-        </span>
+        <Building2 className={compact ? 'h-[20px] w-[20px] shrink-0 text-primary' : 'h-4 w-4 shrink-0 text-primary'} />
+        {!compact && (
+          <span className="min-w-0 flex-1 truncate text-left">
+            {activeTeam?.team.name || (teams.length === 0 ? '创建 / 加入团队' : '团队中心')}
+          </span>
+        )}
         {invitations.length > 0 && (
-          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+          <span className={compact
+            ? 'absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground'
+            : 'flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground'}>
             {invitations.length}
           </span>
         )}
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        {!compact && <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg">
+        <div className={compact
+          ? 'absolute left-full top-0 z-50 ml-2 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg'
+          : 'absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg'}>
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
             <Building2 className="h-4 w-4 text-primary" />
             <div className="min-w-0 flex-1">

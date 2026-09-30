@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import {
   ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, Home,
-  MoreHorizontal, MoveRight, Pencil, Trash2, X, Check,
+  MoreHorizontal, MoveRight, PanelLeftClose, Pencil, Trash2, X, Check,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -52,11 +52,19 @@ interface ProjectsFolderTreeProps {
   onMoveFolder: (id: string, parentId: string | null) => Promise<void>
   onDeleteFolder: (id: string) => Promise<void>
   onDropProjects: (projectIds: string[], folderId: string | null) => Promise<void>
+  /**
+   * Bumped by the collapsed icon rail's 新建文件夹 button: the inline editor lives here,
+   * so the rail asks for it instead of shipping a second create path.
+   */
+  createRequestKey?: number
+  /** Provided only by the wide sidebar: renders the collapse key in the section header. */
+  onCollapseRail?: () => void
 }
 
 export default function ProjectsFolderTree({
   folders, counts, total, openFolderId, isAdmin,
   onOpen, onCreate, onRename, onMoveFolder, onDeleteFolder, onDropProjects,
+  createRequestKey, onCollapseRail,
 }: ProjectsFolderTreeProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -93,6 +101,17 @@ export default function ProjectsFolderTree({
   useEffect(() => {
     if (editor) editorRef.current?.focus()
   }, [editor])
+
+  // The collapsed rail asks for the create editor by bumping the key; the first render
+  // must not open it, so the key is compared against what this mount already saw.
+  const seenCreateRequest = useRef(createRequestKey ?? 0)
+  useEffect(() => {
+    if (createRequestKey === undefined || createRequestKey === seenCreateRequest.current) return
+    seenCreateRequest.current = createRequestKey
+    setEditor({ mode: 'create', parentId: null })
+    setDraft('')
+    setEditorError('')
+  }, [createRequestKey])
 
   // The sidebar scrolls, so an absolutely-positioned popover would be clipped by
   // it: the menu is portalled to <body> and anchored to the viewport instead.
@@ -292,6 +311,18 @@ export default function ProjectsFolderTree({
             className="ml-auto w-7 h-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring inline-flex items-center justify-center"
           >
             <FolderPlus className="w-4 h-4" />
+          </button>
+        )}
+        {/* 收缩键跟着标题行走：它和「新建」同一行、同一尺寸，侧栏顶部不会出现第二行悬空按钮。 */}
+        {onCollapseRail && (
+          <button
+            type="button"
+            onClick={onCollapseRail}
+            aria-label={t('folderRailCollapse')}
+            title={t('folderRailCollapse')}
+            className={`${isAdmin ? '' : 'ml-auto'} w-7 h-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring inline-flex items-center justify-center`}
+          >
+            <PanelLeftClose className="w-4 h-4" />
           </button>
         )}
       </div>
@@ -524,7 +555,7 @@ function indentOf(depth: number): number {
 
 function CountBadge({ value, className, onActive }: { value: number; className?: string; onActive?: boolean }) {
   return (
-    <span className={`text-xs tabular-nums ${onActive ? 'text-foreground' : value === 0 ? 'text-muted-foreground/60' : 'text-muted-foreground'} ${className || ''}`}>
+    <span className={`text-xs tabular-nums ${onActive ? 'text-foreground' : value === 0 ? 'text-muted-foreground/50' : 'text-muted-foreground'} ${className || ''}`}>
       {value}
     </span>
   )

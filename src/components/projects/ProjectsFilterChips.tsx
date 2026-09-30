@@ -92,7 +92,7 @@ export default function ProjectsFilterChips({ filters, onChange, clientLabels, o
           key={chip.id}
           className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary-visible text-primary border-2 border-primary-visible"
         >
-          <span className="text-muted-foreground/80">{chip.group}:</span>
+          <span className="text-muted-foreground">{chip.group}:</span>
           <span className="font-medium">{chip.label}</span>
           <button
             type="button"

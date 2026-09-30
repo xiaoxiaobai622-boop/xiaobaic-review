@@ -19,7 +19,7 @@ interface NotificationContext {
 }
 
 interface ApprovalNotificationContext {
-  project: { id: string; title: string; slug: string; clientNotificationSchedule: string; watermarkEnabled?: boolean }
+  project: { id: string; title: string; slug: string; clientNotificationSchedule: string }
   video?: { id: string; name: string; versionLabel?: string | null }
   approvedVideos?: Array<{ id: string; name: string }>
   approved: boolean // true = approved, false = unapproved
@@ -319,7 +319,6 @@ async function sendApprovalImmediately(context: ApprovalNotificationContext) {
         unsubscribeUrl,
         approverName: authorName || undefined,
         isApprover: isApprover || false,
-        watermarkEnabled: project.watermarkEnabled ?? true,
         locale: recipientLocale,
       }).then(result => {
         if (result.success) {

@@ -9,11 +9,6 @@ import { apiFetch, apiPatch } from '@/lib/api-client'
 import { useAuth } from '@/components/AuthProvider'
 
 type TeamSettingsData = {
-  defaultWatermarkEnabled: boolean
-  defaultWatermarkText: string | null
-  defaultWatermarkPositions: string
-  defaultWatermarkOpacity: number
-  defaultWatermarkFontSize: string
   defaultApplyPreviewLut: boolean
   maxUploadSizeGB: number
   defaultTimestampDisplay: string
@@ -27,11 +22,6 @@ type TeamSettingsData = {
 }
 
 const DEFAULTS: TeamSettingsData = {
-  defaultWatermarkEnabled: true,
-  defaultWatermarkText: null,
-  defaultWatermarkPositions: 'center',
-  defaultWatermarkOpacity: 30,
-  defaultWatermarkFontSize: 'medium',
   defaultApplyPreviewLut: true,
   maxUploadSizeGB: 1,
   defaultTimestampDisplay: 'TIMECODE',
@@ -196,56 +186,12 @@ export default function TeamSettingsPage() {
               onChange={(event) => update('maxUploadSizeGB', Number(event.target.value) || 1)}
             />
           </label>
-          <label className="space-y-1">
-            <span className="text-sm text-muted-foreground">水印位置</span>
-            <select
-              value={settings.defaultWatermarkPositions}
-              onChange={(event) => update('defaultWatermarkPositions', event.target.value)}
-              className={SELECT_CLASS_NAME}
-            >
-              <option value="center">居中</option>
-              <option value="top-left">左上</option>
-              <option value="top-right">右上</option>
-              <option value="bottom-left">左下</option>
-              <option value="bottom-right">右下</option>
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm text-muted-foreground">默认水印文字</span>
-            <Input
-              value={settings.defaultWatermarkText || ''}
-              onChange={(event) => update('defaultWatermarkText', event.target.value || null)}
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm text-muted-foreground">水印不透明度</span>
-            <Input
-              type="number"
-              min={10}
-              max={100}
-              value={settings.defaultWatermarkOpacity}
-              onChange={(event) => update('defaultWatermarkOpacity', Number(event.target.value) || 30)}
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm text-muted-foreground">水印字号</span>
-            <select
-              value={settings.defaultWatermarkFontSize}
-              onChange={(event) => update('defaultWatermarkFontSize', event.target.value)}
-              className={SELECT_CLASS_NAME}
-            >
-              <option value="small">小</option>
-              <option value="medium">中</option>
-              <option value="large">大</option>
-            </select>
-          </label>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader><CardTitle>默认开关</CardTitle></CardHeader>
         <CardContent className="grid gap-2 sm:grid-cols-2">
-          <Toggle label="默认启用水印" checked={settings.defaultWatermarkEnabled} onChange={(value) => update('defaultWatermarkEnabled', value)} />
           <Toggle label="默认应用预览 LUT" checked={settings.defaultApplyPreviewLut} onChange={(value) => update('defaultApplyPreviewLut', value)} />
           <Toggle label="批准后使用预览播放" checked={settings.defaultUsePreviewForApprovedPlayback} onChange={(value) => update('defaultUsePreviewForApprovedPlayback', value)} />
           <Toggle label="允许客户上传附件" checked={settings.defaultAllowClientAssetUpload} onChange={(value) => update('defaultAllowClientAssetUpload', value)} />

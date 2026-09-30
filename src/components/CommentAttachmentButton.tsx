@@ -439,7 +439,7 @@ export default function CommentAttachmentButton({
                   ? t('maxFilesReached')
                   : t('dragDropFiles')}
               </p>
-              <p className="text-xs text-muted-foreground/60 text-center">
+              <p className="text-xs text-muted-foreground text-center">
                 {t('supportedFileTypes')}
               </p>
               <input

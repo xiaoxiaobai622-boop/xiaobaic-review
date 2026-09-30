@@ -353,7 +353,7 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">{placeholder.description}</div>
                     {placeholder.example && (
-                      <div className="text-xs text-muted-foreground/70 mt-0.5 truncate">
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
                         {t('example')} {placeholder.example}
                       </div>
                     )}

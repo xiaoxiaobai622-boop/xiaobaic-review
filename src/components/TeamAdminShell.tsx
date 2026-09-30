@@ -3,7 +3,7 @@
 import { useLayoutEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { FolderKanban, GitBranch, HardDrive, LayoutDashboard, Settings2, Users, type LucideIcon } from 'lucide-react'
+import { CreditCard, FolderKanban, GitBranch, HardDrive, LayoutDashboard, Settings2, Users, type LucideIcon } from 'lucide-react'
 
 type TeamAdminSection = {
   key: string
@@ -16,6 +16,7 @@ const sections: TeamAdminSection[] = [
   { key: 'overview', label: '团队概览', href: '/studio/team', icon: LayoutDashboard },
   { key: 'members', label: '成员管理', href: '/studio/team/members', icon: Users },
   { key: 'storage', label: '容量管理', href: '/studio/team/storage', icon: HardDrive },
+  { key: 'billing', label: '套餐与续费', href: '/studio/team/billing', icon: CreditCard },
   { key: 'projects', label: '项目管理', href: '/studio/team/projects', icon: FolderKanban },
   { key: 'workflow', label: '流程管理', href: '/studio/team/workflow', icon: GitBranch },
   { key: 'video-settings', label: '视频设置', href: '/studio/team/settings', icon: Settings2 },
@@ -70,10 +71,12 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
     return () => document.documentElement.classList.remove('team-admin-scroll-lock')
   }, [])
 
+  // 两块区域各自坐到白色栏面（--popover）上，之间和右/底透画布当 2px 缝、四角 8px 圆角，
+  // 与审片工作区同一套；窄屏沿用原来的上下堆叠，不动。
   return (
-    <div className="scrollbar-hidden flex min-h-0 flex-1 overflow-y-auto bg-background">
-      <div className="flex w-full min-w-0 flex-1 flex-col lg:flex-row">
-        <aside className="shrink-0 border-b border-border bg-card lg:min-h-full lg:w-56 lg:border-b-0 lg:border-r">
+    <div className="scrollbar-hidden flex min-h-0 flex-1 overflow-y-auto bg-background lg:h-[calc(100dvh-var(--admin-header-height))] lg:overflow-hidden">
+      <div className="flex w-full min-w-0 flex-1 flex-col lg:flex lg:h-full lg:min-h-0 lg:flex-row lg:pr-[2px] lg:pb-[2px]">
+        <aside className="shrink-0 border-b border-border bg-card lg:mr-[2px] lg:min-h-0 lg:w-56 lg:overflow-y-auto lg:rounded-[8px] lg:border-b-0 lg:bg-popover">
           <div className="px-4 py-4 lg:px-5 lg:py-6">
             <p className="text-base font-semibold">团队管理</p>
           </div>
@@ -95,7 +98,7 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
           </nav>
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <main className="scrollbar-hidden min-w-0 flex-1 px-4 py-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px] lg:bg-popover lg:px-8 lg:py-7">
           {tabs.length > 0 && (
             <nav aria-label={`${section.label}页签`} className="mb-6 flex gap-6 overflow-x-auto border-b border-border">
               {tabs.map((tab) => (

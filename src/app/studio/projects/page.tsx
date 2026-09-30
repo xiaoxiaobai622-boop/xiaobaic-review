@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Building2, FolderKanban, FolderTree, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle, ChevronRight } from 'lucide-react'
+import { Building2, FolderKanban, FolderTree, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle, ChevronRight, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
@@ -50,6 +50,7 @@ import {
 
 const FILTERS_STORAGE_KEY = 'admin_projects_filters'
 const VIEW_MODE_STORAGE_KEY = 'admin_projects_view'
+const FOLDER_RAIL_STORAGE_KEY = 'admin_projects_folder_rail_collapsed'
 
 function loadInitialFilters(searchParams: URLSearchParams): ProjectsFilterState {
   // URL params take precedence so shareable URLs work
@@ -100,6 +101,11 @@ export default function AdminPage() {
     typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('folder') : null
   )
   const [folderDrawer, setFolderDrawer] = useState(false)
+  // 跨会话记忆：树自己的折叠集合就存在 localStorage 里，侧栏收缩是同一层的偏好，不该刷新就忘。
+  const [folderRailCollapsed, setFolderRailCollapsed] = useState(
+    () => typeof window !== 'undefined' && localStorage.getItem(FOLDER_RAIL_STORAGE_KEY) === '1'
+  )
+  const [folderCreateRequest, setFolderCreateRequest] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>(loadInitialViewMode)
 
   // New Project Modal state
@@ -171,6 +177,22 @@ export default function AdminPage() {
   useEffect(() => {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    localStorage.setItem(FOLDER_RAIL_STORAGE_KEY, folderRailCollapsed ? '1' : '0')
+  }, [folderRailCollapsed])
+
+  // 窄栏搜索面板的关键字沿仓库已有的 window 事件总线送进来，只改 filters.q，
+  // 网格自己的筛选逻辑一行不动（同 commentPosted 的用法）。
+  useEffect(() => {
+    const handleRailSearch = (event: Event) => {
+      const detail = (event as CustomEvent<{ q?: string }>).detail
+      if (typeof detail?.q !== 'string') return
+      setFilters((prev) => (prev.q === detail.q ? prev : { ...prev, q: detail.q as string }))
+    }
+    window.addEventListener('railSearchQuery', handleRailSearch as EventListener)
+    return () => window.removeEventListener('railSearchQuery', handleRailSearch as EventListener)
+  }, [])
 
   const loadProjects = async () => {
     try {
@@ -579,9 +601,72 @@ export default function AdminPage() {
   }
 
   if (loading) {
+    // 骨架按真页面的 DOM 形状逐层占位（页头带 / 236px 侧栏 / 工具栏行 / 四张统计卡 / 项目卡网格），
+    // 卡内每根占位条用真卡同款字号与行高，不写死整卡高度——猜数字反而会跳版式。
     return (
-      <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">{t('loadingProjects')}</p>
+      <div className="flex-1 min-h-0 bg-background lg:h-[calc(100dvh-var(--admin-header-height))] lg:overflow-hidden">
+        <div className="w-full px-3 py-3 sm:px-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-0 lg:pr-[2px] lg:pt-0 lg:pb-[2px]" aria-busy="true">
+          <p className="sr-only">{t('loadingProjects')}</p>
+          <div className="flex items-center justify-between gap-4 border-b border-border pb-3 mb-3 lg:shrink-0 lg:mb-[2px] lg:rounded-[8px] lg:border-b-0 lg:bg-popover lg:px-4 lg:py-3">
+            {/* 页头/按钮/工具栏三段的尺寸都按真元素的实际行高：h1 是 text-2xl(32px)、说明是 text-sm(20px)、Button default 是 h-10。 */}
+            <div className="space-y-1">
+              <div className="h-8 w-44 animate-pulse rounded-md bg-muted" />
+              <div className="h-5 w-64 animate-pulse rounded-md bg-muted/70" />
+            </div>
+            <div className="h-10 w-24 animate-pulse rounded-md bg-muted" />
+          </div>
+
+          <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[2px]">
+            {/* 侧栏骨架跟着已存的收缩态走，否则刷新一次就先看到 236px 再缩成 56px。 */}
+            <div className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 flex-col gap-1.5 overflow-y-auto px-2 pb-4 lg:flex lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14 items-center' : 'w-[236px]'}`}>
+              {[0, 1, 2, 3, 4].map((key) => (
+                <div key={key} className={`h-9 animate-pulse rounded-lg bg-muted/70 ${folderRailCollapsed ? 'w-9' : 'w-full'}`} />
+              ))}
+            </div>
+
+            <div className="scrollbar-hidden min-w-0 flex-1 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px] lg:bg-popover lg:px-4 lg:py-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <div className="h-8 w-24 animate-pulse rounded-md bg-muted/70" />
+                <div className="h-8 w-20 animate-pulse rounded-md bg-muted/70" />
+                <div className="h-8 w-20 animate-pulse rounded-md bg-muted/70" />
+                <div className="ml-auto h-8 w-56 animate-pulse rounded-md bg-muted/70" />
+              </div>
+
+              {/* 统计卡：外壳与内层结构和 ProjectsStats 一致（p-4 / gap-3 / w-9 h-9 rounded-[10px]），
+                  数字与标签之间真代码没有额外间距，所以占位条用各自行高（20px 粗体 tight=25、12px=16）。 */}
+              <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[0, 1, 2, 3].map((key) => (
+                  <div key={key} className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-4 shadow-elevation-md">
+                    <div className="h-9 w-9 flex-shrink-0 animate-pulse rounded-[10px] bg-muted" />
+                    <div className="min-w-0 flex-1">
+                      <div className="h-[25px] w-8 animate-pulse rounded bg-muted" />
+                      <div className="h-4 w-16 animate-pulse rounded bg-muted/70" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 项目卡：外壳圆角/阴影与 ProjectCard 一致（rounded-xl shadow-sm border-border），
+                  内部四行按真结构补齐（ID 行 min-h-22 / 标题 text-sm / 进度条 mt-2.5 / 计数行 mt-2 min-h-20）。 */}
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
+                {[0, 1, 2, 3, 4, 5].map((key) => (
+                  <div key={key} className="rounded-xl border border-border bg-card p-3.5 shadow-sm">
+                    <div className="flex min-h-[22px] items-center gap-2">
+                      <div className="h-[14px] w-12 animate-pulse rounded bg-muted" />
+                      <div className="ml-auto h-[20px] w-14 animate-pulse rounded-full bg-muted/70" />
+                    </div>
+                    <div className="mt-0.5 h-[20px] w-3/4 animate-pulse rounded bg-muted" />
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <div className="h-1.5 flex-1 rounded-full bg-muted" />
+                      <div className="h-[16px] w-10 animate-pulse rounded bg-muted/70" />
+                    </div>
+                    <div className="mt-2 h-[20px] w-1/2 animate-pulse rounded bg-muted/70" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -591,7 +676,7 @@ export default function AdminPage() {
   if (teamDisabled) {
     return (
       <div className="flex-1 min-h-0 bg-background">
-        <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
+        <div className="w-full px-3 py-3 sm:px-4 lg:pl-0 lg:pr-5">
           <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
@@ -619,7 +704,7 @@ export default function AdminPage() {
   if (loadError && totalProjects === 0) {
     return (
       <div className="flex-1 min-h-0 bg-background">
-        <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
+        <div className="w-full px-3 py-3 sm:px-4 lg:pl-0 lg:pr-5">
           <div className="mb-4 sm:mb-6">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
               <FolderKanban className="w-7 h-7 sm:w-8 sm:h-8" />
@@ -650,7 +735,7 @@ export default function AdminPage() {
   if (totalProjects === 0 && user?.role === 'ADMIN') {
     return (
       <div className="flex-1 min-h-0 bg-background">
-        <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
+        <div className="w-full px-3 py-3 sm:px-4 lg:pl-0 lg:pr-5">
           <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
@@ -688,7 +773,13 @@ export default function AdminPage() {
       ? t('folderEmpty')
       : undefined
 
-  const folderTree = (
+  // 收缩列里的「新建文件夹」只能向树要它那个行内编辑器：展开 + 递增请求键。
+  const requestFolderCreate = () => {
+    setFolderRailCollapsed(false)
+    setFolderCreateRequest((key) => key + 1)
+  }
+
+  const renderFolderTree = (withCollapseRail: boolean) => (
     <ProjectsFolderTree
       folders={folders}
       counts={folderCounts}
@@ -701,13 +792,17 @@ export default function AdminPage() {
       onMoveFolder={handleMoveFolder}
       onDeleteFolder={handleDeleteFolder}
       onDropProjects={handleMoveProjects}
+      createRequestKey={folderCreateRequest}
+      onCollapseRail={withCollapseRail ? () => setFolderRailCollapsed(true) : undefined}
     />
   )
 
+  const folderTree = renderFolderTree(false)
+
   return (
-    <div className="flex-1 min-h-0 bg-background">
-      <div className="w-full px-3 py-3 sm:px-4 lg:px-5">
-        <div className="flex justify-between items-center gap-4 border-b border-border pb-3 mb-3">
+    <div className="flex-1 min-h-0 bg-background lg:h-[calc(100dvh-var(--admin-header-height))] lg:overflow-hidden">
+      <div className="w-full px-3 py-3 sm:px-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-0 lg:pr-[2px] lg:pt-0 lg:pb-[2px]">
+        <div className="flex justify-between items-center gap-4 border-b border-border pb-3 mb-3 lg:shrink-0 lg:mb-[2px] lg:rounded-[8px] lg:border-b-0 lg:bg-popover lg:px-4 lg:py-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
               <FolderKanban className="w-6 h-6" />
@@ -721,12 +816,53 @@ export default function AdminPage() {
           </Button>}
         </div>
 
-        <div className="flex items-start gap-4">
-          <aside className="hidden lg:block w-[236px] flex-shrink-0 sticky top-3 max-h-[calc(100vh-5rem)] overflow-y-auto scrollbar-hidden pb-4">
-            {folderTree}
+        <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[2px]">
+          <aside className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 overflow-y-auto px-2 pb-4 lg:block lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14' : 'w-[236px]'}`}>
+            {/* 收缩时树只隐藏、不卸载：行内编辑器与折叠集合都活在组件里，
+                卸载再挂就等于给「新建文件夹」写第二套实现。 */}
+            <div className={folderRailCollapsed ? 'hidden' : undefined}>{renderFolderTree(true)}</div>
+            {folderRailCollapsed && (
+              <nav aria-label={t('folder')} className="flex flex-col items-center gap-1">
+                {/* 展开键沿用标题行的尺寸与位置，切换时下面的图标列不会整体下沉。 */}
+                <div className="flex w-full justify-end px-1 pb-1.5">
+                  <FolderRailButton compact label={t('folderRailExpand')} onClick={() => setFolderRailCollapsed(false)}>
+                    <PanelLeftOpen className="w-4 h-4" />
+                  </FolderRailButton>
+                </div>
+                <FolderRailButton label={`${t('statAll')} · ${visibleProjects.length}`} active={openFolderId === null} onClick={() => openFolder(null)}>
+                  <Home className="w-[18px] h-[18px]" />
+                </FolderRailButton>
+                {folders.filter((folder) => !folder.parentId).map((folder) => (
+                  <FolderRailButton
+                    key={folder.id}
+                    label={`${folder.name} · ${folderCounts.get(folder.id) ?? 0}`}
+                    active={openFolderId === folder.id}
+                    onClick={() => openFolder(folder.id)}
+                  >
+                    {openFolderId === folder.id ? <FolderOpen className="w-[18px] h-[18px]" /> : <Folder className="w-[18px] h-[18px]" />}
+                  </FolderRailButton>
+                ))}
+                <FolderRailButton
+                  label={`${t('folderUnfiled')} · ${folderCounts.get(NO_GROUP_KEY) ?? 0}`}
+                  active={openFolderId === NO_GROUP_KEY}
+                  onClick={() => openFolder(NO_GROUP_KEY)}
+                >
+                  <Folder className="w-[18px] h-[18px]" />
+                </FolderRailButton>
+                {/* 新建/重命名/移动/删除只在展开态有位置；收缩列至少要留住建站入口。 */}
+                {isAdmin && (
+                  <>
+                    <span className="my-1 h-px w-7 bg-border" aria-hidden />
+                    <FolderRailButton label={t('folderNew')} onClick={requestFolderCreate}>
+                      <FolderPlus className="w-[18px] h-[18px]" />
+                    </FolderRailButton>
+                  </>
+                )}
+              </nav>
+            )}
           </aside>
 
-          <div className="flex-1 min-w-0">
+          <div className="scrollbar-hidden min-w-0 flex-1 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px] lg:bg-popover lg:px-4 lg:py-4">
             {/* On desktop this row only holds the breadcrumb, so it must not reserve
                 height while no folder is open. On mobile it holds the folder trigger. */}
             <div className={`flex items-center gap-2 flex-wrap mb-2 ${openFolderId ? 'min-h-[32px]' : 'lg:hidden'}`}>
@@ -836,5 +972,39 @@ export default function AdminPage() {
 
       {renderNewProjectModal()}
     </div>
+  )
+}
+
+/** 收缩后的文件夹侧栏只剩图标，tooltip、aria-label 和 focus 环三样都不能省。 */
+function FolderRailButton({ label, active, compact, onClick, children }: { label: string; active?: boolean; compact?: boolean; onClick: () => void; children: React.ReactNode }) {
+  if (compact) {
+    // 标题行那一枚要和树自带的「新建」同尺寸同观感，所以走同一套类。
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={label}
+        aria-label={label}
+        className="inline-flex w-7 h-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {children}
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-current={active ? 'true' : undefined}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+        active
+          ? 'border-primary-visible bg-primary-visible text-foreground'
+          : 'border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+      }`}
+    >
+      {children}
+    </button>
   )
 }

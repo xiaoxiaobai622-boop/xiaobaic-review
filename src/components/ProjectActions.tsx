@@ -2,7 +2,7 @@
 
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState } from 'react'
+import { useState, type ElementType } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
@@ -28,9 +28,11 @@ interface ProjectActionsProps {
   videos: Video[]
   onRefresh?: () => void
   shareUrl?: string
+  /** 侧栏下半区不要白底卡片壳：只换掉 Card 三层外壳，结构、间距与交互一字不动。 */
+  bare?: boolean
 }
 
-export default function ProjectActions({ project, videos, onRefresh, shareUrl = '' }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, shareUrl = '', bare = false }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -199,10 +201,15 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
       })
   }
 
+  // bare 时三层外壳换成普通 div：Card 的 bg-card、border 和 shadow 就是那块要拿掉的白底。
+  const Shell: ElementType = bare ? 'div' : Card
+  const ShellHeader: ElementType = bare ? 'div' : CardHeader
+  const ShellContent: ElementType = bare ? 'div' : CardContent
+
   return (
     <>
-      <Card>
-        <CardHeader>
+      <Shell>
+        <ShellHeader className={bare ? 'border-b border-border pb-3' : undefined}>
           <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
             <div className="min-w-0 flex-1">
               <CardTitle className="flex items-center gap-2 break-words mb-2">
@@ -232,8 +239,8 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
               }[project.status] || project.status}
             </span>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-2">
+        </ShellHeader>
+        <ShellContent className={bare ? 'space-y-3 pt-3' : 'space-y-3 pb-2'}>
           {/* Due Date */}
           {(project as any).dueDate && (() => {
             const due = new Date((project as any).dueDate)
@@ -414,8 +421,8 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
             <Trash2 className="w-4 h-4 mr-2" />
             {isDeleting ? tc('deleting') : t('deleteProject')}
           </Button>
-        </CardContent>
-      </Card>
+        </ShellContent>
+      </Shell>
 
       {/* Unapprove Modal */}
       <UnapproveModal

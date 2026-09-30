@@ -3,7 +3,7 @@
 import { memo, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
-import { Clock, Trash2, Brush, Check } from 'lucide-react'
+import { Trash2, Brush, Check } from 'lucide-react'
 import DOMPurify from 'isomorphic-dompurify'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachments from './CommentAttachments'
@@ -184,10 +184,9 @@ function MessageBubble({
                 <button
                   type="button"
                   onClick={handleTimestampClick}
-                  className="inline-flex items-center gap-1 rounded bg-warning-visible px-1.5 py-0.5 text-[11px] font-semibold text-warning transition-opacity hover:opacity-90"
+                  className="inline-flex items-center rounded bg-warning px-1.5 py-0.5 text-[11px] font-semibold text-warning-foreground transition-opacity hover:opacity-90"
                   title={t('seekToTimecode')}
                 >
-                  <Clock className="w-3 h-3" />
                   <span className="font-sans tabular-nums">
                     {timestampLabel}{timecodeEndLabel ? ` \u2192 ${timecodeEndLabel}` : ''}
                   </span>

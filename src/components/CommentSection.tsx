@@ -45,6 +45,12 @@ interface CommentSectionProps {
   maxCommentAttachments?: number
   onToggleVisibility?: () => void
   showToggleButton?: boolean
+  /** `信息` 按钮靠 ProjectInfo 监听 openReviewInfo，项目工作区没有它。 */
+  showInfoButton?: boolean
+  /** 标签这条线整体关掉（头部筛选下拉 + 输入框下那排胶囊）；页内批注栏传 false，审片页保持原样。 */
+  showCategoryPicker?: boolean
+  /** 「Enter 发送」提示 + 发送钮搬进输入框内、和画笔同一排；页内批注栏传 true，审片页保持原样。 */
+  sendInsideComposer?: boolean
   onMobileExpandedChange?: (expanded: boolean) => void
   isReviewAuthenticated?: boolean
   onRequireLogin?: () => void
@@ -71,6 +77,9 @@ export default function CommentSection({
   maxCommentAttachments,
   onToggleVisibility,
   showToggleButton = false,
+  showInfoButton = true,
+  showCategoryPicker = true,
+  sendInsideComposer = false,
   onMobileExpandedChange,
   isReviewAuthenticated = false,
   onRequireLogin,
@@ -354,16 +363,18 @@ export default function CommentSection({
               {sortedComments.length}
             </span>
           </CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.dispatchEvent(new CustomEvent('openReviewInfo'))}
-            className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
-            title="视频信息"
-          >
-            <Info className="h-4 w-4" />
-            <span>信息</span>
-          </Button>
+          {showInfoButton && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.dispatchEvent(new CustomEvent('openReviewInfo'))}
+              className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+              title="视频信息"
+            >
+              <Info className="h-4 w-4" />
+              <span>信息</span>
+            </Button>
+          )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span className="mr-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
@@ -390,17 +401,19 @@ export default function CommentSection({
               </button>
             ))}
           </div>
-          <select
-            aria-label="按标签筛选"
-            value={categoryFilter}
-            onChange={(event) => setCategoryFilter(event.target.value as 'ALL' | CommentCategory)}
-            className="h-7 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="ALL">全部标签</option>
-            {COMMENT_CATEGORIES.map((category) => (
-              <option key={category.value} value={category.value}>{category.label}</option>
-            ))}
-          </select>
+          {showCategoryPicker && (
+            <select
+              aria-label="按标签筛选"
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value as 'ALL' | CommentCategory)}
+              className="h-7 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="ALL">全部标签</option>
+              {COMMENT_CATEGORIES.map((category) => (
+                <option key={category.value} value={category.value}>{category.label}</option>
+              ))}
+            </select>
+          )}
           {(statusFilter !== 'ALL' || categoryFilter !== 'ALL') && (
             <button
               type="button"
@@ -552,6 +565,8 @@ export default function CommentSection({
           loading={loading}
           selectedCategory={selectedCategory}
           onCategoryChange={handleCategoryChange}
+          showCategoryPicker={showCategoryPicker}
+          sendInsideComposer={sendInsideComposer}
           selectedTimestamp={selectedTimestamp}
           selectedVideoFps={selectedVideoFps}
           selectedVideoDurationSeconds={currentVideoDuration}

@@ -71,9 +71,10 @@ export function AccentColorProvider() {
     const root = document.documentElement
 
     const write = () => {
-      // Mint paints its primary from globals.css; an inline style would outrank
-      // that rule, so hand the properties back to the stylesheet while it is on.
-      if (root.dataset.theme === 'mint') {
+      // Mint and violet paint their primary from globals.css; an inline style
+      // would outrank those rules, so hand the properties back to the stylesheet
+      // while either one is on.
+      if (root.dataset.theme === 'mint' || root.dataset.theme === 'frame') {
         for (const name of ['--primary', '--ring', '--accent-foreground', '--primary-visible']) {
           root.style.removeProperty(name)
         }
@@ -94,8 +95,9 @@ export function AccentColorProvider() {
 
     write()
 
-    // Re-applies when the theme flips between light/dark, and when mint turns on
-    // or off (which is only a data-theme change, not a class change).
+    // Re-applies when the theme flips between light/dark, and when a data-theme
+    // paint (mint, violet) turns on or off (which is only an attribute change,
+    // not a class change).
     const observer = new MutationObserver(write)
     observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme'] })
   }

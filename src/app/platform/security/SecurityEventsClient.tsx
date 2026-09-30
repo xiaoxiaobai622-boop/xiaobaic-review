@@ -412,7 +412,7 @@ export default function SecurityEventsClient() {
                               <ShieldX className="w-4 h-4 text-destructive" />
                             </span>
                           ) : (
-                            <span className="text-muted-foreground/30">-</span>
+                            <span className="text-muted-foreground/50">-</span>
                           )}
                         </span>
                         {/* Chevron */}

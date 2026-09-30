@@ -5,6 +5,10 @@
 @layer base {
   /* Light Mode Theme */
   :root {
+    /* Not 16px: one rem-root step pulls every rem-based utility (spacing,
+       gaps, padding, type) down 6.25% at once. */
+    font-size: 15px;
+
     /* Base colors - light theme (soft grey instead of white) */
     --background: 220 14% 92%;
     --foreground: 0 0% 13%;
@@ -28,7 +32,10 @@
 
     /* Muted - subtle backgrounds */
     --muted: 220 14% 89%;
-    --muted-foreground: 0 0% 45%;
+    /* Small text sits here (1065 uses), so this is the AA floor for the whole
+       admin: 45% measured 3.93:1 on the light canvas, 40% gives 4.76:1.
+       frame.io's equivalent step (`--colors-text-tertiary`, 27 refs) is 4.78:1. */
+    --muted-foreground: 0 0% 40%;
 
     /* Accent - tint color */
     --accent: 220 14% 89%;
@@ -59,10 +66,12 @@
     --input: 220 14% 85%;
     --ring: 211 100% 50%;
 
-    /* Border radius values */
-    --radius: 0.75rem;
-    --radius-sm: 0.5rem;
-    --radius-lg: 1rem;
+    /* Border radius values — 8/6/10px at a 15px root, off next.frame.io, whose
+       most used radius is 8px. Ours sat at 16px, which is most of why the
+       admin read as bulky. */
+    --radius: 0.5rem;
+    --radius-sm: 0.375rem;
+    --radius-lg: 0.625rem;
     --radius-full: 9999px;
 
     /* Logo color tokens (used by LogoMark) - light mode */
@@ -206,6 +215,95 @@
      * here; --info-visible is left alone and still comes from :root). */
     --info: 155 36% 91%; /* #dff0e9 */
   }
+
+  /*
+   * Violet — the fourth choice in the theme toggle (`<html data-theme='frame'>`).
+   * A light theme, so no `.dark` class.
+   *
+   * Every value here was read off next.frame.io on 2026-09-27 with
+   * getComputedStyle, not eyeballed: blue-shifted greys for the canvas and the
+   * chrome (grey-95 #ecedf4 behind, grey-97 #f2f3f6 for cards, #e7e8f2 for
+   * chips), near-black-with-blue for type (#1f2332 — their body text is never
+   * pure black), hairlines at 5% black over the canvas, and the electric violet
+   * #5b53ff kept for the primary and the ring only. The alert four are their
+   * literals too (#21c17b / #f0cd33 / #f43350 / #3f74ff).
+   *
+   * Like mint, this theme owns --primary/--ring/--accent-foreground/--primary-visible,
+   * so AccentColorProvider stops writing them while data-theme is 'frame'.
+   *
+   * Measured pairs (white on primary 5.09, body on canvas 13.38, muted text on
+   * card 5.02, secondary label 12.81, warning label 10.98, primary on its wash
+   * 13.64). Two stay under AA and are left as the reference has them rather than
+   * quietly retuned: white on --success 2.34 and white on --info 4.07 — the
+   * default light theme is worse at both (2.10 and 2.56).
+   */
+  :root[data-theme='frame'] {
+    color-scheme: light;
+
+    --background: 233 27% 94%; /* #ecedf4 */
+    --foreground: 227 23% 16%; /* #1f2332 */
+
+    --card: 225 18% 96%; /* #f2f3f6 */
+    --card-foreground: 227 23% 16%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 227 23% 16%;
+
+    --primary: 243 100% 66%; /* #5b53ff */
+    --primary-foreground: 0 0% 100%;
+    --primary-visible: 244 100% 97%; /* #efeeff — brand at 10% over white */
+
+    --secondary: 235 30% 93%; /* #e7e8f2 */
+    --secondary-foreground: 227 23% 16%;
+
+    --muted: 235 30% 93%;
+    --muted-foreground: 231 12% 44%; /* #63677d */
+
+    --accent: 220 5% 88%; /* #dfe0e2 — 8% black over the card, their hover recipe */
+    --accent-foreground: 243 100% 66%;
+
+    --success: 154 71% 44%; /* #21c17b */
+    --success-visible: 154 57% 95%; /* #e9f9f2 */
+    --warning: 49 86% 57%; /* #f0cd33 */
+    --warning-foreground: 229 26% 13%; /* #181b29 — their timestamp chip pairing */
+    --warning-visible: 49 87% 94%; /* #fdf8e2 */
+    --destructive: 351 90% 58%; /* #f43350 */
+    --destructive-visible: 351 90% 96%; /* #feebee */
+    --info: 223 100% 62%; /* #3f74ff */
+    --info-visible: 224 100% 96%; /* #ecf1ff */
+
+    --border: 233 15% 89%; /* #e0e1e8 — 5% black over the canvas */
+    --input: 233 15% 89%;
+    --ring: 243 100% 66%;
+  }
+}
+
+/*
+ * Control ladder — the 15px root above already took spacing and type down;
+ * these pull the remaining controls onto 32 / 34 / 36 / 39px instead of
+ * Tailwind's 36 / 40 / 44 / 48px (frame.io's default button is 32px tall).
+ * h-7/h-8 are deliberately left alone: at 26px and 30px they are already in
+ * frame.io's range, and shrinking them further hits icon buttons.
+ *
+ * Not covered: the 250 hard-coded px utilities in `src/**` (114 `text-[Npx]`,
+ * 136 sizing, across 56 files) and `globals.css`'s own `font-size: 12px` do
+ * not follow the root and stay put.
+ *
+ * Written out flat and prefixed with `:root` (0,2,0) so they beat a bare
+ * `.h-10` utility that lands later in the cascade.
+ */
+@layer base {
+  :root .h-9 { height: 2.125rem }
+  :root .h-10 { height: 2.25rem }
+  :root .h-11 { height: 2.375rem }
+  :root .h-12 { height: 2.625rem }
+  :root .min-h-10 { min-height: 2.25rem }
+  :root .min-h-11 { min-height: 2.375rem }
+
+  /* Keep square icon buttons square against the shortened ladder. */
+  :root .w-9 { width: 2.125rem }
+  :root .w-10 { width: 2.25rem }
+  :root .w-11 { width: 2.375rem }
 }
 
 @layer base {
@@ -764,4 +862,13 @@
       transform: scale(1.1);
     }
   }
+}
+
+/* 首页隐藏视口滚动条（home-client 挂载时给 html 加 no-scrollbar） */
+html.no-scrollbar {
+  scrollbar-width: none;
+}
+
+html.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

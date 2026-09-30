@@ -21,7 +21,6 @@ interface ProjectDefaultsSectionProps {
   setDefaultAllowAssetDownload: (value: boolean) => void
   defaultClientCanApprove: boolean
   setDefaultClientCanApprove: (value: boolean) => void
-  defaultWatermarkEnabled: boolean
   show: boolean
   setShow: (value: boolean) => void
   collapsible?: boolean
@@ -44,7 +43,6 @@ export function ProjectDefaultsSection({
   setDefaultAllowAssetDownload,
   defaultClientCanApprove,
   setDefaultClientCanApprove,
-  defaultWatermarkEnabled,
   show,
   setShow,
   collapsible,
@@ -101,11 +99,6 @@ export function ProjectDefaultsSection({
             onCheckedChange={setDefaultUsePreviewForApprovedPlayback}
           />
         </div>
-        {defaultUsePreviewForApprovedPlayback && defaultWatermarkEnabled && (
-          <p className="text-xs text-muted-foreground italic">
-            {t('videoProcessing.cleanPreviewNote')}
-          </p>
-        )}
       </div>
 
       {/* ── Client Access ─────────────────────────────────────────────────── */}

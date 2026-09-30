@@ -75,6 +75,7 @@ interface AdminVideoManagerProps {
   uploadRequestFolderId?: string | null
   timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onShowVideoInfo?: (videoGroup: { name: string; videos: any[] }) => void
+  onOpenInPlayerPane?: (videoGroup: { name: string; videos: any[] }) => void
   onCreateShare?: (preset: SharePreset, target: ShareTarget) => void
   selectionToolbarTargetId?: string
 }
@@ -105,6 +106,7 @@ export default function AdminVideoManager({
   uploadRequestFolderId = null,
   timestampDisplayMode = 'TIMECODE',
   onShowVideoInfo,
+  onOpenInPlayerPane,
   onCreateShare,
   selectionToolbarTargetId,
 }: AdminVideoManagerProps) {
@@ -159,7 +161,6 @@ export default function AdminVideoManager({
   const [selectionLinkCopied, setSelectionLinkCopied] = useState(false)
   const [downloadingSelection, setDownloadingSelection] = useState(false)
   const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
-  const cardClickTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   useEffect(() => {
     if (!actionMenuGroup) setActionMenuPosition(null)
@@ -199,10 +200,6 @@ export default function AdminVideoManager({
     setSelectedGroups(current => new Set([...current].filter(name => currentNames.has(name))))
     setReviewStatusOverrides({})
   }, [videos])
-
-  useEffect(() => () => {
-    Object.values(cardClickTimersRef.current).forEach(timer => clearTimeout(timer))
-  }, [])
 
   useEffect(() => {
     setSelectionToolbarTarget(
@@ -346,26 +343,28 @@ export default function AdminVideoManager({
     })
   }
 
+  // 单击卡片 = 选中这条素材（页内播放器开着就地播，关着只把版本信息拉出来）；多选一律走卡片左上角那枚圆圈。
   const handleCardClick = (groupName: string, event: React.MouseEvent) => {
     event.stopPropagation()
-    if (event.detail !== 1) return
-
-    const existingTimer = cardClickTimersRef.current[groupName]
-    if (existingTimer) clearTimeout(existingTimer)
-    cardClickTimersRef.current[groupName] = setTimeout(() => {
-      toggleGroupSelection(groupName)
-      delete cardClickTimersRef.current[groupName]
-    }, 220)
+    // detail>1 是同一枚双击里的第二下：那一跳归 handleCardDoubleClick 管，这里别再选一遍。
+    // 不用定时器把第一下也压住（旧做法要等 220ms），单击才仍然是立刻播。
+    if (event.detail > 1) return
+    if ((event.target as HTMLElement).closest('button, a, input, textarea, select, [role="menuitem"]')) return
+    const videoGroup = {
+      name: groupName,
+      videos: videos.filter((video) => video.name === groupName).sort((a, b) => b.version - a.version),
+    }
+    if (onOpenInPlayerPane) {
+      onOpenInPlayerPane(videoGroup)
+      return
+    }
+    onShowVideoInfo?.(videoGroup)
   }
 
+  // 双击卡片 = 整页打开审片界面（和圆圈多选、更多菜单都不冲突：那两处的事件先被 closest 守卫挡掉）。
   const handleCardDoubleClick = (groupName: string, event: React.MouseEvent) => {
     event.stopPropagation()
     if ((event.target as HTMLElement).closest('button, a, input, textarea, select, [role="menuitem"]')) return
-    const existingTimer = cardClickTimersRef.current[groupName]
-    if (existingTimer) {
-      clearTimeout(existingTimer)
-      delete cardClickTimersRef.current[groupName]
-    }
     router.push(`/studio/projects/${projectId}/share?video=${encodeURIComponent(groupName)}`)
   }
 
@@ -913,7 +912,8 @@ export default function AdminVideoManager({
             onDrop={(event) => void handleVersionDrop(event, groupName)}
             className={cn(
               'group relative',
-              isGridCard && 'h-full',
+              // 230px = 线上（改版前外壳）实测卡宽：网格内容区 956px 四等分。外壳把这一列挤窄/撑宽时卡片都不再跟着变。
+              isGridCard && 'h-full max-w-[230px]',
               viewMode === 'grid' && isExpanded && 'col-span-full',
               isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg',
               dropTargetGroup === groupName && 'border-primary ring-2 ring-primary/50'

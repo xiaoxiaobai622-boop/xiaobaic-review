@@ -21,6 +21,10 @@ interface CommentInputProps {
 
   selectedCategory?: CommentCategory | null
   onCategoryChange?: (category: CommentCategory | null) => void
+  /** 默认渲染；页内批注栏显式关掉，审片页不受影响。 */
+  showCategoryPicker?: boolean
+  /** 「Enter 发送」提示 + 发送钮搬进输入框内、和左下角画笔同一圈；页内批注栏传 true，审片页保持原样。 */
+  sendInsideComposer?: boolean
 
   // Timestamp
   selectedTimestamp: number | null
@@ -70,6 +74,8 @@ export default function CommentInput({
   loading,
   selectedCategory = null,
   onCategoryChange,
+  showCategoryPicker = true,
+  sendInsideComposer = false,
   selectedTimestamp,
   selectedVideoFps,
   selectedVideoDurationSeconds = null,
@@ -281,10 +287,34 @@ export default function CommentInput({
                   ))}
                 </div>
               )}
+              {sendInsideComposer && (
+                // 和左边那排画笔同一圈、同一尺寸（bottom-1 / h-7 / h-6 按钮）；左边留出 96px 给画笔，
+                // 栏位窄到装不下时提示文字自己省略号，发送钮永远在右下角不被挤掉。
+                // 整条 pointer-events-none：这一圈压在输入框的文字区上，不能挡住点字定位光标。
+                <div className="pointer-events-none absolute bottom-1 left-[96px] right-2 flex h-7 items-center justify-end gap-1.5">
+                  <p
+                    title={t('enterToSend')}
+                    className="hidden min-w-0 truncate text-right text-xs text-muted-foreground sm:block"
+                  >
+                    {t('enterToSend')}
+                  </p>
+                  <Button
+                    onClick={onSubmit}
+                    variant="default"
+                    disabled={!canSubmit}
+                    size="icon"
+                    className="pointer-events-auto h-6 w-6 shrink-0"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="flex h-8 min-w-0 items-center justify-between gap-2">
+            <div className={sendInsideComposer
+              ? 'flex min-w-0 items-center justify-between gap-2'
+              : 'flex h-8 min-w-0 items-center justify-between gap-2'}>
               <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                {onCategoryChange && !replyingToComment && (
+                {showCategoryPicker && onCategoryChange && !replyingToComment && (
                   <div className="flex items-center gap-1">
                     {COMMENT_CATEGORIES.map((category) => {
                       const selected = selectedCategory === category.value
@@ -340,25 +370,31 @@ export default function CommentInput({
               </div>
               <div
                 id="review-annotation-properties"
-                className="flex h-7 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1"
+                className={sendInsideComposer
+                  ? 'flex min-w-0 flex-1 items-center justify-center overflow-x-auto'
+                  : 'flex h-7 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1'}
               />
               <div className="flex shrink-0 items-center gap-1.5">
-                <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
+                {!sendInsideComposer && (
+                  <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
+                )}
                 {showShortcutsButton && onShowShortcuts && (
                   <Button type="button" variant="outline" size="sm" onClick={onShowShortcuts} className="hidden h-8 lg:inline-flex">
                     <Keyboard className="h-4 w-4 lg:mr-2" />
                     <span className="hidden lg:inline">{t('shortcuts')}</span>
                   </Button>
                 )}
-                <Button
-                  onClick={onSubmit}
-                  variant="default"
-                  disabled={!canSubmit}
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
+                {!sendInsideComposer && (
+                  <Button
+                    onClick={onSubmit}
+                    variant="default"
+                    disabled={!canSubmit}
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>

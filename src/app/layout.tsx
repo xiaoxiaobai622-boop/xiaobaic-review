@@ -84,8 +84,8 @@ export default async function RootLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <body className="min-h-dvh overflow-x-clip font-sans flex flex-col">
-        {/* Parser-blocking and first in the document, so the theme is on <html>
-            before any content is painted — no flash of the default theme. */}
+        {/* Parser-blocking and first in the document, so a saved colour theme is
+            on <html> before any content is painted — no flash of the default. */}
         <script nonce={cspNonce} dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
         <NextIntlClientProvider messages={messages}>
           <StorageConfigProvider provider={storageProvider}>

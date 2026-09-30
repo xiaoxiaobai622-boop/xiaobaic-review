@@ -44,12 +44,7 @@ interface Project {
   guestLatestOnly: boolean
   guestShowPhotos: boolean
   previewResolution: string
-  watermarkEnabled: boolean
-  watermarkText: string | null
   skipTranscoding: boolean
-  watermarkPositions: string
-  watermarkOpacity: number
-  watermarkFontSize: string
   applyPreviewLut: boolean
   allowAssetDownload: boolean
   allowPhotoDownload: boolean
@@ -72,11 +67,6 @@ function processingSettingsFrom(data: any) {
     title: data.title,
     previewResolution: data.previewResolution,
     skipTranscoding: data.skipTranscoding ?? false,
-    watermarkEnabled: data.watermarkEnabled ?? true,
-    watermarkText: data.watermarkText,
-    watermarkPositions: data.watermarkPositions || 'center',
-    watermarkOpacity: data.watermarkOpacity ?? 30,
-    watermarkFontSize: data.watermarkFontSize || 'medium',
     applyPreviewLut: data.applyPreviewLut ?? true,
   }
 }
@@ -113,12 +103,6 @@ export default function ProjectSettingsPage() {
   const [customSlugValue, setCustomSlugValue] = useState('')
   const [previewResolution, setPreviewResolution] = useState('720p')
   const [skipTranscoding, setSkipTranscoding] = useState(false)
-  const [watermarkEnabled, setWatermarkEnabled] = useState(true)
-  const [watermarkText, setWatermarkText] = useState('')
-  const [useCustomWatermark, setUseCustomWatermark] = useState(false)
-  const [watermarkPositions, setWatermarkPositions] = useState('center')
-  const [watermarkOpacity, setWatermarkOpacity] = useState(30)
-  const [watermarkFontSize, setWatermarkFontSize] = useState('medium')
   const [applyPreviewLut, setApplyPreviewLut] = useState(true)
   const [allowAssetDownload, setAllowAssetDownload] = useState(true)
   const [allowPhotoDownload, setAllowPhotoDownload] = useState(true)
@@ -151,11 +135,6 @@ export default function ProjectSettingsPage() {
     title: '',
     previewResolution: '720p',
     skipTranscoding: false,
-    watermarkEnabled: true,
-    watermarkText: null as string | null,
-    watermarkPositions: 'center',
-    watermarkOpacity: 30,
-    watermarkFontSize: 'medium',
     applyPreviewLut: true,
   })
 
@@ -198,12 +177,6 @@ export default function ProjectSettingsPage() {
         setTimestampDisplay(data.timestampDisplay || 'TIMECODE')
         setPreviewResolution(data.previewResolution)
         setSkipTranscoding(data.skipTranscoding ?? false)
-        setWatermarkEnabled(data.watermarkEnabled ?? true)
-        setWatermarkText(data.watermarkText || '')
-        setUseCustomWatermark(!!data.watermarkText)
-        setWatermarkPositions(data.watermarkPositions || 'center')
-        setWatermarkOpacity(data.watermarkOpacity ?? 30)
-        setWatermarkFontSize(data.watermarkFontSize || 'medium')
         setApplyPreviewLut(data.applyPreviewLut ?? true)
         setAllowAssetDownload(data.allowAssetDownload ?? true)
         setAllowPhotoDownload(data.allowPhotoDownload ?? true)
@@ -309,11 +282,6 @@ export default function ProjectSettingsPage() {
         timestampDisplay,
         previewResolution,
         skipTranscoding,
-        watermarkEnabled,
-        watermarkText: useCustomWatermark ? watermarkText : null,
-        watermarkPositions,
-        watermarkOpacity,
-        watermarkFontSize,
         applyPreviewLut,
         allowAssetDownload,
         allowPhotoDownload,
@@ -334,16 +302,10 @@ export default function ProjectSettingsPage() {
         dueReminder: dueDate ? dueReminder : null,
       }
 
-      const currentWatermarkText = useCustomWatermark ? watermarkText : null
       const processingSettingsChanged =
         title !== originalSettings.title ||
         previewResolution !== originalSettings.previewResolution ||
         skipTranscoding !== originalSettings.skipTranscoding ||
-        watermarkEnabled !== originalSettings.watermarkEnabled ||
-        currentWatermarkText !== originalSettings.watermarkText ||
-        watermarkPositions !== originalSettings.watermarkPositions ||
-        watermarkOpacity !== originalSettings.watermarkOpacity ||
-        watermarkFontSize !== originalSettings.watermarkFontSize ||
         applyPreviewLut !== originalSettings.applyPreviewLut
 
       if (processingSettingsChanged) {
@@ -383,13 +345,6 @@ export default function ProjectSettingsPage() {
       if (refreshResponse.ok) {
         const refreshedData = await refreshResponse.json()
         setProject(refreshedData)
-        setWatermarkEnabled(refreshedData.watermarkEnabled ?? true)
-        setWatermarkText(refreshedData.watermarkText || '')
-        setUseCustomWatermark(!!refreshedData.watermarkText)
-        setWatermarkPositions(refreshedData.watermarkPositions || 'center')
-        setWatermarkOpacity(refreshedData.watermarkOpacity ?? 30)
-        setWatermarkFontSize(refreshedData.watermarkFontSize || 'medium')
-        setApplyPreviewLut(refreshedData.applyPreviewLut ?? true)
 
         setOriginalSettings(processingSettingsFrom(refreshedData))
       }
@@ -764,11 +719,6 @@ export default function ProjectSettingsPage() {
                     onCheckedChange={setUsePreviewForApprovedPlayback}
                   />
                 </div>
-                {usePreviewForApprovedPlayback && watermarkEnabled && (
-                  <p className="text-xs text-muted-foreground italic">
-                    {t('cleanPreviewHint')}
-                  </p>
-                )}
               </div>
 
               {/* ── Client Access ────────────────────────────────────────── */}
@@ -905,7 +855,6 @@ export default function ProjectSettingsPage() {
                   <Switch id="skipTranscoding" checked={skipTranscoding} onCheckedChange={(checked) => {
                     setSkipTranscoding(checked)
                     if (checked) {
-                      setWatermarkEnabled(false)
                       setApplyPreviewLut(false)
                     }
                   }} />
@@ -933,126 +882,6 @@ export default function ProjectSettingsPage() {
                     {t('previewResolutionHint')}
                   </p>
                 </div>
-              </div>
-              )}
-
-              {!skipTranscoding && (
-              <div className="space-y-3 border p-4 rounded-lg bg-muted/30">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="watermarkEnabled">{t('enableWatermarks')}</Label>
-                    <p className="text-xs text-muted-foreground">
-                      {t('enableWatermarksDescription')}
-                    </p>
-                  </div>
-                  <Switch
-                    id="watermarkEnabled"
-                    checked={watermarkEnabled}
-                    onCheckedChange={setWatermarkEnabled}
-                  />
-                </div>
-
-                {watermarkEnabled && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label htmlFor="customWatermark">{t('customWatermarkText')}</Label>
-                        <p className="text-xs text-muted-foreground">
-                          {t('customWatermarkTextDescription')}
-                        </p>
-                      </div>
-                      <Switch
-                        id="customWatermark"
-                        checked={useCustomWatermark}
-                        onCheckedChange={setUseCustomWatermark}
-                      />
-                    </div>
-
-                    {useCustomWatermark && (
-                      <div className="space-y-2">
-                        <Input
-                          value={watermarkText}
-                          onChange={(e) => setWatermarkText(e.target.value)}
-                          placeholder={t('watermarkPlaceholder')}
-                          className="font-mono"
-                          maxLength={100}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {t('watermarkDefaultHint', { title: project?.title })}
-                          <br />
-                          <span className="text-warning">{t('watermarkAllowedChars')}</span>
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="space-y-2 pt-2 border-t border-border">
-                      <Label>{t('watermarkPositions')}</Label>
-                      <p className="text-xs text-muted-foreground">{t('watermarkPositionsHint')}</p>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {(['center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((pos) => {
-                          const selected = watermarkPositions.split(',').map(p => p.trim()).includes(pos)
-                          return (
-                            <button
-                              key={pos}
-                              type="button"
-                              onClick={() => {
-                                const current = new Set(watermarkPositions.split(',').map(p => p.trim()).filter(Boolean))
-                                if (current.has(pos)) {
-                                  current.delete(pos)
-                                  if (current.size === 0) return
-                                } else {
-                                  current.add(pos)
-                                }
-                                setWatermarkPositions(Array.from(current).join(','))
-                              }}
-                              className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
-                                selected
-                                  ? 'bg-primary text-primary-foreground border-primary'
-                                  : 'bg-muted/50 text-muted-foreground border-border hover:border-primary/50'
-                              }`}
-                            >
-                              {t(`position.${pos}`)}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>{t('watermarkFontSize')}</Label>
-                      <Select value={watermarkFontSize} onValueChange={setWatermarkFontSize}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="small">{t('fontSizeSmall')}</SelectItem>
-                          <SelectItem value="medium">{t('fontSizeMedium')}</SelectItem>
-                          <SelectItem value="large">{t('fontSizeLarge')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label>{t('watermarkOpacity')}</Label>
-                        <span className="text-xs text-muted-foreground">{watermarkOpacity}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={10}
-                        max={100}
-                        step={5}
-                        value={watermarkOpacity}
-                        onChange={(e) => setWatermarkOpacity(Number(e.target.value))}
-                        className="w-full accent-primary"
-                      />
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{t('opacitySubtle')}</span>
-                        <span>{t('opacityBold')}</span>
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
               )}
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { Leaf, Moon, Sun } from 'lucide-react'
+import { Aperture, Leaf, Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
@@ -13,11 +13,12 @@ interface ThemeToggleProps {
 /** The document element is the source of truth; the admin default lives in AccentColorProvider. */
 function readThemeFromDom(): ThemeChoice {
   const root = document.documentElement
-  if (root.getAttribute('data-theme') === 'mint') return 'mint'
+  const attribute = root.getAttribute('data-theme')
+  if (attribute === 'mint' || attribute === 'frame') return attribute
   return root.classList.contains('dark') ? 'dark' : 'light'
 }
 
-export default function ThemeToggle({ className }: ThemeToggleProps) {
+export default function ThemeToggle({ className, compact = false }: ThemeToggleProps & { compact?: boolean }) {
   const t = useTranslations('controls')
   const [theme, setTheme] = useState<ThemeChoice>('light')
   const [mounted, setMounted] = useState(false)
@@ -45,11 +46,38 @@ export default function ThemeToggle({ className }: ThemeToggleProps) {
     )
   }
 
-  const Icon = theme === 'mint' ? Leaf : theme === 'dark' ? Moon : Sun
+  const Icon = theme === 'mint' ? Leaf : theme === 'frame' ? Aperture : theme === 'dark' ? Moon : Sun
   const labels: Record<ThemeChoice, string> = {
     light: t('themeLight'),
     mint: t('themeMint'),
+    frame: t('themeFrame'),
     dark: t('themeDark'),
+  }
+
+  if (compact) {
+    return (
+      <label
+        className={cn('relative inline-flex h-[44px] w-[44px] cursor-pointer items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent', className)}
+        title={labels[theme]}
+      >
+        <Icon className="h-[20px] w-[20px] shrink-0 text-foreground" aria-hidden="true" />
+        <span className="sr-only">{labels[theme]}</span>
+        <select
+          value={theme}
+          onChange={(event) => {
+            const next = event.target.value as ThemeChoice
+            localStorage.setItem('theme', next)
+            applyThemeChoice(next)
+          }}
+          className="absolute inset-0 cursor-pointer opacity-0 outline-none"
+          aria-label={t('toggleTheme')}
+        >
+          {(['light', 'mint', 'frame', 'dark'] as ThemeChoice[]).map((choice) => (
+            <option key={choice} value={choice}>{labels[choice]}</option>
+          ))}
+        </select>
+      </label>
+    )
   }
 
   return (
@@ -69,7 +97,7 @@ export default function ThemeToggle({ className }: ThemeToggleProps) {
         className="max-w-28 cursor-pointer bg-transparent text-xs font-medium text-foreground outline-none"
         aria-label={t('toggleTheme')}
       >
-        {(['light', 'mint', 'dark'] as ThemeChoice[]).map((choice) => (
+        {(['light', 'mint', 'frame', 'dark'] as ThemeChoice[]).map((choice) => (
           <option key={choice} value={choice}>
             {labels[choice]}
           </option>

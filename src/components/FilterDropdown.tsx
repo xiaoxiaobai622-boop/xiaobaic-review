@@ -117,7 +117,7 @@ export default function FilterDropdown({ groups, triggerLabel, triggerIcon, widt
 
                 <div className="px-2 py-1 text-xs font-medium text-muted-foreground flex items-center justify-between">
                   <span>{group.label}</span>
-                  <span className="text-muted-foreground/70">
+                  <span className="text-muted-foreground">
                     {group.selected.size}/{group.options.length}
                   </span>
                 </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { AuthProvider } from '@/components/AuthProvider'
-import AdminHeader from '@/components/AdminHeader'
+import StudioRail from '@/components/StudioRail'
 import SessionMonitor from '@/components/SessionMonitor'
 import KofiWidget from '@/components/KofiWidget'
 import { usePathname } from 'next/navigation'
@@ -12,7 +12,6 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
-  const headerRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
   const hideHeader = pathname?.match(/^\/studio\/projects\/[^/]+\/share/)
   const isProjectWorkspace = Boolean(pathname?.match(/^\/studio\/projects\/[^/]+$/))
@@ -39,42 +38,18 @@ export default function AdminLayout({
     }
   }, [])
 
-  // Allow components (e.g. share sidebar) to size to viewport minus header.
+  // 顶栏已移除（功能迁至左侧图标栏），依赖该变量的组件按 0px 取尺寸。
   useEffect(() => {
-    if (hideHeader) {
-      document.documentElement.style.setProperty('--admin-header-height', '0px')
-      return
-    }
-
-    const headerEl = headerRef.current
-    if (!headerEl) return
-
-    const update = () => {
-      document.documentElement.style.setProperty('--admin-header-height', `${headerEl.offsetHeight}px`)
-    }
-
-    update()
-
-    const observer = new ResizeObserver(() => update())
-    observer.observe(headerEl)
-
-    return () => {
-      observer.disconnect()
-      document.documentElement.style.setProperty('--admin-header-height', '0px')
-    }
-  }, [hideHeader])
+    document.documentElement.style.setProperty('--admin-header-height', '0px')
+  }, [])
 
   return (
     <AuthProvider requireAuth={true}>
-      <div className="flex flex-1 min-h-0 bg-background flex-col overflow-x-clip">
+      <div className="flex flex-1 min-h-0 bg-background overflow-x-clip">
         <a href="#main-content" className="skip-link">
           跳到主要内容
         </a>
-        {!hideHeader && (
-          <div ref={headerRef}>
-            <AdminHeader />
-          </div>
-        )}
+        {!hideHeader && <StudioRail />}
         <main id="main-content" tabIndex={-1} className={`flex-1 min-h-0 flex flex-col outline-none ${isProjectWorkspace ? 'lg:overflow-hidden' : ''}`}>
           {children}
         </main>

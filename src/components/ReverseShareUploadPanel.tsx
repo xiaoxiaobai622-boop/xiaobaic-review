@@ -393,7 +393,7 @@ export default function ReverseShareUploadPanel({
       <p className="text-center text-sm text-muted-foreground">
         {atLimit ? t('maxFilesReached') : t('dragDropFiles')}
       </p>
-      <p className="max-w-xl text-center text-xs leading-5 text-muted-foreground/70">{t('supportedFileTypes')}</p>
+      <p className="max-w-xl text-center text-xs leading-5 text-muted-foreground">{t('supportedFileTypes')}</p>
       <input
         ref={fileInputRef}
         type="file"
@@ -562,7 +562,7 @@ export default function ReverseShareUploadPanel({
               <p className="text-sm text-muted-foreground text-center">
                 {atLimit ? t('maxFilesReached') : t('dragDropFiles')}
               </p>
-              <p className="text-xs text-muted-foreground/60 text-center">{t('supportedFileTypes')}</p>
+              <p className="text-xs text-muted-foreground text-center">{t('supportedFileTypes')}</p>
               <input ref={fileInputRef} type="file" className="hidden" accept={ACCEPTED_FILE_INPUT} multiple onChange={handleFileChange} />
             </div>
           )}
