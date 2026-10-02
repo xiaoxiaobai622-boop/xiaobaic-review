@@ -13,6 +13,14 @@
     --background: 220 14% 92%;
     --foreground: 0 0% 13%;
 
+    /* The studio rail's pink wash is anchored to the bottom of the column, not
+       stretched over 100vh — a full-height ramp turns the whole lower half of
+       the sidebar pink. The span is his call, not mine: 260px was "too much
+       pink", 110px (the bottom two icon slots) he asked to see at 130. #f3c1f5
+       is sampled off his shot, the far stop is each theme's own background.
+       Dark mode → none. */
+    --rail-gradient: linear-gradient(to top, #f3c1f5 0, hsl(var(--background)) 130px);
+
     /* Card colors - elevated surfaces (slightly lighter than background) */
     --card: 220 14% 96%;
     --card-foreground: 0 0% 13%;
@@ -96,6 +104,7 @@
     /* Base colors - dark theme */
     --background: 0 0% 7%;
     --foreground: 0 0% 98%;
+    --rail-gradient: none;
 
     /* Card colors - elevated dark surfaces */
     --card: 0 0% 12%;

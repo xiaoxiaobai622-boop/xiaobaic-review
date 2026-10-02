@@ -888,6 +888,10 @@ export default function ProjectPage() {
   const shareWholeProjectReview = () =>
     openObjectShare('REVIEW', { scopeType: 'PROJECT', scopeId: project.id, name: project.title })
 
+  // 「复制收录链接」在没有可复制的链接时退到创建流，范围与分享记录面板那枚按钮一字不差
+  const createCollectLink = () =>
+    openObjectShare('COLLECT', { scopeType: 'PROJECT', scopeId: '', name: project.title })
+
   const downloadFolderOriginals = async (folderId: string) => {
     setFolderMenu(null)
     const folderVideos = project.videos.filter((video: any) => video.folderId === folderId)
@@ -1375,7 +1379,7 @@ export default function ProjectPage() {
                     </button>
                     {projectInfoOpen && (
                       <div id="project-info-panel" className="px-3 pb-3 pt-1">
-                        <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} />
+                        <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} />
                       </div>
                     )}
                   </>
@@ -1624,7 +1628,7 @@ export default function ProjectPage() {
           {/* 宽屏不再占右列：版本信息已搬进左侧项目侧栏的下半区，这块只服务窄屏。 */}
           <aside className="scrollbar-hidden border-t border-border p-3 lg:hidden">
             {selectedVideoGroup ? renderVersionInspector(false) : (
-              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} />
+              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} />
             )}
           </aside>
         </div>

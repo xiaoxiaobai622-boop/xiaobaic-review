@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CircleHelp, Clock3, LogOut, User, UserRound, Users } from 'lucide-react'
+import { CircleHelp, Clock3, LogOut, UserRound, Users } from 'lucide-react'
 import { AllApplication, Config } from '@icon-park/react'
 import { useAuth } from '@/components/AuthProvider'
+import { initialsFromName } from '@/components/InitialsAvatar'
 import TeamSwitcher from '@/components/TeamSwitcher'
 import RailSearch from '@/components/RailSearch'
 import RailFeedback from '@/components/RailFeedback'
@@ -17,6 +18,36 @@ import { useTranslations } from 'next-intl'
 
 /** 图标只有 tooltip 不够：只用键盘时也要看得见落点，整条栏共用这一组类。 */
 const RAIL_ICON_BUTTON = 'flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card'
+
+/**
+ * 没照片时那颗名字片：两端色取自他给的对标截图（#ff7ef9 / #fb5cf7），深色字压上去
+ * 两端都过 4.5:1（判据 A7 由 getComputedStyle 实算）；有照片时照片直接铺满，
+ * 头像本体不再涂渐变——那条粉色渐变归窄栏（globals.css 的 --rail-gradient），不归头像。
+ */
+const NAME_CHIP_GRADIENT = 'linear-gradient(180deg, #ff7ef9, #fb5cf7)'
+
+/** 44px 命中区一寸不动，里面收成 32px：有照片是圆图，没照片是名字坐在方片里（他截图那颗就是方角，圆角跟这一列其他控件同一档）。 */
+function RailAvatar({ name, src }: { name: string; src?: string | null }) {
+  const [imageFailed, setImageFailed] = useState(false)
+  useEffect(() => { setImageFailed(false) }, [src])
+
+  if (src && !imageFailed) {
+    return (
+      <span className="h-[32px] w-[32px] overflow-hidden rounded-full">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt="" onError={() => setImageFailed(true)} className="h-full w-full object-cover" />
+      </span>
+    )
+  }
+  return (
+    <span
+      className="flex h-[32px] w-[32px] items-center justify-center rounded-lg text-[13px] font-semibold text-[#212121]"
+      style={{ backgroundImage: NAME_CHIP_GRADIENT }}
+    >
+      {initialsFromName(name)}
+    </span>
+  )
+}
 
 /** 团队有效期：内测期没有到期这回事，只有被平台停用才亮红点。 */
 function TeamExpiryBadge() {
@@ -79,12 +110,15 @@ export default function StudioRail() {
   const contactEmail = getContactEmail(user.email)
   const displayName = user.name || user.phone || contactEmail || '微信用户'
 
-  // 窄栏自己带这条左留白带（lg:pl-5 让图标坐在带正中，lg:mr-5 把同宽的空带留给页面），
-  // 这样每个 /studio 页面看到的栏宽都一样：以前只有项目页容器自己补了 lg:pl-5，
-  // 团队管理等页面没有 ⇒ 同样的 56px 栏在那边看着窄一截。控件 44px 比 56px 内容盒宽，
-  // 左右各溢出 4px，溢出的是画布留白那一边，栏宽一律没动。
+  // 窄栏自己带这条左留白带（lg:pl-5 让图标坐在带正中），这样每个 /studio 页面看到的栏宽都一样：
+  // 以前只有项目页容器自己补了 lg:pl-5，团队管理等页面没有 ⇒ 同样的栏在那边看着窄一截。
+  // lg:w-[71.25px] ＝ 原来的 w-14(52.5) ＋ 原来那条 lg:mr-5(18.75) 的空带：整列足迹和图标绝对位置
+  // 一寸没动（判据 A16/A17），只是把空带并进栏面，右边不再留一条没涂装的白缝。
   return (
-    <aside className="sticky top-0 z-40 flex h-screen w-14 shrink-0 flex-col items-center gap-2 bg-background py-3 lg:mr-5 lg:pl-5">
+    <aside
+      className="sticky top-0 z-40 flex h-screen w-14 shrink-0 flex-col items-center gap-2 bg-background py-3 lg:w-[71.25px] lg:pl-5 lg:pr-5"
+      style={{ backgroundImage: 'var(--rail-gradient)' }}
+    >
       <TeamSwitcher compact />
 
       <div className="my-1 h-px w-8 bg-border" aria-hidden />
@@ -122,16 +156,11 @@ export default function StudioRail() {
       <div className="relative w-[44px]">
         <button
           onClick={() => setShowUserMenu(!showUserMenu)}
-          className={`${RAIL_ICON_BUTTON} overflow-hidden border border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground`}
+          className={`${RAIL_ICON_BUTTON} hover:bg-accent`}
           aria-label={displayName}
           title={displayName}
         >
-          {user.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.avatarUrl} alt={displayName} className="h-full w-full object-cover" />
-          ) : (
-            <User className="h-[20px] w-[20px]" />
-          )}
+          <RailAvatar name={displayName} src={user.avatarUrl} />
         </button>
         {showUserMenu && (
           <div className="absolute left-full bottom-0 ml-2 w-56 rounded-lg border border-border bg-card shadow-elevation-lg z-50">

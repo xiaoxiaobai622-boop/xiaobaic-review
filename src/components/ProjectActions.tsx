@@ -2,16 +2,17 @@
 
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState, type ElementType } from 'react'
+import { useState, useEffect, useRef, type ElementType } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Calendar } from 'lucide-react'
+import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Calendar, Copy, Check } from 'lucide-react'
 import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
-import { apiPost, apiPatch, apiDelete } from '@/lib/api-client'
+import { apiPost, apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import { useAuth } from '@/components/AuthProvider'
 
 interface Video {
@@ -30,9 +31,11 @@ interface ProjectActionsProps {
   bare?: boolean
   /** 「分享审阅链接」按下的那一下由页面接管：整项目范围的创建弹窗只有页面那份状态能开。 */
   onShareReview: () => void
+  /** 还没有可复制的收录链接时，这枚按钮开的也是页面那枚创建窗。 */
+  onCreateCollectLink: () => void
 }
 
-export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -43,6 +46,46 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
   const [isArchiving, setIsArchiving] = useState(false)
 
   const [showUnapproveModal, setShowUnapproveModal] = useState(false)
+
+  // 「复制收录链接」是读操作：拿该项目最新一条有效收录短链写进剪贴板，
+  // 已取消与已过期的都不算——复制出去只会让人拿到打不开的地址。
+  const [collectLinkBusy, setCollectLinkBusy] = useState(false)
+  const [collectLinkCopied, setCollectLinkCopied] = useState(false)
+  const collectCopiedTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (collectCopiedTimer.current !== null) window.clearTimeout(collectCopiedTimer.current)
+  }, [])
+
+  const handleCopyCollectLink = async () => {
+    if (collectLinkBusy) return
+    setCollectLinkBusy(true)
+    try {
+      const response = await apiFetch(`/api/projects/${project.id}/share-links`, { cache: 'no-store' })
+      if (!response.ok) {
+        appAlert(tc('errorTryAgain'))
+        return
+      }
+      const data = await response.json()
+      const collect = (Array.isArray(data.shareLinks) ? data.shareLinks : []).find(
+        (link: any) => link.type === 'COLLECT' && link.scopeType === 'PROJECT' && link.status === 'ACTIVE',
+      )
+      if (!collect) {
+        onCreateCollectLink()
+        return
+      }
+      if (!await copyTextToClipboard(collect.url)) {
+        appAlert(tc('errorTryAgain'))
+        return
+      }
+      setCollectLinkCopied(true)
+      if (collectCopiedTimer.current !== null) window.clearTimeout(collectCopiedTimer.current)
+      collectCopiedTimer.current = window.setTimeout(() => setCollectLinkCopied(false), 1500)
+    } catch {
+      appAlert(tc('errorTryAgain'))
+    } finally {
+      setCollectLinkBusy(false)
+    }
+  }
 
   // Check if user has admin privileges (ADMIN or SUPER_ADMIN)
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
@@ -272,6 +315,23 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
             <Link2 className="w-4 h-4 mr-2" />
             {t('shareReviewLink')}
           </Button>
+
+          {/* 上传接口在项目没开「允许客户提交素材」时一律 403，所以入口照分享记录面板的规矩只在开着时给。 */}
+          {project.allowReverseShare && (
+            <Button
+              variant="outline"
+              size="default"
+              className="w-full"
+              data-tutorial="copy-collect-link"
+              disabled={collectLinkBusy}
+              onClick={() => void handleCopyCollectLink()}
+            >
+              {collectLinkCopied
+                ? <Check className="w-4 h-4 mr-2 text-emerald-600" />
+                : <Copy className="w-4 h-4 mr-2" />}
+              {collectLinkCopied ? tc('copied') : t('copyCollectLink')}
+            </Button>
+          )}
 
           <Button
             variant="outline"

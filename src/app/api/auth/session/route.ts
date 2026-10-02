@@ -43,6 +43,15 @@ export async function GET(request: NextRequest) {
       return withNoStore(NextResponse.json({ authenticated: false, user: null }, { status: 401 }))
     }
 
+    // 微信登录建出来的用户行没有头像，照片在 WechatIdentity 那行；不回落到那行，
+    // 窄栏对微信进来的账号永远画一个小人。（飞书头像只能经 /api/feishu/avatar 代理，
+    // 那个接口要带 Bearer，画不进 <img>，所以这里不碰。）
+    const avatarUrl = user.avatarUrl || (await prisma.wechatIdentity.findFirst({
+      where: { userId: user.id, avatarUrl: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      select: { avatarUrl: true },
+    }))?.avatarUrl || null
+
     const response = NextResponse.json({
       authenticated: true,
       // The studio inactivity monitor needs the configured admin timeout, and it
@@ -54,7 +63,7 @@ export async function GET(request: NextRequest) {
         email: user.email,
         phone: user.phone,
         name: user.name,
-        avatarUrl: user.avatarUrl,
+        avatarUrl,
         onboardingCompleted: user.onboardingCompleted,
         role: user.role,
         isPlatformAdmin: user.isPlatformAdmin === true,

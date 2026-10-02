@@ -55,9 +55,10 @@ export default function ThemeToggle({ className, compact = false }: ThemeToggleP
   }
 
   if (compact) {
+    // 窄栏里它就是一枚图标：不带自己的底色和描边，否则在栏面上又框出一块方框。
     return (
       <label
-        className={cn('relative inline-flex h-[44px] w-[44px] cursor-pointer items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-accent', className)}
+        className={cn('relative inline-flex h-[44px] w-[44px] cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-accent', className)}
         title={labels[theme]}
       >
         <Icon className="h-[20px] w-[20px] shrink-0 text-foreground" aria-hidden="true" />
