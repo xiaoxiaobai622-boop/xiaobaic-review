@@ -222,7 +222,12 @@ export async function generateAdminSummaryEmail(data: AdminSummaryData): Promise
     `
   }).join('')
 
-  const adminUrl = data.projects[0]?.shareUrl ? escapeHtml(data.projects[0].shareUrl.replace(/\/share\/[^/]+/, '/studio/projects')) : '#'
+  // Built from the project id, not from the share address: the client link is
+  // now a root-level code with nothing left to swap out.
+  const firstProjectId = data.projects.find((p) => p.projectId)?.projectId
+  const adminUrl = data.appDomain && firstProjectId
+    ? escapeHtml(`${data.appDomain.replace(/\/+$/, '')}/studio/projects/${firstProjectId}`)
+    : '#'
 
   const template = await getEmailTemplate('ADMIN_ACTIVITY_SUMMARY')
   const placeholderValues: Record<string, string> = {

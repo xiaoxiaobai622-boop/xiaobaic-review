@@ -55,7 +55,8 @@ export async function GET(
       project.id,
       quality,
       request,
-      `share-stream:${project.id}:${quality}`,
+      `share-stream:${project.id}:${token}:${quality}`,
+      { shareId: token },
     )
 
     const appUrl = await getAppUrl(request)

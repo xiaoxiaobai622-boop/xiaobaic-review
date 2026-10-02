@@ -8,11 +8,10 @@ import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { Trash2, ExternalLink, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Copy, Check, Calendar } from 'lucide-react'
+import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Calendar } from 'lucide-react'
 import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
 import { apiPost, apiPatch, apiDelete } from '@/lib/api-client'
-import { copyTextToClipboard } from '@/lib/clipboard'
 import { useAuth } from '@/components/AuthProvider'
 
 interface Video {
@@ -27,12 +26,13 @@ interface ProjectActionsProps {
   project: Project
   videos: Video[]
   onRefresh?: () => void
-  shareUrl?: string
   /** 侧栏下半区不要白底卡片壳：只换掉 Card 三层外壳，结构、间距与交互一字不动。 */
   bare?: boolean
+  /** 「分享审阅链接」按下的那一下由页面接管：整项目范围的创建弹窗只有页面那份状态能开。 */
+  onShareReview: () => void
 }
 
-export default function ProjectActions({ project, videos, onRefresh, shareUrl = '', bare = false }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -41,20 +41,11 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
   const [isDeleting, setIsDeleting] = useState(false)
   const [isTogglingApproval, setIsTogglingApproval] = useState(false)
   const [isArchiving, setIsArchiving] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
 
   const [showUnapproveModal, setShowUnapproveModal] = useState(false)
 
   // Check if user has admin privileges (ADMIN or SUPER_ADMIN)
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
-
-  const buildProjectShareCopyText = () => {
-    const projectData = project as Project & { authMode?: string | null; sharePassword?: string | null }
-    const password = (projectData.authMode === 'PASSWORD' || projectData.authMode === 'BOTH')
-      ? projectData.sharePassword?.trim()
-      : ''
-    return `请点击链接，审阅${project.title}\n链接：${shareUrl}${password ? `\n密码：${password}` : ''}`
-  }
 
   // Filter only ready videos
   const readyVideos = videos.filter(v => v.status === 'READY')
@@ -73,10 +64,6 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
   )
 
   const canApproveProject = readyVideos.length > 0 && allVideosHaveApprovedVersion
-
-  const handleViewSharePage = () => {
-    router.push(`/studio/projects/${project.id}/share`)
-  }
 
   const handleToggleApproval = async () => {
     // Prevent double-clicks during approval toggle
@@ -276,65 +263,14 @@ export default function ProjectActions({ project, videos, onRefresh, shareUrl = 
             )
           })()}
 
-          {/* Share Link */}
-          {shareUrl && (
-            <div className="pb-3 border-b border-border">
-              <p className="text-sm text-muted-foreground mb-2">{t('shareLink')}</p>
-              <div className="flex flex-col gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={shareUrl}
-                  className="flex-1 px-3 py-2 border rounded-md text-xs bg-muted truncate"
-                />
-                <div className="flex gap-2">
-                  <Button 
-                    onClick={async () => {
-                      if (await copyTextToClipboard(buildProjectShareCopyText())) {
-                        setLinkCopied(true)
-                        setTimeout(() => setLinkCopied(false), 2000)
-                      } else {
-                        appAlert(tc('errorTryAgain'))
-                      }
-                    }} 
-                    variant="outline" 
-                    size="sm"
-                    className="flex-1"
-                  >
-                    {linkCopied ? (
-                      <>
-                        <Check className="w-4 h-4 mr-2 text-success" />
-                        {tc('copied')}
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4 mr-2" />
-                        {tc('copy')}
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={() => window.open(shareUrl, '_blank', 'noopener,noreferrer')}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                  >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    {tc('open')}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
           <Button
             variant="outline"
             size="default"
             className="w-full"
-            onClick={handleViewSharePage}
+            onClick={onShareReview}
           >
-            <ExternalLink className="w-4 h-4 mr-2" />
-            {t('viewSharePage')}
+            <Link2 className="w-4 h-4 mr-2" />
+            {t('shareReviewLink')}
           </Button>
 
           <Button

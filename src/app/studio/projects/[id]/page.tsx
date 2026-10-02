@@ -17,7 +17,7 @@ import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
 import RecycleBinBlock from '@/components/RecycleBinBlock'
 import ShareLinksPanel from '@/components/ShareLinksPanel'
 import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Trash2, Copy, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, ChevronDown, MessageSquare, PackageCheck, PanelRight, MonitorPlay } from 'lucide-react'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, ChevronDown, MessageSquare, PackageCheck, PanelRight, MonitorPlay } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -274,7 +274,6 @@ export default function ProjectPage() {
   const [recycleBinRefreshKey, setRecycleBinRefreshKey] = useState(0)
   const [workspaceRefreshKey, setWorkspaceRefreshKey] = useState(0)
   const [workspaceRefreshing, setWorkspaceRefreshing] = useState(false)
-  const [collectionLinkCopied, setCollectionLinkCopied] = useState(false)
   const [uploadRequestKey, setUploadRequestKey] = useState(0)
   const [uploadRequestFiles, setUploadRequestFiles] = useState<File[] | undefined>(undefined)
   const [uploadRequestFolderId, setUploadRequestFolderId] = useState<string | null>(null)
@@ -572,10 +571,10 @@ export default function ProjectPage() {
   // Fetch share URL
   useEffect(() => {
     async function fetchShareUrl() {
-      if (!project?.slug) return
+      if (!id) return
 
       try {
-        const response = await apiFetch(`/api/share/url?slug=${project.slug}`)
+        const response = await apiFetch(`/api/share/url?projectId=${id}`)
         if (response.ok) {
           const data = await response.json()
           if (data.shareUrl) setShareUrl(data.shareUrl)
@@ -586,7 +585,7 @@ export default function ProjectPage() {
     }
 
     fetchShareUrl()
-  }, [project?.slug])
+  }, [id])
 
 
   // The video grid and its effects key off these arrays, so their identities
@@ -826,18 +825,6 @@ export default function ProjectPage() {
     || user.teamRole === 'ADMIN'
     || project.createdById === user.id
   ))
-  const collectionUrl = shareUrl ? `${shareUrl}${shareUrl.includes('?') ? '&' : '?'}mode=collect` : ''
-
-  const copyCollectionLink = async () => {
-    if (!collectionUrl) return
-    if (await copyTextToClipboard(collectionUrl)) {
-      setCollectionLinkCopied(true)
-      window.setTimeout(() => setCollectionLinkCopied(false), 2000)
-    } else {
-      appAlert(tc('errorTryAgain'))
-    }
-  }
-
   const openRollbackDialog = (video: any) => {
     setRollbackError('')
     setRollbackTarget(video)
@@ -896,6 +883,10 @@ export default function ProjectPage() {
     setFolderShareMenuId(null)
     setShareDialog({ preset, target })
   }
+
+  // 项目信息里那条「分享审阅链接」开的是同一枚弹窗，只是范围整条换成项目本身
+  const shareWholeProjectReview = () =>
+    openObjectShare('REVIEW', { scopeType: 'PROJECT', scopeId: project.id, name: project.title })
 
   const downloadFolderOriginals = async (folderId: string) => {
     setFolderMenu(null)
@@ -1286,19 +1277,6 @@ export default function ProjectPage() {
             <span className="shrink-0 text-xs text-muted-foreground">
               {t('materialSummary', { materials: videoGroupNames.length, versions: workspaceVideos.length })}
             </span>
-            {project.allowReverseShare && collectionUrl && (
-              <a href={collectionUrl} target="_blank" rel="noopener noreferrer">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9"
-                  title={t('openCollectionLink')}
-                  aria-label={t('openCollectionLink')}
-                >
-                  <ExternalLink className="h-4 w-4 -scale-x-100" />
-                </Button>
-              </a>
-            )}
             <Button
               size="default"
               className={projectToolbarButtonClassName}
@@ -1311,18 +1289,7 @@ export default function ProjectPage() {
               <Upload className="mr-2 h-4 w-4" />
               {t('uploadVideos')}
             </Button>
-            {project.allowReverseShare ? (
-              <Button
-                variant="outline"
-                size="default"
-                className={projectToolbarButtonClassName}
-                onClick={copyCollectionLink}
-                disabled={!collectionUrl}
-              >
-                {collectionLinkCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                {collectionLinkCopied ? tc('copied') : t('copyCollectionLink')}
-              </Button>
-            ) : (
+            {!project.allowReverseShare && (
               <Link href={`/studio/projects/${id}/settings`}>
                 <Button variant="outline" size="default" className={projectToolbarButtonClassName}>
                   <FolderUp className="mr-2 h-4 w-4" />
@@ -1408,7 +1375,7 @@ export default function ProjectPage() {
                     </button>
                     {projectInfoOpen && (
                       <div id="project-info-panel" className="px-3 pb-3 pt-1">
-                        <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} shareUrl={shareUrl} bare />
+                        <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} />
                       </div>
                     )}
                   </>
@@ -1571,7 +1538,7 @@ export default function ProjectPage() {
                 )
               })()}
               <input ref={folderUploadInputRef} type="file" multiple accept={VIDEO_INPUT_ACCEPT} className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
-              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} shareUrl={shareUrl} uploadRequestKey={uploadRequestKey} uploadRequestFiles={uploadRequestFiles} uploadRequestFolderId={uploadRequestFolderId} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={showVersionInfo} onOpenInPlayerPane={reviewPaneMounted ? showVersionInfo : undefined} onCreateShare={(preset, target) => openObjectShare(preset, target)} />
+              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} uploadRequestKey={uploadRequestKey} uploadRequestFiles={uploadRequestFiles} uploadRequestFolderId={uploadRequestFolderId} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={showVersionInfo} onOpenInPlayerPane={reviewPaneMounted ? showVersionInfo : undefined} onCreateShare={(preset, target) => openObjectShare(preset, target)} />
                 </div>
             </section>
 
@@ -1657,7 +1624,7 @@ export default function ProjectPage() {
           {/* 宽屏不再占右列：版本信息已搬进左侧项目侧栏的下半区，这块只服务窄屏。 */}
           <aside className="scrollbar-hidden border-t border-border p-3 lg:hidden">
             {selectedVideoGroup ? renderVersionInspector(false) : (
-              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} shareUrl={shareUrl} />
+              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} />
             )}
           </aside>
         </div>

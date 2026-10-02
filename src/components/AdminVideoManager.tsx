@@ -2,11 +2,11 @@
 
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Link2, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff, Download } from 'lucide-react'
+import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff, Download } from 'lucide-react'
 import VideoUpload from './VideoUpload'
 import VideoList from './VideoList'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -18,7 +18,6 @@ import { apiPatch, apiFetch, apiDelete } from '@/lib/api-client'
 import { FILE_LIMITS } from '@/lib/file-validation'
 import { useTranslations } from 'next-intl'
 import VideoComparison, { type VideoComparisonComment } from './VideoComparison'
-import { copyTextToClipboard } from '@/lib/clipboard'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
 import { VideoReviewStatusControl } from './VideoReviewStatusSelect'
@@ -69,7 +68,6 @@ interface AdminVideoManagerProps {
   maxRevisions?: number
   enableRevisions?: boolean
   comments?: VideoComparisonComment[]
-  shareUrl?: string
   uploadRequestKey?: number
   uploadRequestFiles?: File[]
   uploadRequestFolderId?: string | null
@@ -100,7 +98,6 @@ export default function AdminVideoManager({
   sortMode = 'alphabetical',
   viewMode = 'grid',
   comments = [],
-  shareUrl = '',
   uploadRequestKey = 0,
   uploadRequestFiles,
   uploadRequestFolderId = null,
@@ -114,15 +111,35 @@ export default function AdminVideoManager({
   const tc = useTranslations('common')
   const router = useRouter()
 
-  // Group videos by name
-  const videoGroups = videos.reduce((acc: Record<string, any[]>, video) => {
-    const name = video.name
-    if (!acc[name]) {
-      acc[name] = []
+  // Group videos by name and order each group's versions here. Memoised on the videos
+  // prop so a parent re-render keeps the same arrays — VideoList resets its local state
+  // when it sees a new array identity, and the version list used to be a fresh sort.
+  const videoGroups = useMemo(() => {
+    const grouped = videos.reduce((acc: Record<string, any[]>, video) => {
+      if (!acc[video.name]) {
+        acc[video.name] = []
+      }
+      acc[video.name].push(video)
+      return acc
+    }, {})
+
+    for (const groupVideos of Object.values(grouped)) {
+      groupVideos.sort((a, b) => {
+        if (sortMode === 'alphabetical') {
+          // Alphabetical by version label
+          return a.versionLabel.localeCompare(b.versionLabel)
+        } else {
+          // Status sorting: approved first, then by version descending
+          if (a.approved !== b.approved) {
+            return a.approved ? -1 : 1
+          }
+          return b.version - a.version
+        }
+      })
     }
-    acc[name].push(video)
-    return acc
-  }, {})
+
+    return grouped
+  }, [videos, sortMode])
 
   // Only allow one video expanded at a time - default collapsed
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
@@ -131,7 +148,6 @@ export default function AdminVideoManager({
   const localVersionInputRef = useRef<HTMLInputElement>(null)
   const [localVersionTargetGroup, setLocalVersionTargetGroup] = useState<string | null>(null)
   const [localVersionFile, setLocalVersionFile] = useState<File | null>(null)
-  const [copiedReviewGroup, setCopiedReviewGroup] = useState<string | null>(null)
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
   const [editGroupValue, setEditGroupValue] = useState('')
   const [savingGroupName, setSavingGroupName] = useState<string | null>(null)
@@ -158,7 +174,6 @@ export default function AdminVideoManager({
   const [bulkStatusLoading, setBulkStatusLoading] = useState(false)
   const [reviewStatusUpdatingVideoId, setReviewStatusUpdatingVideoId] = useState<string | null>(null)
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, VideoReviewStatus | null>>({})
-  const [selectionLinkCopied, setSelectionLinkCopied] = useState(false)
   const [downloadingSelection, setDownloadingSelection] = useState(false)
   const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
 
@@ -509,44 +524,6 @@ export default function AdminVideoManager({
     }
   }
 
-  const handleShareSelection = async () => {
-    if (selectedGroups.size === 0) return
-    const baseUrl = shareUrl || `${window.location.origin}/studio/projects/${projectId}/share`
-    const selectedNames = [...selectedGroups]
-    const targetUrl = selectedNames.length === 1
-      ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}video=${encodeURIComponent(selectedNames[0])}`
-      : baseUrl
-    const copied = await copyTextToClipboard(targetUrl)
-    if (!copied) {
-      appAlert(tc('errorTryAgain'))
-      return
-    }
-    setSelectionLinkCopied(true)
-    window.setTimeout(() => setSelectionLinkCopied(false), 1600)
-  }
-
-  const handleCopyReviewLink = async (groupName: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!shareUrl) {
-      appAlert(tc('errorTryAgain'))
-      return
-    }
-    const baseUrl = shareUrl
-    const separator = baseUrl.includes('?') ? '&' : '?'
-    const copied = await copyTextToClipboard(`${baseUrl}${separator}video=${encodeURIComponent(groupName)}`)
-    if (!copied) {
-      appAlert(tc('errorTryAgain'))
-      return
-    }
-    setCopiedReviewGroup(groupName)
-    window.setTimeout(() => {
-      setCopiedReviewGroup(null)
-      setActionMenuGroup(null)
-      setVersionSourceMenuGroup(null)
-      setReviewStatusMenuGroup(null)
-    }, 1200)
-  }
-
   const openLocalVersionPicker = (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
     setActionMenuGroup(null)
@@ -812,15 +789,6 @@ export default function AdminVideoManager({
           ? <Loader2 className="h-4 w-4 animate-spin" />
           : <Download className="h-4 w-4" />}
         {tc('download')}
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        className="h-8"
-        onClick={handleShareSelection}
-      >
-        {selectionLinkCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-        {selectionLinkCopied ? tc('copied') : t('shareSelection')}
       </Button>
     </div>
   ) : null
@@ -1120,8 +1088,8 @@ export default function AdminVideoManager({
                                 <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
                               </button>
                               {shareTypeMenuGroup === groupName && <div role="menu" aria-label={`${groupName} 分享类型`} className={cn('absolute top-0 z-[100] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')}>
-                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
-                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
+                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
+                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
                               </div>}
                             </div>
                             <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
@@ -1129,10 +1097,6 @@ export default function AdminVideoManager({
                             </button>
                             <button type="button" onClick={(e) => handleOpenReview(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                               <ExternalLink className="h-4 w-4" />{t('openReviewPage')}
-                            </button>
-                            <button type="button" onClick={(e) => handleCopyReviewLink(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-                              {copiedReviewGroup === groupName ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
-                              {copiedReviewGroup === groupName ? tc('copied') : '复制文件链接'}
                             </button>
                             <button
                               type="button"
@@ -1295,18 +1259,7 @@ export default function AdminVideoManager({
                 <div className="mt-5">
                   <h4 className="text-sm font-medium mb-3">{t('allVersions')}</h4>
                   <VideoList
-                    videos={groupVideos.sort((a, b) => {
-                      if (sortMode === 'alphabetical') {
-                        // Alphabetical by version label
-                        return a.versionLabel.localeCompare(b.versionLabel)
-                      } else {
-                        // Status sorting: approved first, then by version descending
-                        if (a.approved !== b.approved) {
-                          return a.approved ? -1 : 1
-                        }
-                        return b.version - a.version
-                      }
-                    })}
+                    videos={groupVideos}
                     onRefresh={onRefresh}
                   />
                 </div>

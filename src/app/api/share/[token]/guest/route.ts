@@ -40,7 +40,9 @@ export async function POST(
 
     // Find project by slug
     const resolved = await resolveShareMetadata(token)
-    if (resolved.link) return NextResponse.json({ error: 'Guest access is not available for this share link' }, { status: 403 })
+    // 访客身份是项目自己的地址才有的入口；单独创建的分享链接不给。主链接现在也是一行
+    // 真实记录，所以要按「是不是项目主链接」判断，而不是按「有没有链接行」。
+    if (resolved.link && !resolved.policy?.isProjectMaster) return NextResponse.json({ error: 'Guest access is not available for this share link' }, { status: 403 })
     const project = resolved.project ? { id: resolved.project.id, guestMode: resolved.project.guestMode } : null
 
     if (!project) {
@@ -83,6 +85,9 @@ export async function POST(
         sessionId: shareTokenPayload.sessionId,
         request,
         analyticsConsent: readAnalyticsConsent(request),
+        // 项目开了「访客身份」时访客走的就是这条路，漏掉链接段的话访问记录全落在 null 上，
+        // 分享记录面板点主链接那一行就只会报「没人来过」。
+        shareLinkId: resolved.link?.id ?? null,
       })
     }
 

@@ -277,8 +277,7 @@ export const createProjectSchema = z.object({
   dueDate: z.string().datetime().nullable().optional(),
   dueReminder: z.enum(['NONE', 'DAY_BEFORE', 'WEEK_BEFORE']).nullable().optional(),
   isShareOnly: z.boolean().optional(),
-  previewResolution: z.enum(['720p', '1080p', '2160p']).optional(),
-  watermarkText: safeStringSchema(0, 100).optional()
+  previewResolution: z.enum(['720p', '1080p', '2160p']).optional()
 })
 
 export const updateProjectSchema = z.object({
@@ -316,16 +315,6 @@ export const updateProjectSchema = z.object({
 
   // Preview LUT settings
   applyPreviewLut: z.boolean().optional(),
-
-  // Watermark settings
-  watermarkEnabled: z.boolean().optional(),
-  watermarkText: safeStringSchema(0, 100).nullable().optional(),
-  watermarkPositions: z.string().refine(val => {
-    const valid = ['center', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
-    return val.split(',').map(p => p.trim()).every(p => valid.includes(p))
-  }, { message: 'Invalid watermark position(s)' }).optional(),
-  watermarkOpacity: z.number().int().min(10).max(100).optional(),
-  watermarkFontSize: z.enum(['small', 'medium', 'large']).optional(),
 
   // Download settings
   allowAssetDownload: z.boolean().optional(),

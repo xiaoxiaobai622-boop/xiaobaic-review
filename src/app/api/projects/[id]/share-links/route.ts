@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
-import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAdministerProject } from '@/lib/project-access'
 import { encrypt } from '@/lib/encryption'
-import { getAppUrl, generateShareUrl } from '@/lib/url'
-import { projectMasterPolicy, sanitizeSharePermissions } from '@/lib/share-links'
+import { getAppUrl } from '@/lib/url'
+import { ensureProjectMasterLink, sanitizeSharePermissions, formatShareLinkUrl } from '@/lib/share-links'
+import { allocateShareToken } from '@/lib/share-tokens'
+import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const MASTER_LINK_SELECT = {
-  slug: true,
-  shareSlug: true,
-  status: true,
-  authMode: true,
-  sharePassword: true,
-  hideFeedback: true,
-  allowAssetDownload: true,
-  team: { select: { shareKey: true, slug: true } },
-} as const
 
 function cleanScopeType(value: unknown) {
   return ['PROJECT', 'FOLDER', 'VIDEO', 'VIDEO_VERSION'].includes(String(value)) ? String(value) : null
@@ -42,7 +31,7 @@ function serialize(link: any, baseUrl: string) {
     id: link.id,
     projectId: link.projectId,
     token: link.token,
-    url: `${baseUrl}/share/${encodeURIComponent(link.token)}`,
+    url: formatShareLinkUrl(link.token, baseUrl),
     name: link.name,
     type: link.type,
     scopeType: link.scopeType,
@@ -59,18 +48,29 @@ function serialize(link: any, baseUrl: string) {
 }
 
 /**
- * The project's own address (`/share/<teamKey>/<shareSlug>`, the one every
- * notification email carries) has no ShareLink row, so it is shown from the
- * project settings the share policy is built from.
+ * The project's own address is a real row (`masterOfProjectId`), so the panel can
+ * show its expiry, view count and access records the same way as a created link.
+ * Its comment/download rules still come from the project settings page, which is
+ * what `ensureProjectMasterLink` mirrors into the row.
  */
-async function serializeMasterLink(project: Prisma.ProjectGetPayload<{ select: typeof MASTER_LINK_SELECT }>) {
-  const policy = projectMasterPolicy(project)
+async function serializeMasterLink(projectId: string, baseUrl: string, archived: boolean) {
+  const master = await ensureProjectMasterLink(projectId)
+  if (!master) return null
+  // 归档的项目对访客已经打不开，这一行不能继续显示「有效」。
+  const status = archived
+    ? 'ARCHIVED'
+    : master.expiresAt && new Date(master.expiresAt).getTime() <= Date.now() ? 'EXPIRED' : master.status
   return {
-    url: await generateShareUrl(project),
-    authMode: policy.authMode,
-    hasPassword: Boolean(project.sharePassword),
-    permissions: policy.permissions,
-    status: policy.status,
+    id: master.id,
+    name: master.name,
+    url: formatShareLinkUrl(master.token, baseUrl),
+    authMode: master.authMode,
+    hasPassword: Boolean(master.sharePassword),
+    permissions: master.permissions,
+    status,
+    expiresAt: master.expiresAt,
+    maxViews: master.maxViews,
+    viewCount: master.viewCount,
   }
 }
 
@@ -79,14 +79,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (user instanceof Response) return user
   const { id } = await params
   if (!(await canAdministerProject(prisma, user, id))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  const [links, project] = await Promise.all([
-    prisma.shareLink.findMany({ where: { projectId: id }, orderBy: { createdAt: 'desc' } }),
-    prisma.project.findUnique({ where: { id }, select: MASTER_LINK_SELECT }),
-  ])
   const baseUrl = await getAppUrl(request)
+  const [links, project] = await Promise.all([
+    // The master row is shown as its own pinned line, not twice.
+    prisma.shareLink.findMany({ where: { projectId: id, masterOfProjectId: null }, orderBy: { createdAt: 'desc' } }),
+    prisma.project.findUnique({ where: { id }, select: { status: true } }),
+  ])
+  const masterLink = await serializeMasterLink(id, baseUrl, project?.status === 'ARCHIVED')
   return NextResponse.json({
     shareLinks: links.map(link => serialize(link, baseUrl)),
-    masterLink: project ? await serializeMasterLink(project) : null,
+    masterLink,
   })
 }
 
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const link = await prisma.shareLink.create({
       data: {
         projectId: id,
-        token: crypto.randomBytes(18).toString('base64url'),
+        token: await allocateShareToken(prisma),
         name: typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 120) : (type === 'COLLECT' ? '收录分享' : type === 'DELIVERY' ? '交付分享' : '审片分享'),
         type,
         scopeType,
@@ -124,7 +126,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
     const baseUrl = await getAppUrl(request)
     return NextResponse.json({ shareLink: serialize(link, baseUrl) }, { status: 201 })
-  } catch {
+  } catch (error) {
+    logError('[SHARE LINKS] Failed to create share link', error)
     return NextResponse.json({ error: '创建分享失败' }, { status: 500 })
   }
 }

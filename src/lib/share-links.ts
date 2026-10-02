@@ -1,6 +1,30 @@
 import { prisma } from '@/lib/db'
+import { allocateShareToken } from '@/lib/share-tokens'
 
 export const SHARE_LINK_STATUSES = ['ACTIVE', 'REVOKED', 'EXPIRED'] as const
+
+export const PROJECT_MASTER_LINK_NAME = '项目主链接'
+
+/**
+ * A share address is the bare code at the root of the domain
+ * (`https://vidx.cn/<token>`) so it can be read off a screen and typed on a
+ * phone — the project's own address included. The older
+ * `/share/<teamKey>/<shareSlug>` shape keeps resolving for links already sent.
+ */
+export function formatShareLinkUrl(token: string, baseUrl: string): string {
+  return `${baseUrl}/${encodeURIComponent(token)}`
+}
+
+/**
+ * The session a visitor on an unauthenticated (`authMode = NONE`) link gets.
+ * It carries the address they came in through because one project can publish
+ * several open links at once: keyed by project alone, the second link's visit
+ * was swallowed by the first one's dedupe key, and killing sessions on a revoke
+ * would have hit every other link from the same IP.
+ */
+export function noneAccessSessionId(projectId: string, linkToken: string, ipAddress: string): string {
+  return `none:${projectId}:${linkToken}:${ipAddress}`
+}
 
 type ShareLinkRecord = {
   id: string
@@ -16,12 +40,24 @@ type ShareLinkRecord = {
   maxViews: number | null
   viewCount: number
   status: string
+  masterOfProjectId: string | null
 }
 
+/** The columns every policy is built from; kept in one place so a new policy
+ *  field cannot be selected in one query and missing in another. */
+const SHARE_LINK_POLICY_FIELDS = {
+  id: true, token: true, name: true, type: true, scopeType: true,
+  scopeId: true, permissions: true, authMode: true, sharePassword: true,
+  expiresAt: true, maxViews: true, viewCount: true, status: true,
+  masterOfProjectId: true,
+} as const
+
 /**
- * The rules a request is judged by. Either they come from a `ShareLink` row, or
- * they are synthesised from the project for the project's own master URL
- * (`/share/<teamKey>/<shareSlug>`, the link every notification email carries).
+ * The rules a request is judged by. They come from a `ShareLink` row, except for
+ * the project's legacy `/share/<teamKey>/<shareSlug>` address, which has no row
+ * and is synthesised from the project. The project's master link does have a row
+ * (`masterOfProjectId`), so it gets expiry, revocation and access records like
+ * any other link while its comment/download rules still come from the project.
  */
 export type SharePolicy = ShareLinkRecord & { isProjectMaster: boolean }
 
@@ -66,10 +102,11 @@ export type ResolvedShareMetadata = {
 }
 
 /**
- * A project master URL has no `ShareLink` row, but it must not therefore escape
- * the per-link guards: the project's own settings become the policy. Archiving
- * is the master URL's kill switch, and `hideFeedback`/`allowAssetDownload` are
- * what retire comment/download instead of granting them unconditionally.
+ * A project address without a row must not therefore escape the per-link guards:
+ * the project's own settings become the policy. Archiving is the owner's kill
+ * switch, and `hideFeedback`/`allowAssetDownload` are what retire comment/download
+ * instead of granting them unconditionally. Also the source of the permissions a
+ * master row inherits.
  */
 export function projectMasterPolicy(project: any): SharePolicy {
   return {
@@ -79,6 +116,7 @@ export function projectMasterPolicy(project: any): SharePolicy {
     type: 'REVIEW',
     scopeType: 'PROJECT',
     scopeId: null,
+    masterOfProjectId: null,
     permissions: [
       'view',
       ...(project.hideFeedback ? [] : ['comment']),
@@ -94,13 +132,22 @@ export function projectMasterPolicy(project: any): SharePolicy {
   }
 }
 
-function toPolicy(link: ShareLinkRecord, projectStatus?: string): SharePolicy {
+function toPolicy(link: ShareLinkRecord, project: any | null): SharePolicy {
   // Archiving a project is the owner's kill switch for everything it exposes, so
   // an explicit link must not keep working after the project is archived.
+  const status = project?.status === 'ARCHIVED' ? 'REVOKED' : link.status
+  if (!link.masterOfProjectId || !project) return { ...link, isProjectMaster: false, status }
+  // The master row owns the address, the expiry and the access records. Who may
+  // comment or download is still set on the project's settings page, so those
+  // rules keep coming from the project instead of drifting into the row.
+  const master = projectMasterPolicy(project)
   return {
     ...link,
-    isProjectMaster: false,
-    status: projectStatus === 'ARCHIVED' ? 'REVOKED' : link.status,
+    permissions: master.permissions,
+    authMode: master.authMode,
+    sharePassword: master.sharePassword,
+    status,
+    isProjectMaster: true,
   }
 }
 
@@ -108,20 +155,101 @@ function toPolicy(link: ShareLinkRecord, projectStatus?: string): SharePolicy {
 export async function resolveShareMetadata(token: string): Promise<ResolvedShareMetadata> {
   const link = await prisma.shareLink.findUnique({
     where: { token },
-    select: {
-      id: true, token: true, name: true, type: true, scopeType: true,
-      scopeId: true, permissions: true, authMode: true, sharePassword: true,
-      expiresAt: true, maxViews: true, viewCount: true, status: true,
-      project: { select: SHARE_PROJECT_METADATA_SELECT },
-    },
+    select: { ...SHARE_LINK_POLICY_FIELDS, project: { select: SHARE_PROJECT_METADATA_SELECT } },
   })
-  if (link) return { link, project: link.project, policy: toPolicy(link, link.project?.status) }
+  if (link) return { link, project: link.project, policy: toPolicy(link, link.project) }
 
   const project = await prisma.project.findUnique({
     where: { slug: token },
     select: SHARE_PROJECT_METADATA_SELECT,
   })
   return { link: null, project, policy: project ? projectMasterPolicy(project) : null }
+}
+
+/**
+ * Every project has one master link row, created the first time something needs
+ * its address rather than in a migration: the container runs `prisma migrate
+ * deploy` on boot, so a backfill that trips over an existing token would stop the
+ * app from starting. The address is allocated, never derived from the title.
+ */
+export async function ensureProjectMasterLink(projectId: string): Promise<ShareLinkRecord | null> {
+  const existing = await prisma.shareLink.findUnique({
+    where: { masterOfProjectId: projectId },
+    select: SHARE_LINK_POLICY_FIELDS,
+  })
+  if (existing) return existing
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: SHARE_PROJECT_METADATA_SELECT,
+  })
+  if (!project) return null
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const master = projectMasterPolicy(project)
+      return await prisma.shareLink.create({
+        data: {
+          projectId,
+          masterOfProjectId: projectId,
+          token: await allocateShareToken(prisma),
+          name: PROJECT_MASTER_LINK_NAME,
+          type: master.type,
+          scopeType: master.scopeType,
+          permissions: master.permissions,
+          authMode: master.authMode,
+          sharePassword: master.sharePassword,
+        },
+        select: SHARE_LINK_POLICY_FIELDS,
+      })
+    } catch (error) {
+      // Two notifications for the same project can race here; the loser reads the
+      // row the winner created instead of minting a second address.
+      if ((error as { code?: string })?.code !== 'P2002') throw error
+      const row = await prisma.shareLink.findUnique({
+        where: { masterOfProjectId: projectId },
+        select: SHARE_LINK_POLICY_FIELDS,
+      })
+      if (row) return row
+    }
+  }
+  return null
+}
+
+/**
+ * Pull the project's current address out of circulation and hand it a new one.
+ * The old code stops matching any row, so a leaked address is dead from the
+ * moment this returns, without touching the videos it exposes.
+ */
+export async function rotateProjectMasterToken(projectId: string): Promise<ShareLinkRecord | null> {
+  const master = await ensureProjectMasterLink(projectId)
+  if (!master) return null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await prisma.shareLink.update({
+        where: { id: master.id },
+        data: { token: await allocateShareToken(prisma) },
+        select: SHARE_LINK_POLICY_FIELDS,
+      })
+    } catch (error) {
+      if ((error as { code?: string })?.code !== 'P2002') throw error
+    }
+  }
+  return null
+}
+
+/**
+ * Read-only addresses for a page of projects, so list views can link straight to
+ * the short URL. A project nobody has opened yet simply has no row and is missing
+ * from the map: loading a list must not mint share rows.
+ */
+export async function masterTokensByProject(projectIds: string[]): Promise<Map<string, string>> {
+  if (projectIds.length === 0) return new Map()
+  const rows = await prisma.shareLink.findMany({
+    where: { masterOfProjectId: { in: projectIds } },
+    select: { masterOfProjectId: true, token: true },
+  })
+  return new Map(rows.map(row => [row.masterOfProjectId as string, row.token]))
 }
 
 export function isShareLinkActive(link: ShareValidity | null): boolean {
@@ -131,14 +259,25 @@ export function isShareLinkActive(link: ShareValidity | null): boolean {
   return true
 }
 
-export async function incrementShareLinkView(linkId: string): Promise<boolean> {
-  const current = await prisma.shareLink.findUnique({ where: { id: linkId }, select: { status: true, expiresAt: true, maxViews: true, viewCount: true } })
-  if (!current || !isShareLinkActive(current)) return false
-  const result = await prisma.shareLink.updateMany({
-    where: { id: linkId, status: 'ACTIVE', viewCount: current.viewCount },
-    data: { viewCount: { increment: 1 } },
-  })
-  return result.count > 0
+/**
+ * Count one view for a link that is still inside its own limits, and hand back
+ * the new total. `null` means the link itself refused: revoked, expired, or out
+ * of views. An optimistic `viewCount` match that lost is not a refusal — someone
+ * else already counted that view — so re-read and try again, bounded. Two visitors
+ * racing for the last remaining view still split one win and one 410, because the
+ * loser re-checks the limits before it increments.
+ */
+export async function incrementShareLinkView(linkId: string): Promise<number | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const current = await prisma.shareLink.findUnique({ where: { id: linkId }, select: { status: true, expiresAt: true, maxViews: true, viewCount: true } })
+    if (!current || !isShareLinkActive(current)) return null
+    const result = await prisma.shareLink.updateMany({
+      where: { id: linkId, status: 'ACTIVE', viewCount: current.viewCount },
+      data: { viewCount: { increment: 1 } },
+    })
+    if (result.count > 0) return current.viewCount + 1
+  }
+  return null
 }
 
 export function scopeVideoIds(link: ShareScope | null, videos: Array<{ id: string; folderId: string | null; name: string; version: number }>): Set<string> | null {

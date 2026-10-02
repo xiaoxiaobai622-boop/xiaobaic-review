@@ -10,8 +10,11 @@ import { apiFetch } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { generateSharePasscode } from '@/lib/password-utils'
 
-export type SharePreset = 'REVIEW' | 'DELIVERY'
-export type ShareTarget = { scopeType: 'FOLDER' | 'VIDEO'; scopeId: string; name: string }
+export type SharePreset = 'REVIEW' | 'DELIVERY' | 'COLLECT'
+/** A version row: `VIDEO` shares every version of the file, `VIDEO_VERSION` only one. */
+export type ShareVersionOption = { id: string; version: number; versionLabel: string | null }
+/** `PROJECT` covers the whole project, which is what 收录 uses; `scopeId` is then unused. */
+export type ShareTarget = { scopeType: 'PROJECT' | 'FOLDER' | 'VIDEO' | 'VIDEO_VERSION'; scopeId: string; name: string; versions?: ShareVersionOption[] }
 
 interface CreateShareDialogProps {
   projectId: string
@@ -20,6 +23,10 @@ interface CreateShareDialogProps {
   target: ShareTarget | null
   onOpenChange: (open: boolean) => void
   onCreated?: () => void
+}
+
+function versionName(item: ShareVersionOption): string {
+  return item.versionLabel || `v${item.version}`
 }
 
 function ToggleRow({ checked, onChange, icon: Icon, title, description }: { checked: boolean; onChange: (value: boolean) => void; icon: any; title: string; description: string }) {
@@ -32,6 +39,7 @@ function ToggleRow({ checked, onChange, icon: Icon, title, description }: { chec
 
 export default function CreateShareDialog({ projectId, open, preset, target, onOpenChange, onCreated }: CreateShareDialogProps) {
   const [name, setName] = useState('')
+  const [versionScope, setVersionScope] = useState('all')
   const [allowDownload, setAllowDownload] = useState(true)
   const [allowComment, setAllowComment] = useState(true)
   const [passwordEnabled, setPasswordEnabled] = useState(false)
@@ -47,9 +55,11 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
   useEffect(() => {
     if (!open || !target) return
     const delivery = preset === 'DELIVERY'
-    setName(`${target.name}${delivery ? '交付' : '审阅'}`.slice(0, 100))
-    setAllowDownload(true)
-    setAllowComment(!delivery)
+    const collect = preset === 'COLLECT'
+    setName(`${target.name}${collect ? '收录' : delivery ? '交付' : '审阅'}`.slice(0, 100))
+    setVersionScope('all')
+    setAllowDownload(!collect)
+    setAllowComment(!delivery && !collect)
     setPasswordEnabled(false)
     setPassword('')
     setExpiryEnabled(false)
@@ -68,14 +78,20 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
     setSubmitting(method)
     setError('')
     try {
-      const permissions = ['view', ...(allowComment ? ['comment'] : []), ...(allowDownload ? ['download'] : [])]
+      const collect = preset === 'COLLECT'
+      const permissions = collect ? ['upload'] : ['view', ...(allowComment ? ['comment'] : []), ...(allowDownload ? ['download'] : [])]
+      const onlyVersion = target.versions?.find(item => item.id === versionScope)
+      const scopeType = onlyVersion ? 'VIDEO_VERSION' : target.scopeType
+      const scopeId = onlyVersion ? onlyVersion.id : target.scopeId
       const effectivePassword = passwordEnabled ? (password.trim() || generateSharePasscode()) : ''
       if (passwordEnabled && !password.trim()) setPassword(effectivePassword)
-      const response = await apiFetch(`/api/projects/${projectId}/share-links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), type: preset, scopeType: target.scopeType, scopeId: target.scopeId, permissions, authMode: passwordEnabled ? 'PASSWORD' : 'NONE', password: effectivePassword, expiresAt: expiryEnabled ? new Date(expiresAt).toISOString() : null, maxViews: limitEnabled ? Number(maxViews) : null }) })
+      const response = await apiFetch(`/api/projects/${projectId}/share-links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), type: preset, scopeType, scopeId, permissions, authMode: passwordEnabled ? 'PASSWORD' : 'NONE', password: effectivePassword, expiresAt: expiryEnabled ? new Date(expiresAt).toISOString() : null, maxViews: limitEnabled ? Number(maxViews) : null }) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || '创建分享失败')
       const url = data.shareLink.url as string
-      const copyText = `请点击链接，审阅${target.name}\n链接：${url}${effectivePassword ? `\n密码：${effectivePassword}` : ''}`
+      const copyText = collect
+        ? `请点击链接，上传素材到${target.name}\n链接：${url}${effectivePassword ? `\n密码：${effectivePassword}` : ''}`
+        : `请点击链接，审阅${target.name}${onlyVersion ? `（${versionName(onlyVersion)}）` : ''}\n链接：${url}${effectivePassword ? `\n密码：${effectivePassword}` : ''}`
       if (method === 'link') await copyTextToClipboard(copyText)
       const qrImage = method === 'qr' ? await QRCode.toDataURL(url, { width: 240, margin: 1, color: { dark: '#111827', light: '#ffffff' } }) : undefined
       setCreated({ url, copyText, qrImage })
@@ -83,10 +99,12 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
     } catch (reason) { setError(reason instanceof Error ? reason.message : '创建分享失败') } finally { setSubmitting(null) }
   }
 
+  const versions = [...(target?.versions ?? [])].sort((a, b) => b.version - a.version)
+
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="w-[calc(100%-2rem)] max-w-[520px] gap-0 overflow-hidden !rounded-lg !p-0">
       <DialogHeader className="border-b border-border px-6 py-5 pr-14">
-        <DialogTitle>创建{preset === 'DELIVERY' ? '交付' : '审阅'}分享</DialogTitle>
+        <DialogTitle>创建{preset === 'COLLECT' ? '收录' : preset === 'DELIVERY' ? '交付' : '审阅'}分享</DialogTitle>
         <DialogDescription>{target?.name || ''}</DialogDescription>
       </DialogHeader>
       {created ? <div className="px-6 py-6">
@@ -96,9 +114,13 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
       </div> : <>
         <div className="max-h-[calc(100vh-12rem)] overflow-y-auto px-6 py-5">
           <label className="block text-sm font-medium">分享名称 <span className="text-destructive">*</span><input value={name} maxLength={100} onChange={event => setName(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" /></label>
+          {versions.length > 1 && <label className="mt-4 block text-sm font-medium">分享范围<select value={versionScope} onChange={event => setVersionScope(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"><option value="all">全部 {versions.length} 个版本（以后上传的新版本也算在内）</option>{versions.map((item, index) => <option key={item.id} value={item.id}>仅 {versionName(item)}{index === 0 ? '（最新）' : ''}</option>)}</select></label>}
           <div className="mt-5 divide-y divide-border border-y border-border">
-            <ToggleRow checked={allowDownload} onChange={setAllowDownload} icon={Download} title="允许下载" description={preset === 'DELIVERY' ? '接收方可以下载交付文件' : '审阅者可以下载视频文件'} />
-            <ToggleRow checked={allowComment} onChange={setAllowComment} icon={MessageSquare} title="允许批注" description="接收方可以添加时间点和画面批注" />
+            {/* 收录链接只带 upload 一条权限，服务端也会这样落库，所以这两个开关不能出现。 */}
+            {preset !== 'COLLECT' && <>
+              <ToggleRow checked={allowDownload} onChange={setAllowDownload} icon={Download} title="允许下载" description={preset === 'DELIVERY' ? '接收方可以下载交付文件' : '审阅者可以下载视频文件'} />
+              <ToggleRow checked={allowComment} onChange={setAllowComment} icon={MessageSquare} title="允许批注" description="接收方可以添加时间点和画面批注" />
+            </>}
             <ToggleRow checked={passwordEnabled} onChange={(value) => { setPasswordEnabled(value); setPassword(value ? (password || generateSharePasscode()) : '') }} icon={ShieldCheck} title="密码保护" description="打开链接时需要输入访问密码" />
           </div>
           {passwordEnabled && <label className="mt-4 block text-sm font-medium">密码<input type="text" value={password} onChange={event => setPassword(event.target.value)} placeholder="输入访问密码" className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" /></label>}

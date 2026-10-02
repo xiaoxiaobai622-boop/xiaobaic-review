@@ -39,6 +39,12 @@ model User {
   feishuBinding      FeishuBinding?
   feishuNotificationsSent     FeishuNotification[] @relation("FeishuNotificationSender")
   feishuNotificationsReceived FeishuNotification[] @relation("FeishuNotificationUploader")
+  ordersCreated               Order[]              @relation("OrderCreator")
+  ordersFulfilled             Order[]              @relation("OrderFulfiller")
+  orderEventsAsActor          OrderEvent[]         @relation("OrderEventActor")
+  platformAnnouncements       PlatformAnnouncement[] @relation("PlatformAnnouncementTarget")
+  platformAnnouncementReads   PlatformAnnouncementRead[] @relation("PlatformAnnouncementReads")
+  platformFeedback            PlatformFeedback[]         @relation("PlatformFeedback")
 }
 
 // WeChat identities are separate from admin users. The unionId index allows a
@@ -123,6 +129,7 @@ model Team {
   featureGrants   TeamFeatureGrant[]
   quota           TeamQuota?
   projectGroups   ProjectGroup[]
+  orders          Order[]
 
   @@index([createdById])
 }
@@ -164,6 +171,13 @@ model TeamQuota {
   maxStorageGB Int      @default(20)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // PLAN = written by fulfilOrder from a Plan; MANUAL = ops edited it in the
+  // console. Default is PLAN on purpose: the provenance of existing rows is
+  // unknowable, and defaulting to MANUAL would show "quota will be reset" for
+  // every team on every confirmation until nobody reads it any more.
+  source         String   @default("PLAN") // PLAN, MANUAL
+  sourceOrderId  String?
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
@@ -782,6 +796,14 @@ model Settings {
   brandingFaviconPath String? // Path to uploaded custom favicon (svg/png/ico)
   emailHeaderStyle    String  @default("LOGO_AND_NAME") // NONE, LOGO_ONLY, NAME_ONLY, LOGO_AND_NAME
 
+  // 对公转账信息（一期唯一收款通道）。刻意不掩码：客户就是往这个账号打钱。
+  // 真密钥类字段（微信支付那三项）走 env，不进这张表 —— GET /api/settings 是整行展开。
+  transferAccountName String?
+  transferAccountNo   String?
+  transferBank        String?
+  transferNote        String?
+  transferQrPath      String?
+
   // SMTP Email Configuration
   smtpServer      String?
   smtpPort        Int?    @default(587)
@@ -1029,6 +1051,10 @@ model SharePageAccess {
   // JWT session ID for unique session tracking
   sessionId String
 
+  // Which share link brought this visit. Null for the project's own master URL.
+  // Not a FK relation on purpose: deleting a link must not erase its audit trail.
+  shareLinkId String?
+
   // Client metadata
   ipAddress String?
   userAgent String?
@@ -1038,6 +1064,7 @@ model SharePageAccess {
   @@index([projectId, createdAt])
   @@index([projectId, accessMethod])
   @@index([sessionId])
+  @@index([shareLinkId, createdAt])
 }
 
 // Independent share records. A project may have many active links, each with
@@ -1053,6 +1080,13 @@ model ShareLink {
   scopeType   String   @default("PROJECT") // PROJECT, FOLDER, VIDEO, VIDEO_VERSION
   scopeId     String?
   permissions String[] @default(["view", "comment"])
+
+  // The project's own address is a row too, so it can be opened at the root of
+  // the domain and carry expiry, revocation and access records like any link.
+  // Only that one row per project sets this; ordinary links leave it NULL, and
+  // Postgres treats NULLs as distinct, so the unique index gives "at most one
+  // master link per project" without a partial index Prisma cannot model.
+  masterOfProjectId String? @unique
 
   authMode      String    @default("PASSWORD")
   sharePassword String?
@@ -1229,4 +1263,139 @@ model FeishuNotification {
   @@index([uploaderId])
   @@index([status])
   @@index([createdAt])
+}
+
+model Plan {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  name         String
+  priceCents   Int
+  currency     String   @default("CNY")
+  durationDays Int
+  maxMembers   Int
+  maxProjects  Int
+  maxVideos    Int
+  maxStorageGB Int
+  active       Boolean  @default(true)
+  sort         Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders Order[]
+
+  @@index([active, sort])
+}
+
+/// One commercial transaction. Amounts are stored in cents; the client never
+/// supplies them. PAID and FULFILLED stay separate because the manual channel
+/// writes both in one click while the wechat callback will only be able to
+/// write PAID, leaving fulfilment retryable without double-charging.
+model Order {
+  id              String    @id @default(cuid())
+  teamId          String
+  planKey         String
+  plan            Plan      @relation(fields: [planKey], references: [key], onDelete: Restrict)
+  periods         Int       @default(1)
+  amountCents     Int
+  currency        String    @default("CNY")
+  reference       String    @unique
+  status          String    @default("OPEN") // OPEN, REPORTED, PAID, FULFILLED, CLOSED
+  createdById     String
+  reportedAt      DateTime?
+  reportNote      String?
+  paidAt          DateTime?
+  fulfilledAt     DateTime?
+  fulfilledById   String?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  invoiceRequested Boolean   @default(false)
+  invoiceTitle    String?
+  invoiceTaxNo    String?
+  closeReason     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Restrict, never Cascade: an order row IS the reconciliation evidence
+  // (reference, reportNote, paidAt, the invoice fields). Deleting a team or a
+  // login must not destroy it — same stance as planKey -> Plan above.
+  team      Team             @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  createdBy User             @relation("OrderCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  fulfilledBy User?          @relation("OrderFulfiller", fields: [fulfilledById], references: [id], onDelete: Restrict)
+  events    OrderEvent[]
+  attempts  PaymentAttempt[]
+
+  @@index([teamId, status])
+  @@index([status, createdAt])
+  @@index([planKey])
+}
+
+/// One attempt through one channel. Phase 1 writes exactly one `manual` row per
+/// order; adding wechat later means inserting `wechat` rows, nothing else.
+model PaymentAttempt {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider    String
+  outTradeNo  String   @unique
+  providerRef String?
+  amountCents Int
+  status      String   @default("CREATED") // CREATED, SUCCEEDED, FAILED
+  raw         Json?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+}
+
+model OrderEvent {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actorUserId String
+  actor       User     @relation("OrderEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  type        String
+  note        String?
+  at          DateTime @default(now())
+
+  @@index([orderId, at])
+}
+
+// ── 平台运营：系统通知 + 用户反馈 ──
+
+model PlatformAnnouncement {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  // null = 全员广播；有值 = 定向发给该用户
+  userId    String?
+  user      User?    @relation("PlatformAnnouncementTarget", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  reads     PlatformAnnouncementRead[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model PlatformAnnouncementRead {
+  id             String               @id @default(cuid())
+  announcementId String
+  announcement   PlatformAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                 @relation("PlatformAnnouncementReads", fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime             @default(now())
+
+  @@unique([announcementId, userId])
+}
+
+model PlatformFeedback {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation("PlatformFeedback", fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  status    String    @default("OPEN") // OPEN / RESOLVED
+  reply     String?
+  repliedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([status, createdAt])
 }

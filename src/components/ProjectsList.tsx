@@ -65,7 +65,7 @@ export default function ProjectsList({
   }
   const projectHref = (project: ProjectListItem) => user?.role === 'ADMIN'
     ? `/studio/projects/${project.id}`
-    : `/share/${project.slug}`
+    : project.shareCode ? `/${project.shareCode}` : `/share/${project.slug}`
 
   // Rows drag to the sidebar tree exactly like the grid cards do, so filing a project
   // never depends on switching back to the grid view.

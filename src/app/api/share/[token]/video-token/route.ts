@@ -81,7 +81,8 @@ export async function GET(
       project.id,
       quality,
       request,
-      sessionId
+      sessionId,
+      { shareId: token }
     )
 
     return NextResponse.json({ token: tokenValue })

@@ -19,7 +19,7 @@ import { buildUnsubscribeUrl, generateRecipientUnsubscribeToken } from '@/lib/un
 import { safeParseBody } from '@/lib/validation'
 import crypto from 'crypto'
 import { logError } from '@/lib/logging'
-import { resolveShareMetadata, isShareLinkActive } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, formatShareLinkUrl } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -158,7 +158,7 @@ export async function POST(
         title: (shareMessages.unauthorizedOtpRequestTitle || 'Unauthorized Access Attempt: {projectTitle}').replace('{projectTitle}', project.title),
         body: await (async () => {
           const baseUrl = await getAppUrl(request).catch(() => '')
-          const link = baseUrl ? `${baseUrl}/share/${token}` : null
+          const link = baseUrl ? formatShareLinkUrl(token, baseUrl) : null
           const requestBody = (shareMessages.unauthorizedOtpRequestBody || '{email} requested access but is not a registered recipient')
             .replace('{email}', email)
 

@@ -56,6 +56,7 @@ export async function getTenantAccessToken(): Promise<string> {
         app_id: FEISHU_APP_ID,
         app_secret: FEISHU_APP_SECRET,
       }),
+      signal: AbortSignal.timeout(10_000),
     })
 
     const data = await response.json()
@@ -147,6 +148,7 @@ export async function fetchFeishuProfileByUserAccessToken(accessToken: string): 
   const response = await fetch(`${FEISHU_API_BASE}/authen/v1/user_info`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: 'no-store',
+    signal: AbortSignal.timeout(10_000),
   })
   const data = await response.json().catch(() => null)
   if (!response.ok || data?.code !== 0) {
@@ -171,6 +173,7 @@ export async function refreshFeishuUserAccessToken(refreshToken: string): Promis
       Authorization: `Bearer ${tenantToken}`,
     },
     body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+    signal: AbortSignal.timeout(10_000),
   })
   const data = await response.json().catch(() => null)
   if (!response.ok || data?.code !== 0 || !data?.data?.access_token) {
@@ -191,6 +194,7 @@ export async function fetchFeishuProfileByOpenId(openId: string): Promise<Feishu
     {
       headers: { Authorization: `Bearer ${tenantToken}` },
       cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
     },
   )
   const data = await response.json().catch(() => null)
@@ -237,6 +241,7 @@ export async function exchangeCodeForUser(code: string): Promise<FeishuUserInfo>
         grant_type: 'authorization_code',
         code,
       }),
+      signal: AbortSignal.timeout(10_000),
     })
 
     const tokenData = await tokenResponse.json()
@@ -252,6 +257,7 @@ export async function exchangeCodeForUser(code: string): Promise<FeishuUserInfo>
       headers: {
         Authorization: `Bearer ${userAccessToken}`,
       },
+      signal: AbortSignal.timeout(10_000),
     })
 
     const userInfoData = await userInfoResponse.json()
@@ -397,6 +403,7 @@ export async function sendMessageCard(openId: string, options: SendCardOptions):
         msg_type: 'interactive',
         content: JSON.stringify(card),
       }),
+      signal: AbortSignal.timeout(10_000),
     })
 
     const data = await response.json()

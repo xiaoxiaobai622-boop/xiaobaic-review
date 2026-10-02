@@ -9,7 +9,7 @@ import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-t
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions, noneAccessSessionId } from '@/lib/share-links'
 export const runtime = 'nodejs'
 
 
@@ -119,9 +119,6 @@ export async function GET(
     }
 
     const { isAdmin } = accessCheck
-    if (shareLink && !isAdmin && !(await incrementShareLinkView(shareLink.id))) {
-      return NextResponse.json({ error: 'This share link has reached its viewing limit' }, { status: 410 })
-    }
 
     // Track share page access for projects with no authentication (authMode = NONE)
     // Only track as NONE if guest mode is disabled; otherwise let guest endpoint track as GUEST
@@ -129,20 +126,18 @@ export async function GET(
       // Use Redis for 30-minute deduplication
       const redis = getRedis()
       const ipAddress = getClientIpAddress(request)
-      const dedupeKey = `share_access:${projectMeta.id}:${ipAddress}`
+      const sessionId = noneAccessSessionId(projectMeta.id, token, ipAddress)
+      const dedupeKey = `share_access:${sessionId}`
       const alreadyTracked = await redis.get(dedupeKey)
 
       if (!alreadyTracked) {
-        // CRITICAL: Use deterministic sessionId for NONE authMode
-        // This must match the sessionId used in JWT token for session invalidation to work
-        const sessionId = `none:${projectMeta.id}:${ipAddress}`
-
         await trackSharePageAccess({
           projectId: projectMeta.id,
           accessMethod: 'NONE',
           sessionId,
           request,
           analyticsConsent: readAnalyticsConsent(request),
+          shareLinkId: shareLink?.id ?? null,
         })
 
         await redis.set(dedupeKey, '1', 'EX', 30 * 60)
@@ -159,6 +154,22 @@ export async function GET(
         authMode: projectMeta.authMode,
         guestMode: true
       }, { status: 401 })
+    }
+
+    // Counted only once every gate above has let this visitor through: a request
+    // that ends in 401 showed nobody anything, and counting it would halve a
+    // link's view budget on guest-mode projects. An already exhausted link is
+    // still refused by the activity check at the top of this handler.
+    let viewsUsed: number | null = null
+    // A visitor who leaves the page open refreshes the video catalog on a timer.
+    // That is one continued visit, not another visitor, so it must not eat the
+    // link's view budget.
+    const isCatalogRefresh = request.headers.get('x-share-refresh') === 'catalog'
+    if (shareLink && !isAdmin && !isCatalogRefresh) {
+      viewsUsed = await incrementShareLinkView(shareLink.id)
+      if (viewsUsed === null) {
+        return NextResponse.json({ error: 'This share link has reached its viewing limit' }, { status: 410 })
+      }
     }
 
     const videosSanitizedBase = project.videos.map((video: any) => ({
@@ -246,8 +257,12 @@ export async function GET(
     ])
 
     let allRecipients: Array<{id: string, name: string | null, email: string | null}> = []
-    // Include recipients for all authenticated users (guest mode is the only restriction)
-    if (!isGuest) {
+    // The visitor page needs the work, not the address book. A share link can be
+    // held by someone with no identity at all, so the roster and the client's
+    // email go only to someone the server recognizes: a team account, or a
+    // recipient who cleared this link's own authentication.
+    const visitorIsMember = isAdmin || !!shareContext?.recipientId
+    if (!isGuest && visitorIsMember) {
       const recipients = await getProjectRecipients(project.id)
       allRecipients = recipients
         .filter(r => r.id)
@@ -332,10 +347,12 @@ export async function GET(
 
       ...(isGuest ? {} : {
         clientName,
-        clientEmail: primaryRecipient?.email || null,
         companyName: project.companyName || null,
-        recipients: allRecipients,
-        authenticatedRecipientId,
+        ...(visitorIsMember ? {
+          clientEmail: primaryRecipient?.email || null,
+          recipients: allRecipients,
+          authenticatedRecipientId,
+        } : {}),
       }),
 
       // Not sensitive; used by share UI to format comment timestamp badges
@@ -374,6 +391,10 @@ export async function GET(
       },
       shareType: shareLink?.type || 'REVIEW',
       sharePermissions: linkPermissions(policy),
+      // The visitor page has to answer "几时到期／还能看几次". 项目自己的地址没有在
+      // 设置页里给出这两个栏位，所以那一行始终读回 null。
+      shareExpiresAt: policy?.expiresAt ? new Date(policy.expiresAt).toISOString() : null,
+      shareViewsRemaining: policy?.maxViews == null ? null : Math.max(0, policy.maxViews - (viewsUsed ?? policy.viewCount)),
     }
 
     if (shareLink?.type === 'COLLECT') {
@@ -382,7 +403,8 @@ export async function GET(
       projectData.allowAssetDownload = false
       projectData.allowPhotoDownload = false
       projectData.allowClientAssetUpload = false
-      projectData.allowReverseShare = true
+      // allowReverseShare 故意不覆盖：上传接口按项目这一列判 403，这里把它写成 true
+      // 只会让关掉收录的项目仍然给出一个上传面板。
       projectData.clientCanApprove = false
     }
 
@@ -394,12 +416,12 @@ export async function GET(
     // streams with and the player waiting forever. The link's own permissions
     // still cap what the issued token can do.
     if (!shareContext) {
-      // CRITICAL: For NONE authMode, use deterministic sessionId based on IP
-      // This must match the sessionId used in SharePageAccess tracking
+      // CRITICAL: For NONE authMode the sessionId is deterministic and carries
+      // this address, so it matches the one SharePageAccess tracking wrote.
       let sessionId = accessCheck.shareTokenSessionId || `share:${project.id}:${token}`
 
       if (projectMeta.authMode === 'NONE') {
-        sessionId = `none:${projectMeta.id}:${getClientIpAddress(request)}`
+        sessionId = noneAccessSessionId(projectMeta.id, token, getClientIpAddress(request))
       }
 
       const shareToken = signShareToken({

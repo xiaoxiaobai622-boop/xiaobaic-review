@@ -4,24 +4,20 @@ import { requireApiAdmin } from '@/lib/auth'
 import { canAdministerProject } from '@/lib/project-access'
 import { generateUniqueProjectSlugs } from '@/lib/share-tokens'
 import { invalidateShareTokensByProject } from '@/lib/session-invalidation'
-import { generateShareUrl } from '@/lib/url'
+import { formatShareLinkUrl, rotateProjectMasterToken } from '@/lib/share-links'
+import { getAppUrl } from '@/lib/url'
 import { rateLimit } from '@/lib/rate-limit'
 import { logError, logMessage } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const MASTER_PROJECT_SELECT = {
-  slug: true,
-  shareSlug: true,
-  team: { select: { shareKey: true, slug: true } },
-} as const
-
 // POST /api/projects/[id]/share-slug/rotate
 // Retire the project's master share address. Every notification email carries it,
 // so this is the one supported way to pull a leaked address out of circulation:
-// both the URL segment and the API token are replaced, the old address stops
-// resolving immediately, and viewers holding a session for it are dropped.
+// the short code and the legacy `/share/<team>/<slug>` pair are both replaced, the
+// old addresses stop resolving immediately, and viewers holding a session for them
+// are dropped.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireApiAdmin(request)
   if (user instanceof Response) return user
@@ -47,6 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const { slug, shareSlug } = await generateUniqueProjectSlugs(prisma, project.teamId)
     await prisma.project.update({ where: { id }, data: { slug, shareSlug } })
+    const master = await rotateProjectMasterToken(id)
 
     let invalidatedSessions = 0
     try {
@@ -57,14 +54,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
     logMessage(`[SECURITY] Project ${id} share address rotated - ${invalidatedSessions} share sessions invalidated`)
 
-    const updated = await prisma.project.findUnique({ where: { id }, select: MASTER_PROJECT_SELECT })
-    if (!updated) return NextResponse.json({ error: '项目不存在' }, { status: 404 })
-
+    if (!master) return NextResponse.json({ error: '项目不存在' }, { status: 404 })
     return NextResponse.json({
       success: true,
       slug,
       shareSlug,
-      url: await generateShareUrl(updated, request),
+      token: master.token,
+      url: formatShareLinkUrl(master.token, await getAppUrl(request)),
       invalidatedSessions,
     })
   } catch (error) {

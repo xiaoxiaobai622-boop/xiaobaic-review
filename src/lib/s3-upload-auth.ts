@@ -61,6 +61,11 @@ async function resolveProjectId(target: S3UploadTarget): Promise<string | null> 
   return null
 }
 
+/** Target → owning project. Kept next to the existing resolution so the two can't drift. */
+export async function getUploadTargetProjectId(target: S3UploadTarget): Promise<string | null> {
+  return resolveProjectId(target)
+}
+
 export async function canUserAdministerUploadTarget(userId: string, target: S3UploadTarget): Promise<boolean> {
   const projectId = await resolveProjectId(target)
   if (!projectId) return false

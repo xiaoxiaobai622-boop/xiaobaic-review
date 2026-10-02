@@ -207,7 +207,7 @@ export default function AdminPage() {
         // if the team's data had disappeared.
         setProjects([])
         setLoadError(projectsRes.status === 403
-          ? '没有权限读取项目列表，请确认当前团队已激活'
+          ? '没有权限读取项目列表，请确认你已加入当前团队'
           : `项目列表加载失败（HTTP ${projectsRes.status}）`)
       }
     } catch {
@@ -688,11 +688,11 @@ export default function AdminPage() {
           </div>
           <Card>
             <div className="py-12 text-center">
-              <Building2 className="mx-auto h-10 w-10 text-amber-600" />
+              <Building2 className="mx-auto h-10 w-10 text-muted-foreground" />
               <p className="mt-3 text-sm font-medium">团队已停用</p>
               <p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p>
               <Button asChild variant="outline" className="mt-4">
-                <Link href="/studio/team?tab=team">查看团队激活</Link>
+                <Link href="/studio/team?tab=team">查看团队信息</Link>
               </Button>
             </div>
           </Card>

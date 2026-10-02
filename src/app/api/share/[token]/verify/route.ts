@@ -271,6 +271,7 @@ export async function POST(
         sessionId: shareTokenPayload.sessionId,
         request,
         analyticsConsent: readAnalyticsConsent(request),
+        shareLinkId: resolved.link?.id ?? null,
       })
     }
 

@@ -9,6 +9,8 @@ import { ExternalLink, Loader2, FolderOpen } from 'lucide-react'
 interface PortalProject {
   id: string
   slug: string
+  /** The project's own short address; null until that link row exists. */
+  shareCode: string | null
   title: string
   status: 'IN_REVIEW' | 'APPROVED'
   dueDate: string | null
@@ -124,7 +126,7 @@ export default function PortalDashboard({ token, onUnauthorized }: Props) {
                   </div>
                 </div>
                 <a
-                  href={`/share/${encodeURIComponent(p.slug)}`}
+                  href={p.shareCode ? `/${p.shareCode}` : `/share/${encodeURIComponent(p.slug)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex"

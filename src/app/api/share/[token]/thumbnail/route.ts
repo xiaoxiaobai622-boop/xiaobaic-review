@@ -56,7 +56,8 @@ export async function GET(
       project.id,
       'thumbnail',
       request,
-      `share-thumb:${project.id}`,
+      `share-thumb:${project.id}:${token}`,
+      { shareId: token },
     )
 
     const appUrl = await getAppUrl(request)

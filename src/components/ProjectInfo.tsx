@@ -405,8 +405,10 @@ function ProjectInfo({
             </Dialog>
           )}
 
-          {/* Download Button - Only show when video is approved and not in guest mode */}
-          {isVideoApproved && !isGuest && !hideDownloadButton && (
+          {/* Download Button — only for an approved video, and only unless the share link hides it.
+              A link that grants download may be opened by someone with no account, so login is
+              not part of this decision; the mint endpoint re-checks the permission anyway. */}
+          {isVideoApproved && !hideDownloadButton && (
             <Button data-tutorial="download-btn" onClick={handleDownload} variant="default" size="sm" title={t('downloadOriginal')}>
               <Download className="w-4 h-4 sm:mr-2" />
               <span className="hidden sm:inline">{tc('download')}</span>

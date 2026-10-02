@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
+import { requireProjectWritable } from '@/lib/team-writeable'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
 import { deleteFile, getVideoContentType, moveStorageFile } from '@/lib/storage'
@@ -35,6 +36,8 @@ export async function POST(
     if (!(await canAccessProject(prisma, authResult, projectId))) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
+    const blocked = await requireProjectWritable(projectId)
+    if (blocked) return blocked
     const body = await request.json().catch(() => ({}))
     const videoName = typeof body.videoName === 'string' ? body.videoName.trim() : ''
 

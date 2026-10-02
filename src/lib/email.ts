@@ -824,7 +824,6 @@ export async function sendProjectApprovedEmail({
   unsubscribeUrl,
   approverName,
   isApprover = false,
-  watermarkEnabled = true,
   locale: localeOverride,
 }: {
   clientEmail: string
@@ -836,7 +835,6 @@ export async function sendProjectApprovedEmail({
   unsubscribeUrl?: string
   approverName?: string
   isApprover?: boolean
-  watermarkEnabled?: boolean
   locale?: string
 }) {
   const settings = await getEmailSettings()
@@ -867,22 +865,14 @@ export async function sendProjectApprovedEmail({
     } else {
       approvalMessage = approvedMsg.allApproved || 'All deliverables have been approved.'
     }
-    if (watermarkEnabled) {
-      approvalMessage += ` ${approvedMsg.downloadNoWatermarks || 'You can now download the final version without watermarks.'}`
-    } else {
-      approvalMessage += ` ${approvedMsg.filesReady || 'The final files are now ready for download.'}`
-    }
+    approvalMessage += ` ${approvedMsg.filesReady || 'The final files are now ready for download.'}`
   } else {
     if (approverName && !isApprover) {
       approvalMessage = (approvedMsg.approverApprovedOne || '{{APPROVER_NAME}} has approved this deliverable.').replace('{{APPROVER_NAME}}', `<strong>${escapeHtml(approverName)}</strong>`)
     } else {
       approvalMessage = approvedMsg.oneApproved || 'This deliverable has been approved.'
     }
-    if (watermarkEnabled) {
-      approvalMessage += ` ${approvedMsg.downloadNoWatermarks || 'You can now download the final version without watermarks.'}`
-    } else {
-      approvalMessage += ` ${approvedMsg.fileReady || 'The final file is now ready for download.'}`
-    }
+    approvalMessage += ` ${approvedMsg.fileReady || 'The final file is now ready for download.'}`
   }
 
   const placeholderValues: Record<string, string> = {

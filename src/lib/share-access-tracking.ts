@@ -26,8 +26,9 @@ export async function trackSharePageAccess(params: {
   sessionId: string
   request: NextRequest
   analyticsConsent?: boolean | null
+  shareLinkId?: string | null
 }) {
-  const { projectId, accessMethod, email, sessionId, request, analyticsConsent } = params
+  const { projectId, accessMethod, email, sessionId, request, analyticsConsent, shareLinkId } = params
 
   // Analytics tracking is optional and should never block share access.
   const settings = await getSecuritySettings()
@@ -50,6 +51,7 @@ export async function trackSharePageAccess(params: {
           accessMethod,
           email,
           sessionId,
+          shareLinkId: shareLinkId ?? null,
           ipAddress,
           userAgent,
         },

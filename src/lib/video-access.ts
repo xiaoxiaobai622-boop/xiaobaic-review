@@ -5,7 +5,7 @@ import { logError, logMessage } from './logging'
 import { getClientIpAddress } from './utils'
 import { getClientSessionTimeoutSeconds } from './settings'
 import { getRedis } from './redis'
-import { isShareSessionRevoked } from './session-invalidation'
+import { isShareSessionRevoked, isShareLinkRevoked } from './session-invalidation'
 import { isAdminSessionRevoked } from './studio-session-registry'
 
 type CachedValue<T> = { value: T; expiresAt: number; version?: string }
@@ -65,6 +65,10 @@ interface VideoAccessToken {
   ipAddress: string
   createdAt: number
   isAdmin: boolean
+  // The share link this token was minted through. Revoking that link has to
+  // reach the bytes, not only the page, and the project id is too coarse: a
+  // project can carry several live links.
+  shareId?: string
 }
 
 /**
@@ -77,7 +81,7 @@ export async function generateVideoAccessToken(
   quality: string,
   request: NextRequest,
   sessionId: string,
-  options?: { skipCacheCheck?: boolean },
+  options?: { skipCacheCheck?: boolean; shareId?: string },
 ): Promise<string> {
   const redis = getRedis()
 
@@ -99,6 +103,7 @@ export async function generateVideoAccessToken(
     ipAddress,
     createdAt: Date.now(),
     isAdmin: sessionId.startsWith('admin:'),
+    shareId: options?.shareId,
   }
 
   const ttlSeconds = await getClientSessionTimeoutSeconds()
@@ -175,6 +180,8 @@ export async function verifyVideoAccessToken(
 
     return null
   }
+
+  if (tokenData.shareId && await isShareLinkRevoked(tokenData.shareId)) return null
 
   if (isAdminSession) {
     const adminSessionId = tokenData.sessionId.startsWith('admin:')

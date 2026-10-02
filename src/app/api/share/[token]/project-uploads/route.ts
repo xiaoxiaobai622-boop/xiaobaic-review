@@ -34,7 +34,9 @@ export async function POST(
     const { token: shareToken } = await params
 
     const resolved = await resolveShareMetadata(shareToken)
-    const deniedByLink = resolved.link !== null && resolved.link.type !== 'COLLECT'
+    // The project's own address decides collection from the project setting below,
+    // not from a link type; only an explicit link is refused for not being COLLECT.
+    const deniedByLink = resolved.link !== null && !resolved.policy?.isProjectMaster && resolved.link.type !== 'COLLECT'
     if ((resolved.policy && !isShareLinkActive(resolved.policy)) || deniedByLink) {
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     }
@@ -196,7 +198,9 @@ export async function DELETE(
     const uploadId = searchParams.get('uploadId') ?? ''
 
     const resolved = await resolveShareMetadata(shareToken)
-    const deniedByLink = resolved.link !== null && resolved.link.type !== 'COLLECT'
+    // The project's own address decides collection from the project setting below,
+    // not from a link type; only an explicit link is refused for not being COLLECT.
+    const deniedByLink = resolved.link !== null && !resolved.policy?.isProjectMaster && resolved.link.type !== 'COLLECT'
     if ((resolved.policy && !isShareLinkActive(resolved.policy)) || deniedByLink) {
       return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
     }

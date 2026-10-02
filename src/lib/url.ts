@@ -1,6 +1,7 @@
 import { prisma } from './db'
 import { NextRequest } from 'next/server'
 import { headers } from 'next/headers'
+import { ensureProjectMasterLink, formatShareLinkUrl } from './share-links'
 
 /**
  * Get the application URL from request headers
@@ -65,48 +66,18 @@ export async function getAppDomain(): Promise<string> {
 }
 
 /**
- * Generate a share URL for a project
+ * The address every notification, email and webhook carries for a project. It is
+ * the project's master link — a real `ShareLink` row created on first need — so
+ * the same address the owner sees in 分享记录 is the one the client receives, and
+ * it can be expired, revoked and read for access records from there.
  */
-type ShareUrlProject = {
-  slug: string
-  shareSlug?: string | null
-  team?: { shareKey?: string | null; slug?: string | null } | null
-}
-
-export async function generateShareUrl(
-  projectOrSlug: string | ShareUrlProject,
-  request?: NextRequest
-): Promise<string> {
-  const baseUrl = await getAppUrl(request)
-  if (typeof projectOrSlug === 'string') {
-    return `${baseUrl}/share/${projectOrSlug}`
-  }
-
-  const teamKey = projectOrSlug.team?.shareKey || projectOrSlug.team?.slug
-  const shareSlug = projectOrSlug.shareSlug || projectOrSlug.slug
-
-  if (!teamKey || !shareSlug) {
-    return `${baseUrl}/share/${projectOrSlug.slug}`
-  }
-
-  return `${baseUrl}/share/${teamKey}/${shareSlug}`
-}
-
 export async function generateProjectShareUrlById(
   projectId: string,
   request?: NextRequest,
 ): Promise<string> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: {
-      slug: true,
-      shareSlug: true,
-      team: { select: { shareKey: true, slug: true } },
-    },
-  })
-
-  if (!project) throw new Error('Project not found')
-  return generateShareUrl(project, request)
+  const master = await ensureProjectMasterLink(projectId)
+  if (!master) throw new Error('Project not found')
+  return formatShareLinkUrl(master.token, await getAppUrl(request))
 }
 
 /**

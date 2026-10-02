@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { parseBearerToken } from '@/lib/auth'
 import { verifyPortalSession } from '@/lib/portal-token'
+import { masterTokensByProject } from '@/lib/share-links'
 import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
@@ -68,10 +69,13 @@ export async function GET(request: NextRequest) {
       return b.updatedAt.getTime() - a.updatedAt.getTime()
     })
 
+    const masterTokens = await masterTokensByProject(sorted.map(p => p.id))
+
     return NextResponse.json({
       projects: sorted.map((p) => ({
         id: p.id,
         slug: p.slug,
+        shareCode: masterTokens.get(p.id) || null,
         title: p.title,
         status: p.status,
         dueDate: p.dueDate ? p.dueDate.toISOString() : null,

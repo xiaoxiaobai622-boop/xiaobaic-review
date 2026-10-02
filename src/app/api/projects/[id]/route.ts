@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInvalidWatermarkCharacters } from '@/lib/watermark'
 import { prisma, LIVE_VIDEO, LIVE_COMMENT } from '@/lib/db'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
 import { canAccessProject, canAdministerProject } from '@/lib/project-access'
@@ -201,7 +200,6 @@ export async function PATCH(
       { value: validatedBody.title, scene: 1 },
       { value: validatedBody.description, scene: 3 },
       { value: validatedBody.companyName, scene: 3 },
-      { value: validatedBody.watermarkText, scene: 3 },
     ]
     for (const field of securityFields) {
       const securityCheck = await checkWechatText(field.value, { userId: authResult.id, scene: field.scene as 1 | 2 | 3 | 4 })
@@ -310,51 +308,6 @@ export async function PATCH(
 
     if (validatedBody.skipTranscoding !== undefined) {
       updateData.skipTranscoding = validatedBody.skipTranscoding
-    }
-
-    if (validatedBody.watermarkEnabled !== undefined) {
-      updateData.watermarkEnabled = validatedBody.watermarkEnabled
-    }
-
-    if (validatedBody.watermarkText !== undefined) {
-      // SECURITY: Validate watermark text using the same Unicode-aware rules as FFmpeg.
-      if (validatedBody.watermarkText) {
-        const invalidChars = getInvalidWatermarkCharacters(validatedBody.watermarkText)
-        if (invalidChars.length > 0) {
-          const uniqueInvalid = invalidChars.join(', ')
-          return NextResponse.json(
-            {
-              error: projectMessages.invalidWatermarkCharacters || 'Invalid characters in watermark text',
-              details: (projectMessages.invalidWatermarkCharactersDetails || 'Watermark text contains invalid characters: {chars}. Only letters, numbers, spaces, and these characters are allowed: - _ . ( )').replace('{chars}', uniqueInvalid)
-            },
-            { status: 400 }
-          )
-        }
-
-        if (validatedBody.watermarkText.length > 100) {
-          return NextResponse.json(
-            {
-              error: projectMessages.watermarkTextTooLong || 'Watermark text too long',
-              details: projectMessages.watermarkTextTooLongDetails || 'Watermark text must be 100 characters or less'
-            },
-            { status: 400 }
-          )
-        }
-      }
-
-      updateData.watermarkText = validatedBody.watermarkText || null
-    }
-
-    if (validatedBody.watermarkPositions !== undefined) {
-      updateData.watermarkPositions = validatedBody.watermarkPositions
-    }
-
-    if (validatedBody.watermarkOpacity !== undefined) {
-      updateData.watermarkOpacity = validatedBody.watermarkOpacity
-    }
-
-    if (validatedBody.watermarkFontSize !== undefined) {
-      updateData.watermarkFontSize = validatedBody.watermarkFontSize
     }
 
     if (validatedBody.applyPreviewLut !== undefined) {

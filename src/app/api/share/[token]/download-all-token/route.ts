@@ -110,7 +110,8 @@ export async function POST(
           project.id,
           'original',
           request,
-          sessionId
+          sessionId,
+          { shareId: slug }
         )
         return `/api/content/${accessToken}?download=true`
       })

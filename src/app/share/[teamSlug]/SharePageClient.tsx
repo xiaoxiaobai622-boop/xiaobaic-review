@@ -20,6 +20,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import PrivacyBanner, { PRIVACY_STORAGE_KEY } from '@/components/PrivacyBanner'
 import ReverseShareUploadPanel from '@/components/ReverseShareUploadPanel'
+import ShareExpiryNote from '@/components/ShareExpiryNote'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
@@ -241,6 +242,10 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     : ['view', 'comment', 'download']
   const canComment = sharePermissions.includes('comment')
   const canDownload = sharePermissions.includes('download') && Boolean(project?.allowAssetDownload) && !isGuest
+  // The original video is the one download the share API hands to an anonymous
+  // visitor — `video-token?quality=original` decides on the link's own
+  // permissions. Photos and attached assets stay login-only, matching the routes.
+  const canDownloadOriginal = sharePermissions.includes('download') && Boolean(project?.allowAssetDownload)
 
   // Guest responses intentionally omit project.id. Comments still carry the
   // same server-validated project id, which keeps the composer usable without
@@ -440,7 +445,13 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       const authToken = tokenOverride || shareToken
       const projectResponse = await fetch(`/api/share/${token}`, {
         cache: 'no-store',
-        headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}), ...getConsentHeader() }
+        // The catalog poll is the only caller that refreshes in place; the server
+        // must not charge it against the link's view budget.
+        headers: {
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(options.onlyIfVideoCatalogChanged ? { 'x-share-refresh': 'catalog' } : {}),
+          ...getConsentHeader(),
+        },
       })
 
       // Recover from stale/expired stored share token
@@ -771,6 +782,13 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     inFlightTokenRequestsRef.current.set(requestKey, { promise: requestPromise, signal })
     return requestPromise
   }, [storageKey, token])
+
+  // The original is minted on click, never ahead of time: it is the largest
+  // object behind the link, and the download permission is checked by the mint.
+  const requestOriginalDownload = useCallback(async (videoId: string) => {
+    const accessToken = await fetchVideoToken(videoId, 'original')
+    return accessToken ? `/api/content/${accessToken}?download=true` : null
+  }, [fetchVideoToken])
 
   const fetchTokensForVideos = useCallback(async (
     videos: any[],
@@ -1454,7 +1472,9 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       <>
       <div className="fixed inset-0 bg-background flex flex-col overflow-hidden">
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
-          <div className="flex items-center gap-2" data-tutorial="grid-actions" />
+          <div className="flex items-center gap-2" data-tutorial="grid-actions">
+            <ShareExpiryNote expiresAt={project.shareExpiresAt ?? null} viewsRemaining={project.shareViewsRemaining ?? null} />
+          </div>
 
           <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
             {project.allowReverseShare && project.shareType !== 'DELIVERY' && shareToken && (
@@ -1531,6 +1551,9 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           showComparisonAction={false}
           trailingAction={
             <div className="flex items-center gap-1">
+              {/* From `sm` up, because on a phone this row's truncating element is
+                  the video name — the deadline must not be what shortens it. */}
+              <ShareExpiryNote expiresAt={project.shareExpiresAt ?? null} viewsRemaining={project.shareViewsRemaining ?? null} className="mr-1 hidden sm:block" />
               <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} onOpenChange={handleLoginOpenChange} />
             </div>
           }
@@ -1571,11 +1594,12 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 followLatestVersion={urlVersion === null}
                 isAdmin={false}
                 isGuest={isGuest}
-                allowAssetDownload={canDownload}
+                allowAssetDownload={canDownloadOriginal}
                 clientCanApprove={project.clientCanApprove}
                 shareToken={shareToken}
                 onStreamAuthExpired={recoverStreamAuth}
-                hideDownloadButton={!canDownload}
+                hideDownloadButton={!canDownloadOriginal}
+                onDownloadToken={requestOriginalDownload}
                 allowComparison={false}
                 comments={showCommentPanel ? filteredComments : []}
                 timestampDisplayMode={timestampDisplayMode}
