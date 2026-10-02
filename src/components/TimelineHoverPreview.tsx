@@ -32,6 +32,9 @@ function TimelineHoverPreview({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [ready, setReady] = useState(false)
   const [previewTime, setPreviewTime] = useState<number | null>(null)
+  // The seeked/loadeddata listeners can only attach once the <video> node exists, which is
+  // exactly when this stops returning null — so `visible` has to be one of their deps.
+  const visible = hoveredTime !== null && Number.isFinite(duration) && duration > 0
 
   useEffect(() => {
     const video = videoRef.current
@@ -94,9 +97,9 @@ function TimelineHoverPreview({
       video.removeEventListener('seeked', handleSeeked)
       video.removeEventListener('loadeddata', handleLoadedData)
     }
-  }, [videoUrl])
+  }, [videoUrl, visible])
 
-  if (hoveredTime === null || !videoUrl || !Number.isFinite(duration) || duration <= 0) {
+  if (!visible || !videoUrl) {
     return null
   }
 
