@@ -386,6 +386,19 @@ export async function DELETE(
       )
     }
 
+    // Billing rows are RESTRICT-ed against "User" (Order.createdById /
+    // Order.fulfilledById / OrderEvent.actorUserId): this account signed commercial
+    // records. Unlike the account-merge flow, where the surviving login is the same
+    // person, there is nobody to reassign them to without rewriting the audit trail,
+    // so refuse.
+    const [orderCount, orderEventCount] = await Promise.all([
+      prisma.order.count({ where: { OR: [{ createdById: id }, { fulfilledById: id }] } }),
+      prisma.orderEvent.count({ where: { actorUserId: id } }),
+    ])
+    if (orderCount > 0 || orderEventCount > 0) {
+      return NextResponse.json({ error: '该用户已有账单记录，不能删除，请联系平台' }, { status: 409 })
+    }
+
     // Invalidate all sessions before deletion so active tokens are revoked immediately
     await invalidateAdminSessions(id)
 

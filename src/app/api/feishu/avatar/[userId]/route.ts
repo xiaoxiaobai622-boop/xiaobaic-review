@@ -12,6 +12,10 @@ const FEISHU_IMAGE_HOSTS = new Set([
   'sf3-sg.feishucdn.com',
 ])
 
+// Bounds the wait for Feishu to answer. It is cleared as soon as headers arrive so the
+// image itself streams without a cap — a slow but healthy download must not be cut off.
+const AVATAR_CONNECT_TIMEOUT_MS = 10_000
+
 /** Every rejection answers as the same bare 404, so probes cannot tell why it failed. */
 function avatarUnavailable(): NextResponse {
   return new NextResponse(null, { status: 404 })
@@ -45,7 +49,13 @@ export async function GET(
   }
 
   try {
-    const response = await fetch(avatarUrl, { cache: 'no-store', redirect: 'manual' })
+    const controller = new AbortController()
+    const connectTimer = setTimeout(() => controller.abort(), AVATAR_CONNECT_TIMEOUT_MS)
+    const response = await fetch(avatarUrl, {
+      cache: 'no-store',
+      redirect: 'manual',
+      signal: controller.signal,
+    }).finally(() => clearTimeout(connectTimer))
     if (!response.ok) return avatarUnavailable()
 
     const contentType = response.headers.get('content-type') || ''

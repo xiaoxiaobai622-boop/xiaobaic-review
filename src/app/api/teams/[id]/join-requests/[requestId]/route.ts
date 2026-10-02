@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
+import { requireTeamWritable } from '@/lib/team-writeable'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,6 +19,9 @@ export async function PATCH(
   if (!membership || membership.status !== 'ACTIVE' || !['OWNER', 'ADMIN'].includes(membership.role)) {
     return NextResponse.json({ error: 'Administrator permission required' }, { status: 403 })
   }
+
+  const blocked = await requireTeamWritable(id)
+  if (blocked) return blocked
 
   const body = await request.json().catch(() => null)
   const decision = body?.status

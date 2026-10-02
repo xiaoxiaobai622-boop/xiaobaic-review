@@ -174,8 +174,8 @@ function generateSampleValues(
 
   // Generate sample timecode pills with deep-links
   const encodedVideo = encodeURIComponent(videoName)
-  const sampleTcPill1 = renderTimecodePill('00:00:45:12', `${appDomain}/share/abc123?video=${encodedVideo}&t=45`, brand)
-  const sampleTcPill2 = renderTimecodePill('00:01:28:00', `${appDomain}/share/abc123?video=${encodedVideo}&t=88`, brand)
+  const sampleTcPill1 = renderTimecodePill('00:00:45:12', `${appDomain}/abc123?video=${encodedVideo}&t=45`, brand)
+  const sampleTcPill2 = renderTimecodePill('00:01:28:00', `${appDomain}/abc123?video=${encodedVideo}&t=88`, brand)
 
   // Localized protected project notice
   const protectedNotice = emailCommon?.protectedProjectNotice || 'Use the password sent separately to access this project.'
@@ -189,7 +189,7 @@ function generateSampleValues(
       PROJECT_TITLE: projectTitle,
       VIDEO_NAME: videoName,
       VERSION_LABEL: ex.VERSION_LABEL || 'v2',
-      SHARE_URL: `${appDomain}/share/abc123`,
+      SHARE_URL: `${appDomain}/abc123`,
       PASSWORD_NOTICE: `<div class="protected-note"><strong>${protectedLabel}</strong> ${protectedNotice}</div>`,
       UNSUBSCRIBE_SECTION: unsubscribePreview,
     },
@@ -197,7 +197,7 @@ function generateSampleValues(
       ...base,
       PROJECT_TITLE: projectTitle,
       VIDEO_NAME: videoName,
-      SHARE_URL: `${appDomain}/share/abc123`,
+      SHARE_URL: `${appDomain}/abc123`,
       APPROVAL_MESSAGE: `<strong>${clientName}</strong> ${approvalMessage}`,
       UNSUBSCRIBE_SECTION: unsubscribePreview,
     },
@@ -209,7 +209,7 @@ function generateSampleValues(
       AUTHOR_NAME: authorName,
       COMMENT_CONTENT: commentContent,
       TIMECODE: sampleTcPill1,
-      SHARE_URL: `${appDomain}/share/abc123`,
+      SHARE_URL: `${appDomain}/abc123`,
       ATTACHMENTS: `<div style="margin-top: 12px; padding: 10px 14px; border-radius: 8px; border: 1px solid ${brand.border}; background: ${brand.surfaceAlt};"><div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: ${brand.muted}; margin-bottom: 6px; font-weight: 700;">${attachmentLabel}</div><div style="font-size: 13px; color: ${brand.text}; line-height: 1.8;">Storyboard-v2.pdf</div><div style="font-size: 13px; color: ${brand.text}; line-height: 1.8;">VO-notes.txt</div></div>`,
       UNSUBSCRIBE_SECTION: unsubscribePreview,
     },
@@ -238,7 +238,7 @@ function generateSampleValues(
       ...base,
       PROJECT_TITLE: projectTitle,
       PROJECT_DESCRIPTION: projectDescription,
-      SHARE_URL: `${appDomain}/share/abc123`,
+      SHARE_URL: `${appDomain}/abc123`,
       VIDEO_LIST: `
         <div style="font-size: 15px; padding: 6px 0;">• ${videoName} <span style="font-weight: 600;">v1</span></div>
         <div style="font-size: 15px; padding: 6px 0;">• B-Roll <span style="font-weight: 600;">v1</span></div>
@@ -278,7 +278,7 @@ function generateSampleValues(
       SUMMARY_TEXT: '3 new comments, 1 approval',
       PERIOD: 'today',
       SUMMARY_ITEMS: '<div class="secondary-box"><div style="font-size:14px;">• Main Commercial v2 — New comment</div></div>',
-      SHARE_URL: `${appDomain}/share/abc123`,
+      SHARE_URL: `${appDomain}/abc123`,
       UNSUBSCRIBE_SECTION: unsubscribePreview,
     },
     ADMIN_ACTIVITY_SUMMARY: {

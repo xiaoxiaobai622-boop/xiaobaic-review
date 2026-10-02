@@ -7,7 +7,7 @@ import { apiFetch } from '@/lib/api-client'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 
 type OverviewData = {
-  team: { name: string; avatarUrl: string | null; createdAt: string; subscriptionPlan: string; subscriptionExpiresAt: string | null }
+  team: { name: string; avatarUrl: string | null; status: string; createdAt: string; subscriptionPlan: string; subscriptionExpiresAt: string | null }
   quota: { maxMembers: number; maxProjects: number; maxVideos: number; maxStorageGB: number }
   usage: {
     members: number; projects: number; videos: number; usedBytes: string; recycleBinBytes: string
@@ -37,11 +37,9 @@ function formatDate(value: string) {
 }
 
 function formatSubscription(team: OverviewData['team']) {
-  if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
-  if (!team.subscriptionExpiresAt) return '长期有效'
-  const remaining = new Date(team.subscriptionExpiresAt).getTime() - Date.now()
-  if (remaining <= 0) return '已到期'
-  return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
+  // 免费内测期没有到期日：库里的旧到期日不再对用户报倒计时。
+  if (team.status !== 'ACTIVE') return '已停用'
+  return '长期有效'
 }
 
 const WORKFLOW_STEPS = ['待审阅', '审阅中', '意见汇总完毕', '通过']
@@ -159,7 +157,7 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
               ))}
               <div className="border-l border-border pl-4">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />团队有效期</div>
-                <p className={`mt-1 text-lg font-medium ${data.team.subscriptionPlan === 'UNACTIVATED' || formatSubscription(data.team) === '已到期' ? 'text-destructive' : 'text-primary'}`}>{formatSubscription(data.team)}</p>
+                <p className={`mt-1 text-lg font-medium ${data.team.status !== 'ACTIVE' ? 'text-destructive' : 'text-primary'}`}>{formatSubscription(data.team)}</p>
               </div>
             </CardContent>
           </Card>

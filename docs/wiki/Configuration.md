@@ -125,25 +125,25 @@ Example JSON CORS policy:
 
 ### Overview
 
-The worker computes its CPU allocation from a budget of **half the available threads**, so the worst case (all video workers plus the clean preview worker encoding at once) never exceeds ~50% of the host and the server stays responsive during processing. `CPU_THREADS` overrides the auto-detected thread count that the budget is based on.
+The worker computes its CPU allocation from a budget of **half the available threads**, so the worst case (all video workers encoding at once) never exceeds ~50% of the host and the server stays responsive during processing. `CPU_THREADS` overrides the auto-detected thread count that the budget is based on.
 
 1. **Worker concurrency** — 2 concurrent video jobs on hosts with 24+ threads, otherwise 1
-2. **Threads per job** — the budget split across video workers and the clean preview worker (the `-threads` flag), capped at 8
+2. **Threads per job** — the budget split across the video workers (the `-threads` flag), capped at 8
 3. **Encoding preset** — always `faster`, the speed/size sweet spot for CRF-based review previews
 
 ### Example allocations
 
 | Threads | Concurrent jobs | FFmpeg threads/job | Max threads used |
 |:-------:|:---------------:|:------------------:|:----------------:|
-| 2       | 1               | 1                  | 2 (~100%)        |
-| 4       | 1               | 1                  | 2 (~50%)         |
-| 8       | 1               | 2                  | 4 (~50%)         |
-| 16      | 1               | 4                  | 8 (~50%)         |
-| 24      | 2               | 4                  | 12 (~50%)        |
-| 32      | 2               | 5                  | 15 (~47%)        |
-| 64      | 2               | 8                  | 24 (~38%)        |
+| 2       | 1               | 1                  | 1 (~50%)         |
+| 4       | 1               | 2                  | 2 (~50%)         |
+| 8       | 1               | 4                  | 4 (~50%)         |
+| 16      | 1               | 8                  | 8 (~50%)         |
+| 24      | 2               | 6                  | 12 (~50%)        |
+| 32      | 2               | 8                  | 16 (~50%)        |
+| 64      | 2               | 8                  | 16 (~25%)        |
 
-"Max threads used" includes both the video processing worker and the clean preview worker (generates non-watermarked versions on approval). The resolved allocation is printed at worker startup (`[CPU CONFIG]` log lines).
+"Max threads used" is the video processing workers multiplied by the FFmpeg threads per job. The resolved allocation is printed at worker startup (`[CPU CONFIG]` log lines).
 
 ### Manual overrides
 

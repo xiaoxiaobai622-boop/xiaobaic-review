@@ -53,10 +53,6 @@ export interface TempFiles {
 export interface ProcessingSettings {
   resolution: string
   skipTranscoding: boolean
-  watermarkText?: string
-  watermarkPositions?: string
-  watermarkOpacity?: number
-  watermarkFontSize?: string
   applyLut: boolean
 }
 
@@ -148,53 +144,27 @@ export async function downloadAndValidateVideo(
 }
 
 /**
- * Fetch project and video settings for processing
+ * Fetch project settings for processing
  */
-export async function fetchProcessingSettings(
-  projectId: string,
-  videoId: string
-): Promise<ProcessingSettings> {
+export async function fetchProcessingSettings(projectId: string): Promise<ProcessingSettings> {
   debugLog('Fetching processing settings...')
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: {
-      title: true,
       previewResolution: true,
       skipTranscoding: true,
-      watermarkEnabled: true,
-      watermarkText: true,
-      watermarkPositions: true,
-      watermarkOpacity: true,
-      watermarkFontSize: true,
       applyPreviewLut: true,
     },
   })
 
-  const video = await prisma.video.findUnique({
-    where: { id: videoId },
-    select: { versionLabel: true },
-  })
-
   debugLog('Project settings:', {
-    title: project?.title,
-    resolution: project?.previewResolution,
-    watermarkEnabled: project?.watermarkEnabled
+    resolution: project?.previewResolution
   })
-
-  const watermarkText = project?.watermarkEnabled
-    ? (project.watermarkText || `PREVIEW-${project.title || 'PROJECT'}-${video?.versionLabel || 'v1'}`)
-    : undefined
-
-  debugLog('Final watermark text:', watermarkText || '(no watermark)')
 
   return {
     resolution: project?.previewResolution || '720p',
     skipTranscoding: project?.skipTranscoding ?? false,
-    watermarkText,
-    watermarkPositions: project?.watermarkPositions || 'center',
-    watermarkOpacity: project?.watermarkOpacity ?? 30,
-    watermarkFontSize: project?.watermarkFontSize || 'medium',
     applyLut: project?.applyPreviewLut ?? true,
   }
 }
@@ -302,10 +272,6 @@ export async function processPreview(
     width: dimensions.width,
     height: dimensions.height,
     quality: resolution === '1080p' ? '1080p' : '720p',
-    watermarkText: settings.watermarkText,
-    watermarkPositions: settings.watermarkPositions,
-    watermarkOpacity: settings.watermarkOpacity,
-    watermarkFontSize: settings.watermarkFontSize as any,
     applyLut: settings.applyLut,
     onProgress: (() => {
       let lastWrite = 0

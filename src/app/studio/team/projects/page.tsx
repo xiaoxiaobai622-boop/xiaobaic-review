@@ -28,7 +28,7 @@ export default function TeamProjectsPage() {
       const response = await apiFetch('/api/projects')
       if (!response.ok) {
         setProjects([])
-        setError(response.status === 403 ? '没有权限读取项目列表，请确认当前团队已激活' : `项目列表加载失败（HTTP ${response.status}）`)
+        setError(response.status === 403 ? '没有权限读取项目列表，请确认你已加入当前团队' : `项目列表加载失败（HTTP ${response.status}）`)
         return
       }
       const data = await response.json()

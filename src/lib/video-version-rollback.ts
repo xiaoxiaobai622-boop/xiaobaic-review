@@ -9,6 +9,10 @@ import { cancelCommentNotification } from '@/lib/comment-helpers'
 import { logError } from '@/lib/logging'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
+// A rollback can delete hundreds of comments at once. Cancelling their pending
+// notifications in small waves keeps the queue connection count bounded.
+const CANCEL_NOTIFICATION_CONCURRENCY = 4
+
 export async function rollbackLatestVideoVersion(request: NextRequest, videoId: string) {
   const authResult = await requireApiAdmin(request)
   if (authResult instanceof Response) return authResult
@@ -145,7 +149,13 @@ export async function rollbackLatestVideoVersion(request: NextRequest, videoId: 
       }
     })
 
-    await Promise.all(result.commentIds.map((commentId) => cancelCommentNotification(commentId)))
+    for (let index = 0; index < result.commentIds.length; index += CANCEL_NOTIFICATION_CONCURRENCY) {
+      await Promise.all(
+        result.commentIds
+          .slice(index, index + CANCEL_NOTIFICATION_CONCURRENCY)
+          .map((commentId) => cancelCommentNotification(commentId)),
+      )
+    }
     if (result.cleanupTask) {
       await dispatchDurableTask(result.cleanupTask.id).catch((dispatchError) => {
         logError('Failed to dispatch rolled-back comment attachment cleanup:', dispatchError)

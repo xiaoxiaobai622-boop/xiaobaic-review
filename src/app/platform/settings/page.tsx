@@ -5,7 +5,7 @@ import { appConfirm } from '@/components/AppDialogProvider'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Settings as SettingsIcon, Save, Palette, Mail, Video, Shield, Building2, ShieldCheck, FolderCog, Ban } from 'lucide-react'
+import { Save, Palette, Mail, Video, Shield, Building2, ShieldCheck, FolderCog, Ban, QrCode } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslations } from 'next-intl'
 import { AppearanceSection } from '@/components/settings/AppearanceSection'
@@ -16,6 +16,7 @@ import { VideoProcessingSettingsSection } from '@/components/settings/VideoProce
 import { ProjectDefaultsSection } from '@/components/settings/ProjectDefaultsSection'
 import { SecuritySettingsSection } from '@/components/settings/SecuritySettingsSection'
 import { BlocklistSection } from '@/components/settings/BlocklistSection'
+import { TransferSettingsSection } from '@/components/settings/TransferSettingsSection'
 import { apiPatch, apiPost, apiFetch } from '@/lib/api-client'
 
 interface Settings {
@@ -36,11 +37,6 @@ interface Settings {
   appDomain: string | null
   defaultPreviewResolution: string | null
   defaultSkipTranscoding: boolean | null
-  defaultWatermarkEnabled: boolean | null
-  defaultWatermarkText: string | null
-  defaultWatermarkPositions: string | null
-  defaultWatermarkOpacity: number | null
-  defaultWatermarkFontSize: string | null
   defaultApplyPreviewLut: boolean | null
   maxUploadSizeGB: number | null
   maxCommentAttachments: number | null
@@ -144,11 +140,6 @@ export default function GlobalSettingsPage() {
   const [appDomain, setAppDomain] = useState('')
   const [defaultPreviewResolution, setDefaultPreviewResolution] = useState('720p')
   const [defaultSkipTranscoding, setDefaultSkipTranscoding] = useState(false)
-  const [defaultWatermarkEnabled, setDefaultWatermarkEnabled] = useState(true)
-  const [defaultWatermarkText, setDefaultWatermarkText] = useState('')
-  const [defaultWatermarkPositions, setDefaultWatermarkPositions] = useState('center')
-  const [defaultWatermarkOpacity, setDefaultWatermarkOpacity] = useState(30)
-  const [defaultWatermarkFontSize, setDefaultWatermarkFontSize] = useState('medium')
   const [defaultApplyPreviewLut, setDefaultApplyPreviewLut] = useState(true)
   const [maxUploadSizeGB, setMaxUploadSizeGB] = useState('1')
   const [maxCommentAttachments, setMaxCommentAttachments] = useState('10')
@@ -200,6 +191,7 @@ export default function GlobalSettingsPage() {
   const [showVideoProcessing, setShowVideoProcessing] = useState(false)
   const [showProjectDefaults, setShowProjectDefaults] = useState(false)
   const [showBlocklist, setShowBlocklist] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
 
   const [activeSection, setActiveSection] = useState('appearance')
 
@@ -226,11 +218,6 @@ export default function GlobalSettingsPage() {
     setAppDomain(data.appDomain || '')
     setDefaultPreviewResolution(data.defaultPreviewResolution || '720p')
     setDefaultSkipTranscoding(data.defaultSkipTranscoding ?? false)
-    setDefaultWatermarkEnabled(data.defaultWatermarkEnabled ?? true)
-    setDefaultWatermarkText(data.defaultWatermarkText || '')
-    setDefaultWatermarkPositions(data.defaultWatermarkPositions || 'center')
-    setDefaultWatermarkOpacity(data.defaultWatermarkOpacity ?? 30)
-    setDefaultWatermarkFontSize(data.defaultWatermarkFontSize || 'medium')
     setDefaultApplyPreviewLut(data.defaultApplyPreviewLut ?? true)
     setMaxUploadSizeGB(data.maxUploadSizeGB?.toString() || '1')
     setMaxCommentAttachments(data.maxCommentAttachments?.toString() || '10')
@@ -633,11 +620,6 @@ export default function GlobalSettingsPage() {
         appDomain: appDomain || null,
         defaultPreviewResolution: defaultPreviewResolution || '720p',
         defaultSkipTranscoding,
-        defaultWatermarkEnabled: defaultWatermarkEnabled,
-        defaultWatermarkText: defaultWatermarkText || null,
-        defaultWatermarkPositions: defaultWatermarkPositions || 'center',
-        defaultWatermarkOpacity: defaultWatermarkOpacity,
-        defaultWatermarkFontSize: defaultWatermarkFontSize || 'medium',
         defaultApplyPreviewLut,
         maxUploadSizeGB: parseInt(maxUploadSizeGB, 10) || 1,
         maxCommentAttachments: parseInt(maxCommentAttachments, 10) || 10,
@@ -766,7 +748,7 @@ export default function GlobalSettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
+      <div className="flex-1 min-h-0 flex items-center justify-center">
         <p className="text-muted-foreground">{tc('loading')}</p>
       </div>
     )
@@ -775,6 +757,7 @@ export default function GlobalSettingsPage() {
   const settingSections = [
     { id: 'appearance', label: t('appearance.title'), icon: Palette },
     { id: 'branding', label: t('branding.title'), icon: Building2 },
+    { id: 'transfer', label: t('transfer.title'), icon: QrCode },
     { id: 'privacy', label: t('privacy.title'), icon: ShieldCheck },
     { id: 'notifications', label: t('notifications.title'), icon: Mail },
     { id: 'video-processing', label: t('videoProcessing.title'), icon: Video },
@@ -814,11 +797,6 @@ export default function GlobalSettingsPage() {
   const videoProcessingProps = {
     defaultPreviewResolution, setDefaultPreviewResolution,
     defaultSkipTranscoding, setDefaultSkipTranscoding,
-    defaultWatermarkEnabled, setDefaultWatermarkEnabled,
-    defaultWatermarkText, setDefaultWatermarkText,
-    defaultWatermarkPositions, setDefaultWatermarkPositions,
-    defaultWatermarkOpacity, setDefaultWatermarkOpacity,
-    defaultWatermarkFontSize, setDefaultWatermarkFontSize,
     defaultApplyPreviewLut, setDefaultApplyPreviewLut,
   }
 
@@ -831,7 +809,6 @@ export default function GlobalSettingsPage() {
     defaultShowClientTutorial, setDefaultShowClientTutorial,
     defaultAllowAssetDownload, setDefaultAllowAssetDownload,
     defaultClientCanApprove, setDefaultClientCanApprove,
-    defaultWatermarkEnabled,
   }
 
   const securityProps = {
@@ -860,31 +837,23 @@ export default function GlobalSettingsPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 bg-background">
-      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
-        <div className="mb-4 sm:mb-6">
-          <div className="flex justify-between items-center gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-                <SettingsIcon className="w-7 h-7 sm:w-8 sm:h-8" />
-                {t('title')}
-              </h1>
-              <p className="text-sm sm:text-base text-muted-foreground mt-1">
-                {t('description')}
-              </p>
-            </div>
-
-          </div>
+    <div className="space-y-4">
+      <>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal">{t('title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('description')}
+          </p>
         </div>
 
         {error && (
-          <div role="alert" className="mb-4 sm:mb-6 p-3 sm:p-4 bg-destructive-visible border-2 border-destructive-visible rounded-lg">
+          <div role="alert" className="p-3 sm:p-4 bg-destructive-visible border-2 border-destructive-visible rounded-lg">
             <p className="text-xs sm:text-sm text-destructive font-medium">{error}</p>
           </div>
         )}
 
         {success && (
-          <div role="status" aria-live="polite" className="mb-4 sm:mb-6 p-3 sm:p-4 bg-success-visible border-2 border-success-visible rounded-lg">
+          <div role="status" aria-live="polite" className="p-3 sm:p-4 bg-success-visible border-2 border-success-visible rounded-lg">
             <p className="text-xs sm:text-sm text-success font-medium">{t('savedSuccessfully')}</p>
           </div>
         )}
@@ -893,6 +862,7 @@ export default function GlobalSettingsPage() {
         <div className="lg:hidden space-y-4 sm:space-y-6">
           <AppearanceSection {...appearanceProps} show={showAppearance} setShow={setShowAppearance} />
           <BrandingSection {...brandingProps} show={showBranding} setShow={setShowBranding} />
+          <TransferSettingsSection active={showTransfer} show={showTransfer} setShow={setShowTransfer} />
           <PrivacySection {...privacyProps} show={showPrivacy} setShow={setShowPrivacy} />
           <NotificationsSection {...notificationsProps} show={showNotifications} setShow={setShowNotifications} />
           <VideoProcessingSettingsSection {...videoProcessingProps} show={showVideoProcessing} setShow={setShowVideoProcessing} />
@@ -934,6 +904,9 @@ export default function GlobalSettingsPage() {
             {activeSection === 'branding' && (
               <BrandingSection {...brandingProps} show={true} setShow={() => {}} collapsible={false} />
             )}
+            {activeSection === 'transfer' && (
+              <TransferSettingsSection active={true} show={showTransfer} setShow={setShowTransfer} collapsible={false} />
+            )}
             {activeSection === 'privacy' && (
               <PrivacySection {...privacyProps} show={true} setShow={() => {}} collapsible={false} />
             )}
@@ -955,13 +928,13 @@ export default function GlobalSettingsPage() {
           </div>
         </div>
 
-        <div className="mt-6 sm:mt-8 pb-20 lg:pb-24 flex justify-end">
+        <div className="flex justify-end">
           <Button onClick={handleSave} variant="default" disabled={saving || !loadedOk} size="default">
             <Save className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">{saving ? tc('saving') : tc('saveChanges')}</span>
           </Button>
         </div>
-      </div>
+      </>
     </div>
   )
 }

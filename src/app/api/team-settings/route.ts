@@ -42,11 +42,6 @@ export async function PATCH(request: NextRequest) {
   }
 
   const fields = [
-    'defaultWatermarkEnabled',
-    'defaultWatermarkText',
-    'defaultWatermarkPositions',
-    'defaultWatermarkOpacity',
-    'defaultWatermarkFontSize',
     'defaultApplyPreviewLut',
     'maxUploadSizeGB',
     'defaultTimestampDisplay',

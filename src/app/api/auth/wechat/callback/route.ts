@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     tokenUrl.searchParams.set('secret', process.env.WECHAT_WEB_APP_SECRET || '')
     tokenUrl.searchParams.set('code', code)
     tokenUrl.searchParams.set('grant_type', 'authorization_code')
-    const tokenResponse = await fetch(tokenUrl, { cache: 'no-store' })
+    const tokenResponse = await fetch(tokenUrl, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
     const tokenData = await tokenResponse.json()
     if (!tokenResponse.ok || !tokenData.access_token || !tokenData.openid) throw new Error('Wechat token exchange failed')
 
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     profileUrl.searchParams.set('access_token', tokenData.access_token)
     profileUrl.searchParams.set('openid', tokenData.openid)
     profileUrl.searchParams.set('lang', 'zh_CN')
-    const profileResponse = await fetch(profileUrl, { cache: 'no-store' })
+    const profileResponse = await fetch(profileUrl, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
     const profile = await profileResponse.json()
     if (!profileResponse.ok || profile.errcode) throw new Error('Wechat profile request failed')
 

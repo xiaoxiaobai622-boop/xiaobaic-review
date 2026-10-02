@@ -21,6 +21,12 @@ import { contentDispositionAttachment } from './download-names'
 
 let _s3Client: S3Client | null = null
 
+// Metadata reads sit on the user-facing request path, so they get a hard bound. Bulk
+// uploads and downloads stay uncapped: a slow but healthy transfer must not be cut off.
+// The bound is per send, not on the client — S3Client never forwards connectionTimeout
+// to its HTTP handler, only a requestHandler of our own would carry it.
+const S3_METADATA_TIMEOUT_MS = 10_000
+
 function getS3Client(): S3Client {
   if (_s3Client) return _s3Client
 
@@ -70,6 +76,7 @@ function getS3Bucket(): string {
 }
 
 const cdnUrlCache = new Map<string, { url: string; expiresAt: number }>()
+const CDN_URL_CACHE_MAX_ENTRIES = 2_048
 
 // Content requests can check the same preview several times while a player is
 // starting or seeking. A short process-local cache avoids a HEAD round trip on
@@ -147,6 +154,12 @@ function getCdnStreamUrl(key: string, expirySeconds: number): string | null {
     .digest('hex')
 
   const url = `${getCdnObjectUrl(key)}?auth_key=${timestamp}-${rand}-${uid}-${digest}`
+  // Insertion order is eviction order, so a long-lived process stays capped instead of
+  // retaining one signed URL for every object it has ever served.
+  if (!cdnUrlCache.has(cacheKey) && cdnUrlCache.size >= CDN_URL_CACHE_MAX_ENTRIES) {
+    const oldestKey = cdnUrlCache.keys().next().value
+    if (oldestKey !== undefined) cdnUrlCache.delete(oldestKey)
+  }
   cdnUrlCache.set(cacheKey, { url, expiresAt: timestamp })
   return url
 }
@@ -391,7 +404,8 @@ export async function s3DeleteDirectory(prefix: string): Promise<void> {
 
   do {
     const res = await client.send(
-      new ListObjectsV2Command({ Bucket: bucket, Prefix: normalizedPrefix, ContinuationToken: continuationToken })
+      new ListObjectsV2Command({ Bucket: bucket, Prefix: normalizedPrefix, ContinuationToken: continuationToken }),
+      { abortSignal: AbortSignal.timeout(S3_METADATA_TIMEOUT_MS) },
     )
     const keys = (res.Contents ?? [])
       .map((object) => object.Key)
@@ -422,7 +436,10 @@ export async function s3FileExists(key: string): Promise<boolean> {
   const requestGeneration = s3FileExistsGenerations.get(key) ?? 0
   const checkPromise = (async () => {
     try {
-      await getS3Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+      await getS3Client().send(
+        new HeadObjectCommand({ Bucket: bucket, Key: key }),
+        { abortSignal: AbortSignal.timeout(S3_METADATA_TIMEOUT_MS) },
+      )
       if ((s3FileExistsGenerations.get(key) ?? 0) === requestGeneration) {
         setS3FileExistsCache(key, true, S3_FILE_EXISTS_CACHE_TTL_MS)
       }

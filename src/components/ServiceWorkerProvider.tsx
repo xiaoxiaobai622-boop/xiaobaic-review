@@ -15,39 +15,54 @@ export function ServiceWorkerProvider() {
       return
     }
 
+    let registration: ServiceWorkerRegistration | null = null
+    let cancelled = false
+
+    // Check for updates periodically
+    const handleUpdateFound = () => {
+      const newWorker = registration?.installing
+      if (newWorker) {
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New service worker available
+            logMessage('[SW] New service worker available')
+          }
+        })
+      }
+    }
+
     // Register service worker
     const registerServiceWorker = async () => {
       try {
-        const registration = await navigator.serviceWorker.register('/sw.js', {
+        const result = await navigator.serviceWorker.register('/sw.js', {
           scope: '/',
         })
 
-        logMessage('[SW] Service worker registered:', registration.scope)
+        // The layout can unmount while the registration is still in flight.
+        if (cancelled) return
 
-        // Check for updates periodically
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // New service worker available
-                logMessage('[SW] New service worker available')
-              }
-            })
-          }
-        })
+        registration = result
+        logMessage('[SW] Service worker registered:', registration.scope)
+        registration.addEventListener('updatefound', handleUpdateFound)
       } catch (error) {
         logError('[SW] Service worker registration failed:', error)
       }
     }
 
+    const cleanup = () => {
+      cancelled = true
+      window.removeEventListener('load', registerServiceWorker)
+      registration?.removeEventListener('updatefound', handleUpdateFound)
+    }
+
     // Register on load
     if (document.readyState === 'complete') {
       registerServiceWorker()
-    } else {
-      window.addEventListener('load', registerServiceWorker)
-      return () => window.removeEventListener('load', registerServiceWorker)
+      return cleanup
     }
+
+    window.addEventListener('load', registerServiceWorker)
+    return cleanup
   }, [])
 
   // This component doesn't render anything

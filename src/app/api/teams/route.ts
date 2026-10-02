@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { randomBytes } from 'crypto'
-import { TRIAL_PLAN, UNACTIVATED_PLAN, TRIAL_QUOTA } from '@/lib/platform-access'
+import { BETA_PLAN, BETA_QUOTA } from '@/lib/platform-access'
 import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
@@ -15,19 +16,29 @@ export const dynamic = 'force-dynamic'
  * Team slugs are also used by the join link. Keep existing slugs working,
  * while assigning new teams a short, human-friendly numeric identifier.
  */
-async function getNextTeamIdentifier() {
-  const teams = await prisma.team.findMany({ select: { slug: true } })
-  const maxIdentifier = teams.reduce((max, team) => {
-    if (!/^\d+$/.test(team.slug)) return max
-    const value = Number(team.slug)
-    return Number.isSafeInteger(value) && value >= 10000 ? Math.max(max, value) : max
-  }, 9999)
+const TEAM_IDENTIFIER_SCAN_LIMIT = 1_000
 
-  let candidate = maxIdentifier + 1
-  while (await prisma.team.findUnique({ where: { slug: String(candidate) }, select: { id: true } })) {
-    candidate += 1
+/**
+ * Runs inside the create transaction: the advisory lock serialises concurrent creates, so
+ * the scan and the claim see one snapshot and two teams cannot take the same number.
+ */
+async function getNextTeamIdentifier(tx: Prisma.TransactionClient) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(86230402)`
+
+  const slugs = await tx.team.findMany({ select: { slug: true } })
+  const taken = new Set(slugs.map((team) => team.slug))
+  let maxIdentifier = 9999
+  for (const { slug } of slugs) {
+    if (!/^\d+$/.test(slug)) continue
+    const value = Number(slug)
+    if (Number.isSafeInteger(value) && value >= 10000) maxIdentifier = Math.max(maxIdentifier, value)
   }
-  return String(candidate)
+
+  for (let offset = 1; offset <= TEAM_IDENTIFIER_SCAN_LIMIT; offset += 1) {
+    const candidate = String(maxIdentifier + offset)
+    if (!taken.has(candidate)) return candidate
+  }
+  throw new Error('TEAM_IDENTIFIER_LIMIT_REACHED')
 }
 
 export async function GET(request: NextRequest) {
@@ -89,21 +100,18 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const slug = await getNextTeamIdentifier()
-
   const team = await prisma.$transaction(async (tx) => {
-    const existingTeamCount = await tx.team.count({ where: { createdById: authResult.id } })
-    const isFirstTeam = existingTeamCount === 0
     const now = new Date()
+    const slug = await getNextTeamIdentifier(tx)
     const created = await tx.team.create({
       data: {
         name,
         slug,
         shareKey: `tm_${randomBytes(5).toString('hex')}`,
         createdById: authResult.id,
-        subscriptionPlan: isFirstTeam ? TRIAL_PLAN : UNACTIVATED_PLAN,
+        subscriptionPlan: BETA_PLAN,
         subscriptionStartedAt: now,
-        subscriptionExpiresAt: isFirstTeam ? new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) : null,
+        subscriptionExpiresAt: null,
       },
     })
 
@@ -118,7 +126,8 @@ export async function POST(request: NextRequest) {
     await tx.teamQuota.create({
       data: {
         teamId: created.id,
-        ...TRIAL_QUOTA,
+        ...BETA_QUOTA,
+        source: 'PLAN',
       },
     })
 

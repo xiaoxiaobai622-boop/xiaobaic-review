@@ -17,7 +17,7 @@ import {
   touchPlatformSession,
 } from './platform-session-registry'
 import { getRedis } from './redis'
-import { isShareSessionRevoked } from './session-invalidation'
+import { isShareSessionRevoked, isShareLinkRevoked } from './session-invalidation'
 import { logError, logWarn } from './logging'
 import { getRequestedTeamId } from './team-access'
 import { WECHAT_SESSION_COOKIE, verifyWechatSession } from './wechat-auth'
@@ -208,6 +208,12 @@ export async function verifyShareToken(token: string): Promise<SharePayload | nu
 
     // Check if session is revoked (auth mode changes, etc.)
     if (decoded.sessionId && await isShareSessionRevoked(decoded.sessionId)) {
+      return null
+    }
+
+    // A revoked or deleted link drops its viewer bearer even while the JWT
+    // itself is still inside its TTL.
+    if (decoded.shareId && await isShareLinkRevoked(decoded.shareId)) {
       return null
     }
 

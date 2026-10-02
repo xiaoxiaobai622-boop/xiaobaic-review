@@ -161,9 +161,10 @@ export async function DELETE(
     return NextResponse.json({ error: 'Owner permission required' }, { status: 403 })
   }
 
-  const [projectCount, activeMemberCount] = await Promise.all([
+  const [projectCount, activeMemberCount, orderCount] = await Promise.all([
     prisma.project.count({ where: { teamId: id } }),
     prisma.teamMember.count({ where: { teamId: id, status: 'ACTIVE' } }),
+    prisma.order.count({ where: { teamId: id } }),
   ])
 
   if (projectCount > 0) {
@@ -176,6 +177,13 @@ export async function DELETE(
   if (activeMemberCount > 1) {
     return NextResponse.json(
       { error: '团队中还有其他成员，请先移除成员或转让团队' },
+      { status: 409 },
+    )
+  }
+
+  if (orderCount > 0) {
+    return NextResponse.json(
+      { error: '该团队已有账单记录，不能删除，请联系平台' },
       { status: 409 },
     )
   }

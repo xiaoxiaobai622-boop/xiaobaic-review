@@ -96,11 +96,6 @@ export async function getProjectDefaults(teamId: string) {
     prisma.teamSettings.findUnique({
       where: { teamId },
       select: {
-        defaultWatermarkEnabled: true,
-        defaultWatermarkText: true,
-        defaultWatermarkPositions: true,
-        defaultWatermarkOpacity: true,
-        defaultWatermarkFontSize: true,
         defaultApplyPreviewLut: true,
         maxUploadSizeGB: true,
         defaultTimestampDisplay: true,
@@ -118,11 +113,6 @@ export async function getProjectDefaults(teamId: string) {
       select: {
         defaultPreviewResolution: true,
         defaultSkipTranscoding: true,
-        defaultWatermarkEnabled: true,
-        defaultWatermarkText: true,
-        defaultWatermarkPositions: true,
-        defaultWatermarkOpacity: true,
-        defaultWatermarkFontSize: true,
         defaultApplyPreviewLut: true,
         maxUploadSizeGB: true,
         defaultTimestampDisplay: true,
@@ -151,11 +141,6 @@ export async function getProjectDefaults(teamId: string) {
   return {
     defaultPreviewResolution: previewResolution,
     defaultSkipTranscoding: skipTranscoding ? (globalSettings?.defaultSkipTranscoding ?? false) : false,
-    defaultWatermarkEnabled: teamSettings?.defaultWatermarkEnabled ?? globalSettings?.defaultWatermarkEnabled ?? true,
-    defaultWatermarkText: teamSettings?.defaultWatermarkText ?? globalSettings?.defaultWatermarkText ?? null,
-    defaultWatermarkPositions: teamSettings?.defaultWatermarkPositions || globalSettings?.defaultWatermarkPositions || 'center',
-    defaultWatermarkOpacity: teamSettings?.defaultWatermarkOpacity ?? globalSettings?.defaultWatermarkOpacity ?? 30,
-    defaultWatermarkFontSize: teamSettings?.defaultWatermarkFontSize || globalSettings?.defaultWatermarkFontSize || 'medium',
     defaultApplyPreviewLut: teamSettings?.defaultApplyPreviewLut ?? globalSettings?.defaultApplyPreviewLut ?? true,
     maxUploadSizeGB: teamSettings?.maxUploadSizeGB ?? globalSettings?.maxUploadSizeGB ?? 1,
     defaultTimestampDisplay: teamSettings?.defaultTimestampDisplay || globalSettings?.defaultTimestampDisplay || 'TIMECODE',
@@ -485,5 +470,29 @@ export async function getPasskeyConfigStatus(): Promise<{
       available: false,
       reason: 'Domain not configured. Set appDomain in Settings.',
     }
+  }
+}
+
+/**
+ * 对公转账信息。刻意不带缓存：它一次下单才被读一次，缓存换来的
+ * 是运营改完账号后客户还拿到旧账号的那几分钟。
+ */
+export async function getTransferConfig() {
+  const row = await prisma.settings.findUnique({
+    where: { id: 'default' },
+    select: {
+      transferAccountName: true, transferAccountNo: true, transferBank: true,
+      transferNote: true, transferQrPath: true,
+    },
+  })
+  const accountName = row?.transferAccountName?.trim() || null
+  const accountNo = row?.transferAccountNo?.trim() || null
+  return {
+    accountName,
+    accountNo,
+    bank: row?.transferBank?.trim() || null,
+    note: row?.transferNote ?? null,
+    qrPath: row?.transferQrPath || null,
+    configured: Boolean(accountName && accountNo),
   }
 }

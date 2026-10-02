@@ -42,6 +42,7 @@ export async function getWechatMiniAccessToken(forceRefresh = false): Promise<st
       force_refresh: forceRefresh,
     }),
     cache: 'no-store',
+    signal: AbortSignal.timeout(10_000),
   })
   const data = (await response.json()) as WechatTokenResponse
   if (!response.ok || !data.access_token) {
@@ -77,6 +78,7 @@ export async function generateWechatMiniQrCode(scene: string, page: string): Pro
         width: 280,
       }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
     })
 
     const contentType = response.headers.get('content-type') || ''

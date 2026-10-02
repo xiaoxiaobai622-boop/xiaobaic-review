@@ -155,8 +155,7 @@ If the project allows client approval, an **Approve** button appears in the acti
 After approval:
 - The video shows a checkmark and the label "Approved Version".
 - Only approved versions remain visible.
-- The original unwatermarked file becomes available for download (if enabled).
-- The watermark is removed from playback.
+- The original file becomes available for download (if enabled).
 - Your video team is notified of the approval.
 
 If the project has auto-approve enabled, the entire project is automatically marked as approved once all videos are approved.
@@ -190,7 +189,7 @@ Download options appear after a video has been approved (not available in guest 
 - If the project has additional assets (images, audio, project files), a download dialog lets you select which files to download.
 - If the project has multiple approved videos and downloads are enabled, a **Download All Videos** button in the Videos section header downloads each approved video directly.
 
-Unapproved videos cannot be downloaded — only the watermarked preview is shown for review.
+Unapproved videos cannot be downloaded — only the transcoded preview is shown for review.
 
 ## Theme and language
 
@@ -222,8 +221,8 @@ These can be combined, e.g. `https://example.com/share/token?video=Hero%20Reel&t
 
 ## FAQ
 
-**Q: The video looks blurry or has a watermark.**
-A: Unapproved videos are shown as watermarked previews at 720p or 1080p. Once you approve the video, the original quality becomes available.
+**Q: The video looks blurry.**
+A: Unapproved videos are shown as downscaled previews at 720p or 1080p. Once you approve the video, the original quality becomes available.
 
 **Q: I can't see the comment section.**
 A: On mobile, comments are collapsed by default — tap the comment header to expand. If you entered as a guest, comments are hidden.

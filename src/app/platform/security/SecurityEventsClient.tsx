@@ -2,7 +2,8 @@
 
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -90,6 +91,9 @@ export default function SecurityEventsClient() {
   const [pagination, setPagination] = useState({ page: 1, limit: DEFAULT_PAGE_SIZE, total: 0, pages: 0 })
   const [stats, setStats] = useState<Array<{ type: string; count: number }>>([])
   const [loading, setLoading] = useState(true)
+  // 读失败与「读到了但没事件」必须是两种界面状态：把 403 或网络错误画成空列表，
+  // 看的人会以为系统里真的干干净净。null = 这一次读成功了（或压根没发请求）。
+  const [loadFailure, setLoadFailure] = useState<'dashboard-off' | 'failed' | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [typeFilter, setTypeFilter] = useState<Set<string> | null>(null) // null = not initialized yet
   const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set(SEVERITY_OPTIONS.map(o => o.value)))
@@ -107,48 +111,72 @@ export default function SecurityEventsClient() {
     return () => clearInterval(interval)
   }, [showRateLimitsModal])
 
+  // The request as one stable string. Filters live here rather than in the callback's
+  // dependencies, so a response that only refreshes stats or completes the filter's
+  // initial value cannot change the query and make the first page load twice.
+  const eventsQuery = useMemo(() => {
+    if ((typeFilter !== null && typeFilter.size === 0) || severityFilter.size === 0) return null
+
+    const params = new URLSearchParams({
+      page: pagination.page.toString(),
+      limit: pagination.limit.toString(),
+    })
+
+    // Send comma-separated values if filtering (not showing all)
+    if (typeFilter !== null && typeFilter.size > 0 && typeFilter.size < stats.length) {
+      params.append('type', Array.from(typeFilter).join(','))
+    }
+    if (severityFilter.size > 0 && severityFilter.size < SEVERITY_OPTIONS.length) {
+      params.append('severity', Array.from(severityFilter).join(','))
+    }
+
+    return params.toString()
+  }, [pagination.page, pagination.limit, typeFilter, severityFilter, stats.length, SEVERITY_OPTIONS.length])
+
   const loadEvents = useCallback(async () => {
     setLoading(true)
+
+    // If filters are initialized but empty, show no results
+    if (eventsQuery === null) {
+      setEvents([])
+      setPagination(p => ({ ...p, total: 0, pages: 0 }))
+      setLoadFailure(null)
+      setLoading(false)
+      return
+    }
+
     try {
-      // If filters are initialized but empty, show no results
-      if ((typeFilter !== null && typeFilter.size === 0) || severityFilter.size === 0) {
+      const response = await apiFetch(`/api/security/events?${eventsQuery}`)
+      // 403 是「平台设置里把看板关了」，不是「没有事件」。这一支不渲染空列表文案，
+      // 否则会画出三个 0 加一句「未发现安全事件」，而库里其实有几百条。
+      if (response.status === 403) {
         setEvents([])
+        setStats([])
         setPagination(p => ({ ...p, total: 0, pages: 0 }))
-        setLoading(false)
+        setLoadFailure('dashboard-off')
         return
       }
-
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-      })
-
-      // Send comma-separated values if filtering (not showing all)
-      if (typeFilter !== null && typeFilter.size > 0 && typeFilter.size < stats.length) {
-        params.append('type', Array.from(typeFilter).join(','))
-      }
-      if (severityFilter.size > 0 && severityFilter.size < SEVERITY_OPTIONS.length) {
-        params.append('severity', Array.from(severityFilter).join(','))
-      }
-
-      const response = await apiFetch(`/api/security/events?${params}`)
       if (!response.ok) throw new Error(t('failedToLoadEvents'))
 
       const data: SecurityEventsResponse = await response.json()
       setEvents(data.events)
       setPagination(data.pagination)
       setStats(data.stats)
-
-      // Initialize type filter with all types on first load only
-      if (typeFilter === null && data.stats.length > 0) {
-        setTypeFilter(new Set(data.stats.map(s => s.type)))
-      }
+      setLoadFailure(null)
     } catch (error) {
       logError('Error loading security events:', error)
+      setLoadFailure('failed')
     } finally {
       setLoading(false)
     }
-  }, [pagination.page, pagination.limit, typeFilter, severityFilter, stats.length, SEVERITY_OPTIONS.length, t])
+  }, [eventsQuery, t])
+
+  // Initialize type filter with all types on first load only
+  useEffect(() => {
+    if (typeFilter === null && stats.length > 0) {
+      setTypeFilter(new Set(stats.map(s => s.type)))
+    }
+  }, [typeFilter, stats])
 
   const loadRateLimits = useCallback(async () => {
     try {
@@ -251,19 +279,16 @@ export default function SecurityEventsClient() {
   }
 
   return (
-    <div className="flex-1 min-h-0 bg-background">
-      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
-        <div className="mb-4 sm:mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-            <Shield className="w-7 h-7 sm:w-8 sm:h-8" />
-            {t('title')}
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
+    <div className="space-y-4">
+      <>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal">{t('title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {t('description')}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <FilterDropdown
             groups={[
               {
@@ -315,59 +340,82 @@ export default function SecurityEventsClient() {
           </Button>
         </div>
 
-        {/* Stats Overview */}
-        <Card className="p-3 mb-4">
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10">
-                <Shield className="w-4 h-4 text-primary" />
+        {/* Stats Overview —— 只在这一页真的读到数据时才画数字，否则三个 0 会被读成「什么都没发生」 */}
+        {!loading && !loadFailure && (
+          <Card className="p-3">
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className="rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10">
+                  <Shield className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{t('events')}</p>
+                  <p className="text-base font-semibold tabular-nums">{pagination.total.toLocaleString()}</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">{t('events')}</p>
-                <p className="text-base font-semibold tabular-nums">{pagination.total.toLocaleString()}</p>
+              <div className="flex items-center gap-2">
+                <div className="rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10">
+                  <Tag className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{t('types')}</p>
+                  <p className="text-base font-semibold tabular-nums">{stats.length}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10">
+                  <XCircle className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{t('blocked')}</p>
+                  <p className="text-base font-semibold tabular-nums">{events.filter(e => e.wasBlocked).length}</p>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10">
-                <Tag className="w-4 h-4 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">{t('types')}</p>
-                <p className="text-base font-semibold tabular-nums">{stats.length}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10">
-                <XCircle className="w-4 h-4 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">{t('blocked')}</p>
-                <p className="text-base font-semibold tabular-nums">{events.filter(e => e.wasBlocked).length}</p>
-              </div>
-            </div>
-          </div>
-        </Card>
+          </Card>
+        )}
 
         {/* Events List */}
         <Card className="overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-            <span className="text-sm font-medium">{t('title')}</span>
-            <span className="text-xs text-muted-foreground">
-              {t('showing', { count: events.length, total: pagination.total })}
-            </span>
-          </div>
-          {/* Table Header */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground bg-muted/20 border-b">
-            <span className="w-20 flex-shrink-0">{t('severity')}</span>
-            <span className="flex-1 min-w-0">{t('eventType')}</span>
-            <span className="w-28 hidden md:block">{t('ipAddress')}</span>
-            <span className="w-32 hidden lg:block">{tc('date')}</span>
-            <span className="w-8 text-center">{t('block')}</span>
-            <span className="w-4"></span>
-          </div>
+          {!loadFailure && (
+            <>
+              <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+                <span className="text-sm font-medium">{t('title')}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t('showing', { count: events.length, total: pagination.total })}
+                </span>
+              </div>
+              {/* Table Header */}
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground bg-muted/20 border-b">
+                <span className="w-20 flex-shrink-0">{t('severity')}</span>
+                <span className="flex-1 min-w-0">{t('eventType')}</span>
+                <span className="w-28 hidden md:block">{t('ipAddress')}</span>
+                <span className="w-32 hidden lg:block">{tc('date')}</span>
+                <span className="w-8 text-center">{t('block')}</span>
+                <span className="w-4"></span>
+              </div>
+            </>
+          )}
           <div>
             {loading ? (
               <div className="text-center py-8 text-muted-foreground">{t('loadingEvents')}</div>
+            ) : loadFailure === 'dashboard-off' ? (
+              <div role="alert" className="px-4 py-8">
+                <p className="text-sm font-medium text-foreground">{t('dashboardOffTitle')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('dashboardOffHint')}</p>
+                <Button asChild variant="outline" size="sm" className="mt-3">
+                  <Link href="/platform/settings">{t('openSecuritySettings')}</Link>
+                </Button>
+              </div>
+            ) : loadFailure === 'failed' ? (
+              <div role="alert" className="px-4 py-8">
+                <p className="text-sm font-medium text-foreground">{t('loadFailedTitle')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('loadFailedHint')}</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={loadEvents}>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  {tc('retry')}
+                </Button>
+              </div>
             ) : events.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">{t('noEvents')}</div>
             ) : (
@@ -523,7 +571,7 @@ export default function SecurityEventsClient() {
             )}
           </div>
         </Card>
-      </div>
+      </>
 
       {/* Cleanup Modal */}
       <Dialog open={showCleanupModal} onOpenChange={setShowCleanupModal}>

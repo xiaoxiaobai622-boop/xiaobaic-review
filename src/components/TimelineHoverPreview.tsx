@@ -45,6 +45,11 @@ function TimelineHoverPreview({
     setPreviewTime(targetTime)
     setReady(false)
 
+    // A hover that ends before metadata lands must not leave the old target time queued
+    // to seek over the new one. The element is recorded with the handler so the cleanup
+    // detaches from the exact node the listener went on.
+    let pendingSeek: { video: HTMLVideoElement, handler: () => void } | null = null
+
     const timer = window.setTimeout(() => {
       const current = videoRef.current
       if (!current) return
@@ -63,10 +68,14 @@ function TimelineHoverPreview({
         applySeek()
       } else {
         current.addEventListener('loadedmetadata', applySeek, { once: true })
+        pendingSeek = { video: current, handler: applySeek }
       }
     }, 70)
 
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      if (pendingSeek) pendingSeek.video.removeEventListener('loadedmetadata', pendingSeek.handler)
+    }
   }, [videoUrl, hoveredTime, duration])
 
   useEffect(() => {

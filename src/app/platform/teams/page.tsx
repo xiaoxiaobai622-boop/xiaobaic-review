@@ -19,13 +19,10 @@ type Team = {
   _count: { members: number; projects: number }
 }
 
-function formatExpiry(team: Pick<Team, 'status' | 'subscriptionPlan' | 'subscriptionExpiresAt'>, now: number) {
+function formatExpiry(team: Pick<Team, 'status'>) {
+  // 免费内测期没有到期日：库里的旧到期日不再对外报倒计时。
   if (team.status === 'DISABLED') return '已停用'
-  if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
-  if (!team.subscriptionExpiresAt) return '长期有效'
-  const remaining = new Date(team.subscriptionExpiresAt).getTime() - now
-  if (remaining <= 0) return '已到期'
-  return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
+  return '长期有效'
 }
 
 export default function PlatformTeamsPage() {
@@ -43,10 +40,9 @@ export default function PlatformTeamsPage() {
       const response = await fetch('/api/platform/teams', { headers, cache: 'no-store' })
       if (!response.ok) throw new Error('无法加载团队列表')
       const data = await response.json()
-      const now = Date.now()
       setTeams((data.teams || []).map((team: Omit<Team, 'expiryLabel'>) => ({
         ...team,
-        expiryLabel: formatExpiry(team, now),
+        expiryLabel: formatExpiry(team),
       })))
     } catch (err) {
       setError(err instanceof Error ? err.message : '无法加载团队列表')
@@ -88,11 +84,10 @@ export default function PlatformTeamsPage() {
   const disabledCount = teams.filter((team) => team.status === 'DISABLED').length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm text-muted-foreground">平台控制台</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-normal">团队管理</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">团队管理</h1>
           <p className="mt-1 text-sm text-muted-foreground">停用后，该团队所有成员和接口将立即无法使用。</p>
         </div>
         <button
@@ -169,7 +164,7 @@ export default function PlatformTeamsPage() {
               <div className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-sm">
                 <Clock3 className="h-4 w-4 text-muted-foreground" />
                 <span className="text-muted-foreground">团队有效期</span>
-                <span className={`font-medium ${team.status === 'ACTIVE' && team.subscriptionPlan !== 'UNACTIVATED' && team.expiryLabel !== '已到期' ? 'text-primary' : 'text-destructive'}`}>
+                <span className={`font-medium ${team.status === 'ACTIVE' ? 'text-primary' : 'text-destructive'}`}>
                   {team.expiryLabel}
                 </span>
               </div>

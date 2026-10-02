@@ -155,12 +155,11 @@ Both the **video asset list** (per video) and the **Client Uploads** block suppo
 - Use bulk select on video assets and client uploads to download or delete multiple files at once.
 - Use custom URLs for memorable share links.
 - Enable revision tracking for complex projects.
-- Configure watermarks globally or per-project (text, opacity, font size, positions).
 - Monitor analytics to track engagement.
 - Use Security Logs to track access attempts.
 - Set due dates and use the calendar view to manage project deadlines.
 - Enable privacy disclosure for GDPR compliance.
-- Use skip-transcoding mode for projects that don't need watermarked previews.
+- Use skip-transcoding mode for projects that don't need transcoded previews.
 - Set admin session inactivity timeout for enhanced security.
 
 ---

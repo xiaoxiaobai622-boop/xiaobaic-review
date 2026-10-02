@@ -1,11 +1,9 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 import crypto from 'crypto'
 import { getCpuAllocation } from './cpu-config'
 import { logError, logMessage } from './logging'
-import { getInvalidWatermarkCharacters, stripInvalidWatermarkCharacters } from './watermark'
 
 // Debug mode - outputs verbose FFmpeg logs
 // Enable with: DEBUG_WORKER=true environment variable
@@ -14,6 +12,44 @@ const DEBUG = process.env.DEBUG_WORKER === 'true'
 // Use system-installed ffmpeg (installed via apk in Dockerfile)
 const ffmpegPath = 'ffmpeg'
 const ffprobePath = 'ffprobe'
+
+// Idle bounds measured locally: ffprobe of a 15 MB clip stays silent for 0.01-0.03 s
+// total, a transcode's stderr gap peaks at 500 ms, and a 10-minute waveform render is
+// quiet for 0.21 s. A ffprobe pointed at an unresponsive HTTP input goes permanently
+// silent after 23 ms and never exits, so silence is the stall signal. The bounds sit
+// ~300x and ~240x above the busiest healthy gap and are idle-only: a process that keeps
+// producing output is never cut off, however long the real work takes.
+const FFPROBE_IDLE_TIMEOUT_MS = 15_000
+const FFMPEG_IDLE_TIMEOUT_MS = 120_000
+
+/**
+ * Kill a spawned process that stops writing to both pipes. Without it a stalled
+ * ffprobe or ffmpeg holds the worker's Promise forever and the job never resolves.
+ */
+function attachIdleWatchdog(child: ChildProcess, idleMs: number, label: string): void {
+  let timer: NodeJS.Timeout | null = null
+
+  const arm = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      logError(`${label} produced no output for ${idleMs / 1000}s, killing it`)
+      child.kill('SIGKILL')
+    }, idleMs)
+  }
+
+  const disarm = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+  }
+
+  child.stdout?.on('data', arm)
+  child.stderr?.on('data', arm)
+  child.once('close', disarm)
+  child.once('error', disarm)
+  arm()
+}
 
 /**
  * Resolve the optional preview LUT across Docker and local development.
@@ -46,38 +82,6 @@ export interface VideoMetadata {
   format?: string
 }
 
-/**
- * Validate and sanitize watermark text for FFmpeg
- * Defense-in-depth: validates even if upstream validation exists
- *
- * @param text - The watermark text to validate
- * @returns Sanitized text safe for FFmpeg
- * @throws Error if text contains invalid characters or exceeds length limit
- */
-function validateAndSanitizeWatermarkText(text: string): string {
-  if (text.length > 100) {
-    throw new Error('Watermark text exceeds 100 character limit')
-  }
-
-  // Allow Unicode letters/numbers (including Chinese) and safe punctuation.
-  const invalidChars = getInvalidWatermarkCharacters(text)
-  if (invalidChars.length > 0) {
-    throw new Error(`Watermark text contains invalid characters: ${invalidChars.join(', ')}`)
-  }
-
-  // Defense-in-depth; validation above should already have rejected these.
-  const sanitized = stripInvalidWatermarkCharacters(text)
-
-  // Escape all characters that FFmpeg drawtext filter syntax might interpret
-  return sanitized
-    .replace(/\\/g, '\\\\')  // Backslash first (prevents double-escaping)
-    .replace(/'/g, "\\'")    // Single quote
-    .replace(/:/g, '\\:')    // Colon (used in filter syntax)
-    .replace(/%/g, '\\%')    // Percent (used in FFmpeg expressions)
-    .replace(/\[/g, '\\[')   // Square brackets (used in filter syntax)
-    .replace(/\]/g, '\\]')
-}
-
 export async function getVideoMetadata(inputPath: string): Promise<VideoMetadata> {
   return new Promise((resolve, reject) => {
     const args = [
@@ -94,6 +98,7 @@ export async function getVideoMetadata(inputPath: string): Promise<VideoMetadata
     }
 
     const ffprobe = spawn(ffprobePath, args)
+    attachIdleWatchdog(ffprobe, FFPROBE_IDLE_TIMEOUT_MS, 'ffprobe')
     let stdout = ''
     let stderr = ''
 
@@ -200,19 +205,12 @@ export async function getVideoMetadata(inputPath: string): Promise<VideoMetadata
   })
 }
 
-type WatermarkPosition = 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
-type WatermarkFontSize = 'small' | 'medium' | 'large'
-
 export interface TranscodeOptions {
   inputPath: string
   outputPath: string
   width: number
   height: number
   quality?: '720p' | '1080p'
-  watermarkText?: string
-  watermarkPositions?: string // comma-separated positions, e.g. "center,bottom-right"
-  watermarkOpacity?: number // 10-100
-  watermarkFontSize?: WatermarkFontSize
   applyLut?: boolean // Apply preview LUT for color-calibrated previews (default: true)
   onProgress?: (progress: number) => void
 }
@@ -224,7 +222,6 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     width,
     height,
     quality = '720p',
-    watermarkText,
     onProgress
   } = options
 
@@ -234,7 +231,6 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
       outputPath,
       width,
       height,
-      watermarkText,
       hasProgressCallback: !!onProgress
     })
   }
@@ -265,64 +261,6 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
 
   // Scale video
   filters.push(`scale=${width}:${height}`)
-
-  // Add watermark if specified
-  let watermarkTextFile: string | null = null
-  if (watermarkText) {
-    // Validate and sanitize watermark text (defense-in-depth)
-    const validatedText = validateAndSanitizeWatermarkText(watermarkText)
-
-    // SECURITY: Write watermark to secure temp directory instead of inline
-    // mkdtempSync creates a directory with restricted permissions (0700)
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watermark-'))
-    watermarkTextFile = path.join(tmpDir, 'text.txt')
-    fs.writeFileSync(watermarkTextFile, validatedText, 'utf-8')
-
-    // Parse positions (comma-separated, default: center)
-    const positionsStr = options.watermarkPositions || 'center'
-    const positions = positionsStr.split(',').map(p => p.trim()).filter(Boolean) as WatermarkPosition[]
-
-    // Convert opacity 10-100 to FFmpeg alpha 0.1-1.0
-    const rawOpacity = Math.max(10, Math.min(100, options.watermarkOpacity ?? 30))
-    const alpha = (rawOpacity / 100).toFixed(2)
-    const shadowAlpha = (rawOpacity / 200).toFixed(2)
-
-    // Font size multipliers relative to video width
-    const fontSize = options.watermarkFontSize || 'medium'
-    const isVertical = height > width
-    const sizeMultipliers = {
-      small:  { center: isVertical ? 0.05 : 0.025, corner: isVertical ? 0.035 : 0.018 },
-      medium: { center: isVertical ? 0.08 : 0.04,  corner: isVertical ? 0.05  : 0.025 },
-      large:  { center: isVertical ? 0.12 : 0.06,  corner: isVertical ? 0.07  : 0.035 },
-    }
-    const multiplier = sizeMultipliers[fontSize] || sizeMultipliers.medium
-    const centerFontPx = Math.round(width * multiplier.center)
-    const cornerFontPx = Math.round(width * multiplier.corner)
-
-    const spacing = isVertical ? 30 : 50
-    const fontCandidates = [
-      '/usr/share/fonts/noto/NotoSansCJK-Regular.ttc',
-      '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-      '/usr/share/fonts/dejavu/DejaVuSans.ttf',
-    ]
-    const font = fontCandidates.find((candidate) => fs.existsSync(candidate)) ?? fontCandidates[2]
-
-    const positionMap: Record<WatermarkPosition, { x: string; y: string; fs: number; shadow: number }> = {
-      'center':       { x: '(w-text_w)/2', y: '(h-text_h)/2', fs: centerFontPx, shadow: 2 },
-      'top-left':     { x: `${spacing}`, y: `${spacing}`, fs: cornerFontPx, shadow: 1 },
-      'top-right':    { x: `w-text_w-${spacing}`, y: `${spacing}`, fs: cornerFontPx, shadow: 1 },
-      'bottom-left':  { x: `${spacing}`, y: `h-text_h-${spacing}`, fs: cornerFontPx, shadow: 1 },
-      'bottom-right': { x: `w-text_w-${spacing}`, y: `h-text_h-${spacing}`, fs: cornerFontPx, shadow: 1 },
-    }
-
-    for (const pos of positions) {
-      const coords = positionMap[pos]
-      if (!coords) continue
-      filters.push(
-        `drawtext=textfile='${watermarkTextFile}':fontfile=${font}:fontsize=${coords.fs}:fontcolor=white@${alpha}:x=${coords.x}:y=${coords.y}:shadowcolor=black@${shadowAlpha}:shadowx=${coords.shadow}:shadowy=${coords.shadow}`
-      )
-    }
-  }
 
   // Apply preview LUT unless explicitly disabled.
   // Convert to BT.709 limited-range yuv420p first — this matches what a decoded
@@ -390,6 +328,7 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     const ffmpeg = spawn('nice', ['-n', '10', ffmpegPath, ...args], {
       stdio: ['ignore', 'pipe', 'pipe']
     })
+    attachIdleWatchdog(ffmpeg, FFMPEG_IDLE_TIMEOUT_MS, 'FFmpeg transcode')
     let stderr = ''
 
     if (DEBUG) {
@@ -426,20 +365,6 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     })
 
     ffmpeg.on('close', (code) => {
-      // Cleanup watermark temp file
-      if (watermarkTextFile && fs.existsSync(watermarkTextFile)) {
-        try {
-          const tmpDir = path.dirname(watermarkTextFile)
-          fs.unlinkSync(watermarkTextFile)
-          fs.rmdirSync(tmpDir)
-          if (DEBUG) {
-            logMessage('[FFMPEG DEBUG] Cleaned up watermark temp file:', watermarkTextFile)
-          }
-        } catch (cleanupErr) {
-          logError('Failed to cleanup watermark temp file:', cleanupErr)
-        }
-      }
-
       if (DEBUG) {
         logMessage('[FFMPEG DEBUG] Process exited with code:', code)
       }
@@ -459,17 +384,6 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
     })
 
     ffmpeg.on('error', (err) => {
-      // Cleanup watermark temp file and directory on error
-      if (watermarkTextFile && fs.existsSync(watermarkTextFile)) {
-        try {
-          const tmpDir = path.dirname(watermarkTextFile)
-          fs.unlinkSync(watermarkTextFile)
-          fs.rmdirSync(tmpDir)
-        } catch (cleanupErr) {
-          logError('Failed to cleanup watermark temp file:', cleanupErr)
-        }
-      }
-
       if (DEBUG) {
         logError('[FFMPEG DEBUG] Failed to spawn FFmpeg:', err)
       }
@@ -511,6 +425,7 @@ export async function generateThumbnail(
     const ffmpeg = spawn('nice', ['-n', '10', ffmpegPath, ...args], {
       stdio: ['ignore', 'pipe', 'pipe']
     })
+    attachIdleWatchdog(ffmpeg, FFMPEG_IDLE_TIMEOUT_MS, 'FFmpeg thumbnail')
     let stderr = ''
 
     if (DEBUG) {
@@ -564,6 +479,9 @@ export async function generateWaveformImage(
     '-i', inputPath,
     '-filter_complex', 'showwavespic=s=512x288:colors=#7c8cf8',
     '-frames:v', '1',
+    // '-v error' keeps stderr empty while the render works, which the idle watchdog would
+    // read as a stall, so progress goes to stdout instead and keeps the heartbeat.
+    '-progress', 'pipe:1',
     '-y',
     outputPath
   ]
@@ -572,6 +490,7 @@ export async function generateWaveformImage(
     const ffmpeg = spawn('nice', ['-n', '10', ffmpegPath, ...args], {
       stdio: ['ignore', 'pipe', 'pipe']
     })
+    attachIdleWatchdog(ffmpeg, FFMPEG_IDLE_TIMEOUT_MS, 'FFmpeg waveform')
     let stderr = ''
 
     ffmpeg.stderr.on('data', (data) => {

@@ -90,6 +90,13 @@ export async function POST(request: NextRequest) {
 
     await tx.project.updateMany({ where: { createdById: target.id }, data: { createdById: currentUser.id } })
     await tx.team.updateMany({ where: { createdById: target.id }, data: { createdById: currentUser.id } })
+    // Billing rows are RESTRICT-ed against "User" (Order.createdById /
+    // Order.fulfilledById / OrderEvent.actorUserId): a merged account left behind
+    // would both abort the delete below and silently dangle the signature on a
+    // commercial record.
+    await tx.order.updateMany({ where: { createdById: target.id }, data: { createdById: currentUser.id } })
+    await tx.order.updateMany({ where: { fulfilledById: target.id }, data: { fulfilledById: currentUser.id } })
+    await tx.orderEvent.updateMany({ where: { actorUserId: target.id }, data: { actorUserId: currentUser.id } })
     await tx.wechatIdentity.updateMany({ where: { userId: target.id }, data: { userId: currentUser.id } })
     await tx.comment.updateMany({ where: { userId: target.id }, data: { userId: currentUser.id } })
     await tx.adminSavedView.updateMany({ where: { userId: target.id }, data: { userId: currentUser.id } })

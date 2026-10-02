@@ -34,6 +34,8 @@ export interface ProjectListItem {
   id: string
   projectCode: string
   slug: string
+  /** The project's own short share code; null until that address has been minted. */
+  shareCode?: string | null
   title: string
   description?: string | null
   status: string

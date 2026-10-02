@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
+import { requireTeamWritable } from '@/lib/team-writeable'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,8 @@ export async function POST(
   if (!invite || invite.teamId !== id || invite.status !== 'PENDING') {
     return NextResponse.json({ error: 'Invitation is invalid' }, { status: 404 })
   }
+  const blocked = await requireTeamWritable(invite.teamId)
+  if (blocked) return blocked
   if (invite.expiresAt < new Date()) {
     await prisma.teamInvite.update({ where: { id: invite.id }, data: { status: 'EXPIRED' } })
     return NextResponse.json({ error: 'Invitation has expired' }, { status: 410 })

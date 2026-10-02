@@ -207,6 +207,92 @@ async function revokeShareSessions(sessionIds: string[]): Promise<number> {
   return sessionIds.length
 }
 
+// A revocation marker has to outlive everything it can be used to reach: the
+// viewer bearer (up to the configured share TTL) and the content tokens minted
+// with it (up to four hours). 7 days matches the share-session markers above.
+const SHARE_LINK_REVOCATION_TTL_SECONDS = 7 * 24 * 60 * 60
+
+/**
+ * Kill one share link's access without touching any other link of the project.
+ *
+ * Two layers, because a revoked link has to stop serving bytes immediately and
+ * not only at the next page load:
+ * - `revoked:share_link:<token>` is checked by the viewer bearer and by every
+ *   content token that carries the link, which covers anything minted later;
+ * - the live `video_access:*` tokens of that link are deleted here, which
+ *   covers viewers who are already watching.
+ *
+ * @param token - The link's address segment (`ShareLink.token`)
+ * @returns Number of in-flight content tokens removed
+ */
+export async function revokeShareLinkAccess(token: string): Promise<number> {
+  const redis = getRedis()
+  try {
+    await redis.setex(`revoked:share_link:${token}`, SHARE_LINK_REVOCATION_TTL_SECONDS, '1')
+
+    let removed = 0
+    const tokenStream = redis.scanStream({ match: 'video_access:*', count: 100 })
+    for await (const keys of tokenStream) {
+      for (const key of keys) {
+        const raw = await redis.get(key)
+        if (!raw) continue
+        try {
+          const data = JSON.parse(raw) as { shareId?: string; sessionId?: string; videoId?: string; quality?: string }
+          if (data.shareId !== token) continue
+          const pipeline = redis.pipeline().del(key)
+          if (data.sessionId && data.videoId && data.quality) {
+            pipeline.del(`video_token_cache:${data.sessionId}:${data.videoId}:${data.quality}`)
+          }
+          await pipeline.exec()
+          removed += 1
+        } catch {
+          // Malformed token data is ignored here; verification rejects it.
+        }
+      }
+    }
+
+    // The per-process verification cache answers from memory for up to ten
+    // seconds, so flush it rather than let a revoked link keep playing.
+    if (removed > 0) await redis.incr('video_token_rev_version')
+
+    logMessage(`[SESSION_INVALIDATION] Revoked share link ${token} and ${removed} content tokens`)
+    return removed
+  } catch (error) {
+    logError('[SESSION_INVALIDATION] Error revoking share link:', error)
+    throw error
+  }
+}
+
+/**
+ * @param token - The link's address segment (`ShareLink.token`)
+ * @returns true if the link has been revoked, or the check could not be made
+ */
+export async function isShareLinkRevoked(token: string): Promise<boolean> {
+  try {
+    const redis = getRedis()
+    return (await redis.exists(`revoked:share_link:${token}`)) === 1
+  } catch (error) {
+    logError('[SESSION_INVALIDATION] Error checking share link revocation:', error)
+    return true // Fail closed: deny access if Redis is unavailable
+  }
+}
+
+/**
+ * Re-activating a link has to undo the marker, or the address stays dead until
+ * the marker's own TTL runs out. Tokens killed by the revoke are simply re-minted
+ * on the next page load.
+ */
+export async function clearShareLinkRevocation(token: string): Promise<void> {
+  const redis = getRedis()
+  try {
+    await redis.del(`revoked:share_link:${token}`)
+    await redis.incr('video_token_rev_version')
+  } catch (error) {
+    logError('[SESSION_INVALIDATION] Error clearing share link revocation:', error)
+    throw error
+  }
+}
+
 /**
  * Clear pending passkey challenges for a user
  *

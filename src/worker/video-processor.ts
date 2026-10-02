@@ -37,7 +37,7 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
 
     const videoInfo = await downloadAndValidateVideo(videoId, originalStoragePath, tempFiles)
 
-    const settings = await fetchProcessingSettings(projectId, videoId)
+    const settings = await fetchProcessingSettings(projectId)
     const project = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
     if (!project) throw new Error(`Project ${projectId} not found`)
 

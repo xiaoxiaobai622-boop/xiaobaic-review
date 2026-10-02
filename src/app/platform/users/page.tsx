@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Users, UserPlus, Edit, Trash2, Mail, User, Search, RefreshCw, AlertCircle, Eye, EyeOff, Copy, Check, KeyRound, Fingerprint, Plus } from 'lucide-react'
+import { UserPlus, Edit, Trash2, Search, RefreshCw, AlertCircle, Eye, EyeOff, Copy, Check, KeyRound, Fingerprint, Plus } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { apiDelete, apiFetch, apiPost, apiPatch } from '@/lib/api-client'
 import { PasswordRequirements } from '@/components/PasswordRequirements'
@@ -104,6 +104,8 @@ export default function UsersPage() {
   // Action states
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // 列表读取失败单独记：写进 `error` 的话只会浮在某一枚弹窗里，列表这边照旧画成「没有找到成员」。
+  const [listError, setListError] = useState('')
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -111,8 +113,9 @@ export default function UsersPage() {
       if (!res.ok) throw new Error('Failed to fetch users')
       const data = await res.json()
       setUsers(data.users)
-    } catch (err) {
-      setError(t('failedToLoadUsers'))
+      setListError('')
+    } catch {
+      setListError(t('failedToLoadUsers'))
     } finally {
       setLoading(false)
     }
@@ -407,28 +410,13 @@ export default function UsersPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex-1 min-h-0 bg-background">
-        <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
-          <div className="flex items-center justify-center h-64">
-            <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex-1 min-h-0 bg-background">
-      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
-        <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
+    <div className="space-y-4">
+      <>
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-              <Users className="w-7 h-7 sm:w-8 sm:h-8" />
-              团队成员
-            </h1>
-            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
+            <h1 className="text-2xl font-semibold tracking-normal">团队成员</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               管理成员身份，以及他们可以查看的团队项目
             </p>
           </div>
@@ -449,118 +437,134 @@ export default function UsersPage() {
         </div>
 
         {/* Search */}
-        <div className="mb-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder={t('searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              data-form-type="other"
-              data-lpignore="true"
-              data-1p-ignore
-            />
-          </div>
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder={t('searchPlaceholder')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-form-type="other"
+            data-lpignore="true"
+            data-1p-ignore
+          />
         </div>
 
-        {/* Users List */}
-        {filteredUsers.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p className="font-medium">{t('noUsers')}</p>
-            <p className="text-sm mt-1">
-              {searchQuery ? t('noUsersSearch') : t('noUsersHint')}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {filteredUsers.map((user) => (
-              <div
-                key={user.id}
-                className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors"
-              >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <User className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-medium truncate">{user.name || user.username || user.phone || getDisplayEmail(user.email)}</p>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-info-visible text-info border border-info-visible flex-shrink-0">
-                        {user.role === 'ADMIN' ? '管理员' : '团队成员'}
-                      </span>
-                      {loggedInUser?.id === user.id && (
-                        <span className="px-2 py-0.5 text-xs rounded-full bg-success-visible text-success border border-success-visible flex-shrink-0">
-                          {t('you')}
+        {/* Users Table */}
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          {loading ? (
+            <div className="p-10 text-center text-sm text-muted-foreground">正在加载成员…</div>
+          ) : listError ? (
+            <div role="alert" className="px-4 py-8">
+              <p className="text-sm font-medium text-destructive">{listError}</p>
+              <p className="mt-1 text-sm text-muted-foreground">这一行不代表平台没有成员，只是这一次没读到。</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={fetchUsers}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                重试
+              </Button>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="p-10 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">{t('noUsers')}</p>
+              <p className="mt-1">
+                {searchQuery ? t('noUsersSearch') : t('noUsersHint')}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px] text-sm">
+                <caption className="sr-only">成员列表，共 {filteredUsers.length} 人</caption>
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
+                    <th scope="col" className="px-3 py-2 font-medium">成员</th>
+                    <th scope="col" className="px-3 py-2 font-medium">登录账号</th>
+                    <th scope="col" className="px-3 py-2 font-medium">项目可见范围</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredUsers.map((user) => (
+                    <tr key={user.id} className="hover:bg-muted/40">
+                      <th scope="row" className="px-3 py-1.5 text-left font-normal">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="truncate font-medium">{user.name || user.username || user.phone || getDisplayEmail(user.email)}</span>
+                          <span className="rounded-full border border-info-visible bg-info-visible px-2 py-0.5 text-xs text-info">
+                            {user.role === 'ADMIN' ? '管理员' : '团队成员'}
+                          </span>
+                          {loggedInUser?.id === user.id && (
+                            <span className="rounded-full border border-success-visible bg-success-visible px-2 py-0.5 text-xs text-success">
+                              {t('you')}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
-                      <span className="flex items-center gap-1">
-                        <Mail className="w-3 h-3" />
-                        <span className="truncate">{getDisplayEmail(user.email) || user.phone}</span>
-                      </span>
-                      {user.username && (
-                        <span>@{user.username}</span>
-                      )}
-                      {user.role === 'MEMBER' && (
-                        <span>{user.projectAccessScope === 'ALL_PROJECTS' ? '可查看团队全部项目' : `指定 ${user.projectMemberships.length} 个项目`}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-0.5 sm:gap-1 ml-2 flex-shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => openEditModal(user)}
-                    title={t('editUser')}
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  {loggedInUser?.id === user.id && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => openPasswordModal(user)}
-                      title={t('changePassword')}
-                    >
-                      <KeyRound className="w-4 h-4" />
-                    </Button>
-                  )}
-                  {passkeyAvailable && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => openPasskeyModal(user)}
-                      title={t('managePasskeys')}
-                    >
-                      <Fingerprint className="w-4 h-4" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => confirmDelete(user)}
-                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    title={t('deleteUser')}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                      </th>
+                      <td className="max-w-[280px] truncate px-3 py-1.5 text-muted-foreground">
+                        {getDisplayEmail(user.email) || user.phone}
+                        {user.username && <span> · @{user.username}</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {user.role === 'ADMIN'
+                          ? '—'
+                          : user.projectAccessScope === 'ALL_PROJECTS'
+                            ? '团队全部项目'
+                            : `指定 ${user.projectMemberships.length} 个项目`}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openEditModal(user)}
+                            title={t('editUser')}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          {loggedInUser?.id === user.id && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openPasswordModal(user)}
+                              title={t('changePassword')}
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {passkeyAvailable && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openPasskeyModal(user)}
+                              title={t('managePasskeys')}
+                            >
+                              <Fingerprint className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => confirmDelete(user)}
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            title={t('deleteUser')}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </>
 
       {/* Add User Modal */}
       <Dialog open={showAddUserModal} onOpenChange={setShowAddUserModal}>

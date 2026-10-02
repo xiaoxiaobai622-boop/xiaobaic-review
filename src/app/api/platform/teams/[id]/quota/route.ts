@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAuth } from '@/lib/auth'
-import { getTeamQuota, getTeamUsage, TRIAL_QUOTA } from '@/lib/platform-access'
+import { getTeamQuota, getTeamUsage, BETA_QUOTA } from '@/lib/platform-access'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // maxProjects/maxVideos accept 0: readers treat a non-positive allowance as
-// "unlimited" (lib/platform-access isUnlimitedQuota).
+// "unlimited" (isUnlimitedQuota in lib/billing-pricing, which lib/platform-access imports for the
+// storage gate and the two client renderers share).
 const QUOTA_MINIMUMS: Record<string, number> = {
   maxMembers: 1,
   maxProjects: 0,
@@ -47,8 +48,10 @@ export async function PATCH(
     where: { teamId: id },
     // A partial edit must not mint the rest of the row from schema defaults (20 GB etc.);
     // an omitted key means "whatever the team's baseline is", not "50 videos".
-    create: { teamId: id, ...TRIAL_QUOTA, ...data },
-    update: data,
+    // This IS a hand-edit by definition: source=MANUAL is what makes the next
+    // fulfilment confirmation warn that it is about to overwrite these numbers.
+    create: { teamId: id, ...BETA_QUOTA, ...data, source: 'MANUAL' },
+    update: { ...data, source: 'MANUAL', sourceOrderId: null },
   })
 
   return NextResponse.json({ quota })

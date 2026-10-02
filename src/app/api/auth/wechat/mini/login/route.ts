@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       js_code: code,
       grant_type: 'authorization_code',
     })
-    const response = await fetch(`https://api.weixin.qq.com/sns/jscode2session?${params}`, { cache: 'no-store' })
+    const response = await fetch(`https://api.weixin.qq.com/sns/jscode2session?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
     const data = await response.json() as CodeSessionResponse
     if (!response.ok || !data.openid || data.errcode) {
       logError('Wechat mini code2Session failed:', data.errmsg || data.errcode)

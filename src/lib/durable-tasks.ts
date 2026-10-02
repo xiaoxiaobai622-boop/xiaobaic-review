@@ -6,6 +6,10 @@ import { logError } from './logging'
 
 type DbClient = PrismaClient | Prisma.TransactionClient
 
+// Same bound the backoff exponent already clamps at: past ten dispatches the delay is
+// pinned at an hour, so a task that never succeeds would be retried forever.
+const DURABLE_TASK_MAX_ATTEMPTS = 10
+
 export type DurableTaskKind =
   | 'PROCESS_VIDEO'
   | 'PROCESS_ASSET'
@@ -53,7 +57,15 @@ export async function dispatchDurableTask(taskId: string): Promise<boolean> {
     return true
   } catch (error) {
     const attempts = task.attempts + 1
-    const delayMs = Math.min(60 * 60 * 1000, 2 ** Math.min(attempts, 10) * 1000)
+    if (attempts >= DURABLE_TASK_MAX_ATTEMPTS) {
+      // DurableTask has no status column, so there is no dead-letter state to move it to
+      // without a migration. Dropping it keeps the hourly sweep from re-dispatching a
+      // permanently failing task forever; the log line is the record and needs a human.
+      logError(`[DURABLE_TASK] Dropping ${task.kind} task ${task.id} after ${attempts} attempts:`, error)
+      await prisma.durableTask.delete({ where: { id: task.id } }).catch(() => undefined)
+      return false
+    }
+    const delayMs = Math.min(60 * 60 * 1000, 2 ** Math.min(attempts, DURABLE_TASK_MAX_ATTEMPTS) * 1000)
     await prisma.durableTask.update({
       where: { id: task.id },
       data: {

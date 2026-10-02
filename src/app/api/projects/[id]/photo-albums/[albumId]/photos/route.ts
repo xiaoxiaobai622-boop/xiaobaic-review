@@ -144,7 +144,7 @@ export async function POST(
 
     const storageCheck = await checkTeamStorageQuota(album.project.teamId, BigInt(fileSize))
     if (!storageCheck.allowed) {
-      return NextResponse.json({ error: '当前团队存储空间不足，请删除旧文件或激活更高配额' }, { status: 413 })
+      return NextResponse.json({ error: '当前团队存储空间不足，请彻底删除旧素材（回收站里的文件仍占空间）' }, { status: 413 })
     }
 
     const photoValidation = validatePhotoFile(fileName, mimeType || 'application/octet-stream')

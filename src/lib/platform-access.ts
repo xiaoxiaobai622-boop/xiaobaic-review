@@ -1,30 +1,23 @@
 import { prisma } from '@/lib/db'
+import { isUnlimitedQuota } from '@/lib/billing-pricing'
 
-export const TRIAL_PLAN = 'TRIAL'
-export const MONTHLY_PLAN = 'MONTHLY'
-export const UNACTIVATED_PLAN = 'UNACTIVATED'
+export const BETA_PLAN = 'BETA'
 
-export const TRIAL_QUOTA = {
-  maxMembers: 2,
+// 免费内测期所有团队共用这一份额度，不再有试用/月卡两档。
+export const BETA_QUOTA = {
+  maxMembers: 5,
   maxProjects: 0,
   maxVideos: 0,
-  maxStorageGB: 1,
+  maxStorageGB: 10,
 } as const
 
-export const MONTHLY_QUOTA = {
-  maxMembers: 10,
-  maxProjects: 0,
-  maxVideos: 0,
-  maxStorageGB: 50,
-} as const
+// `isUnlimitedQuota` 现在住在 `@/lib/billing-pricing`（纯函数模块，无 Prisma import）：
+// 平台队列与客户账单页两枚 `'use client'` 渲染方也要用同一个「不限」口径，
+// 而这一枚文件第一行就 import Prisma，客户端碰不得。
 
-export function isUnlimitedQuota(value: number) {
-  return value <= 0
-}
-
-export function isTeamSubscriptionActive(team: { subscriptionPlan: string; subscriptionExpiresAt: Date | null }) {
-  if (team.subscriptionPlan === UNACTIVATED_PLAN) return false
-  return !team.subscriptionExpiresAt || team.subscriptionExpiresAt.getTime() > Date.now()
+export function isTeamSubscriptionActive(_team: { subscriptionPlan: string; subscriptionExpiresAt: Date | null }) {
+  // 免费内测期没有到期这回事：写闸门照旧调用这里，但只有团队状态能拦下写操作。
+  return true
 }
 
 export async function isTeamFeatureEnabled(teamId: string, featureKey: string) {
@@ -43,15 +36,11 @@ export async function isTeamFeatureEnabled(teamId: string, featureKey: string) {
 }
 
 export async function getTeamQuota(teamId: string) {
-  return prisma.teamQuota.upsert({
-    where: { teamId },
-    // Without an explicit create the row materializes from the schema defaults
-    // (10 seats / 5 projects / 50 videos / 20 GB), which is more generous than the
-    // trial a team gets from POST /api/teams — a team that predates that write would
-    // quietly gain 19 GB the first time anything read its quota.
-    create: { teamId, ...TRIAL_QUOTA },
-    update: {},
-  })
+  const row = await prisma.teamQuota.findUnique({ where: { teamId } })
+  // 读一次额度不许落一行：quota 只由「新建团队」和后台手动改额度两处写。之前的 `upsert` 让任何一次
+  // 容量/席位检查都给缺行团队补写一行，于是「线上 6 个团队只有 4 行 quota」这种真实差异会被查看动作抹掉。
+  // 缺行时返回内测口径，不能回落到 schema 默认（10 人 / 20 GB / 5 项目 / 50 视频）。
+  return row ?? { teamId, ...BETA_QUOTA, source: 'PLAN' }
 }
 
 export async function getTeamUsage(teamId: string) {
@@ -77,25 +66,25 @@ export async function getTeamUsage(teamId: string) {
  */
 type TeamStorageUsageRow = { projectId: string; source: string; inBin: boolean; bytes: bigint }
 
-function teamStorageUsageRows(teamId: string) {
+function teamStorageUsageRows(teamId: string | null) {
   return prisma.$queryRaw<TeamStorageUsageRow[]>`
     WITH named AS (
       SELECT v."projectId" AS "projectId", v."originalStoragePath" AS path, v."originalFileSize" AS bytes,
              (v."deletedAt" IS NOT NULL) AS "inBin", 'video' AS source, 1 AS rank
       FROM "Video" v JOIN "Project" p ON p.id = v."projectId"
-      WHERE p."teamId" = ${teamId} AND v."originalFileSize" > 0
+      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND v."originalFileSize" > 0
       UNION ALL
       SELECT v."projectId", a."storagePath", a."fileSize", (v."deletedAt" IS NOT NULL), 'asset', 2
       FROM "VideoAsset" a JOIN "Video" v ON v.id = a."videoId" JOIN "Project" p ON p.id = v."projectId"
-      WHERE p."teamId" = ${teamId} AND a."uploadCompletedAt" IS NOT NULL AND a."fileSize" > 0
+      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND a."uploadCompletedAt" IS NOT NULL AND a."fileSize" > 0
       UNION ALL
       SELECT u."projectId", u."storagePath", u."fileSize", false, 'upload', 3
       FROM "ProjectUpload" u JOIN "Project" p ON p.id = u."projectId"
-      WHERE p."teamId" = ${teamId} AND u."uploadCompletedAt" IS NOT NULL AND u."fileSize" > 0
+      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND u."uploadCompletedAt" IS NOT NULL AND u."fileSize" > 0
       UNION ALL
       SELECT al."projectId", ph."storagePath", ph."fileSize", false, 'photo', 4
       FROM "Photo" ph JOIN "PhotoAlbum" al ON al.id = ph."albumId" JOIN "Project" p ON p.id = al."projectId"
-      WHERE p."teamId" = ${teamId} AND ph."uploadCompletedAt" IS NOT NULL AND ph."fileSize" > 0
+      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND ph."uploadCompletedAt" IS NOT NULL AND ph."fileSize" > 0
     ), deduped AS (
       SELECT DISTINCT ON (path) "projectId", bytes, "inBin", source
       FROM named ORDER BY path, "inBin" ASC, bytes DESC, rank ASC
@@ -117,8 +106,7 @@ export type TeamStorageBreakdown = {
 
 const ZERO = BigInt(0)
 
-export async function getTeamStorageBreakdown(teamId: string): Promise<TeamStorageBreakdown> {
-  const rows = await teamStorageUsageRows(teamId)
+function summarizeStorageRows(rows: TeamStorageUsageRow[]): TeamStorageBreakdown {
   const breakdown: TeamStorageBreakdown = {
     liveBytes: ZERO,
     recycleBinBytes: ZERO,
@@ -143,6 +131,36 @@ export async function getTeamStorageBreakdown(teamId: string): Promise<TeamStora
   }
   breakdown.totalBytes = breakdown.liveBytes + breakdown.recycleBinBytes
   return breakdown
+}
+
+export async function getTeamStorageBreakdown(teamId: string): Promise<TeamStorageBreakdown> {
+  return summarizeStorageRows(await teamStorageUsageRows(teamId))
+}
+
+/**
+ * Platform-wide meter: the same dedupe-by-path口径 as a single team's, so the console's
+ * total can never contradict the sum of what each team is charged for.
+ */
+export async function getPlatformStorageTotals(): Promise<PlatformStorageTotals> {
+  const breakdown = summarizeStorageRows(await teamStorageUsageRows(null))
+  return {
+    liveBytes: Number(breakdown.liveBytes),
+    recycleBinBytes: Number(breakdown.recycleBinBytes),
+    totalBytes: Number(breakdown.totalBytes),
+    bySource: {
+      video: Number(breakdown.bySource.video),
+      asset: Number(breakdown.bySource.asset),
+      upload: Number(breakdown.bySource.upload),
+      photo: Number(breakdown.bySource.photo),
+    },
+  }
+}
+
+export type PlatformStorageTotals = {
+  liveBytes: number
+  recycleBinBytes: number
+  totalBytes: number
+  bySource: Record<'video' | 'asset' | 'upload' | 'photo', number>
 }
 
 export async function getTeamStorageUsage(teamId: string): Promise<bigint> {

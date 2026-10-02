@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Video, MessageSquare, Pin, PinOff, Link2, Check, Archive, ArchiveRestore, Trash2, MoreHorizontal, AlertTriangle, Layers, CheckCircle2, FolderKanban, FolderInput, FolderOpen } from 'lucide-react'
-import { apiDelete, apiPatch } from '@/lib/api-client'
+import { apiDelete, apiFetch, apiPatch } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { formatDate } from '@/lib/utils'
@@ -426,7 +426,7 @@ export default function ProjectsDashboard({
 
   const projectHref = (project: ProjectListItem) => isAdmin
     ? `/studio/projects/${project.id}`
-    : `/share/${project.slug}`
+    : project.shareCode ? `/${project.shareCode}` : `/share/${project.slug}`
 
   const active = useMemo(() => projects.filter((p) => p.status !== 'ARCHIVED'), [projects])
   const archived = useMemo(() => projects.filter((p) => p.status === 'ARCHIVED'), [projects])
@@ -489,9 +489,17 @@ export default function ProjectsDashboard({
 
   const handleCopyLink = async (project: ProjectListItem) => {
     setMenuOpen(null)
-    if (await copyTextToClipboard(`${window.location.origin}/share/${project.slug}`)) {
-      setCopiedId(project.id)
-      setTimeout(() => setCopiedId(null), 1500)
+    // 每次复制都向服务端要一次地址：列表里的短码可能是「重置地址」之前的旧值，
+    // 服务端给的才是当下真正生效的那一条。
+    try {
+      const response = await apiFetch(`/api/share/url?projectId=${project.id}`)
+      const shareUrl = response.ok ? (await response.json()).shareUrl : ''
+      if (shareUrl && await copyTextToClipboard(shareUrl)) {
+        setCopiedId(project.id)
+        setTimeout(() => setCopiedId(null), 1500)
+      }
+    } catch (error) {
+      logError('Failed to copy project link', error)
     }
   }
 

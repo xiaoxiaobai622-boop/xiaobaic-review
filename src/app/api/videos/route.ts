@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
+import { requireProjectWritable } from '@/lib/team-writeable'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeDisplayFilename, sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -44,9 +45,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
+    const blocked = await requireProjectWritable(projectId)
+    if (blocked) return blocked
+
     // Validate required fields
     if (!name || !name.trim()) {
   return NextResponse.json({ error: videoMessages.videoNameRequired || 'Video name is required' }, { status: 400 })
+    }
+
+    if (!Number.isInteger(originalFileSize) || originalFileSize <= 0) {
+      return NextResponse.json({ error: videoMessages.validFileSizeRequired || 'Valid fileSize is required' }, { status: 400 })
     }
 
     const videoName = name.trim()
@@ -72,7 +80,7 @@ export async function POST(request: NextRequest) {
     if (!projectForQuota) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     const storageCheck = await checkTeamStorageQuota(projectForQuota.teamId, BigInt(originalFileSize))
     if (!storageCheck.allowed) {
-      return NextResponse.json({ error: '当前团队存储空间不足，请删除旧文件或激活更高配额' }, { status: 413 })
+      return NextResponse.json({ error: '当前团队存储空间不足，请彻底删除旧素材（回收站里的文件仍占空间）' }, { status: 413 })
     }
 
     const result = await prisma.$transaction(async (tx) => {

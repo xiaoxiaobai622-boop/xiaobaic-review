@@ -11,7 +11,6 @@ import { processPhoto } from './photo-processor'
 import { processAdminNotifications } from './studio-notifications'
 import { processClientNotifications } from './client-notifications'
 import { processExternalNotificationJob } from './external-notifications/processExternalNotificationJob'
-import { createCleanPreviewWorker } from './clean-preview-processor'
 import { processDueDateReminders } from './due-date-reminders'
 import { cleanupOldTempFiles, ensureTempDir } from './cleanup'
 import { runPreviewThumbnailBackfill } from './backfill'
@@ -214,19 +213,6 @@ async function main() {
 
   logMessage('External notification worker started')
 
-  // Create clean preview worker for generating non-watermarked previews on approval
-  const cleanPreviewWorker = createCleanPreviewWorker()
-
-  cleanPreviewWorker.on('completed', (job) => {
-    logMessage(`[WORKER] Clean preview completed for video ${job.data.videoId}`)
-  })
-
-  cleanPreviewWorker.on('failed', (job, err) => {
-    logError(`[WORKER ERROR] Clean preview failed for video ${job?.data.videoId}`, err)
-  })
-
-  logMessage('[WORKER] Clean preview worker started')
-
   // Run cleanup on startup
   logMessage('Running initial TUS upload cleanup...')
   await runCleanup().catch((err) => {
@@ -280,7 +266,6 @@ async function main() {
       photoWorker.close(),
       notificationWorker.close(),
       externalNotificationWorker.close(),
-      cleanPreviewWorker.close(),
       notificationQueue.close(),
     ])
     await closeRedisConnection()
@@ -300,7 +285,6 @@ async function main() {
       photoWorker.close(),
       notificationWorker.close(),
       externalNotificationWorker.close(),
-      cleanPreviewWorker.close(),
       notificationQueue.close(),
     ])
     await closeRedisConnection()

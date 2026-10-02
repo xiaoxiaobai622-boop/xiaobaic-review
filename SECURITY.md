@@ -39,7 +39,6 @@ We will respond to your report within 48 hours and provide a timeline for a fix.
 ### Video Access Control
 - **Token-based video streaming** with session validation
 - **Hotlink protection** to prevent unauthorized embedding
-- **Watermarking** on preview videos
 - **Time-limited access tokens** (15 minutes)
 - **Session binding** for video access tokens
 

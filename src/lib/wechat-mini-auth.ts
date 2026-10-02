@@ -19,7 +19,7 @@ export async function exchangeMiniProgramCode(code: string): Promise<MiniWechatI
   url.searchParams.set('js_code', code)
   url.searchParams.set('grant_type', 'authorization_code')
 
-  const response = await fetch(url, { cache: 'no-store' })
+  const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
   const data = await response.json()
   if (!response.ok || !data.openid) {
     throw new Error(data.errmsg || 'WECHAT_CODE_EXCHANGE_FAILED')

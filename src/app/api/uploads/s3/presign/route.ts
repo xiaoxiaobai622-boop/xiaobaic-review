@@ -8,7 +8,8 @@ import {
 } from '@/lib/s3-storage'
 import { ALL_ALLOWED_EXTENSIONS } from '@/lib/asset-validation'
 import { FILE_LIMITS, ALLOWED_PHOTO_TYPES, sanitizeContentType } from '@/lib/file-validation'
-import { verifyS3UploadAccess } from '@/lib/s3-upload-auth'
+import { verifyS3UploadAccess, getUploadTargetProjectId } from '@/lib/s3-upload-auth'
+import { requireProjectWritable } from '@/lib/team-writeable'
 import { logError } from '@/lib/logging'
 import { rateLimit } from '@/lib/rate-limit'
 
@@ -63,6 +64,15 @@ export async function POST(request: NextRequest) {
     // ── Authentication & ownership ──────────────────────────────────────────────
     const authResult = await verifyS3UploadAccess(request, { videoId, assetId, projectUploadId, photoId }, { requireUploadPermission: true })
     if (authResult.errorResponse) return authResult.errorResponse
+
+    // ── Expiry / suspension write gate (both auth branches) ────────────────────
+    // 上传是写：spec §10 的红线是「到期只拦写」，所以管理员令牌那一支与分享令牌那一支（`assetId` /
+    // `projectUploadId`，客户侧的参与方上传）**都要**过闸门。归属项目一律由请求体里那枚 target 解析
+    // （`getUploadTargetProjectId` 对四枚 target 都能解出 projectId），解不出来才不拦 —— 拦不到归属
+    // 不等于可以放行过期团队。
+    const projectId = await getUploadTargetProjectId({ videoId, assetId, projectUploadId, photoId })
+    const blocked = projectId ? await requireProjectWritable(projectId) : null
+    if (blocked) return blocked
 
     // ── Rate limit ──────────────────────────────────────────────────────────────
     const rateLimitResult = await rateLimit(request, {

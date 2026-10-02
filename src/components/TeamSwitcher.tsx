@@ -41,12 +41,9 @@ const ROLE_LABELS: Record<'OWNER' | 'ADMIN' | 'MEMBER', string> = {
 }
 
 function formatTeamExpiry(team: TeamItem['team']) {
+  // 免费内测期没有到期日：库里的旧到期日不再对用户报倒计时。
   if (team.status === 'DISABLED') return '已停用'
-  if (team.subscriptionPlan === 'UNACTIVATED') return '等待激活'
-  if (!team.subscriptionExpiresAt) return '长期有效'
-  const remaining = new Date(team.subscriptionExpiresAt).getTime() - Date.now()
-  if (remaining <= 0) return '已到期'
-  return `${Math.ceil(remaining / (24 * 60 * 60 * 1000))} 天后到期`
+  return '长期有效'
 }
 
 export default function TeamSwitcher({ compact = false }: { compact?: boolean } = {}) {

@@ -41,6 +41,7 @@ export async function callTencentApi(request: TencentApiRequest): Promise<any> {
       'X-TC-Region': region,
     },
     body,
+    signal: AbortSignal.timeout(10_000),
   })
   const data = await response.json().catch(() => ({}))
   if (!response.ok || data?.Response?.Error) {

@@ -1,10 +1,17 @@
 /**
  * Cryptographically secure random integer for browser and server.
  * Uses Web Crypto API (works in both environments).
+ * Rejection sampling, because `value % max` on a raw 32-bit draw makes the
+ * low residues slightly more likely than the high ones.
  */
 function getSecureRandomInt(max: number): number {
+  if (!Number.isInteger(max) || max < 1) throw new RangeError('getSecureRandomInt requires a positive integer')
+  const range = 0x100000000
+  const limit = range - (range % max)
   const array = new Uint32Array(1)
-  crypto.getRandomValues(array)
+  do {
+    crypto.getRandomValues(array)
+  } while (array[0] >= limit)
   return array[0] % max
 }
 

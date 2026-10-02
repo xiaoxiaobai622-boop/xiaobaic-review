@@ -3,7 +3,6 @@
 ## Core functionality
 - Video upload with resumable TUS uploads; originals preserved at any resolution.
 - FFmpeg preview transcoding to 720p or 1080p. Optional skip-transcoding mode to serve originals directly.
-- Customizable watermarks (center/corners, multiple positions), configurable per project or globally. Adjustable opacity and font size.
 - Timestamped comments with threaded replies and version tracking.
 - Annotation drawing on video frames (freehand, color picker, opacity control, undo/redo).
 - Comment file attachments with TUS resumable uploads (multiple files, drag-and-drop).
@@ -59,9 +58,9 @@
 - Asset management: images, audio, subtitles, project files, and documents with content validation.
 - Per-version thumbnails from uploaded image assets.
 - Client uploads block: view, download, and delete files submitted by clients via reverse share, with multi-select bulk actions.
-- Configurable global defaults for new projects (resolution, watermark, downloads, comments, approval).
+- Configurable global defaults for new projects (resolution, downloads, comments, approval).
 - Per-project overrides for global settings.
-- Video reprocessing: re-transcode videos when settings change (resolution, watermark).
+- Video reprocessing: re-transcode videos when settings change (resolution).
 - Inline video previews on the project page (plays the transcoded preview, never the original).
 - One-click video deletion including all versions; drag & drop video files or folders onto the Videos section to upload.
 - Configurable max upload size and max comment attachments.

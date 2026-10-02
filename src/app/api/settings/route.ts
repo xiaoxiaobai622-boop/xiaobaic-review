@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInvalidWatermarkCharacters } from '@/lib/watermark'
 import { prisma } from '@/lib/db'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { encrypt, decrypt } from '@/lib/encryption'
@@ -113,11 +112,6 @@ export async function PATCH(request: NextRequest) {
       appDomain,
       defaultPreviewResolution,
       defaultSkipTranscoding,
-      defaultWatermarkEnabled,
-      defaultWatermarkText,
-      defaultWatermarkPositions,
-      defaultWatermarkOpacity,
-      defaultWatermarkFontSize,
       defaultApplyPreviewLut,
       maxUploadSizeGB,
       defaultTimestampDisplay,
@@ -219,66 +213,6 @@ export async function PATCH(request: NextRequest) {
       if (!Number.isInteger(adminNotificationDay) || adminNotificationDay < 0 || adminNotificationDay > 6) {
         return NextResponse.json(
           { error: settingsMessages.invalidDayMustBeZeroToSix || 'Invalid day. Must be 0-6 (Sunday-Saturday).' },
-          { status: 400 }
-        )
-      }
-    }
-
-    // SECURITY: Validate watermark text using the same Unicode-aware rules as FFmpeg.
-    if (defaultWatermarkText) {
-      const invalidChars = getInvalidWatermarkCharacters(defaultWatermarkText)
-      if (invalidChars.length > 0) {
-        const uniqueInvalid = invalidChars.join(', ')
-        return NextResponse.json(
-          {
-            error: settingsMessages.invalidWatermarkCharacters || 'Invalid characters in watermark text',
-            details: (settingsMessages.invalidWatermarkCharactersDetails || 'Watermark text contains invalid characters: {invalid}. Only letters, numbers, spaces, and these characters are allowed: - _ . ( )').replace('{invalid}', uniqueInvalid)
-          },
-          { status: 400 }
-        )
-      }
-
-      // Additional length check (prevent excessively long watermarks)
-      if (defaultWatermarkText.length > 100) {
-        return NextResponse.json(
-          {
-            error: settingsMessages.watermarkTextTooLong || 'Watermark text too long',
-            details: settingsMessages.watermarkTextTooLongDetails || 'Watermark text must be 100 characters or less'
-          },
-          { status: 400 }
-        )
-      }
-    }
-
-    // SECURITY: Validate watermark positions
-    if (defaultWatermarkPositions !== undefined) {
-      const validPositions = ['center', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
-      const positions = String(defaultWatermarkPositions).split(',').map((p: string) => p.trim())
-      if (!positions.every((p: string) => validPositions.includes(p))) {
-        return NextResponse.json(
-          { error: settingsMessages.invalidWatermarkPosition || 'Invalid watermark position(s).' },
-          { status: 400 }
-        )
-      }
-    }
-
-    // SECURITY: Validate watermark opacity
-    if (defaultWatermarkOpacity !== undefined) {
-      const opacity = Number(defaultWatermarkOpacity)
-      if (!Number.isInteger(opacity) || opacity < 10 || opacity > 100) {
-        return NextResponse.json(
-          { error: settingsMessages.invalidWatermarkOpacity || 'Watermark opacity must be between 10 and 100.' },
-          { status: 400 }
-        )
-      }
-    }
-
-    // SECURITY: Validate watermark font size
-    if (defaultWatermarkFontSize !== undefined) {
-      const validSizes = ['small', 'medium', 'large']
-      if (!validSizes.includes(defaultWatermarkFontSize)) {
-        return NextResponse.json(
-          { error: settingsMessages.invalidWatermarkFontSize || 'Invalid watermark font size. Must be small, medium, or large.' },
           { status: 400 }
         )
       }
@@ -428,11 +362,6 @@ export async function PATCH(request: NextRequest) {
       appDomain,
       defaultPreviewResolution,
       defaultSkipTranscoding,
-      defaultWatermarkEnabled,
-      defaultWatermarkText,
-      defaultWatermarkPositions,
-      defaultWatermarkOpacity: defaultWatermarkOpacity !== undefined ? Number(defaultWatermarkOpacity) : undefined,
-      defaultWatermarkFontSize,
       defaultApplyPreviewLut,
       maxUploadSizeGB: maxUploadSizeGB !== undefined && maxUploadSizeGB !== null ? Number(maxUploadSizeGB) : undefined,
       maxCommentAttachments: maxCommentAttachments !== undefined && maxCommentAttachments !== null ? Number(maxCommentAttachments) : undefined,
@@ -484,7 +413,6 @@ export async function PATCH(request: NextRequest) {
         smtpSecure,
         appDomain,
         defaultPreviewResolution,
-        defaultWatermarkText,
         maxUploadSizeGB: maxUploadSizeGB !== undefined && maxUploadSizeGB !== null ? Number(maxUploadSizeGB) : 1,
         maxCommentAttachments: maxCommentAttachments !== undefined && maxCommentAttachments !== null ? Number(maxCommentAttachments) : 10,
         maxReverseShareFiles: maxReverseShareFiles !== undefined && maxReverseShareFiles !== null ? Number(maxReverseShareFiles) : 10,

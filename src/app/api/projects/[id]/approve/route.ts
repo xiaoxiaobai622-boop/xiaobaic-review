@@ -8,7 +8,6 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
 import { logError, logMessage } from '@/lib/logging'
-import { getCleanPreviewQueue } from '@/lib/queue'
 
 export const runtime = 'nodejs'
 
@@ -109,23 +108,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         },
       }),
     ])
-
-    // Queue clean preview generation if project uses preview for approved playback AND watermarks enabled
-    if (project.usePreviewForApprovedPlayback && project.watermarkEnabled) {
-      try {
-        const cleanPreviewQueue = getCleanPreviewQueue()
-        await cleanPreviewQueue.add('generate-clean-preview', {
-          videoId: selectedVideoId,
-          projectId: project.id,
-          originalStoragePath: selectedVideo.originalStoragePath,
-          resolution: project.previewResolution
-        })
-        logMessage(`[APPROVAL] Queued clean preview generation for video ${selectedVideoId}`)
-      } catch (queueError) {
-        logError('[APPROVAL] Failed to queue clean preview job:', queueError)
-        // Don't fail the approval if queue fails
-      }
-    }
 
     // Check if all UNIQUE videos have at least one approved version
     const allVideos = await prisma.video.findMany({

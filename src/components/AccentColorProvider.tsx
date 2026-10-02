@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { ACCENT_COLORS, AccentColorKey } from '@/components/settings/AppearanceSection'
 import { hexToHslTriplet, isCustomAccentColor } from '@/lib/accent'
 import { applyThemeChoice, readStoredTheme, resolveDefaultTheme } from '@/lib/theme'
@@ -13,6 +13,8 @@ import { applyThemeChoice, readStoredTheme, resolveDefaultTheme } from '@/lib/th
  * THEME_BOOTSTRAP_SCRIPT before this component can even hydrate.
  */
 export function AccentColorProvider() {
+  const accentObserverRef = useRef<MutationObserver | null>(null)
+
   const applyAppearanceSettings = useCallback(async () => {
     try {
       const response = await fetch('/api/settings/theme')
@@ -57,7 +59,10 @@ export function AccentColorProvider() {
     }
 
     mediaQuery.addEventListener('change', handleSystemChange)
-    return () => mediaQuery.removeEventListener('change', handleSystemChange)
+    return () => {
+      mediaQuery.removeEventListener('change', handleSystemChange)
+      accentObserverRef.current?.disconnect()
+    }
   }, [applyAppearanceSettings])
 
   const applyColorVariables = (colorKey: string) => {
@@ -97,9 +102,12 @@ export function AccentColorProvider() {
 
     // Re-applies when the theme flips between light/dark, and when a data-theme
     // paint (mint, violet) turns on or off (which is only an attribute change,
-    // not a class change).
+    // not a class change). One observer at a time: this runs again whenever the
+    // accent changes, and the replacement closes over the new paint.
+    accentObserverRef.current?.disconnect()
     const observer = new MutationObserver(write)
     observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme'] })
+    accentObserverRef.current = observer
   }
 
   return null

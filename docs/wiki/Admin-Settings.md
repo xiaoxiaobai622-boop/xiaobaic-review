@@ -73,10 +73,6 @@ Configure in the admin panel under Settings.
 
 ## Video processing defaults
 - Preview resolution: 720p (default) or 1080p.
-- Watermark enabled and text for preview videos.
-- Watermark opacity: 10-100% (default: 30%).
-- Watermark font size: small, medium, or large.
-- Watermark positions: center, top-left, top-right, bottom-left, bottom-right (multiple positions supported via comma separation).
 - Skip transcoding: serve original files directly without FFmpeg processing.
 - Max upload size: 1-1000 GB per file (default: 1 GB).
 - Max comment attachments: 1-50 files per comment (default: 10).
@@ -165,8 +161,6 @@ Subscribe to project deadlines from any calendar app (Google Calendar, Apple Cal
 ## Per-project settings
 **Video processing**
 - Preview resolution override.
-- Watermark text, enable/disable, opacity, and font size.
-- Watermark positions override.
 - Skip transcoding override.
 - Max upload size override.
 

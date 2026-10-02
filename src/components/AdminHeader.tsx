@@ -9,6 +9,7 @@ import TeamSwitcher from '@/components/TeamSwitcher'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { apiFetch } from '@/lib/api-client'
+import { getContactEmail } from '@/lib/user-contact'
 
 function TeamExpiryBadge() {
   const [label, setLabel] = useState<string | null>(null)
@@ -21,22 +22,10 @@ function TeamExpiryBadge() {
       const data = await response.json()
       const team = (data.teams || []).find((item: any) => item.team.id === data.activeTeamId) || data.teams?.[0]
       if (!team || cancelled) return
-      const current = team.team
-      let next = '长期有效'
-      let isDanger = false
-      if (current.status === 'DISABLED') { next = '已停用'; isDanger = true }
-      else if (current.subscriptionPlan === 'UNACTIVATED') { next = '等待激活'; isDanger = true }
-      else if (current.subscriptionExpiresAt) {
-        const remaining = new Date(current.subscriptionExpiresAt).getTime() - Date.now()
-        if (remaining <= 0) { next = '已到期'; isDanger = true }
-        else {
-          const days = Math.ceil(remaining / (24 * 60 * 60 * 1000))
-          next = `${days} 天后到期`
-          isDanger = days <= 3
-        }
-      }
-      setLabel(next)
-      setDanger(isDanger)
+      // 内测期没有到期这回事，只有被平台停用才亮红。
+      const disabled = team.team.status === 'DISABLED'
+      setLabel(disabled ? '已停用' : '长期有效')
+      setDanger(disabled)
     }).catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -80,6 +69,10 @@ export default function AdminHeader() {
       : user.teamRole === 'MEMBER'
         ? '成员'
         : '未加入团队'
+
+  // Phone/WeChat accounts carry a placeholder mailbox as an internal login id; it is not contact info.
+  const contactEmail = getContactEmail(user.email)
+  const displayName = user.name || user.phone || contactEmail || '微信用户'
 
   return (
     <div className="relative z-40 bg-card border-b border-border/50 shadow-elevation-sm backdrop-blur-sm">
@@ -128,16 +121,16 @@ export default function AdminHeader() {
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-background hover:bg-accent transition-colors shadow-sm"
-                aria-label={user.name || user.email}
-                title={user.name || user.email}
+                aria-label={displayName}
+                title={displayName}
               >
                 <User className="h-5 w-5 text-foreground" />
               </button>
               {showUserMenu && (
                 <div className="absolute right-0 top-full mt-1 w-56 rounded-lg border border-border bg-card shadow-elevation-lg z-50">
                   <div className="px-3 py-2.5 border-b border-border">
-                    <p className="text-sm font-medium truncate">{user.name || user.email}</p>
-                    {user.name && <p className="text-xs text-muted-foreground truncate">{user.email}</p>}
+                    <p className="text-sm font-medium truncate">{displayName}</p>
+                    {user.name && contactEmail && <p className="text-xs text-muted-foreground truncate">{contactEmail}</p>}
                     <p className="text-xs text-muted-foreground mt-0.5">{teamRoleLabel}</p>
                   </div>
                   <div className="p-1">

@@ -149,7 +149,9 @@ export async function canManageProjectApproval(db: DbClient, user: AuthUser, pro
 }
 
 export async function nextProjectCode(db: DbClient, teamId: string) {
-  await db.$executeRaw`SELECT pg_advisory_xact_lock(86230401)`
+  // Two-key form: the class id stays fixed and the team id derives the object key, so
+  // creating a project in one team no longer queues every other team behind it.
+  await db.$executeRaw`SELECT pg_advisory_xact_lock(86230401, hashtext(${teamId}))`
   const existing = await db.project.findMany({
     where: { teamId },
     select: { projectCode: true },

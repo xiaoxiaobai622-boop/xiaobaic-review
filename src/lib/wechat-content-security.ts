@@ -88,6 +88,7 @@ export async function checkWechatImage(
         method: 'POST',
         body: form,
         cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
       },
     )
     const data = (await response.json().catch(() => ({}))) as SecCheckResponse
@@ -132,6 +133,7 @@ export async function checkWechatText(
           openid,
         }),
         cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
       },
     )
     const data = (await response.json().catch(() => ({}))) as SecCheckResponse
@@ -173,6 +175,7 @@ export async function submitWechatMediaCheck(params: {
           openid,
         }),
         cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
       },
     )
     const data = (await response.json().catch(() => ({}))) as {
