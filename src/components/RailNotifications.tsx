@@ -48,11 +48,22 @@ function replyHref(item: ReplyItem): string {
   return `/studio/projects/${item.projectId}/share?${params.toString()}`
 }
 
+interface PlatformItem {
+  id: string
+  title: string
+  content: string
+  createdAt: string
+  readAt: string | null
+}
+
 export default function RailNotifications({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState<'replies' | 'platform'>('replies')
   const [items, setItems] = useState<ReplyItem[]>([])
   const [unread, setUnread] = useState(0)
   const [failed, setFailed] = useState(false)
+  const [platformItems, setPlatformItems] = useState<PlatformItem[]>([])
+  const [platformUnread, setPlatformUnread] = useState(0)
   // 面板里「哪几条是这次新看到的」按取这批数据之前的水位算，写回水位不能把它一起抹掉。
   const [watermark, setWatermark] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -79,19 +90,33 @@ export default function RailNotifications({ className }: { className?: string })
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  const loadPlatform = useCallback(async (): Promise<PlatformItem[]> => {
+    try {
+      const response = await apiFetch('/api/announcements', { cache: 'no-store' })
+      if (!response.ok) throw new Error(String(response.status))
+      const data = await response.json()
+      const loaded = (data.items || []) as PlatformItem[]
+      setPlatformItems(loaded)
+      setPlatformUnread(Number(data.unread) || 0)
+      return loaded
+    } catch {
+      return []
+    }
+  }, [])
+
+  useEffect(() => { load(); loadPlatform() }, [load, loadPlatform])
 
   // 30 秒一次，且只在标签页可见时打（和审阅页那套刷新节奏一致）。
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') load() }
+    const tick = () => { if (document.visibilityState === 'visible') { load(); loadPlatform() } }
     const timer = window.setInterval(tick, REFRESH_INTERVAL_MS)
-    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    const onVisible = () => { if (document.visibilityState === 'visible') { load(); loadPlatform() } }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [load])
+  }, [load, loadPlatform])
 
   useEffect(() => {
     if (!open) return
@@ -132,20 +157,38 @@ export default function RailNotifications({ className }: { className?: string })
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        aria-label={unread > 0 ? `${unread} 条未读通知` : '通知'}
-        title={unread > 0 ? `${unread} 条未读回复` : '批注回复通知'}
+        aria-label={unread + platformUnread > 0 ? `${unread + platformUnread} 条未读通知` : '通知'}
+        title={unread + platformUnread > 0 ? `${unread + platformUnread} 条未读通知` : '通知'}
         className={cn(
           className,
           open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
         )}
       >
         <Bell className="h-[20px] w-[20px]" aria-hidden="true" />
-        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
+        {unread + platformUnread > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
       </button>
 
       {open && (
         <div className="absolute left-full top-0 z-50 ml-2 w-96 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg">
-          <div className="flex items-baseline justify-between gap-2 border-b border-border px-3 py-2">
+          <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => setTab('replies')}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${tab === 'replies' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              批注回复{unread > 0 ? ` · ${unread}` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTab('platform'); if (platformUnread > 0) { setPlatformUnread(0); void fetch('/api/announcements/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: platformItems.map((i) => i.id) }) }) } }}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${tab === 'platform' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              平台消息{platformUnread > 0 ? ` · ${platformUnread}` : ''}
+            </button>
+          </div>
+
+          {tab === 'replies' && (<>
+          <div className="flex items-baseline justify-between gap-2 px-3 pt-2">
             <p className="text-sm font-medium text-foreground">批注回复</p>
             <p className="text-xs text-muted-foreground">{items.length > 0 ? `${items.length} 条` : ''}</p>
           </div>
@@ -183,6 +226,35 @@ export default function RailNotifications({ className }: { className?: string })
               </button>
             ))}
           </div>
+          </>)}
+
+          {tab === 'platform' && (<>
+          <div className="max-h-[420px] overflow-y-auto p-1">
+            {platformItems.length === 0 && (
+              <p className="px-2 py-4 text-sm text-muted-foreground">还没有平台消息。</p>
+            )}
+            {platformItems.map((item) => (
+              <div
+                key={item.id}
+                className="w-full rounded-md px-2 py-2 text-left"
+              >
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className={`min-w-0 truncate text-sm ${item.readAt ? 'text-foreground' : 'font-semibold text-primary'}`}>
+                    {item.title}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.createdAt)}</span>
+                </span>
+                <span className="mt-0.5 whitespace-pre-wrap text-sm text-foreground">{item.content}</span>
+                {!item.readAt && (
+                  <span className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
+                    未读
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          </>)}
         </div>
       )}
     </div>

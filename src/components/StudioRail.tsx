@@ -8,6 +8,7 @@ import { AllApplication, Config } from '@icon-park/react'
 import { useAuth } from '@/components/AuthProvider'
 import TeamSwitcher from '@/components/TeamSwitcher'
 import RailSearch from '@/components/RailSearch'
+import RailFeedback from '@/components/RailFeedback'
 import RailNotifications from '@/components/RailNotifications'
 import ThemeToggle from '@/components/ThemeToggle'
 import { apiFetch } from '@/lib/api-client'
@@ -17,11 +18,10 @@ import { useTranslations } from 'next-intl'
 /** 图标只有 tooltip 不够：只用键盘时也要看得见落点，整条栏共用这一组类。 */
 const RAIL_ICON_BUTTON = 'flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card'
 
-/** 团队有效期：异常时亮红点，悬停看文案。 */
+/** 团队有效期：内测期没有到期这回事，只有被平台停用才亮红点。 */
 function TeamExpiryBadge() {
   const [label, setLabel] = useState<string | null>(null)
   const [danger, setDanger] = useState(false)
-  const [renewCta, setRenewCta] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -30,25 +30,9 @@ function TeamExpiryBadge() {
       const data = await response.json()
       const team = (data.teams || []).find((item: any) => item.team.id === data.activeTeamId) || data.teams?.[0]
       if (!team || cancelled) return
-      const current = team.team
-      let next = '长期有效'
-      let isDanger = false
-      let renew = false
-      if (current.status === 'DISABLED') { next = '已停用'; isDanger = true }
-      else if (current.subscriptionPlan === 'UNACTIVATED') { next = '等待激活'; isDanger = true; renew = true }
-      else if (current.subscriptionExpiresAt) {
-        const remaining = new Date(current.subscriptionExpiresAt).getTime() - Date.now()
-        if (remaining <= 0) { next = '已到期'; isDanger = true; renew = true }
-        else {
-          const days = Math.ceil(remaining / (24 * 60 * 60 * 1000))
-          next = `${days} 天后到期`
-          isDanger = days <= 3
-          renew = days <= 14
-        }
-      }
-      setLabel(next)
-      setDanger(isDanger)
-      setRenewCta(renew)
+      const disabled = team.team.status === 'DISABLED'
+      setLabel(disabled ? '已停用' : '长期有效')
+      setDanger(disabled)
     }).catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -56,9 +40,9 @@ function TeamExpiryBadge() {
   if (!label) return null
   return (
     <Link
-      href={renewCta ? '/studio/team/billing' : '/studio/team?tab=team'}
+      href="/studio/team?tab=team"
       className={`relative ${RAIL_ICON_BUTTON} text-muted-foreground hover:bg-accent hover:text-accent-foreground`}
-      title={`团队 ${label}${renewCta ? ' · 去续费' : ''}`}
+      title={`团队 ${label}`}
     >
       <Clock3 className={`h-[20px] w-[20px] ${danger ? 'text-destructive' : ''}`} />
       {danger && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
@@ -130,6 +114,8 @@ export default function StudioRail() {
       >
         <CircleHelp className="h-[20px] w-[20px]" />
       </RailItem>
+
+      <RailFeedback className={RAIL_ICON_BUTTON} />
 
       {/* 定宽而不是 w-full：w-full 只有内容盒那 36px，44px 的按钮在里面居不了中（auto 外边距在超宽时归零），
           会整枚贴左、比其他图标右移 4px。给成和控件同宽，交给栏的 items-center 居中。 */}

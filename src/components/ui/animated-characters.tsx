@@ -239,22 +239,30 @@ export function AnimatedCharacters({
   // Purple sneaky peeking animation when typing password and it's visible
   useEffect(() => {
     if (passwordLength > 0 && showPassword) {
+      let peekTimer: ReturnType<typeof setTimeout>;
+      let hideTimer: ReturnType<typeof setTimeout>;
+
+      // The next peek is queued from the previous one, so the loop no longer needs
+      // isPurplePeeking in the dependency list.
       const schedulePeek = () => {
-        const peekInterval = setTimeout(() => {
+        peekTimer = setTimeout(() => {
           setIsPurplePeeking(true);
-          setTimeout(() => {
+          hideTimer = setTimeout(() => {
             setIsPurplePeeking(false);
+            schedulePeek();
           }, 800);
         }, Math.random() * 3000 + 2000);
-        return peekInterval;
       };
 
-      const firstPeek = schedulePeek();
-      return () => clearTimeout(firstPeek);
+      schedulePeek();
+      return () => {
+        clearTimeout(peekTimer);
+        clearTimeout(hideTimer);
+      };
     } else {
       setIsPurplePeeking(false);
     }
-  }, [passwordLength, showPassword, isPurplePeeking]);
+  }, [passwordLength, showPassword]);
 
   useEffect(() => {
     const calculatePosition = (ref: React.RefObject<HTMLDivElement | null>) => {
