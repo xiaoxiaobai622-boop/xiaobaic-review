@@ -118,6 +118,17 @@ function LoginForm() {
   const [cooldown, setCooldown] = useState(0)
   const [focusedField, setFocusedField] = useState<FocusedField>(null)
   const [passwordVisible, setPasswordVisible] = useState(false)
+  const [agreed, setAgreed] = useState(false)
+
+  useEffect(() => {
+    try { setAgreed(localStorage.getItem('terms_agreed_v1') === '1') } catch { /* 隐私模式忽略 */ }
+  }, [])
+
+  function setAgreedPersist(value: boolean) {
+    setAgreed(value)
+    try { localStorage.setItem('terms_agreed_v1', value ? '1' : '0') } catch { /* ignore */ }
+    if (value) setError('')
+  }
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -178,6 +189,10 @@ function LoginForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    if (!agreed) {
+      setError('请先阅读并同意《用户服务协议》和《隐私政策》')
+      return
+    }
     setLoading(true)
 
     try {
@@ -257,7 +272,6 @@ function LoginForm() {
             <BrandLogo height={38} />
             <div>
               <p className="text-sm font-semibold text-[#17191f] dark:text-white">逐帧审阅</p>
-              <p className="text-xs text-black/50 dark:text-white/50">申请使用权限：Xiaobai-v001</p>
             </div>
           </div>
           <div className="flex min-h-0 flex-1 items-end justify-center overflow-hidden pb-6 pt-8">
@@ -267,7 +281,6 @@ function LoginForm() {
               passwordLength={password.length}
             />
           </div>
-          <p className="relative z-50 px-8 pb-8 text-xs text-black/45 dark:text-white/45">目前仅限内部团队成员访问</p>
         </section>
 
         <section className="flex min-w-0 items-center justify-center px-5 py-8 sm:px-10 lg:px-14">
@@ -280,7 +293,6 @@ function LoginForm() {
                 <BrandLogo height={42} />
                 <div>
                   <p className="font-semibold text-foreground">逐帧审阅</p>
-                  <p className="text-xs text-muted-foreground">申请使用权限：Xiaobai-v001</p>
                 </div>
               </div>
             </div>
@@ -427,6 +439,21 @@ function LoginForm() {
                 </div>
               )}
 
+              <label className="flex items-start gap-2.5 text-xs leading-5 text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreedPersist(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[hsl(var(--primary))]"
+                />
+                <span>
+                  已阅读并同意
+                  <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">《用户服务协议》</Link>
+                  和
+                  <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">《隐私政策》</Link>
+                </span>
+              </label>
+
               <Button
                 type="submit"
                 variant="default"
@@ -451,6 +478,13 @@ function LoginForm() {
                   className="mt-6"
                 />
 
+                <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
+                  扫码登录即代表已阅读并同意
+                  <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">《用户服务协议》</Link>
+                  和
+                  <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">《隐私政策》</Link>
+                </p>
+
                 <div className="mt-6">
                   <Button
                     type="button"
@@ -464,8 +498,6 @@ function LoginForm() {
                 </div>
               </div>
             )}
-
-            <p className="mt-8 text-center text-xs text-muted-foreground">目前仅限内部团队成员访问</p>
           </div>
         </section>
       </div>

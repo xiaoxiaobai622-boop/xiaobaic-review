@@ -1,8 +1,16 @@
+import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from '@/app/share/[teamSlug]/SharePageClient'
 import { resolveShareMetadata, isShareLinkActive } from '@/lib/share-links'
 
 export const dynamic = 'force-dynamic'
+
+// robots metadata is replaced wholesale per level, so `follow` has to be
+// restated next to `index`. A share code is a visitor's front door, not a page
+// to rank, and no robots.txt prefix can cover a one-segment path.
+export const metadata: Metadata = {
+  robots: { index: false, follow: true },
+}
 
 /**
  * The root of the domain is where a share code is typed, so this route is the

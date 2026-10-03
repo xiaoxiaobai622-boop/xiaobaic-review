@@ -143,6 +143,11 @@ export default function HomeClient() {
               <div className={styles.navDrop}>
                 <a href="https://scnqe74t5owc.feishu.cn/wiki/UOxownMcRiBLeekZwcEc3BBAnc2" target="_blank" rel="noopener noreferrer">帮助文档</a>
                 <a href="#workflow">使用流程</a>
+                <Link href="/features">功能总览</Link>
+                <Link href="/compare">竞品对比</Link>
+                <Link href="/features/frame-comments">逐帧批注</Link>
+                <Link href="/features/versions">版本与定稿</Link>
+                <Link href="/features/share-link">审片链接</Link>
               </div>
             </div>
           </nav>

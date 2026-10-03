@@ -4,7 +4,7 @@ import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
-import { Download, Trash2, Loader2, FileIcon, FileImage, FileVideo, FileMusic, FileArchive, FileText, FilePlay, Square, CheckSquare, Info, RefreshCw } from 'lucide-react'
+import { Download, Trash2, Loader2, FileIcon, FileImage, FileVideo, FileMusic, FileArchive, FileText, FilePlay, Square, CheckSquare, Info, RefreshCw, Replace } from 'lucide-react'
 import { formatFileSize } from '@/lib/utils'
 import { Button } from './ui/button'
 import { apiFetch } from '@/lib/api-client'
@@ -12,7 +12,7 @@ import { logError } from '@/lib/logging'
 import { useAuth } from '@/components/AuthProvider'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog'
 import { Input } from './ui/input'
-import { FILE_LIMITS } from '@/lib/file-validation'
+import { buildOverwritePlan, fileNameWithoutExtension, findTargetVideoName, isVideoUpload, type OverwritePlan } from '@/lib/overwrite-plan'
 
 interface ProjectUpload {
   id: string
@@ -84,17 +84,6 @@ function getUploaderDisplay(upload: ProjectUpload, unknownLabel: string): string
   return upload.uploadedByName || upload.uploadedByEmail || unknownLabel
 }
 
-function isVideoUpload(upload: ProjectUpload): boolean {
-  const lowerName = upload.fileName.toLowerCase()
-  const extension = lowerName.includes('.') ? lowerName.slice(lowerName.lastIndexOf('.')) : ''
-  return upload.fileType?.toLowerCase().startsWith('video/') || FILE_LIMITS.ALLOWED_EXTENSIONS.includes(extension)
-}
-
-function fileNameWithoutExtension(fileName: string): string {
-  const lastDot = fileName.lastIndexOf('.')
-  return (lastDot > 0 ? fileName.slice(0, lastDot) : fileName).trim()
-}
-
 function clickAnchorDownload(url: string) {
   const a = document.createElement('a')
   a.href = url
@@ -125,6 +114,9 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
   const [promotingId, setPromotingId] = useState<string | null>(null)
   const [targetVideoName, setTargetVideoName] = useState('__new__')
   const [newVideoName, setNewVideoName] = useState('')
+  const [bulkOverwriting, setBulkOverwriting] = useState(false)
+  const [overwritePlan, setOverwritePlan] = useState<OverwritePlan | null>(null)
+  const [overwriteProgress, setOverwriteProgress] = useState({ done: 0, total: 0 })
   const [previews, setPreviews] = useState<Record<string, string>>({})
   const previewsRef = useRef<Record<string, string>>({})
 
@@ -235,11 +227,9 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
   }
 
   const openPromoteDialog = (upload: ProjectUpload) => {
-    const suggestedName = fileNameWithoutExtension(upload.fileName)
-    const matchingName = videoNames.find(name => name.toLowerCase() === suggestedName.toLowerCase())
     setPromoteUpload(upload)
-    setTargetVideoName(matchingName || '__new__')
-    setNewVideoName(suggestedName)
+    setTargetVideoName(findTargetVideoName(upload.fileName, videoNames) || '__new__')
+    setNewVideoName(fileNameWithoutExtension(upload.fileName))
   }
 
   const handlePromote = async () => {
@@ -350,6 +340,59 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
     setBulkTranscoding(false)
   }
 
+  const startBulkOverwrite = () => {
+    const plan = buildOverwritePlan(uploads.filter(upload => selectedIds.has(upload.id)), videoNames)
+    if (plan.matches.length === 0) {
+      void appAlert(t('overwriteNothingMatched'))
+      return
+    }
+    setOverwritePlan(plan)
+  }
+
+  /**
+   * One request per file against the same endpoint the single-file dialog uses, in
+   * sequence: the server's per-asset version lock and its 50 promotions/hour guard both
+   * stay meaningful, and a rejected file costs only itself.
+   */
+  const confirmBulkOverwrite = async () => {
+    if (!overwritePlan) return
+    setBulkOverwriting(true)
+    setOverwriteProgress({ done: 0, total: overwritePlan.matches.length })
+    const errors: string[] = []
+    let overwritten = 0
+    for (const match of overwritePlan.matches) {
+      try {
+        const res = await apiFetch(
+          `/api/projects/${projectId}/project-uploads/${match.uploadId}/promote`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoName: match.videoName }),
+          }
+        )
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          errors.push(`${match.fileName}：${data.error || t('overwriteFailed')}`)
+        } else {
+          overwritten++
+        }
+      } catch (error) {
+        logError('Error overwriting video version:', error)
+        errors.push(`${match.fileName}：${t('overwriteFailed')}`)
+      }
+      setOverwriteProgress(prev => ({ done: prev.done + 1, total: prev.total }))
+    }
+    setBulkOverwriting(false)
+    setOverwritePlan(null)
+    setSelectedIds(new Set())
+    onPromoted?.()
+    void fetchUploads()
+    // 只报失败：全过一遍时这几行自己就从面板消失了。
+    if (errors.length > 0) {
+      await appAlert(`${t('overwritePartial', { done: overwritten, failed: errors.length })}\n${errors.join('\n')}`)
+    }
+  }
+
   const handleBulkDownload = async () => {
     setBulkDownloading(true)
     // Stagger native browser downloads slightly so each save dialog appears
@@ -417,15 +460,19 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
                 <span>{selectedIds.size} / {uploads.length}</span>
               </button>
               <div className="flex-1" />
-              <Button type="button" variant="outline" size="sm" onClick={handleBulkDownload} disabled={bulkDownloading || bulkDeleting}>
+              <Button type="button" variant="outline" size="sm" onClick={handleBulkDownload} disabled={bulkDownloading || bulkDeleting || bulkOverwriting}>
                 {bulkDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Download className="h-3.5 w-3.5 mr-1" />}
                 {tc('download')}
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={handleBulkTranscode} disabled={bulkTranscoding || bulkDownloading || bulkDeleting}>
+              <Button type="button" variant="outline" size="sm" onClick={handleBulkTranscode} disabled={bulkTranscoding || bulkDownloading || bulkDeleting || bulkOverwriting}>
                 {bulkTranscoding ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
                 重新转码
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={handleBulkDelete} disabled={bulkDeleting || bulkDownloading} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60">
+              <Button type="button" variant="outline" size="sm" onClick={startBulkOverwrite} disabled={bulkOverwriting || bulkTranscoding || bulkDownloading || bulkDeleting} title={t('bulkOverwrite')}>
+                <Replace className="h-3.5 w-3.5 mr-1" />
+                {t('bulkOverwrite')}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={handleBulkDelete} disabled={bulkDeleting || bulkDownloading || bulkOverwriting} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60">
                 {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
                 {tc('delete')}
               </Button>
@@ -618,6 +665,44 @@ export default function ProjectUploadsBlock({ projectId, onCountChange, videoNam
               <Button onClick={handlePromote} disabled={!!promotingId || (targetVideoName === '__new__' && !newVideoName.trim())}>
                 {promotingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {promotingId ? t('promotingUpload') : t('promoteUpload')}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!overwritePlan} onOpenChange={(open) => !open && !bulkOverwriting && setOverwritePlan(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('overwriteConfirmTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t('overwriteConfirmDescription', { count: overwritePlan?.matches.length ?? 0 })}
+            </p>
+            <ul className="max-h-56 divide-y overflow-y-auto rounded-md border">
+              {overwritePlan?.matches.map(match => (
+                <li key={match.uploadId} className="px-3 py-2">
+                  <p className="truncate text-sm" title={match.fileName}>{match.fileName}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {t('overwriteInto')}{' '}
+                    <span className="font-medium text-foreground" title={match.videoName}>{match.videoName}</span>
+                  </p>
+                </li>
+              ))}
+            </ul>
+            {!!overwritePlan && overwritePlan.skipped.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t('overwriteSkipped', { count: overwritePlan.skipped.length })}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setOverwritePlan(null)} disabled={bulkOverwriting}>{tc('cancel')}</Button>
+              <Button onClick={confirmBulkOverwrite} disabled={bulkOverwriting}>
+                {bulkOverwriting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Replace className="h-4 w-4" />}
+                {bulkOverwriting
+                  ? t('overwriteProgress', { done: overwriteProgress.done, total: overwriteProgress.total })
+                  : t('bulkOverwrite')}
               </Button>
             </div>
           </div>

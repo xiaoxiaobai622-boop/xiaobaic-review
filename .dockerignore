@@ -87,6 +87,12 @@ CONTRIBUTING.md
 docs/
 *.md
 !README.PRODUCTION.md
+# 内容页文稿是运行时读的（`src/lib/marketing/content.ts:11,243` 从 `process.cwd()/content/marketing`
+# 逐文件 readFileSync）。镜像里没有这六篇，`/features/*` 与 `/compare/*` 就在生产 500。
+# 上面 `*.md` 是否命中带目录的层级取决于构建上下文用的是哪种匹配口径，本机不许 build 所以证不了；
+# 这两条负向规则在两种口径下都保证文稿进得了上下文，也让下一个读这个文件的人不会顺手删掉它。
+!content/**
+!content/marketing/*.md
 
 # Security audit reports and development notes (never include in Docker)
 SECURITY_FIXES_*.md

@@ -49,7 +49,7 @@ export function LegalDoc({
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-5 text-xs text-[#8b919b]">
           <span>逐帧审阅</span>
           <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">
-            桂ICP备2026017259号-2
+            桂ICP备2026022852号
           </a>
         </div>
       </footer>

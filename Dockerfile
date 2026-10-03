@@ -94,6 +94,9 @@ COPY --from=builder --link /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --link /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --link /app/prisma ./prisma
 COPY --from=builder --link /app/src ./src
+# 内容页文稿在运行时按路径读（`src/lib/marketing/content.ts:11` = `process.cwd()/content/marketing`），
+# 不在 `.next` 产物里；runner 是逐目录显式 COPY 的，少这一行就等于生产没有内容页。
+COPY --from=builder --link /app/content ./content
 COPY --from=builder --link /app/package.json ./package.json
 COPY --from=builder --link /app/tsconfig.json ./tsconfig.json
 COPY --from=builder --link /app/next.config.js ./next.config.js

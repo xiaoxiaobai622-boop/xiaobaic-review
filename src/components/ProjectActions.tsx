@@ -2,13 +2,14 @@
 
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState, useEffect, useRef, type ElementType } from 'react'
+import { useState, useEffect, useRef, type ElementType, type ReactNode } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, FolderKanban, Calendar, Copy, Check } from 'lucide-react'
+import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, Calendar, Copy, Check, ChevronsUpDown, FileText, Users, Share2 } from 'lucide-react'
+import type { ProjectSettingsSection } from './ProjectSettingsPanel'
 import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
 import { apiPost, apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
@@ -33,9 +34,11 @@ interface ProjectActionsProps {
   onShareReview: () => void
   /** 还没有可复制的收录链接时，这枚按钮开的也是页面那枚创建窗。 */
   onCreateCollectLink: () => void
+  /** 这排菜单就是项目设置那三节：按下哪一节，由页面浮起设置面板并落在这一节。 */
+  onOpenSettings: (section: ProjectSettingsSection) => void
 }
 
-export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -46,6 +49,12 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
   const [isArchiving, setIsArchiving] = useState(false)
 
   const [showUnapproveModal, setShowUnapproveModal] = useState(false)
+
+  // 身份块整块是一枚弹出式按钮（对标那排也是整块可点），点开的是这个项目自己的菜单。
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const menuRootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   // 「复制收录链接」是读操作：拿该项目最新一条有效收录短链写进剪贴板，
   // 已取消与已过期的都不算——复制出去只会让人拿到打不开的地址。
@@ -231,43 +240,116 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
       })
   }
 
+  // 菜单开着才挂 document 监听：点外面关掉（照 TeamSwitcher 那套手搓下拉的规矩）、Escape 关并把焦点
+  // 还给身份块、方向键在项间走。这组件在项目页挂两枚（侧栏 bare ＋ 窄屏卡片），监听必须随开随摘。
+  useEffect(() => {
+    if (!projectMenuOpen) return
+    const root = menuRootRef.current
+    const handleMouseDown = (event: MouseEvent) => {
+      if (root && !root.contains(event.target as Node)) setProjectMenuOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProjectMenuOpen(false)
+        triggerRef.current?.focus()
+        return
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      event.preventDefault()
+      const items = menuRef.current
+        ? Array.from(menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'))
+        : []
+      if (items.length === 0) return
+      const at = items.indexOf(document.activeElement as HTMLElement)
+      const down = event.key === 'ArrowDown'
+      const next = at === -1 ? (down ? 0 : items.length - 1) : (at + (down ? 1 : -1) + items.length) % items.length
+      items[next].focus()
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [projectMenuOpen])
+
+  // 菜单这一排就是设置面板那三节：关掉菜单，把选中的那节交给页面浮层。
+  const pickSection = (section: ProjectSettingsSection) => {
+    setProjectMenuOpen(false)
+    onOpenSettings(section)
+  }
+
   // bare 时三层外壳换成普通 div：Card 的 bg-card、border 和 shadow 就是那块要拿掉的白底。
+  // 名称那行跟着换：整块是一枚 <button>，button 的内容模型不许套 <h3>（CardTitle 就是 h3），
+  // 所以 bare 用 span 自己带 CardTitle 那套字号字重，两种形态画出来一模一样。
   const Shell: ElementType = bare ? 'div' : Card
   const ShellHeader: ElementType = bare ? 'div' : CardHeader
   const ShellContent: ElementType = bare ? 'div' : CardContent
+  const ShellTitle: ElementType = bare ? 'span' : CardTitle
+  const titleClass = bare ? 'block min-w-0 truncate text-[20px] font-semibold leading-none tracking-tight' : 'truncate text-[20px]'
 
   return (
     <>
       <Shell>
-        <ShellHeader className={bare ? 'border-b border-border pb-3' : undefined}>
-          <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <CardTitle className="flex items-center gap-2 break-words mb-2">
-                <span className="rounded-md p-1.5 flex-shrink-0 bg-foreground/5 dark:bg-foreground/10">
-                  <FolderKanban className="w-4 h-4 text-primary" />
-                </span>
-                <span className="min-w-0 break-words">{project.title}</span>
-              </CardTitle>
-              <p className="text-sm text-muted-foreground break-words">{(project as any).description}</p>
-            </div>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 ${
-                project.status === 'APPROVED'
-                  ? 'bg-success-visible text-success border-2 border-success-visible'
-                  : project.status === 'SHARE_ONLY'
-                  ? 'bg-info-visible text-info border-2 border-info-visible'
-                  : project.status === 'IN_REVIEW'
-                  ? 'bg-primary-visible text-primary border-2 border-primary-visible'
-                  : 'bg-muted text-muted-foreground border border-border'
-              }`}
+        <ShellHeader className={bare ? 'border-b border-border pt-[20px] pb-3' : undefined}>
+          {/* 照 Frame.io 侧栏顶部那排项目切换器排：封面块在左、名称与人数两行整体缩到封面块右边，
+              整行垂直居中，右侧一枚上下箭头，整块点开是项目菜单。
+              尺寸全用 px 字面量：`:root .h-12` 被控件阶梯压到 2.625rem（=39.4px），而 `.w-12` 不在阶梯里，
+              写 `h-12 w-12` 会画出一枚 45×39.4 的扁块；gap/字号同理吃 15px 根字号。
+              48px 块配 20px 字、封面块到文字 16px、第二行 14px 无图标、块上内边距 20px，
+              四个数都是 10-03 在 next.frame.io 那排上量的（量的过程见 frameio-study/）。
+              名称超一行就截断，对标那排自己也截（「小白's First P…」），别当缺陷改成折行。
+              封面块不画图标：对标那块是纯渐变面，两端一暗一亮（黑/30 → 白/25），不是黑压黑的一块实心。
+              箭头吃 text-foreground：对标那枚最暗像素 (76,80,99) 几乎就是它标题的 (63,65,77)；
+              跟第二行同灰时实量只到 (138,141,156)，看着像禁用。
+              菜单与这块同宽、不带描边、吃 --popover：对标那层只有投影浮着，占栏宽 0.94。 */}
+          <div ref={menuRootRef} className="relative">
+            <button
+              type="button"
+              ref={triggerRef}
+              data-tutorial="project-info-trigger"
+              aria-haspopup="menu"
+              aria-expanded={projectMenuOpen}
+              onClick={() => setProjectMenuOpen((open) => !open)}
+              className="flex w-full min-w-0 items-center gap-[16px] rounded-[8px] text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {{
-                IN_REVIEW: t('statusInReview'),
-                APPROVED: t('statusApproved'),
-                SHARE_ONLY: t('statusShareOnly'),
-                ARCHIVED: t('statusArchived'),
-              }[project.status] || project.status}
-            </span>
+              <span className="h-[48px] w-[48px] shrink-0 rounded-[8px] bg-primary bg-gradient-to-bl from-black/30 to-white/25" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <ShellTitle className={titleClass}>{project.title}</ShellTitle>
+                {/* 第二行只报人数。取不到数字就不画，宁缺一个也别把「0 人」当成事实显示出去。 */}
+                {typeof (project as any).memberCount === 'number' && (
+                  <p className="mt-[6px] min-w-0 truncate text-[14px] text-muted-foreground">
+                    {t('projectMemberCount', { count: (project as any).memberCount })}
+                  </p>
+                )}
+              </span>
+              <ChevronsUpDown className="h-[16px] w-[16px] shrink-0 text-foreground" aria-hidden="true" />
+            </button>
+
+            {projectMenuOpen && (
+              <div
+                ref={menuRef}
+                role="menu"
+                aria-label={t('projectMenuLabel')}
+                className="absolute left-0 top-full z-50 mt-1 w-full rounded-lg bg-popover p-1 shadow-elevation-lg"
+              >
+                <MenuItem
+                  icon={<FileText className="h-4 w-4 shrink-0" />}
+                  label={t('projectDetails')}
+                  onSelect={() => pickSection('project-details')}
+                />
+                <MenuItem
+                  icon={<Users className="h-4 w-4 shrink-0" />}
+                  label={t('clientInfoNotifications')}
+                  onSelect={() => pickSection('client-info')}
+                />
+                <MenuItem
+                  icon={<Share2 className="h-4 w-4 shrink-0" />}
+                  label={t('clientSharePage')}
+                  onSelect={() => pickSection('client-share')}
+                />
+              </div>
+            )}
           </div>
         </ShellHeader>
         <ShellContent className={bare ? 'space-y-3 pt-3' : 'space-y-3 pb-2'}>
@@ -429,5 +511,24 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
         processing={isTogglingApproval}
       />
     </>
+  )
+}
+
+/** 项目菜单的一行。字号与内边距用 px 字面量：紧凑档的控件阶梯会把 text-sm/py-* 压平。 */
+function MenuItem({ icon, label, onSelect }: {
+  icon: ReactNode
+  label: string
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className="flex w-full items-center gap-[10px] rounded-md px-[10px] py-[7px] text-left text-[14px] text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+    >
+      {icon}
+      <span className="min-w-0 truncate">{label}</span>
+    </button>
   )
 }

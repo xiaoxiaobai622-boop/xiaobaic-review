@@ -1,8 +1,18 @@
 // scripts/seo-check.mjs —— 零依赖本地 SEO 断言。不部署，只打 dev server。
 const BASE = process.env.SEO_CHECK_BASE || 'http://127.0.0.1:3000'
 const BOT_UA = 'Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)'
-// 与 app 的 getSiteUrl() 保持一致：origin 会剥掉尾部斜杠与路径前缀。
-const SITE = new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://127.0.0.1:3000').origin
+// SITE 必须从 BASE 派生，不能另读一个环境变量：canonical/sitemap 比的是"我们打的这台服务器自己认为
+// 它是谁"，部署后跑 `SEO_CHECK_BASE=https://vidx.cn node scripts/seo-check.mjs` 时如果 SITE 还停在
+// 127.0.0.1:3000，这 16 条会全红——一道只在该被用的那一刻失效的验收门等于没有。
+const SITE = (() => {
+  try {
+    return new URL(BASE).origin
+  } catch {
+    // 这条脚本是部署后的验收门。门本身抛一坨 Node 栈，人就当它坏了不看。
+    console.error(`SEO_CHECK_BASE 必须是 http(s) 绝对 URL，收到的是：${BASE}`)
+    process.exit(1)
+  }
+})()
 
 const PAGES = [
   { path: '/compare/netdisk-wechat', h1: '用网盘和微信审片，卡在哪三个地方',
@@ -41,7 +51,8 @@ for (const p of [...PAGES.map(x => ({ ...x, kind: 'page' })), ...HUBS.map(path =
   if (status !== 200) { report(false, `${p.path} 返回 ${status}（期望 200）`); continue }
   has(body, /<title>.*\| 逐帧审阅<\/title>/, `${p.path} title 含品牌后缀`)
   has(body, /<meta name="description" content="[^"]{20,}"/, `${p.path} description ≥20 字`)
-  has(body, new RegExp(`<link rel="canonical" href="${esc(SITE)}${esc(p.path)}">`), `${p.path} canonical 用 SITE 前缀`)
+  // React 把 <link> 渲染成自闭合 `/>`，所以收尾两种写法都收。SITE+path 仍是字面量全等。
+  has(body, new RegExp(`<link rel="canonical" href="${esc(SITE)}${esc(p.path)}"\\/?>`), `${p.path} canonical 用 SITE 前缀`)
   has(body, /<meta property="og:title"/, `${p.path} og:title`)
   has(body, /<meta property="og:image"/, `${p.path} og:image`)
   has(body, /<meta property="og:url"/, `${p.path} og:url`)
@@ -51,7 +62,10 @@ for (const p of [...PAGES.map(x => ({ ...x, kind: 'page' })), ...HUBS.map(path =
     for (const h2 of p.h2) has(body, new RegExp(`<h2[^>]*>${esc(h2)}`), `${p.path} H2「${h2}」`)
     has(body, /href="\/login"/, `${p.path} 有指向 /login 的 CTA`)
     has(body, /application\/ld\+json/, `${p.path} 有 JSON-LD`)
-    report(!/vitransfer/i.test(body), `${p.path} 不含 vitransfer`)
+    // 旧包名只禁在对外可见的内容里。根布局会把 next-intl 字典整包塞进 <script>，其中键名 `viTransfer`
+    // 是应用自身的 i18n 键（值已是 FrameReview），不属于内容页文案；所以只扫正文与 JSON-LD。
+    const visible = body.replace(/<script(?![^>]*application\/ld\+json)[\s\S]*?<\/script>/g, '')
+    report(!/vitransfer/i.test(visible), `${p.path} 不含 vitransfer`)
   }
 }
 
@@ -60,7 +74,11 @@ report(nf === 404, '未知 slug 返回 404')
 report(!(nf === 200 && nfb.length < 20000), '未知 slug 不渲染成薄内容空页')
 
 const robots = await html('/robots.txt')
-report(robots.status === 200 && /Disallow: \/studio\//.test(robots.body), 'robots.txt Disallow /studio/')
+// 断的是**裸** `/studio`：`Disallow: /studio/`（带尾斜杠）匹配不到裸路径，而裸路径是真能抓到 200 的。
+// 用 `$` 收尾，这样"写回带斜杠的旧形态"会直接红，不会静默放行。
+report(robots.status === 200 && /^Disallow: \/studio$/m.test(robots.body), 'robots.txt Disallow 覆盖裸 /studio')
+// 负向断言必须自带 status 前置：`/robots.txt` 挂了时 body 是空串，"里面没有 X"会恒真空过。
+report(robots.status === 200 && !/^Disallow: \/portal/m.test(robots.body), '/portal 不进 Disallow（它自带 noindex，见 robots.ts 注释）')
 report(/Sitemap: https?:\/\//.test(robots.body), 'robots.txt 有绝对 Sitemap 行')
 
 const sm = await html('/sitemap.xml')

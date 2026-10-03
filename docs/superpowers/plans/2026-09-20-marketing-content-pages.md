@@ -48,6 +48,17 @@
 
 **其他约定**：段落内不出现裸 `|`；`##` 之前必须有一个空行；文件末尾单个换行；正文里不得出现域名（绝对 URL 一律由 `getSiteUrl()` 在模板里拼）。
 
+## 2026-10-03 执行期裁决（4 条，与下文任务冲突时以本节为准）
+
+仓库自 09-20 以来前进了很多（域名已切 `vidx.cn`，`src/app/[shareCode]/` 占了根级一段路径），下面的裁决把计划对齐到现状。
+
+1. **渲染器自己写，`marked` 不装。** 理由同 Global Constraints 那条：装依赖要重启他的 dev，跨 install 不重启会全站 500。`src/lib/marketing/content.ts` 里带一个只认上面那张子集的解析器：**先整篇 HTML 转义，再按子集生成标签**，所以输出安全是构造出来的，不靠 `DOMPurify`（也因此 `isomorphic-dompurify` 这条依赖同样不用）。子集之外的写法由 `.sdd/md-lint.mjs` 在写作侧挡掉。
+2. **路由用显式 `compare/`、`features/` 两个目录，不用 `[group]`。** `src/app/[shareCode]/page.tsx`（提交 a042533）会匹配任意未知的一段 URL ⇒ 计划里的 `(marketing)/[group]/page.tsx` 与它是"两个页面解析同一段"，Next 直接报错。而根级 `[group]/[slug]` 又排在所有未来的两段路由前面。静态目录既有优先级又不会撞。`loadDocs()` 的键仍是 `group/slug`，只是路由表由两对文件写死。
+3. **`getSiteUrl()` 在非 production 允许退回请求 origin。** `.env` 里没有 `NEXT_PUBLIC_APP_URL`，而我不能改 `.env`、也不能重启他的 dev（pid 已换成 7472，仍占 3000）。改法：env 有值一律以 env 为准；没值时 production 照旧抛错，非 production 用请求的 `host` 拼 origin。这样本地能把 canonical/sitemap 全链路验绿，线上漏配仍然是"第一时间炸"，禁止域名字面量兜底这条不破。
+4. **枢纽页 schema 不放 `offers`。** 平台未定价、也没有对外报价的授权，`price: '0'` 这种写法等于向搜索引擎登记一个我们没承诺过的价格。Task 8 只留 `SoftwareApplication`（去掉 `offers`）+ `BreadcrumbList`。**本期一律不引用计费/订单相关代码的状态**（他 2026-10-03 指令：不要出现计费模块）。
+
+另外两条范围调整：**Task 5 的"首页搬家"本期不做**——首页文件正被另外的会话改（`home-client.tsx`），搬动它等于把别人的未提交改动卷进我的改动面；营销页的页头页脚由 `(marketing)/layout.tsx` 自己出。**Task 6 的首页文案重写同样不做**，只保留"从首页能进到 `/features`、`/compare`"这一条内链需求，且等前面几页验绿之后再单独评估要不要动首页。
+
 ## 文件结构
 
 ```

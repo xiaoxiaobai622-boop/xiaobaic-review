@@ -110,6 +110,30 @@ export async function restoreRecycleBinItem(itemId: string, projectId: string): 
   return { ok: true }
 }
 
+export type PurgeOutcome = { purged: number; failed: Array<{ itemId: string; reason: string }> }
+
+/**
+ * Emptying the bin by hand is the same per-item purge the retention worker already
+ * runs, one row at a time: an id that belongs to another project simply is not found,
+ * and an object COS refuses keeps its row so the next pass retries it. Reporting the
+ * failures rather than aborting the batch is the point — half a cleared bin is still
+ * progress, and the caller has to be able to say which records are left.
+ */
+export async function purgeRecycleBinItems(projectId: string, itemIds: string[]): Promise<PurgeOutcome> {
+  const failed: PurgeOutcome['failed'] = []
+  let purged = 0
+  for (const itemId of itemIds) {
+    try {
+      if (await permanentlyDeleteRecycleBinItem(itemId, projectId)) purged++
+      else failed.push({ itemId, reason: 'NOT_FOUND' })
+    } catch (error) {
+      logError(`[RECYCLE_BIN] Failed to purge item ${itemId}`, error)
+      failed.push({ itemId, reason: 'DELETE_FAILED' })
+    }
+  }
+  return { purged, failed }
+}
+
 export async function purgeExpiredRecycleBinItems() {
   const items = await prisma.recycleBinItem.findMany({
     where: { expiresAt: { lte: new Date() } },

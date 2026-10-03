@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MessageSquarePlus, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
 import { apiFetch } from '@/lib/api-client'
 
 interface FeedbackItem {
@@ -127,7 +128,11 @@ export default function RailFeedback({ className }: { className?: string }) {
             />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
-                {error ? <span className="text-destructive">{error}</span> : done ? <span className="text-primary">已提交，感谢你的反馈</span> : `${content.length}/2000`}
+                {error ? <span className="text-destructive">{error}</span> : done ? <span className="text-primary">已提交，感谢你的反馈</span> : (
+                  <>提交即代表同意
+                    <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 underline hover:no-underline">《隐私政策》</Link>
+                  </>
+                )}
               </span>
               <button
                 type="button"

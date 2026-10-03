@@ -16,6 +16,7 @@ import ProjectUploadsBlock from '@/components/ProjectUploadsBlock'
 import PhotoAlbumsBlock from '@/components/PhotoAlbumsBlock'
 import RecycleBinBlock from '@/components/RecycleBinBlock'
 import ShareLinksPanel from '@/components/ShareLinksPanel'
+import { ProjectSettingsPanel, type ProjectSettingsSection } from '@/components/ProjectSettingsPanel'
 import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
 import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, ChevronDown, MessageSquare, PackageCheck, PanelRight, MonitorPlay } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
@@ -300,6 +301,8 @@ export default function ProjectPage() {
   const [rollbackError, setRollbackError] = useState('')
   const [deletingVersionId, setDeletingVersionId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  // 项目设置不再是另一条路由：null＝没开，开了就记着要落在哪一节（身份块那排菜单各挑一节）。
+  const [settingsPanel, setSettingsPanel] = useState<{ section: ProjectSettingsSection } | null>(null)
   const [projectFolders, setProjectFolders] = useState<Array<{ id: string; name: string; createdAt?: string; _count?: { videos: number } }>>([])
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ id: string; left: number; top: number } | null>(null)
@@ -1301,12 +1304,10 @@ export default function ProjectPage() {
                 </Button>
               </Link>
             )}
-            <Link href={`/studio/projects/${id}/settings`}>
-              <Button variant="outline" size="default" className={projectToolbarButtonClassName}>
-                <Settings className="w-4 h-4 sm:mr-2" />
-                <span className="hidden sm:inline">{t('projectSettings')}</span>
-              </Button>
-            </Link>
+            <Button variant="outline" size="default" className={projectToolbarButtonClassName} onClick={() => setSettingsPanel({ section: 'project-details' })}>
+              <Settings className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">{t('projectSettings')}</span>
+            </Button>
             {/* 面板开关：页内播放器、页内批注。亮着 = 这块还显示。 */}
             <div className="flex items-center gap-1">
               <PanelToggleButton icon={MonitorPlay} label={t('panelReviewPlayer')} active={reviewPaneVisible} onToggle={toggleReviewPane} />
@@ -1348,11 +1349,13 @@ export default function ProjectPage() {
                     className={cn(
                       'flex min-w-max items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors lg:w-full',
                       active
-                        ? 'bg-accent text-accent-foreground font-medium'
-                        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                        // 选中行只靠底色区分，字色走中性前景：全仓那套 `bg-accent text-accent-foreground`
+                        // 会把主题强调色画进导航文字里，换主题时这一栏跟着变色。
+                        ? 'bg-accent text-foreground font-semibold'
+                        : 'font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground'
                     )}
                   >
-                    <Icon className="h-4 w-4 text-primary" />
+                    <Icon className="h-4 w-4" strokeWidth={2.5} />
                     <span>{item.label}</span>
                     {item.count > 0 && <span className="ml-auto tabular-nums text-xs text-muted-foreground">{item.count}</span>}
                   </button>
@@ -1379,7 +1382,7 @@ export default function ProjectPage() {
                     </button>
                     {projectInfoOpen && (
                       <div id="project-info-panel" className="px-3 pb-3 pt-1">
-                        <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} />
+                        <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={(section) => setSettingsPanel({ section })} />
                       </div>
                     )}
                   </>
@@ -1397,7 +1400,7 @@ export default function ProjectPage() {
                 <button type="button" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>
                 <button type="button" disabled={workspaceRefreshing} className={cn(CONTEXT_MENU_ITEM_CLASS_NAME, 'disabled:opacity-60')} onClick={() => { void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
                 <div className={MENU_SEPARATOR_CLASS_NAME} />
-                <Link href={`/studio/projects/${id}/settings`} className={CONTEXT_MENU_ITEM_CLASS_NAME}><Settings className="h-4 w-4" />项目设置</Link>
+                <button type="button" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); setSettingsPanel({ section: 'project-details' }) }}><Settings className="h-4 w-4" />项目设置</button>
                 <Link href="/studio/team" className={CONTEXT_MENU_ITEM_CLASS_NAME}><Users className="h-4 w-4" />邀请成员</Link>
               </div>
             )}
@@ -1628,7 +1631,7 @@ export default function ProjectPage() {
           {/* 宽屏不再占右列：版本信息已搬进左侧项目侧栏的下半区，这块只服务窄屏。 */}
           <aside className="scrollbar-hidden border-t border-border p-3 lg:hidden">
             {selectedVideoGroup ? renderVersionInspector(false) : (
-              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} />
+              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={(section) => setSettingsPanel({ section })} />
             )}
           </aside>
         </div>
@@ -1696,6 +1699,14 @@ export default function ProjectPage() {
         </DialogContent>
       </Dialog>
       <CreateShareDialog projectId={project.id} open={Boolean(shareDialog)} preset={shareDialog?.preset || 'REVIEW'} target={shareDialog?.target || null} onOpenChange={(open) => { if (!open) setShareDialog(null) }} onCreated={() => window.dispatchEvent(new Event('shareLinksChanged'))} />
+      {settingsPanel && (
+        <ProjectSettingsPanel
+          projectId={project.id}
+          variant="overlay"
+          initialSection={settingsPanel.section}
+          onClose={() => setSettingsPanel(null)}
+        />
+      )}
     </div>
   )
 }

@@ -173,3 +173,26 @@ src/app/sitemap.ts                # 只枚举 (marketing) 组 + /privacy + /term
 8. **微信小程序登录是 PARTIAL**：代码齐、挂在 `/login` 与 `/profile`（管理端），`WECHAT_MINI_APP_ID/SECRET` 在 `.env.example:64-65` 全为注释 → 不得写成客户看片入口，也不得写成当前一定可用。
 9. **存储只有本地磁盘 + 任意 S3 协议**（无 OSS/COS 原生驱动）；腾讯云 MPS/CDN 是可开的转码/加速通道。→ §6「素材放在你自己的存储里——本地磁盘或你配置的 S3/OSS 桶」里的 **OSS 二字删掉**，改成"你配置的 S3 兼容桶"。
 10. **旧版本"不静默消失"要加边界**：回收站 7 天后会自动清理，不是永久保留。
+
+## 14. 上线前必须做（本次未做）—— 2026-10-03 定稿
+
+本期产物**全部停在本地工作树，一次 commit 都没有，服务器零接触**。下面每条都是"要做但没做"或"部署后才会验"。逐条代码证据在会话交付说明里（§二 待上线清单、§三 编号 findings），本节只留口径与顺序。
+
+1. **确认 `NEXT_PUBLIC_APP_URL`。** 生产容器 env 已有这个键（2026-10-03 只读取证，未取值）；他本机 `.env` 没有，本地验绿靠的是"非 production 退回请求 origin"。
+2. **推送 = 部署**（CI 触发条件 `push: branches: [main]`），这一步由他发起。推完用 `SEO_CHECK_BASE=https://vidx.cn node scripts/seo-check.mjs` 复跑，确认 canonical / og:url / sitemap 的绝对 URL 全部跟到新域名（顺带验一件事：`NEXT_PUBLIC_*` 在 Next 里可能被**构建期**内联，那样光改容器 env 不生效、要重新构建——判据就是这条 curl 出来的 canonical 是不是新域名）（脚本里的 `SITE` 现在从 `BASE` 派生，这条命令才是可用的）。
+3. **站长平台提交**：Google Search Console 与百度站长平台分别提交 `https://vidx.cn/sitemap.xml`；百度另开"主动推送/快速收录"。百度侧恢复比 Google 慢。
+4. **文稿生效要走重新构建**，不是重启进程：`src/lib/marketing/content.ts:11` 在运行时按 `process.cwd()/content/marketing` 读文件，文稿随镜像走；重启只清进程内缓存、不换文件。
+5. **分享卡片图（可选）**：`openGraph.images` 现在指向 `/brand/logo.png`，256×256，微信/飞书卡片偏小；要好看得另出一张 1200×630。
+6. **预发/预览环境必须 `NODE_ENV=production` 或显式配 env**：非 production 时 canonical 跟请求 `Host` 头走（这是为了本机无 env 也能验而做的取舍），公网暴露出去等于任何人可用自定义 Host 头改写我们的 canonical。
+7. **第一次部署后必须验内容页真的进了镜像**：`curl -o /dev/null -w '%{http_code}\n' https://vidx.cn/features/versions` 与 `/compare/fenzhen` 必须 200。`Dockerfile` runner 阶段新增的 `COPY --from=builder --link /app/content ./content` 与 `.dockerignore` 里 `*.md` 之后的两条 `!content/**` / `!content/marketing/*.md` 是本机验不出来的（不许 build），真正必需的是 **Dockerfile 那一条**（runner 是逐目录显式 COPY 的）。`.dockerignore` 那两条负向规则大概率是空转——Docker 的 ignore 按路径分段匹配、`*` 不跨 `/`，所以 `*.md` 只命中构建上下文根目录的 `.md`，碰不到 `content/marketing/*.md`；留着的理由是防口径变化与防后人顺手删，不是它现在在保命。两条都在的净效果只有一个：无论哪种匹配口径，六篇都能进镜像。
+8. **`public/robots.txt` 已删除且不能还原**：静态文件与 `src/app/robots.ts` 同时存在时 Next 对 `/robots.txt` 直接返 500 E212（conflicting public file and page file）。
+9. **每次定稿要连着刷 `updatedOn`**：六篇 frontmatter 现在统一 `2026-10-03`。它同时喂 `<lastmod>`（`sitemap.ts:24`）、`article:published_time`（`DocPage.tsx:31`）和页面上那行「文稿最后核对于」；正文里竞品引用的「核实于 2026-09-20」是对方页面的取证日，跟着一起改就是假话。
+10. **部署前确认后台语言仍是中文**：`<html lang>` 由 `settings.language` 驱动（`src/app/layout.tsx:85` ← `src/i18n/locale.ts:34-58`，读库、60 秒缓存），不是常量。
+11. **部署后回扫 robots 的裸路径**：`/studio`、`/platform`、`/device` 已改成不带尾斜杠（带斜杠匹配不到裸路径，裸路径实测 200 可抓），能自己声明 noindex 的 `/portal`、`/profile`、`/onboarding` 已从 Disallow 撤掉——和这个文件原本对 `/login` 的论证是同一条。
+12. **部署后拿一枚真短码验 noindex**：`src/app/[shareCode]/page.tsx:11-13` 现在写死 `robots: { index: false, follow: true }`（一段路径的短码没有前缀可以 Disallow，只能靠页面自己声明）。本机验不了：未知短码走 `notFound()`，页面级 metadata 在那条分支根本不参与渲染，所以 curl 不到这枚 meta 标签。机制本身在同应用里已实机证过（`/portal` 出 `<meta name="robots" content="noindex, nofollow"/>`）。**上线后拿你自己团队的一条分享链接 `curl -s <链接> | grep 'name="robots"'`**，应看到 `noindex, follow`。收录以后再撤，Google 以周计、百度更慢，所以这条要在提交 sitemap 之前落地。
+
+已知缺口（本期不修，等他按编号点单，完整证据在交付说明 §三 1–12）：客户在分享会话里点不到「通过」（`SharePageClient.tsx:1595` 写死 `isAdmin={false}`、`ProjectInfo.tsx:82` 的条件要 `isAdmin`、`api/share/**` 没有审批路由，`allowClientApproval` 与链接的 `approve` 权限都没有消费方 ⇒ 文稿已把「通过」全部归到团队侧定稿那一步，要恢复这句卖点得先接线）；`src/components/LegalDoc.tsx:52` 的备案号与首页/营销页不同值；永久删除/到点清理仍会级联掉那一版意见；回收站里只有视频版本可恢复；CTA 与各登录方式的可用性属部署配置不做承诺；回传原片要求上传人有站点账号（要改 `src/app/api/share/**`，本期禁碰）；"最多留几版"在 20/50/10 三处不一致；`guestLatestOnly` 与 `allowClientAssetUpload` 两个默认值影响客户侧所见；手机端圈画未做真人走查；**分享页登录弹窗 `src/components/ReviewLoginActions.tsx` 还有 4 处挡人文案**（`:338`「申请使用权限：Xiaobai-v001」＋`:344,400,413`「目前仅限内部团队成员访问」），受众是分享页里被要求登录的看片人（不是我们 CTA 的落点），要不要一起收口由他定。`src/app/login/page.tsx` 本轮已清到 0 处（4 行 `<p>` 全删，`git diff --numstat` = `0 5`）；但 `curl` 原始 HTML 仍能 grep 到「仅限内部团队成员访问」——那是 next-intl 把整个 `common` 命名空间内联进 HTML 的 `internalAccess` 键（`src/locales/{zh,en,de,nl}.json` 各 1 条，全仓零消费方），不是渲染出来的文案，别按原始 HTML 判有没有删干净。
+
+另记一条与本期无关的回归风险：**4 处把站点域名写死成 env 缺失时的退路**（`src/app/api/auth/feishu/callback/route.ts:16`、`src/lib/deep-link.ts:32`、`src/lib/feishu.ts:18`、`src/proxy.ts:5`）。SEO 这条线一处都没有——缺 env 直接抛错（`site-url.ts:19`）。再换域名时这四条会静默指向旧域。
+
+**§13 里两处口径已被后续指令覆盖**：§13-1 引的 TRIAL/MONTHLY 套餐数字只作内部事实，**内容页一律不写我方席位数量/存储额度/价格/"免费"/"内测"**（2026-10-03 指令「不要出现计费模块」「去掉那两个价格承诺」）；§13-10 那句"回收站 7 天后自动清理、不能恢复"是错的，实际有 `restoreRecycleBinItem` 恢复入口，只有非 VIDEO 类型不可恢复。§13-1 那句"客户方看片/写意见的人数不占席位"是本期唯一能对外写的席位口径；§14 已知缺口第一条另有一个连带后果：三处文稿原本顺着中文习惯写了"客户方看片、留言、**点通过**的人数不占席位"，这半句会被读成客户在自己那侧能点通过，代码证伪（见上面缺口第一条），已删到只剩看片与留言（`compare--fenzhen.md:14,24`、`compare--netdisk-wechat.md:13`）。
