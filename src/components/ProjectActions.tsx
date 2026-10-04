@@ -554,7 +554,7 @@ function MenuItem({ icon, label, onSelect }: {
       type="button"
       role="menuitem"
       onClick={onSelect}
-      className="flex w-full items-center gap-3 rounded-[4px] px-3 py-2 text-left text-[16px] text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent [&_svg]:size-6 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]"
+      className="flex w-full items-center gap-3 rounded-[4px] px-3 py-2 text-left text-[14px] text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent [&_svg]:size-6 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]"
     >
       {icon}
       <span className="min-w-0 truncate">{label}</span>

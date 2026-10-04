@@ -23,7 +23,8 @@ import { hashPassword } from '../src/lib/encryption'
  *  A9/B8/B20 在同一天第三轮跟着他改的样式换了口径：封面块那块黑压黑的 CSS 渐变换成按项目 id 稳定轮换的
  *    三张 frame.io 预设图（A9）；菜单在 bare 态向身份块两侧各扩 left-5＝15px 根字号下的 18.75px，
  *    占的是整幅栏面宽而不是 210px 一张小卡（B8）；菜单行改成 16px 字＋24px 图标，
- *    不再吃被紧凑档压平的 text-sm（B20）。
+ *    不再吃被紧凑档压平的 text-sm（B20）。第四轮（同日）他说「红框的字太大了，小点」，
+ *    菜单行与侧栏那五行导航一起收到 14px（B20 跟着换数；24px 图标他没点，没动）。
  *    唯一没照搬的是整块尺寸：同一张比例尺下（我们这块封面 48px＝29 图像像素、间距 16px＝9 图像像素两把尺对得上）
  *    对标那块是 20×21 图像像素、我们是 29×28，即我们大 30-45%；但「块高 ÷ 两行文字高」两侧都是 1.2-1.3，
  *    说明整块是等比放大，不是排错了——这条留着他一句话再定。
@@ -415,7 +416,7 @@ try {
   const iconRatios = (m1.itemIconColors || []).map((c: string | null) => (c ? ratio(c) : null))
   check(iconRatios.length === 4 && iconRatios.every((r: number | null) => r !== null && r >= 3),
     'B19b 四行图标压菜单底到 3:1（WCAG 非文本下限）', `→ ${JSON.stringify(iconRatios)}`)
-  check((m1.itemSizes || []).every((s: string) => s === '16px'), 'B20 菜单行 16px（10-04 第三轮照 frame.io 项目菜单实测值：16px 字＋24px 图标，不是本站控件阶梯压平后的 text-sm）', `→ ${JSON.stringify(m1.itemSizes)}`)
+  check((m1.itemSizes || []).every((s: string) => s === '14px'), 'B20 菜单行 14px（10-04 第三轮照对标图定到 16px，同日第四轮他「红框的字太大了，小点」收到 14px；图标仍 24px 他没点）', `→ ${JSON.stringify(m1.itemSizes)}`)
 
   console.log(`  Escape → ${JSON.stringify(await pressKey(page, 'Escape'))}`)
   await sleep(500)

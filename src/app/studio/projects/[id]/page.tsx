@@ -1351,7 +1351,7 @@ export default function ProjectPage() {
                     onClick={() => changeWorkspace(item.id)}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'flex min-w-max items-center gap-2 rounded-md px-3 py-2 text-[16px] transition-colors lg:w-full',
+                      'flex min-w-max items-center gap-2 rounded-md px-3 py-2 text-[14px] transition-colors lg:w-full',
                       active
                         // 选中行只靠底色区分，字色走中性前景：全仓那套 `bg-accent text-accent-foreground`
                         // 会把主题强调色画进导航文字里，换主题时这一栏跟着变色。
