@@ -437,17 +437,27 @@ try {
       return { file, added: Number(added), deleted: Number(deleted) }
     })
   const offLimits = ['src/app/studio/team/settings/page.tsx', 'src/app/studio/projects/new/page.tsx',
-    'src/app/api/share/[token]/route.ts', 'prisma/schema.prisma',
+    'src/app/api/share/[token]/route.ts',
     'src/components/SharePasswordRequirements.tsx', 'src/lib/password-utils.ts']
   const hitchhikers = offLimits.filter(f => dirty.some(d => d.file === f))
-  check(hitchhikers.length === 0, 'B5 点名的改动就那一块：这六份文件零 diff', hitchhikers.length ? `→ 被顺手改了 ${hitchhikers.join(' ')}` : '')
-  // project-access 从「零 diff」名单里放出来：10-04 做成员面板时把那套「谁能打开这个项目」的
-  // 判定抽成了一枚导出的 projectViewersWhere（人数、名单、加撤人共用）。那是纯新增，
-  // 一行没删——删一行才叫越界：等于把这次删减没砍掉的读取逻辑顺手改了一遍。
-  const accessDiff = dirty.find(d => d.file === 'src/lib/project-access.ts')
-  check(!accessDiff || accessDiff.deleted === 0,
-    'B5b project-access 只许多、不许改（这一版它只新增了一枚导出函数，删掉的行必须是 0）',
-    accessDiff ? `→ +${accessDiff.added} / -${accessDiff.deleted}` : '→ 本次没碰')
+  check(hitchhikers.length === 0, 'B5 点名的改动就那一块：这五份文件零 diff', hitchhikers.length ? `→ 被顺手改了 ${hitchhikers.join(' ')}` : '')
+  // schema 也从「零 diff」名单里放出来：10-04 他自己点单做了「受限项目」，往上加了一列 restricted（实测 +2/-0）。
+  // 这次删减的护栏没丢——砍列一定在 numstat 里留下 deleted>0，那十列一列都不许被顺手带走。
+  const schemaDiff = dirty.find(d => d.file === 'prisma/schema.prisma')
+  check(!schemaDiff || schemaDiff.deleted === 0,
+    'B5c schema 只许多、不许删（这次删减一列都没砍；盘上那 2 行是他 10-04 加的 restricted）',
+    schemaDiff ? `→ +${schemaDiff.added} / -${schemaDiff.deleted}` : '→ 本次没碰')
+  // project-access 的护栏从「删掉的行必须是 0」换成「对外那九枚判定一个没少」。
+  // 行数基线在这天活不过一轮：他加 restricted 的 OR、我修那枚 OR 顶掉 assignmentAccess 的越权
+  // （check-project-member-count A9 实测 403 才修的），两次都要留下删除行。
+  // 这轮删减真正不许干的是把读取逻辑整个摘掉——导出面少一个名字才是那件事。
+  const exportedNames = (src: string) => [...src.matchAll(/^export (?:async )?function (\w+)/gm)].map((m) => m[1])
+  const beforeExports = exportedNames(execFileSync('git', ['show', 'HEAD:src/lib/project-access.ts'], { encoding: 'utf8' }))
+  const afterExports = exportedNames(accessLib)
+  const droppedExports = beforeExports.filter(n => !afterExports.includes(n))
+  check(droppedExports.length === 0 && afterExports.length >= beforeExports.length,
+    'B5b project-access 对外的判定一个没少（这轮删减没摘任何读取逻辑；只许多不许删名字）',
+    droppedExports.length ? `→ 少了 ${droppedExports.join(' ')}` : `→ HEAD ${beforeExports.length} 枚，现在 ${afterExports.length} 枚`)
 } finally {
   chrome?.kill()
   rmSync(userDataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 })

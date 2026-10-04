@@ -24,6 +24,19 @@ interface Video {
   approved: boolean
 }
 
+/** 项目默认头像：frame.io 的三张预设渐变图原样搬来（@2x），按项目 id 稳定轮换。 */
+const PROJECT_AVATAR_GRADIENTS = [
+  '/avatars/project-card-10@2x.jpg',
+  '/avatars/project-card-11@2x.jpg',
+  '/avatars/project-card-12@2x.jpg',
+]
+
+function projectAvatarGradient(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
+  return PROJECT_AVATAR_GRADIENTS[Math.abs(hash) % PROJECT_AVATAR_GRADIENTS.length]
+}
+
 interface ProjectActionsProps {
   project: Project
   videos: Video[]
@@ -298,7 +311,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
   return (
     <>
       <Shell>
-        <ShellHeader className={bare ? 'border-b border-border pt-[20px] pb-3' : undefined}>
+        <ShellHeader className={bare ? 'relative border-b border-border pt-[20px] pb-3' : 'relative'}>
           {/* 照 Frame.io 侧栏顶部那排项目切换器排：封面块在左、名称与人数两行整体缩到封面块右边，
               整行垂直居中，右侧一枚上下箭头，整块点开是项目菜单。
               尺寸全用 px 字面量：`:root .h-12` 被控件阶梯压到 2.625rem（=39.4px），而 `.w-12` 不在阶梯里，
@@ -310,7 +323,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               箭头吃 text-foreground：对标那枚最暗像素 (76,80,99) 几乎就是它标题的 (63,65,77)；
               跟第二行同灰时实量只到 (138,141,156)，看着像禁用。
               菜单与这块同宽、不带描边、吃 --popover：对标那层只有投影浮着，占栏宽 0.94。 */}
-          <div ref={menuRootRef} className="relative">
+          <div ref={menuRootRef}>
             <button
               type="button"
               ref={triggerRef}
@@ -318,9 +331,12 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               aria-haspopup="menu"
               aria-expanded={projectMenuOpen}
               onClick={() => setProjectMenuOpen((open) => !open)}
-              className="flex w-full min-w-0 items-center gap-[16px] rounded-[8px] text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex w-full min-w-0 items-center gap-[16px] rounded-[8px] text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span className="h-[48px] w-[48px] shrink-0 rounded-[8px] bg-primary bg-gradient-to-bl from-black/30 to-white/25" />
+              <span
+                className="h-[48px] w-[48px] shrink-0 rounded-[8px] bg-cover bg-center"
+                style={{ backgroundImage: `url(${projectAvatarGradient(project.id)})` }}
+              />
               <span className="flex min-w-0 flex-1 flex-col">
                 <ShellTitle className={titleClass}>{project.title}</ShellTitle>
                 {/* 第二行只报人数。取不到数字就不画，宁缺一个也别把「0 人」当成事实显示出去。 */}
@@ -338,7 +354,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                 ref={menuRef}
                 role="menu"
                 aria-label={t('projectMenuLabel')}
-                className="absolute left-0 top-full z-50 mt-1 w-full rounded-lg bg-popover p-1 shadow-elevation-lg"
+                className={`absolute top-[calc(100%+1px)] z-50 rounded-lg bg-popover p-1 shadow-elevation-lg ${bare ? '-left-5 -right-5' : 'left-0 right-0'}`}
               >
                 <MenuItem
                   icon={<FileText className="h-4 w-4 shrink-0" />}
@@ -533,11 +549,12 @@ function MenuItem({ icon, label, onSelect }: {
   onSelect: () => void
 }) {
   return (
+    // 尺寸抄 frame.io 项目菜单实测值：16px 字、24px 图标(stroke 1.5)、12/8 内边距、12px 图标-文字间距。
     <button
       type="button"
       role="menuitem"
       onClick={onSelect}
-      className="flex w-full items-center gap-[10px] rounded-md px-[10px] py-[7px] text-left text-[14px] text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+      className="flex w-full items-center gap-3 rounded-[4px] px-3 py-2 text-left text-[16px] text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent [&_svg]:size-6 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]"
     >
       {icon}
       <span className="min-w-0 truncate">{label}</span>

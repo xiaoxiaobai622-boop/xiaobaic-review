@@ -16,11 +16,14 @@ import { hashPassword } from '../src/lib/encryption'
  *    同日再点单加第四行「成员管理」，开的是同一层浮栏里的成员名单。
  *    B21/B15/B16 是在替「删的是菜单里的行、动作本身还在面板那两枚按钮上、照旧先弹确认窗」作证。
  *    键盘（Escape／方向键）与点外面都要关得掉。
- *  B22/B23/A8/A9/B4/B4b 是他 10-03 第二轮「这个细节真的差，按对标图的样式调」加的红：
+ *  B22/B23/A8/B4/B4b 是他 10-03 第二轮「这个细节真的差，按对标图的样式调」加的红：
  *    拿同一枚 Edge 窗口的两张 1484×768 截图（对标那张＋我们那张）同尺度对着量的——
- *    封面块里那枚白色文件夹图标对标没有（A8）、那块渐变两端要真的走得开而不是黑压黑（A9）、
- *    箭头那枚跟它自己的标题几乎同色而不是跟弱档同灰（B4/B4b）、
- *    弹层跟身份块同宽不带描边底色吃 --popover（B8/B22/B23）。
+ *    封面块里那枚白色文件夹图标对标没有（A8）、箭头那枚跟它自己的标题几乎同色而不是跟弱档同灰（B4/B4b）、
+ *    弹层不吃描边底色走 --popover（B22/B23）。
+ *  A9/B8/B20 在同一天第三轮跟着他改的样式换了口径：封面块那块黑压黑的 CSS 渐变换成按项目 id 稳定轮换的
+ *    三张 frame.io 预设图（A9）；菜单在 bare 态向身份块两侧各扩 left-5＝15px 根字号下的 18.75px，
+ *    占的是整幅栏面宽而不是 210px 一张小卡（B8）；菜单行改成 16px 字＋24px 图标，
+ *    不再吃被紧凑档压平的 text-sm（B20）。
  *    唯一没照搬的是整块尺寸：同一张比例尺下（我们这块封面 48px＝29 图像像素、间距 16px＝9 图像像素两把尺对得上）
  *    对标那块是 20×21 图像像素、我们是 29×28，即我们大 30-45%；但「块高 ÷ 两行文字高」两侧都是 1.2-1.3，
  *    说明整块是等比放大，不是排错了——这条留着他一句话再定。
@@ -243,8 +246,6 @@ async function menuFacts(page: Page) {
     if (!menu) return JSON.stringify({ open: false, anyMenu: document.querySelectorAll('[role="menu"]').length })
     const items = [...menu.querySelectorAll('[role="menuitem"]')].filter(i => i.offsetParent !== null)
     const mr = menu.getBoundingClientRect()
-    const btn = ${TRIGGER}
-    const br = btn.getBoundingClientRect()
     const active = document.activeElement
     const probe = document.createElement('div')
     probe.className = 'bg-popover'
@@ -265,7 +266,6 @@ async function menuFacts(page: Page) {
       bgInFrame,
       menuBorderTopWidth: mcs.borderTopWidth,
       menuBorderTopStyle: mcs.borderTopStyle,
-      triggerWidth: Math.round(br.width),
       popoverColor,
       texts: items.map(i => i.textContent.trim()),
       disabled: items.map(i => Boolean(i.disabled)),
@@ -274,7 +274,7 @@ async function menuFacts(page: Page) {
       itemIconColors: items.map(i => { const s = i.querySelector('svg'); return s ? getComputedStyle(s).color : null }),
       itemSizes: items.map(i => getComputedStyle(i).fontSize),
       left: Math.round(mr.left), top: Math.round(mr.top), right: Math.round(mr.right), width: Math.round(mr.width),
-      triggerRight: Math.round(br.right),
+      height: Math.round(mr.height),
       inSidebar: (() => {
         const side = menu.closest('section')
         return side ? Math.round(side.getBoundingClientRect().right) : null
@@ -365,8 +365,9 @@ try {
   check(f.titleSize === '20px' && f.coverW === 48 && f.coverH === 48 && f.coverRadius === '8px',
     'A6 护栏：名称 20px、封面块 48×48、圆角 8px 一字没动', `→ ${JSON.stringify([f.titleSize, f.coverW, f.coverH, f.coverRadius])}`)
   check(Number(f.gapAboveBlock) >= 20 && Number(f.gapAboveBlock) <= 26, 'A7 折叠标题到封面块的实际留白在 20px 上下（这是画出来的距离，不是我只看 computed）', `→ ${String(f.gapAboveBlock)}px`)
-  check(Number(f.coverSvgs) === 0, 'A8 封面块里不再画那枚白色文件夹图标（对标那块是纯渐变面，10-03 同尺度截图两侧对比出来的）', `→ 块内 svg ${String(f.coverSvgs)} 枚`)
-  check(/255,\s*255,\s*255/.test(String(f.coverBgImage)), 'A9 封面块的对角渐变有一端是提亮（原来是黑→更黑，看着是一块实心）', `→ ${String(f.coverBgImage)}`)
+  check(Number(f.coverSvgs) === 0, 'A8 封面块里不再画那枚白色文件夹图标（对标那块就是一张图，上面不叠图标；10-03 同尺度截图两侧对比出来的）', `→ 块内 svg ${String(f.coverSvgs)} 枚`)
+  check(/\/avatars\/project-card-1[012]@2x\.jpg/.test(String(f.coverBgImage)),
+    'A9 封面块画的是 frame.io 那三张预设图之一（10-04 第三轮：黑压黑那块渐变改成按项目 id 稳定轮换的真图，读到 none 或别的 URL 就是没接上）', `→ ${String(f.coverBgImage)}`)
 
   // ── B 组：整块可点出项目菜单 ───────────────────────────────────────────
   check(f.tag === 'button' && f.haspopup === 'menu', 'B1 整块是一枚弹出式按钮（对标那排整块可点，不是只有箭头能点）', `→ tag ${String(f.tag)} aria-haspopup ${String(f.haspopup)}`)
@@ -381,14 +382,20 @@ try {
   const opened = await waitFor(page, `[...document.querySelectorAll('[role="menu"]')].filter(m => m.offsetParent !== null).length`, 20_000)
   const m1 = await menuFacts(page)
   check(Boolean(opened) && m1.open, 'B5 点一下把项目菜单弹出来', `→ ${JSON.stringify(m1).slice(0, 120)}`)
-  await shot(page, 'info-menu-open', { x: f.blockRect[0] - 12, y: f.blockRect[1] - 46, width: f.blockRect[2] + 24, height: 240 })
+  // 裁菜单自己的矩形：bare 态它向身份块两侧各扩 18.75px，按那块裁出来的图会削掉两边（上一版就是这么一张假证据）。
+  // 菜单没开着干脆不截——一张「本该是菜单」却没有菜单的图，比没图更坏。
+  if (m1.open) await shot(page, 'info-menu-open', { x: Number(m1.left) - 6, y: Number(m1.top) - 6, width: Number(m1.width) + 12, height: Number(m1.height) + 12 })
   const expandedNow = String(await evalJs(page, `(() => { const b = ${TRIGGER}; return b ? b.getAttribute('aria-expanded') : null })()`))
   check(expandedNow === 'true', 'B6 弹出后 aria-expanded 翻成 true', `→ ${expandedNow}`)
   check(JSON.stringify(m1.texts) === JSON.stringify(['项目详情', '客户信息与通知', '客户分享页面', '成员管理']),
     'B7 菜单里那四行＝设置那三节＋成员管理（他 10-04 把这三项搬进这排菜单，原来单列的「项目设置」不再自己占一行；10-04 又点单加第四行成员）', `→ ${JSON.stringify(m1.texts)}`)
-  check(m1.left === (f.blockRect?.[0] ?? -1) && Math.abs(m1.width - m1.triggerWidth) <= 1,
-    'B8 菜单与身份块同宽同左缘（对标那块弹层占栏宽 0.94、左缘就贴着那块封面，不是 210px 一张小卡）',
-    `→ 块 left ${String(f.blockRect?.[0])} 宽 ${String(f.blockRect?.[2])} / 菜单 left ${m1.left} 宽 ${m1.width}`)
+  // 10-04 第三轮按对标改的：bare 态（宽屏那块在左侧栏里）菜单不再跟身份块同宽，而是向两侧各扩
+  // `left-5`＝15px 根字号下的 18.75px，占的是栏面宽；非 bare（窄屏卡片态）仍是 left-0 right-0 同宽。
+  const blockLeft = Number(f.blockRect?.[0])
+  const blockRight = blockLeft + Number(f.blockRect?.[2])
+  check(Math.abs(blockLeft - m1.left - 18.75) <= 1 && Math.abs(m1.right - blockRight - 18.75) <= 1,
+    'B8 菜单在 bare 态向身份块两侧各扩 18.75px（对标那层弹的是整幅栏面宽，不是 210px 一张小卡）',
+    `→ 块 left ${blockLeft} 右 ${blockRight} / 菜单 left ${m1.left} 右 ${m1.right}`)
   check(m1.inSidebar === null || m1.right <= m1.inSidebar, 'B9 菜单右缘没被侧栏那块的 overflow 裁掉（裁了就点不到那一项）', `→ 菜单右 ${m1.right}／侧栏右 ${m1.inSidebar}`)
   check(m1.menuBorderTopStyle === 'none' || m1.menuBorderTopWidth === '0px',
     'B22 菜单不带描边（对标那层只有投影浮着，一圈 1px 边框是本站自己的手搓味）',
@@ -408,7 +415,7 @@ try {
   const iconRatios = (m1.itemIconColors || []).map((c: string | null) => (c ? ratio(c) : null))
   check(iconRatios.length === 4 && iconRatios.every((r: number | null) => r !== null && r >= 3),
     'B19b 四行图标压菜单底到 3:1（WCAG 非文本下限）', `→ ${JSON.stringify(iconRatios)}`)
-  check((m1.itemSizes || []).every((s: string) => s === '14px'), 'B20 菜单行 14px（不吃控件阶梯压平后的 text-sm）', `→ ${JSON.stringify(m1.itemSizes)}`)
+  check((m1.itemSizes || []).every((s: string) => s === '16px'), 'B20 菜单行 16px（10-04 第三轮照 frame.io 项目菜单实测值：16px 字＋24px 图标，不是本站控件阶梯压平后的 text-sm）', `→ ${JSON.stringify(m1.itemSizes)}`)
 
   console.log(`  Escape → ${JSON.stringify(await pressKey(page, 'Escape'))}`)
   await sleep(500)

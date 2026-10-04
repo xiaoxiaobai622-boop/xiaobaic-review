@@ -161,7 +161,7 @@ export default function RailNotifications({ className }: { className?: string })
         title={unread + platformUnread > 0 ? `${unread + platformUnread} 条未读通知` : '通知'}
         className={cn(
           className,
-          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
         )}
       >
         <Bell className="h-[20px] w-[20px]" aria-hidden="true" />

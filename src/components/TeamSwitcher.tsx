@@ -130,7 +130,7 @@ export default function TeamSwitcher({ compact = false }: { compact?: boolean } 
         onClick={() => setOpen((value) => !value)}
         className={compact
           // 窄栏只有图标，键盘落点必须看得见，且 offset 要跟栏的 bg-card 同色。
-          ? 'relative flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card'
+          ? 'relative flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card'
           : 'flex min-h-11 w-48 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-xs sm:px-3 sm:text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent sm:w-56'}
         aria-label="团队中心"
         title={compact ? (activeTeam?.team.name || '团队中心') : undefined}

@@ -19,7 +19,7 @@ import ShareLinksPanel from '@/components/ShareLinksPanel'
 import { ProjectSettingsPanel, type ProjectSettingsSection } from '@/components/ProjectSettingsPanel'
 import { ProjectMembersPanel } from '@/components/ProjectMembersPanel'
 import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, ChevronDown, MessageSquare, PackageCheck, PanelRight, MonitorPlay } from 'lucide-react'
+import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck, PanelRight, MonitorPlay } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -287,8 +287,6 @@ export default function ProjectPage() {
   const [uploadRequestFolderId, setUploadRequestFolderId] = useState<string | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement>(null)
   const [selectedVideoGroupName, setSelectedVideoGroupName] = useState<string | null>(null)
-  // 项目信息区宽屏收进左侧项目侧栏，窄屏仍走右列，所以只需要一个折叠开关。
-  const [projectInfoOpen, setProjectInfoOpen] = useState(true)
   // 右上角那对面板开关：整块项目侧栏、侧栏下半的信息区（项目信息 / 版本信息）。
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [infoAreaCollapsed, setInfoAreaCollapsed] = useState(false)
@@ -1314,10 +1312,6 @@ export default function ProjectPage() {
                 </Button>
               </Link>
             )}
-            <Button variant="outline" size="default" className={projectToolbarButtonClassName} onClick={() => openSettings('project-details')}>
-              <Settings className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">{t('projectSettings')}</span>
-            </Button>
             {/* 面板开关：页内播放器、页内批注。亮着 = 这块还显示。 */}
             <div className="flex items-center gap-1">
               <PanelToggleButton icon={MonitorPlay} label={t('panelReviewPlayer')} active={reviewPaneVisible} onToggle={toggleReviewPane} />
@@ -1357,7 +1351,7 @@ export default function ProjectPage() {
                     onClick={() => changeWorkspace(item.id)}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'flex min-w-max items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors lg:w-full',
+                      'flex min-w-max items-center gap-2 rounded-md px-3 py-2 text-[16px] transition-colors lg:w-full',
                       active
                         // 选中行只靠底色区分，字色走中性前景：全仓那套 `bg-accent text-accent-foreground`
                         // 会把主题强调色画进导航文字里，换主题时这一栏跟着变色。
@@ -1379,23 +1373,9 @@ export default function ProjectPage() {
             {!infoAreaCollapsed && (
               <section className="scrollbar-hidden hidden rounded-[8px] bg-popover px-2 lg:mt-[2px] lg:block lg:min-h-0 lg:overflow-y-auto" aria-label={selectedVideoGroup ? tv('versionInfo') : t('projectInfoSection')}>
                 {selectedVideoGroup ? renderVersionInspector(true) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setProjectInfoOpen((value) => !value)}
-                      aria-expanded={projectInfoOpen}
-                      aria-controls="project-info-panel"
-                      className="flex w-full items-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {projectInfoOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-                      <span className="truncate">{t('projectInfoSection')}</span>
-                    </button>
-                    {projectInfoOpen && (
-                      <div id="project-info-panel" className="px-3 pb-3 pt-1">
-                        <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} />
-                      </div>
-                    )}
-                  </>
+                  <div id="project-info-panel" className="px-3 pb-3 pt-3">
+                    <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} />
+                  </div>
                 )}
               </section>
             )}

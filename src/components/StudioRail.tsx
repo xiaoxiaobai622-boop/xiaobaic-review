@@ -72,7 +72,7 @@ function TeamExpiryBadge() {
   return (
     <Link
       href="/studio/team?tab=team"
-      className={`relative ${RAIL_ICON_BUTTON} text-muted-foreground hover:bg-accent hover:text-accent-foreground`}
+      className={`relative ${RAIL_ICON_BUTTON} text-muted-foreground hover:text-accent-foreground`}
       title={`团队 ${label}`}
     >
       <Clock3 className={`h-[20px] w-[20px] ${danger ? 'text-destructive' : ''}`} />
@@ -138,8 +138,8 @@ export default function StudioRail() {
 
       <TeamExpiryBadge />
 
-      {/* 主题控件的可见焦点在内层 select 上，按钮本体拿不到环，只能靠 focus-within 打。 */}
-      <ThemeToggle compact className="h-[44px] w-[44px] rounded-lg outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 focus-within:ring-offset-background" />
+      {/* 内层 select 点击后会一直占着焦点，focus-within 的环会常驻（用户明确不要外框），所以这里不打焦点环。 */}
+      <ThemeToggle compact className="h-[44px] w-[44px] rounded-lg outline-none" />
 
       <RailItem
         href="https://scnqe74t5owc.feishu.cn/wiki/UOxownMcRiBLeekZwcEc3BBAnc2?from=from_copylink"
@@ -156,7 +156,7 @@ export default function StudioRail() {
       <div className="relative w-[44px]">
         <button
           onClick={() => setShowUserMenu(!showUserMenu)}
-          className={`${RAIL_ICON_BUTTON} hover:bg-accent`}
+          className={`${RAIL_ICON_BUTTON}`}
           aria-label={displayName}
           title={displayName}
         >
@@ -209,7 +209,7 @@ function ProjectsRailItem({ active }: { active: boolean }) {
       className={`${RAIL_ICON_BUTTON} ${
         active
           ? 'text-foreground'
-          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+          : 'text-muted-foreground hover:text-accent-foreground'
       }`}
       aria-current={active ? 'page' : undefined}
     >
@@ -231,7 +231,7 @@ function RailItem({
   const className = `${RAIL_ICON_BUTTON} ${
     active
       ? 'text-foreground'
-      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+      : 'text-muted-foreground hover:text-accent-foreground'
   }`
   if (external) {
     return (

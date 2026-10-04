@@ -1,10 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessageSquarePlus, Send } from 'lucide-react'
+import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/api-client'
+
+// 1:1 抄自 frame.io 侧栏「提交反馈」的灯泡图标（fill=currentColor，24 viewBox）。
+function BulbIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true" focusable="false">
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M15.971 15.185c0-.424.336-.83.762-1.345.745-.9 1.767-2.135 1.767-4.384C18.5 5.53 15.234 3 12 3S5.5 5.506 5.5 9.456c0 2.254 1.023 3.488 1.767 4.387.427.514.762.919.762 1.342 0 .45.365.815.816.815h6.31c.45 0 .816-.365.816-.815ZM12.5 5a1 1 0 1 0 0 2c.425 0 .933.223 1.355.645.422.422.645.93.645 1.355a1 1 0 1 0 2 0c0-1.075-.527-2.067-1.23-2.77C14.567 5.529 13.575 5 12.5 5Z"
+        fill="currentColor"
+      />
+      <path d="M14.995 17.998a2.998 2.998 0 0 1-5.995 0h5.995Z" fill="currentColor" />
+    </svg>
+  )
+}
 
 interface FeedbackItem {
   id: string
@@ -104,10 +119,10 @@ export default function RailFeedback({ className }: { className?: string }) {
         title="提交反馈"
         className={cn(
           className,
-          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
         )}
       >
-        <MessageSquarePlus className="h-[20px] w-[20px]" aria-hidden="true" />
+        <BulbIcon className="h-[20px] w-[20px]" />
       </button>
 
       {open && (

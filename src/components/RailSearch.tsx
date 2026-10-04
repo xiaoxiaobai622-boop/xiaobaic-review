@@ -142,7 +142,7 @@ export default function RailSearch({ className }: { className?: string }) {
         title={scope === 'assets' ? '搜索当前项目的素材' : '搜索项目'}
         className={cn(
           className,
-          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
         )}
       >
         <Search className="h-[20px] w-[20px]" aria-hidden="true" />

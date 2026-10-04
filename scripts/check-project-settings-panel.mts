@@ -8,11 +8,13 @@ import { join } from 'node:path'
  * （A＝项目页内浮一层设置面板，自带那几段导航，内容从设置页抽成共享组件复用，/settings 保留可直链）。
  *
  * 这份判据断的是六件事：
- *  1 入口分两类：身份块菜单那三项（＝设置那三节）＋工具栏与右键菜单的「项目设置」开浮层，URL 必须还停在 /studio/projects/<id>；
- *    两枚「开启收录」不在他点单里，10-04 改回原样——照旧换成 /settings 整页，且 DOM 里 0 枚浮层。
- *  2 浮层盖的是「除全局窄栏以外的整块主区」：面板四边正好坐在 #main-content 内缩 2px 上（顶边贴视口顶，
- *    因为顶栏早就没了、--admin-header-height 实测 0px），窄栏一寸没被盖住、还点得着。
- *  3 栏面照壳层那套：bg-popover + 8px 圆角 + shadow-elevation-lg，缝那 2px 透出来的是半透明遮罩不是实色墙。
+ *  1 入口两处：身份块菜单那三行（＝设置那三节）＋素材区右键菜单那项「项目设置」，都开小弹窗，
+ *    URL 必须还停在 /studio/projects/<id>；原来工具栏那枚「项目设置」10-04 第三轮删了，
+ *    A7 断的就是主区里再没有第三枚叫这名的按钮/链接。
+ *    两枚「开启收录」不在他点单里，10-04 改回原样——照旧换成 /settings 整页，且 DOM 里 0 枚弹窗。
+ *  2 10-04 他点的「把他们都改成小弹窗」：居中一张卡（宽 760、四周留 16px、顶不过视口高），
+ *    遮罩这次铺满整屏——窄栏与项目侧栏在窗开着时点不着（这条是他认下的取舍，A2d/A2g 钉住现状）。
+ *  3 栏面照壳层那套：bg-popover + 8px 圆角 + shadow-elevation-lg；窗头钉着、正文自己滚。
  *  4 内容一份不差也不多一份：导航三项、「客户分享页面」八行、「项目详情」四行，与 /settings 直链逐字相等；
  *    上一轮删掉的那十二串一句都不许被搬回来。
  *  5 链路还通：浮层里改名 → 「重新处理」窗 → PATCH → 库里真变了；Escape／点遮罩／关闭钮都能收掉；连开两次只有一枚。
@@ -29,8 +31,10 @@ const ROUTE_FILE = 'src/app/studio/projects/[id]/settings/page.tsx'
 const PANEL_FILE = 'src/components/ProjectSettingsPanel.tsx'
 const PROJECT_PAGE_FILE = 'src/app/studio/projects/[id]/page.tsx'
 const ACTIONS_FILE = 'src/components/ProjectActions.tsx'
-/** 浮层相对 #main-content 的内缩＝壳层那条缝的宽度（C2.13/14 定死的 2px）。 */
-const SEAM = 2
+/** 设置窗那一张卡的宽度：他 10-04 点「改成小弹窗」时给的两扇窗一宽一窄，这一扇是宽的（成员窗 560，见 check-project-members.mts C44）。 */
+const PANEL_WIDTH = 760
+/** 卡片四周至少留出的缝：ui/dialog 的 max-h-[calc(100vh-2rem)] 与 w-[calc(100%-2rem)] 都是 2rem＝16px。 */
+const CARD_GUTTER = 16
 
 for (const line of readFileSync('.env', 'utf8').split('\n')) {
   const i = line.indexOf('=')
@@ -161,6 +165,43 @@ async function pressKey(page: Page, key: string) {
     return target.tagName.toLowerCase()
   })()`)
 }
+/**
+ * 真鼠标事件（CDP Input.dispatchMouseEvent）：Radix 的「点外面收窗」听的是 document 上的 pointerdown，
+ * 页面里 `el.click()` 只发 click、不发 pointerdown ⇒ 用它点遮罩会得到「窗没关」，那是探针的错不是产品的错。
+ * 所以这一条必须走真指针。坐标取不到（元素没画出来）就原样报 not-found，让断言红。
+ */
+async function realClick(page: Page, expr: string) {
+  const at = JSON.parse(String(await evalJs(page, `(() => { const el = (${expr}); if (!el) return 'null'; const b = el.getBoundingClientRect(); if (b.width === 0 || b.height === 0) return 'null'; return JSON.stringify([b.x + b.width / 2, b.y + b.height / 2]) })()`))) as number[] | null
+  if (!at) return 'not-found'
+  await page.s('Input.dispatchMouseEvent', { type: 'mousePressed', x: at[0], y: at[1], button: 'left', clickCount: 1 })
+  await page.s('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at[0], y: at[1], button: 'left', clickCount: 1 })
+  return `clicked@${at[0].toFixed(0)},${at[1].toFixed(0)}`
+}
+/** 按屏幕坐标点（点卡片外的遮罩时没有元素可指，只有坐标）。 */
+async function realClickAt(page: Page, x: number, y: number) {
+  await page.s('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
+  await page.s('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
+  return `clicked@${x.toFixed(0)},${y.toFixed(0)}`
+}
+/** 真键盘（Radix 的 Escape 监听挂在 document 的捕获阶段，CDP 发的事件才和它同一棵树）。 */
+async function realPressKey(page: Page, key: string, vk: number) {
+  await page.s('Input.dispatchKeyEvent', { type: 'keyDown', key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk })
+  await page.s('Input.dispatchKeyEvent', { type: 'keyUp', key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk })
+  return key
+}
+/** 连按 Tab，每次记焦点还在不在卡片里；第一格是开窗那一刻的落点。 */
+async function tabWalk(page: Page, times: number) {
+  const read = () => evalJs(page, `(() => {
+    const a = document.activeElement, p = document.querySelector(${JSON.stringify(PANEL)})
+    return JSON.stringify({ tag: a ? a.tagName.toLowerCase() : 'none', inPanel: Boolean(p && a && p.contains(a)) })
+  })()`)
+  const out: Array<{ tag: string; inPanel: boolean }> = [JSON.parse(String(await read()))]
+  for (let i = 0; i < times; i++) {
+    await realPressKey(page, 'Tab', 9)
+    out.push(JSON.parse(String(await read())))
+  }
+  return out
+}
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOT_DIR
   if (!dir) return
@@ -190,8 +231,11 @@ async function loginInBrowser(page: Page, email: string) {
   })()`))
 }
 
+/**
+ * 小弹窗有两层：遮罩（Radix Overlay，fixed inset-0）与卡片（Radix Content）。
+ * `-overlay` 这枚名字沿用原来的写法——它同时是「窗开没开」的计数对象：Radix 关窗时把两层一起摘掉。
+ */
 const OVERLAY = `[data-tutorial="project-settings-overlay"]`
-const SCRIM = `[data-tutorial="project-settings-scrim"]`
 const PANEL = `[data-tutorial="project-settings-panel"]`
 const CLOSE = `[data-tutorial="project-settings-close"]`
 const TRIGGER = `[...document.querySelectorAll('[data-tutorial="project-info-trigger"]')].filter(b => b.offsetParent !== null)[0]`
@@ -206,14 +250,22 @@ const MENU_COUNT = `[...document.querySelectorAll('[role="menu"]')].filter(m => 
 const MENU_ITEMS = `(${OPEN_MENU} ? [...${OPEN_MENU}.querySelectorAll('[role="menuitem"]')].filter(i => i.offsetParent !== null) : [])`
 const menuTexts = async (page: Page) => JSON.parse(String(await evalJs(page, `JSON.stringify(${MENU_ITEMS}.map(i => i.innerText.trim()))`)))
 const clickMenuItem = (page: Page, label: string) => click(page, `${MENU_ITEMS}.find(i => i.innerText.trim() === ${JSON.stringify(label)})`)
+/**
+ * 10-04 第三轮把工具栏那枚「项目设置」删掉了：开浮层的入口只剩身份块菜单那三行＋素材区右键菜单（右键那路归 A9）。
+ * 下面「先开一扇、再验三种收法」好几处都走菜单，抽一枚 helper，别在四处各手写一遍点法（漏一处就是假绿）。
+ */
+async function openViaMenu(page: Page, label: string) {
+  const t = await click(page, TRIGGER)
+  const up = await waitFor(page, MENU_COUNT, 20_000)
+  const m = up ? await clickMenuItem(page, label) : 'not-found'
+  return `点身份块 → ${t}，菜单${up ? '弹出' : '没弹'}，点「${label}」→ ${m}`
+}
 
 const openCount = (page: Page) => evalJs(page, `document.querySelectorAll(${JSON.stringify(OVERLAY)}).length`)
 /** waitFor 的入参是一段 JS 表达式，选择器字符串本身不是表达式，必须包成 querySelector。 */
 const waitSel = (page: Page, selector: string, ms = 30_000) => waitFor(page, `document.querySelector(${JSON.stringify(selector)})`, ms)
 const waitPanel = (page: Page, ms = 30_000) => waitSel(page, PANEL, ms)
 const waitClosed = (page: Page, ms = 20_000) => waitFor(page, `document.querySelectorAll(${JSON.stringify(OVERLAY)}).length === 0`, ms)
-/** click 的入参是一段 JS 表达式，选择器常量必须包成 querySelector，否则 `[data-x]` 会被读成「给非引用赋值」。 */
-const clickSel = (page: Page, selector: string) => click(page, `document.querySelector(${JSON.stringify(selector)})`)
 /**
  * 右键菜单这层用 offsetParent 判可见是错的：position:fixed 的元素 offsetParent 恒为 null。
  * 只按「盒子有尺寸＋菜单里有那行字」认，两处读数（在不在、点哪枚）共用同一条解析。
@@ -281,17 +333,34 @@ async function countByLabel(page: Page, label: string) {
 async function clickWorkspaceTab(page: Page, label: string) {
   return click(page, `[...document.querySelectorAll('#main-content nav button')].filter(b => b.offsetParent !== null && b.innerText.trim().startsWith(${JSON.stringify(label)}))[0]`)
 }
+/**
+ * 居中一张小弹窗的几何。三组读数各管一件事：
+ *  1 卡片自己——在视口正中、宽钉在 PANEL_WIDTH、四周留得出 CARD_GUTTER；
+ *  2 遮罩——这次铺满整屏，窄栏落在它底下（A2d/A2g 断的就是他认下的那条取舍）；
+ *  3 窗头与正文——卡片只有两层，窗头不跟着滚、正文自己滚。
+ * 量不到时返回 null，让下面那一组各报各的 FAIL，而不是抛异常把整趟跑断。
+ */
 async function geometry(page: Page) {
   return JSON.parse(String(await evalJs(page, `(() => {
     const panel = document.querySelector(${JSON.stringify(PANEL)})
-    const scrim = document.querySelector(${JSON.stringify(SCRIM)})
+    const scrim = document.querySelector(${JSON.stringify(OVERLAY)})
     const main = document.getElementById('main-content')
-    if (!panel || !main) return JSON.stringify(null)
+    if (!panel || !scrim || !main) return JSON.stringify(null)
     const rail = main.previousElementSibling
     const box = (el) => { const b = el.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height } }
     const cs = getComputedStyle(panel)
-    const scs = scrim ? getComputedStyle(scrim) : null
-    const hit = (x, y) => { const e = document.elementFromPoint(x, y); if (!e) return 'none'; return { inPanel: panel.contains(e), inRail: rail ? rail.contains(e) : false, tag: e.tagName.toLowerCase(), cls: String(e.className).slice(0, 60) } }
+    // 底色/圆角/阴影当场存成字符串：getComputedStyle 给的是活对象，而下面要临时换一次主题，
+    // 留到组装返回值时那次重算已经踩在「还原主题」的过渡上，读出来是半路的值。
+    const panelBg = cs.backgroundColor
+    const panelRadius = cs.borderTopLeftRadius
+    const panelShadow = cs.boxShadow
+    const scs = getComputedStyle(scrim)
+    const scrimBg = scs.backgroundColor
+    const hit = (x, y) => {
+      const e = document.elementFromPoint(x, y)
+      if (!e) return { tag: 'none', inPanel: false, inScrim: false, inRail: false }
+      return { tag: e.tagName.toLowerCase(), cls: String(e.className).slice(0, 40), inPanel: panel.contains(e), inScrim: scrim === e || scrim.contains(e), inRail: rail ? rail.contains(e) : false }
+    }
     const alphaOf = (c) => {
       if (!c) return null
       const slash = c.indexOf('/')
@@ -299,7 +368,19 @@ async function geometry(page: Page) {
       const parts = c.split(',')
       return parts.length > 3 ? parseFloat(parts[3]) : 1
     }
-    const p = box(panel), m = box(main), rb = rail ? box(rail) : null
+    const p = box(panel), m = box(main), rb = rail ? box(rail) : null, sb = box(scrim)
+    const header = panel.firstElementChild
+    const body = panel.lastElementChild
+    const hTopBefore = header ? header.getBoundingClientRect().top : null
+    // 只有正文真溢出时这个读数才有内容；溢出与否一并回传，别让「没滚」冒充「滚了也没歪」。
+    let bodyTop = null, hTopAfter = null, scrolled = false
+    if (body && body.scrollHeight > body.clientHeight) {
+      body.scrollTop = 60
+      bodyTop = body.scrollTop
+      hTopAfter = header ? header.getBoundingClientRect().top : null
+      scrolled = body.scrollTop > 0
+      body.scrollTop = 0
+    }
     // --popover 存的是 HSL 三元组（形如 220 14% 96%），产品侧由 Tailwind 以 hsl(var(--popover)) 消费。
     // 探针直接写 backgroundColor:'var(--popover)' 拿到的是无效声明 ⇒ 浏览器回落 transparent，
     // 于是把合格的面板判成 FAIL。探针必须走产品同一条消费路径：挂一枚 bg-popover 工具类元素。
@@ -313,23 +394,37 @@ async function geometry(page: Page) {
     }
     const popoverRgb = probeRgb()
     // 默认主题里 --card == --popover，直接比会放走「错用了卡片色」；临时切到 frame 那套（两色不同）再比一次。
+    // 卡片带着 duration-200 + transition-property: all，换主题那一刻底色是从旧值走过来的，同步读只读得到起点
+    //（成员窗那条同类断言 10-04 实测：frame 下 --popover 已是纯白，卡底仍量成旧的灰）。这条问的是底色归哪枚 token，
+    // 不是问动画，所以先把这一张卡的过渡按住，量完当场交还；探针是新建的元素、没有起始值，本来就不受影响。
     const root = document.documentElement
     const prevTheme = root.getAttribute('data-theme')
+    const prevTransition = panel.style.transition
+    panel.style.transition = 'none'
     root.setAttribute('data-theme', 'frame')
     const framePanelBg = getComputedStyle(panel).backgroundColor
     const framePopoverRgb = probeRgb()
     if (prevTheme === null) root.removeAttribute('data-theme')
     else root.setAttribute('data-theme', prevTheme)
+    // 交还过渡之前先让还原后的值重算一次：否则下一次重算会把「白 → 灰」看成一次颜色变化、过渡重新启动。
+    void getComputedStyle(panel).backgroundColor
+    panel.style.transition = prevTransition
     return JSON.stringify({
-      p, m, railRight: rb ? rb.r : null, railVisible: rail ? rail.offsetParent !== null : false,
-      headerVar: getComputedStyle(document.documentElement).getPropertyValue('--admin-header-height').trim(),
-      panelBg: cs.backgroundColor, popoverRgb, framePanelBg, framePopoverRgb,
-      panelRadius: cs.borderTopLeftRadius, panelShadow: cs.boxShadow,
-      scrimAlpha: scs ? alphaOf(scs.backgroundColor) : null, scrimBg: scs ? scs.backgroundColor : null,
-      hitCenter: hit((p.l + p.r) / 2, (p.t + p.b) / 2),
-      hitSeam: hit(m.l + 1, m.t + 1),
-      hitRail: rb ? hit(rb.l + rb.w / 2, rb.t + 20) : 'no-rail',
+      p, s: sb, m, railRight: rb ? rb.r : null, railVisible: rail ? rail.offsetParent !== null : false,
       innerW: innerWidth, innerH: innerHeight,
+      maxWidth: cs.maxWidth, childCount: panel.children.length,
+      headerShrink: header ? getComputedStyle(header).flexShrink : null,
+      bodyOverflowY: body ? getComputedStyle(body).overflowY : null,
+      bodyOverflows: body ? body.scrollHeight > body.clientHeight : null,
+      bodyScrolled: scrolled, bodyTopAfterScroll: bodyTop, headerTopBefore: hTopBefore, headerTopAfterScroll: hTopAfter,
+      bodyHScroll: body ? body.scrollWidth > body.clientWidth + 1 : null,
+      panelBg, popoverRgb, framePanelBg, framePopoverRgb,
+      panelRadius, panelShadow,
+      scrimAlpha: alphaOf(scrimBg), scrimBg,
+      hitCenter: hit((p.l + p.r) / 2, (p.t + p.b) / 2),
+      // 卡片左边缘外 8px：这一点铁定在卡外、又还在视口内，量的是「点外面收窗」那条路。
+      hitOutside: hit(p.l - 8, (p.t + p.b) / 2),
+      hitRail: rb ? hit(rb.l + rb.w / 2, rb.t + rb.h / 2) : 'no-rail',
     })
   })()`)))
 }
@@ -420,38 +515,58 @@ try {
   check(urlAfterMenu === `/studio/projects/${project.id}`, 'A1c 换的是一层浮层，不是路由：URL 还停在项目页', `→ ${urlAfterMenu}`)
   await sleep(1_200)
 
-  // ── A2/A3 浮层的几何与栏面 ─────────────────────────────────────────────
-  // 量不到时不抛异常：填一份 NaN／占位读数，让这八条各报各的 FAIL，红才看得见全貌。
+  // ── A2/A3 小弹窗的几何与栏面 ────────────────────────────────────────────
+  // 他 10-04 的话：「把他们都改成小弹窗」。这一组量的是居中一张卡＋全屏遮罩，
+  // 原来那组「面板四边坐在主区内缩 2px 上／不盖窄栏」按新形态整组重写（旧断言留着就是假绿）。
+  // 量不到时不抛异常：填一份 NaN／占位读数，让这十几条各报各的 FAIL，红才看得见全貌。
   const measured = await geometry(page)
   const g = measured ?? {
-    p: { l: NaN, t: NaN, r: NaN, b: NaN, w: NaN, h: NaN }, m: { l: NaN, t: NaN, r: NaN, b: NaN, w: NaN, h: NaN },
-    railRight: null, railVisible: false, headerVar: 'n/a', panelBg: 'n/a', popoverRgb: 'n/a',
-    framePanelBg: 'n/a', framePopoverRgb: 'n/a', panelRadius: 'n/a', panelShadow: 'n/a',
-    scrimAlpha: null, scrimBg: null, hitCenter: 'no-panel', hitSeam: 'no-panel', hitRail: 'no-panel',
-    innerW: NaN, innerH: NaN,
+    p: { l: NaN, t: NaN, r: NaN, b: NaN, w: NaN, h: NaN }, s: { l: NaN, t: NaN, r: NaN, b: NaN, w: NaN, h: NaN },
+    m: { l: NaN, t: NaN, r: NaN, b: NaN, w: NaN, h: NaN },
+    railRight: null, railVisible: false, innerW: NaN, innerH: NaN,
+    maxWidth: 'n/a', childCount: NaN, headerShrink: 'n/a', bodyOverflowY: 'n/a',
+    panelBg: 'n/a', popoverRgb: 'n/a', framePanelBg: 'n/a', framePopoverRgb: 'n/a',
+    panelRadius: 'n/a', panelShadow: 'n/a', scrimAlpha: null, scrimBg: null,
+    hitCenter: 'no-panel', hitOutside: 'no-panel', hitRail: 'no-panel',
   }
-  check(!!measured, 'A2a 量得到浮层与 #main-content 的几何', measured ? '' : '→ 面板没画出来，下面这组读的是占位值')
   const near = (a: number, b: number) => Math.abs(a - b) <= 0.6
-  check(near(g.p.l - g.m.l, SEAM) && near(g.m.r - g.p.r, SEAM) && near(g.p.t - g.m.t, SEAM) && near(g.m.b - g.p.b, SEAM),
-    `A2 面板四边正好坐在主区内缩 ${SEAM}px 上（缝跟壳层同一档，不多不少）`,
-    `→ 左 ${g.p.l.toFixed(2)} 右 ${g.p.r.toFixed(2)} 顶 ${g.p.t.toFixed(2)} 底 ${g.p.b.toFixed(2)}｜主区 ${g.m.l.toFixed(2)}/${g.m.r.toFixed(2)}/${g.m.t.toFixed(2)}/${g.m.b.toFixed(2)}`)
-  check(near(g.m.t, 0) && g.headerVar === '0px', 'A2b 顶边贴视口顶：--admin-header-height 实测就是 0px（顶栏早没了，浮层不该给它留位子）', `→ 主区顶 ${g.m.t}，变量 ${g.headerVar}`)
-  check(near(g.m.b, g.innerH), 'A2c 浮层铺到视口底（盖的是整块主区，不是居中一张小窗）', `→ 主区底 ${g.m.b} 视口 ${g.innerH}`)
-  check(g.railVisible === true && g.railRight !== null && g.p.l >= g.railRight - 0.6,
-    'A2d 窄栏没被盖住：面板左边界在窄栏右边缘之外', `→ 窄栏右 ${String(g.railRight)} 面板左 ${g.p.l.toFixed(2)}`)
-  check(g.hitCenter?.inPanel === true, 'A2e 面板正中确实画在最上面（elementFromPoint 命中面板）', `→ 命中 ${JSON.stringify(g.hitCenter)}`)
-  check(g.hitSeam?.inPanel === false, `A2f 缝那 2px 真的透出来（主区内缩 1px 处不属于面板）`, `→ 命中 ${JSON.stringify(g.hitSeam)}`)
-  check(g.hitRail?.inRail === true && g.hitRail?.inPanel === false, 'A2g 遮罩没糊到窄栏上：窄栏正中仍归窄栏自己（还能点）', `→ 命中 ${JSON.stringify(g.hitRail)}`)
-  check(g.panelRadius === '8px', 'A3a 面板圆角 8px（跟壳层六块栏面同一档）', `→ ${g.panelRadius}`)
-  check(!!measured && g.panelShadow !== 'none' && g.panelShadow.length > 0, 'A3b 面板浮得起：阴影不是 none', `→ ${String(g.panelShadow).slice(0, 60)}`)
+  check(!!measured, 'A2a 量得到卡片与遮罩的几何', measured ? '' : '→ 弹窗没画出来，下面这组读的是占位值')
+  check(near(g.p.l, g.innerW - g.p.r) && near(g.p.t, g.innerH - g.p.b),
+    'A2 卡片坐在视口正中（左右留白相等、上下留白相等——居中不需要量主区，那段 #main-content 测量跟着外壳一起删了）',
+    `→ 左 ${g.p.l.toFixed(2)} 右余 ${(g.innerW - g.p.r).toFixed(2)}｜顶 ${g.p.t.toFixed(2)} 底余 ${(g.innerH - g.p.b).toFixed(2)}`)
+  check(g.maxWidth === `${PANEL_WIDTH}px` && near(g.p.w, Math.min(PANEL_WIDTH, g.innerW - CARD_GUTTER * 2)),
+    `A2b 宽钉在 ${PANEL_WIDTH}px（两扇窗一宽一窄，设置这扇是宽的；屏不够宽时让位、两侧各留 ${CARD_GUTTER}px）`,
+    `→ max-width ${g.maxWidth} 实宽 ${g.p.w.toFixed(2)}｜视口 ${g.innerW}×${g.innerH}`)
+  check(g.p.t >= CARD_GUTTER - 0.6 && g.innerH - g.p.b >= CARD_GUTTER - 0.6,
+    `A2c 整张卡在视口里、上下各留得出 ${CARD_GUTTER}px（不再是铺满主区那一大片）`,
+    `→ 顶 ${g.p.t.toFixed(2)} 底余 ${(g.innerH - g.p.b).toFixed(2)} 卡高 ${g.p.h.toFixed(2)}`)
+  check(g.s.l <= 0.6 && g.s.t <= 0.6 && near(g.s.r, g.innerW) && near(g.s.b, g.innerH),
+    'A2d 遮罩铺满整屏（fixed inset-0）：这扇窗现在管的是整个视口，不再是主区那一块',
+    `→ 遮罩 ${g.s.l.toFixed(1)}/${g.s.t.toFixed(1)}→${g.s.r.toFixed(1)}/${g.s.b.toFixed(1)}｜视口 ${g.innerW}×${g.innerH}`)
+  check(g.hitCenter?.inPanel === true, 'A2e 卡片正中确实画在最上面（elementFromPoint 命中卡片）', `→ 命中 ${JSON.stringify(g.hitCenter)}`)
+  check(g.hitOutside?.inScrim === true && g.hitOutside?.inPanel === false,
+    'A2f 卡片左边缘外 8px 归遮罩（点外面收窗那条路还在，不逼人找关闭钮）', `→ 命中 ${JSON.stringify(g.hitOutside)}`)
+  check(g.railVisible === true && g.hitRail?.inScrim === true && g.hitRail?.inRail === false && g.hitRail?.inPanel === false,
+    'A2g 窄栏这回落进遮罩底下：窗开着时它画着但点不着（改版前断的是「不盖窄栏」，他 10-04 点「都改成小弹窗」时认下了这条变化）',
+    `→ 窄栏右 ${String(g.railRight)} 命中 ${JSON.stringify(g.hitRail)}`)
+  check(g.childCount === 2 && g.headerShrink === '0' && g.bodyOverflowY === 'auto',
+    'A2h 卡片只有两层：窗头（flex-shrink 0，钉着）＋正文（overflow-y auto，自己滚）',
+    `→ ${g.childCount} 层｜窗头 shrink ${g.headerShrink}｜正文 ${g.bodyOverflowY}`)
+  check(g.panelRadius === '8px', 'A3a 卡片圆角 8px（跟壳层六块栏面同一档）', `→ ${g.panelRadius}`)
+  check(!!measured && g.panelShadow !== 'none' && g.panelShadow.length > 0, 'A3b 卡片浮得起：阴影不是 none', `→ ${String(g.panelShadow).slice(0, 60)}`)
   // 探针自己也得作证：一枚 bg-popover 元素若是全透明，说明消费路径没走通，此时比出来的相等/不等都不作数。
   const probeWorks = !/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)/.test(String(g.popoverRgb)) &&
     !/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)/.test(String(g.framePopoverRgb))
   check(!!measured && probeWorks && g.panelBg === g.popoverRgb && g.framePanelBg === g.framePopoverRgb,
-    'A3c 面板底色就是 --popover（栏面这一层，跟壳层同一块白；frame 主题下再比一次，免得 --card 冒充）',
+    'A3c 卡片底色就是 --popover（栏面这一层，跟壳层同一块白；frame 主题下再比一次，免得 --card 冒充）',
     `→ 默认 ${g.panelBg} vs ${g.popoverRgb}｜frame ${g.framePanelBg} vs ${g.framePopoverRgb}${probeWorks ? '' : '｜探针读成透明，这条不算数'}`)
   const alpha = Number(g.scrimAlpha)
-  check(g.scrimBg !== null && alpha > 0 && alpha < 1, 'A3d 遮罩是半透明不是实色墙（底下项目页透得出来，这层才叫浮层）', `→ ${g.scrimBg}`)
+  check(g.scrimBg !== null && alpha > 0 && alpha < 1, 'A3d 遮罩是半透明不是实色墙（底下项目页透得出来，这层才叫弹窗）', `→ ${g.scrimBg}`)
+  // 键盘这一侧：窗开着时焦点不许走出这张卡。以前那句「遮罩没做 inert」写进未证清单，
+  // 换成 Radix 之后这层是壳给的（FocusScope loop＋trapped、外面整片 aria-hidden），量得到就该断住。
+  const walk = await tabWalk(page, 8)
+  check(!!measured && walk.every(x => x.inPanel === true),
+    'A3e 开窗那一刻焦点在卡里、连按八次 Tab 也出不去（背后那一整页键盘够不着）', `→ ${JSON.stringify(walk.map(x => x.inPanel ? 'in' : x.tag))}`)
 
   // ── A4 内容一份不差也不多一份 ───────────────────────────────────────────
   const overlayNav = await panelNav(page)
@@ -467,6 +582,20 @@ try {
   const overlayText = await panelText(page)
   const leaked = BANNED.filter(s => overlayText.includes(s))
   check(overlayText.length > 0 && leaked.length === 0, 'A4d 浮层里那十二串一句都不许回来（搬代码最容易顺手把砍掉的两节搬回来）', `→ 正文 ${overlayText.length} 字，还剩 ${JSON.stringify(leaked)}`)
+  // 收窄到 760 之后新出来的两条风险，只能在内容最长那一节上量：正文滚得动吗、横向挤出去了吗。
+  // 「比窗高」这个前提在旧的铺满主区那版是天然成立的，换成小弹窗后 813 高的视口里八行开关装得下（实测溢出 false），
+  // 于是把前提自己造出来：临时压到 480 高（卡片钉的是 calc(100vh-2rem)，压完这张卡必然装不下整节），量完当场还原。
+  await page.s('Emulation.setDeviceMetricsOverride', { width: 1440, height: 480, deviceScaleFactor: 1, mobile: false })
+  await sleep(600)
+  const tall = await geometry(page)
+  await page.s('Emulation.clearDeviceMetricsOverride')
+  await sleep(600)
+  check(!!tall && tall.bodyOverflows === true && tall.bodyScrolled === true && near(Number(tall.headerTopAfterScroll), Number(tall.headerTopBefore)),
+    'A4e 视口压到 480 高之后「客户分享页面」比窗高：正文滚得动、窗头一动不动（窗头跟着滚＝两层结构塌成一层）',
+    tall ? `→ 溢出 ${String(tall.bodyOverflows)} 滚到 ${String(tall.bodyTopAfterScroll)}｜窗头 ${String(tall.headerTopBefore)} → ${String(tall.headerTopAfterScroll)}｜卡高 ${String(tall.p && tall.p.h)}` : '→ 量不到')
+  check(!!tall && tall.bodyHScroll === false,
+    'A4f 卡片缩到 760 之后正文不许横向溢出（挤出一条横滚就等于这节在窗里读不全）',
+    tall ? `→ 横滚 ${String(tall.bodyHScroll)}｜卡宽 ${String(tall.p && tall.p.w)}` : '→ 量不到')
   console.log(`  浮层里切到「${zh('projectDetails')}」→ ${await pickSection(page, zh('projectDetails'))}`)
   const backToDetail = await panelLabels(page)
   check(JSON.stringify(backToDetail) === JSON.stringify(EXPECT_DETAILS),
@@ -474,20 +603,34 @@ try {
   await shot(page, 'panel-1-overlay-open')
 
   // ── A6/A7/A8 三种收法 ──────────────────────────────────────────────────
-  const byEsc = await closeBy(page, async () => { console.log(`  Escape → ${await pressKey(page, 'Escape')}`); return 'Escape' })
-  check(byEsc.before === 1 && byEsc.closed, 'A6 Escape 收掉浮层（按前必须真有 1 枚，不然「没了」是句假话）', `→ 按前 ${byEsc.before} 枚，按后 ${byEsc.after} 枚`)
+  const byEsc = await closeBy(page, async () => { console.log(`  Escape → ${await realPressKey(page, 'Escape', 27)}`); return 'Escape' })
+  check(byEsc.before === 1 && byEsc.closed, 'A6 Escape 收掉浮层（按前必须真有 1 枚，不然「没了」是句假话；这回放的是真键盘）', `→ 按前 ${byEsc.before} 枚，按后 ${byEsc.after} 枚`)
   check(await pathname(page) === `/studio/projects/${project.id}`, 'A6b Escape 之后 URL 还是项目页（浮层没有偷偷 push 一条历史）', `→ ${await pathname(page)}`)
   check(await waitFor(page, TRIGGER) , 'A6c 底下项目页还在（身份块重新可见）')
+  // 这扇窗是页面用 open 状态控的、没有 Radix 的 Trigger 子节点，所以「还给打开它的那枚按钮」得自己接住。
+  const focusAfterEsc = String(await evalJs(page, `(() => { const a = document.activeElement, b = ${TRIGGER}; return a && b && a === b ? 'trigger' : (a ? a.tagName.toLowerCase() : 'none') })()`))
+  check(focusAfterEsc === 'trigger', 'A6d Escape 后焦点还给身份块那枚按钮（键盘用户掉不回页面顶部）', `→ ${focusAfterEsc}`)
 
-  console.log(`  再点「${zh('projectSettings')}」→ ${await clickByLabel(page, zh('projectSettings'))}`)
-  check(await waitPanel(page), 'A7 工具栏「项目设置」也是开浮层（不是跳页）', `→ ${await pathname(page)}`)
-  const bySeam = await closeBy(page, () => evalJs(page, `(() => { const m = document.getElementById('main-content').getBoundingClientRect(); const e = document.elementFromPoint(m.left + 1, m.top + 1); if (!e) return 'none'; e.click(); return 'clicked:' + e.tagName.toLowerCase() })()`))
+  // ── A7 入口改线：工具栏那枚「项目设置」删了，浮层从菜单开 ─────────────────
+  const orphanEntries = await countByLabel(page, zh('projectSettings'))
+  check(orphanEntries === 0,
+    `A7 主区里没有第二枚叫「${zh('projectSettings')}」的按钮/链接（10-04 第三轮他把工具栏那枚删了，入口＝身份块菜单那三行＋素材区右键菜单；还在就是两处入口各画一份、或整页跳转又回来了）`, `→ 找到 ${orphanEntries} 枚`)
+  console.log(`  ${await openViaMenu(page, zh('projectDetails'))}`)
+  check(await waitPanel(page), 'A7 从菜单开的是浮层，不是跳页（入口搬家没把行为一起换掉）', `→ ${await pathname(page)}`)
+  // 点的是卡片左边缘外 8px 那一点遮罩：走真指针（上面 realClick 那段注释说了原因）。
+  const gSeam = await geometry(page)
+  const bySeam = await closeBy(page, async () => {
+    if (!gSeam) return '量不到卡片'
+    const at = await realClickAt(page, gSeam.p.l - 8, (gSeam.p.t + gSeam.p.b) / 2)
+    console.log(`  点卡片外的遮罩 → ${at}`)
+    return at
+  })
   check(bySeam.before === 1 && bySeam.closed,
-    'A7b 点缝／遮罩那层就把浮层收掉（他要么 Escape 要么点外面，不该逼人找关闭钮）', `→ 点前 ${bySeam.before} 枚，点后 ${bySeam.after} 枚｜点的是 ${bySeam.detail}`)
-  console.log(`  再点「${zh('projectSettings')}」→ ${await clickByLabel(page, zh('projectSettings'))}`)
+    'A7b 点卡片外的遮罩就把窗收掉（他要么 Escape 要么点外面，不该逼人找关闭钮）', `→ 点前 ${bySeam.before} 枚，点后 ${bySeam.after} 枚｜点的是 ${bySeam.detail}`)
+  console.log(`  ${await openViaMenu(page, zh('projectDetails'))}`)
   check(await waitSel(page, CLOSE), 'A8 浮层里有明确的关闭控件')
-  const byCloseBtn = await closeBy(page, async () => { console.log(`  点关闭 → ${await clickSel(page, CLOSE)}`); return CLOSE })
-  check(byCloseBtn.before === 1 && byCloseBtn.closed, 'A8b 点关闭控件收掉浮层', `→ 点前 ${byCloseBtn.before} 枚，点后 ${byCloseBtn.after} 枚`)
+  const byCloseBtn = await closeBy(page, async () => { const at = await realClick(page, `document.querySelector(${JSON.stringify(CLOSE)})`); console.log(`  真鼠标点关闭 → ${at}`); return at })
+  check(byCloseBtn.before === 1 && byCloseBtn.closed, 'A8b 真指针点关闭控件收掉浮层（这枚按钮在卡里，点它不该被当成「点外面」）', `→ 点前 ${byCloseBtn.before} 枚，点后 ${byCloseBtn.after} 枚｜${byCloseBtn.detail}`)
 
   // ── A9 右键菜单入口 ────────────────────────────────────────────────────
   const ctx = await evalJs(page, `(() => {
@@ -586,12 +729,12 @@ try {
   await waitClosed(page)
 
   // ── A13 连开两次不叠层 ────────────────────────────────────────────────
-  console.log(`  连点两次「${zh('projectSettings')}」`)
-  await clickByLabel(page, zh('projectSettings'))
+  console.log('  连开两次（都走身份块菜单第一行「项目详情」）')
+  await openViaMenu(page, zh('projectDetails'))
   await waitPanel(page)
   await pressKey(page, 'Escape')
   await waitClosed(page)
-  await clickByLabel(page, zh('projectSettings'))
+  await openViaMenu(page, zh('projectDetails'))
   await sleep(1_200)
   const oc = await openCount(page)
   check(oc === 1, 'A13 开关一轮后 DOM 里只有一枚浮层（没叠两层、没漏门户）', `→ ${oc} 枚`)
@@ -700,4 +843,4 @@ if (failures.length) {
   process.exit(1)
 }
 console.log('\n全部通过')
-console.log('未证清单（这份判据证不到的，转浏览器批次或人工）：真鼠标滚轮在浮层内的滚动与橡皮筋、键盘 Tab 顺序是否只走浮层内（遮罩没做 inert）、窄屏（<1024）下浮层与窄栏的排布、英文/德文/荷兰文导航换行、连开快关心跳与请求竞态。')
+console.log('未证清单（这份判据证不到的，转浏览器批次或人工）：真硬件滚轮在窗内滚动的橡皮筋与惯性、读屏实际念到的层级（aria-hidden 只断了机器可见性）、窄屏（<1024）窗与窄栏的排布、英文/德文/荷兰文导航换行、连开快关心跳与请求竞态。焦点是否只走窗内这一条已由 A3e 量到，不再挂在未证里。')
