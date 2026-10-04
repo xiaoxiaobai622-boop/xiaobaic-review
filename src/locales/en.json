@@ -1952,6 +1952,7 @@
     "securityEventsDashboardDisabled": "Security events dashboard is disabled",
     "failedToFetchSecurityEvents": "Failed to fetch security events",
     "olderThanMustBeZeroOrGreater": "olderThan must be 0 or greater (0 = delete all)",
+    "confirmAllRequiredToWipeEvents": "Deleting every security event requires an explicit confirmation",
     "deletedAllSecurityEvents": "Deleted all {count} security events",
     "deletedEventsOlderThanDays": "Deleted {count} events older than {days} days",
     "failedToDeleteSecurityEventsApi": "Failed to delete security events",

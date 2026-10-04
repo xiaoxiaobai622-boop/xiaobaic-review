@@ -1895,6 +1895,7 @@
     "securityEventsDashboardDisabled": "安全事件仪表板已禁用",
     "failedToFetchSecurityEvents": "无法获取安全事件",
     "olderThanMustBeZeroOrGreater": "天数必须为 0 或更大（0 = 全部删除）",
+    "confirmAllRequiredToWipeEvents": "全部删除安全事件需要显式确认",
     "deletedAllSecurityEvents": "删除了所有 {count} 安全事件",
     "deletedEventsOlderThanDays": "已删除 {days} 天前的 {count} 事件",
     "failedToDeleteSecurityEventsApi": "删除安全事件失败",

@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { prisma } from './db'
 import { logError, logMessage } from './logging'
-import { getClientIpAddress } from './utils'
+import { getClientIpAddress, maskEmail } from './utils'
 import { getClientSessionTimeoutSeconds } from './settings'
 import { getRedis } from './redis'
 import { isShareSessionRevoked, isShareLinkRevoked } from './session-invalidation'
@@ -371,10 +371,22 @@ export async function trackVideoAccess(params: {
   })
 }
 
+/** Audit rows live for months and are readable from the console, so no address goes in. */
+function maskEmailsInDetails(details: any): any {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return details
+
+  const masked: Record<string, any> = {}
+  for (const [key, value] of Object.entries(details)) {
+    masked[key] = typeof value === 'string' && value.includes('@') ? maskEmail(value) : value
+  }
+  return masked
+}
+
 export async function logSecurityEvent(params: {
   type: string
   severity: string
   projectId?: string
+  userId?: string
   videoId?: string
   sessionId?: string
   ipAddress?: string
@@ -389,16 +401,22 @@ export async function logSecurityEvent(params: {
       return
     }
 
+    // Most call sites name the actor only inside `details`, so the column is filled from
+    // either place instead of rewriting all of them.
+    const actorId = params.userId
+      || (params.details && typeof params.details.userId === 'string' ? params.details.userId : undefined)
+
     await prisma.securityEvent.create({
       data: {
         type: params.type,
         severity: params.severity,
         projectId: params.projectId,
+        userId: actorId,
         videoId: params.videoId,
         sessionId: params.sessionId,
         ipAddress: params.ipAddress,
         referer: params.referer,
-        details: params.details,
+        details: maskEmailsInDetails(params.details),
         wasBlocked: params.wasBlocked || false,
       }
     })

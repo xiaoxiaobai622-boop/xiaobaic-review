@@ -53,6 +53,10 @@ type SecurityEventType =
   | 'BLOCKED_IP_ATTEMPT'
   | 'RATE_LIMIT_HIT'
 
+  // Audit Trail Integrity Events
+  | 'SECURITY_EVENTS_PURGED'
+  | 'SECURITY_LOGGING_DISABLED'
+
 type SecurityEventSeverity = 'INFO' | 'WARNING' | 'CRITICAL'
 
 interface SecurityEventMetadata {
@@ -319,6 +323,18 @@ const SECURITY_EVENT_METADATA: Record<SecurityEventType, SecurityEventMetadata> 
     category: 'Security',
     severity: 'WARNING',
   },
+  SECURITY_EVENTS_PURGED: {
+    label: 'Security Events Deleted',
+    description: 'A platform administrator deleted security events. Written outside the logging switch so the deletion itself always leaves a record.',
+    category: 'Security',
+    severity: 'CRITICAL',
+  },
+  SECURITY_LOGGING_DISABLED: {
+    label: 'Security Logging Disabled',
+    description: 'The security event logging switch was turned off. Recorded so a quiet stop of the audit trail is still visible.',
+    category: 'Security',
+    severity: 'CRITICAL',
+  },
 }
 
 /**
@@ -348,9 +364,11 @@ export function getSecurityEventCategory(type: string): string {
 }
 
 /**
- * Format IP address for display (mask last octet for privacy)
+ * Format IP address for display (mask last octet for privacy). Masked by default: the
+ * full address is only ever needed by an incident investigation, and that is what the
+ * unmasked value is passed in for.
  */
-export function formatIpAddress(ip: string | undefined, maskForPrivacy = false): string {
+export function formatIpAddress(ip: string | undefined, maskForPrivacy = true): string {
   if (!ip) return 'Unknown'
 
   if (!maskForPrivacy) return ip

@@ -108,6 +108,16 @@ export function formatDateTime(date: Date | string): string {
   return `${dateStr} ${timeStr}`
 }
 
+/**
+ * Keep only enough of an address to recognise the account. Audit rows are kept for months
+ * and are readable by anyone with console access, so they must not carry the full address.
+ */
+export function maskEmail(email: string): string {
+  const [localPart, domain] = email.split('@')
+  if (!domain) return '****'
+  return `${localPart.charAt(0)}****@${domain}`
+}
+
 export function getClientIpAddress(request: NextRequest): string {
   // Header-derived and client-settable — only trustworthy when the origin is reachable
   // solely via the proxy/CDN (a directly-exposed origin lets clients spoof IPs).
@@ -117,10 +127,16 @@ export function getClientIpAddress(request: NextRequest): string {
     if (cfIp) return cfIp
   }
 
+  // Caddy's proxy sets `header_up X-Real-IP {remote_host}`, which overwrites anything
+  // the client sent. X-Forwarded-For is only appended to, so a client-supplied first
+  // hop survives to the origin — audit rows keyed off it would be attacker-chosen.
+  const realIp = request.headers.get('x-real-ip')
+  if (realIp) return realIp.trim()
+
   const xff = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
   if (xff) return xff
 
-  return request.headers.get('x-real-ip') || 'unknown'
+  return 'unknown'
 }
 
 // In-memory color registry (persists during page session)

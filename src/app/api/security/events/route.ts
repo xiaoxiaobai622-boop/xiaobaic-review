@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis } from '@/lib/redis'
+import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 
@@ -112,6 +113,27 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * The purge record has to survive `trackSecurityLogs` being switched off, otherwise the
+ * same administrator can stop the audit trail and then empty it without a trace. So this
+ * writes straight to the table instead of through `logSecurityEvent`.
+ */
+async function recordAuditPurge(request: NextRequest, actorId: string, olderThan: number, deleted: number) {
+  try {
+    await prisma.securityEvent.create({
+      data: {
+        type: 'SECURITY_EVENTS_PURGED',
+        severity: 'CRITICAL',
+        userId: actorId,
+        ipAddress: getClientIpAddress(request),
+        details: { olderThan, deleted },
+      },
+    })
+  } catch (error) {
+    logError('[SECURITY_AUDIT] Failed to record an event purge:', error)
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
@@ -131,7 +153,7 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { olderThan } = body // Days (0 = delete all)
+    const { olderThan, confirmAll } = body // Days (0 = delete all)
 
     if (olderThan === undefined || olderThan === null || olderThan < 0) {
       return NextResponse.json(
@@ -140,43 +162,35 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    if (olderThan === 0) {
-      const result = await prisma.securityEvent.deleteMany({})
-
-      // Also clear the Redis recent events list
-      const redis = getRedis()
-      await redis.del('security:events:recent')
-
-      return NextResponse.json({
-        success: true,
-        deleted: result.count,
-        message: (securityMessages.deletedAllSecurityEvents || 'Deleted all {count} security events').replace('{count}', String(result.count))
-      })
+    if (olderThan === 0 && confirmAll !== true) {
+      return NextResponse.json(
+        { error: securityMessages.confirmAllRequiredToWipeEvents || 'Deleting every security event requires confirmAll: true' },
+        { status: 400 }
+      )
     }
 
     const cutoffDate = new Date()
     cutoffDate.setDate(cutoffDate.getDate() - olderThan)
 
     const result = await prisma.securityEvent.deleteMany({
-      where: {
-        createdAt: {
-          lt: cutoffDate
-        }
-      }
+      where: olderThan === 0 ? {} : { createdAt: { lt: cutoffDate } }
     })
 
-    // Trim Redis recent events list to remove stale entries
-    // (Redis list is capped at 1000 entries with auto-trim, so clearing
-    // the whole list is acceptable — new events will repopulate it)
-    if (result.count > 0) {
-      const redis = getRedis()
-      await redis.del('security:events:recent')
+    // The recent-events list in Redis is a flat cache, so it is dropped rather than filtered.
+    if (olderThan === 0 || result.count > 0) {
+      await getRedis().del('security:events:recent')
     }
+
+    await recordAuditPurge(request, authResult.id, olderThan, result.count)
+
+    const template = olderThan === 0
+      ? securityMessages.deletedAllSecurityEvents || 'Deleted all {count} security events'
+      : securityMessages.deletedEventsOlderThanDays || 'Deleted {count} events older than {days} days'
 
     return NextResponse.json({
       success: true,
       deleted: result.count,
-      message: (securityMessages.deletedEventsOlderThanDays || 'Deleted {count} events older than {days} days').replace('{count}', String(result.count)).replace('{days}', String(olderThan))
+      message: template.replace('{count}', String(result.count)).replace('{days}', String(olderThan))
     })
   } catch (error) {
     logError('Error deleting security events:', error)

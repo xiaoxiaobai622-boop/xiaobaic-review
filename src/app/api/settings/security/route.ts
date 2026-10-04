@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import { invalidateAllShareSessions, clearAllRateLimits } from '@/lib/session-invalidation'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { getClientIpAddress } from '@/lib/utils'
 import { invalidateSecuritySettingsCache, isHttpsManagedByEnvironment } from '@/lib/settings'
 import { logError, logMessage } from '@/lib/logging'
 import { invalidateSecuritySettingsCache as invalidateVideoAccessSecurityCache } from '@/lib/video-access'
@@ -291,6 +292,24 @@ export async function PATCH(request: NextRequest) {
       update: securityValues,
       create: { id: 'default', ...securityValues },
     })
+
+    // Switching the audit trail off silences every later event, so the switch itself has
+    // to be recorded. It goes straight to the table because `logSecurityEvent` honours
+    // the switch it would otherwise be reporting on.
+    if (currentSettings?.trackSecurityLogs === true && settings.trackSecurityLogs === false) {
+      try {
+        await prisma.securityEvent.create({
+          data: {
+            type: 'SECURITY_LOGGING_DISABLED',
+            severity: 'CRITICAL',
+            userId: authResult.id,
+            ipAddress: getClientIpAddress(request),
+          },
+        })
+      } catch (error) {
+        logError('[SECURITY_AUDIT] Failed to record the logging switch being turned off:', error)
+      }
+    }
 
     await invalidateSecuritySettingsCache()
     await invalidateVideoAccessSecurityCache()

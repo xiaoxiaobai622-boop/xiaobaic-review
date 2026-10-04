@@ -1868,6 +1868,7 @@
     "securityEventsDashboardDisabled": "Sicherheitsereignis-Dashboard ist deaktiviert",
     "failedToFetchSecurityEvents": "Sicherheitsereignisse konnten nicht abgerufen werden",
     "olderThanMustBeZeroOrGreater": "olderThan muss 0 oder größer sein (0 = alles löschen)",
+    "confirmAllRequiredToWipeEvents": "Zum Löschen aller Sicherheitsereignisse ist eine ausdrückliche Bestätigung erforderlich",
     "deletedAllSecurityEvents": "{count} Sicherheitsereignisse gelöscht",
     "deletedEventsOlderThanDays": "{count} Ereignisse älter als {days} Tage gelöscht",
     "failedToDeleteSecurityEventsApi": "Sicherheitsereignisse konnten nicht gelöscht werden",

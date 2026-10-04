@@ -266,7 +266,7 @@ export default function SecurityEventsClient() {
     try {
       const data = await apiDelete('/api/security/events', {
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ olderThan: days })
+        body: JSON.stringify(days === 0 ? { olderThan: 0, confirmAll: true } : { olderThan: days })
       })
 
       appAlert(data.message)

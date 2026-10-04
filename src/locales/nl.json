@@ -1868,6 +1868,7 @@
     "securityEventsDashboardDisabled": "Dashboard voor beveiligingsgebeurtenissen is uitgeschakeld",
     "failedToFetchSecurityEvents": "Ophalen van beveiligingsgebeurtenissen mislukt",
     "olderThanMustBeZeroOrGreater": "olderThan moet 0 of hoger zijn (0 = alles verwijderen)",
+    "confirmAllRequiredToWipeEvents": "Voor het verwijderen van alle beveiligingsgebeurtenissen is een uitdrukkelijke bevestiging vereist",
     "deletedAllSecurityEvents": "Alle {count} beveiligingsgebeurtenissen zijn verwijderd",
     "deletedEventsOlderThanDays": "{count} gebeurtenissen ouder dan {days} dagen zijn verwijderd",
     "failedToDeleteSecurityEventsApi": "Verwijderen van beveiligingsgebeurtenissen mislukt",

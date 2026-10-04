@@ -967,8 +967,13 @@ model SecurityEvent {
   severity String @default("INFO") // INFO, WARNING, CRITICAL
 
   projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Deleting a project must not delete the audit trail it produced, so the row
+  // keeps the id but loses the relation.
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
+  // Plain column, not a foreign key: removing a user must not remove the record of
+  // what that user did to the audit trail.
+  userId    String?
   videoId   String?
   sessionId String?
   ipAddress String?
@@ -983,6 +988,7 @@ model SecurityEvent {
   createdAt DateTime @default(now())
 
   @@index([projectId, createdAt])
+  @@index([userId, createdAt])
   @@index([type, createdAt])
   @@index([severity])
 }

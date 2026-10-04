@@ -608,6 +608,19 @@ export async function DELETE(
         // directories that no row names — behind in COS forever.
         directories: [teamProjectStorageKey(project.teamId, id)],
       })
+      // Audit rows have to outlive the project that produced them, but the rows that
+      // survive may not keep personal data. The old CASCADE deleted them outright, which
+      // solved the second half by destroying the first half.
+      await tx.securityEvent.updateMany({
+        where: { projectId: id },
+        data: {
+          ipAddress: null,
+          referer: null,
+          videoId: null,
+          sessionId: null,
+          details: { scrubbed: 'PROJECT_DELETED' },
+        },
+      })
       await tx.project.delete({ where: { id } })
       return durableTask
     })
