@@ -97,6 +97,9 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
   const [inputValue, setInputValue] = useState("")
   const [inputError, setInputError] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  // Radix 的模态窗关掉时把焦点交还给 Dialog.Trigger，而这一枚窗是队列控的、没有 Trigger 那枚子节点：
+  // 它照样 preventDefault 自己那步还原，于是一整串确认走完焦点掉回 <body>。开窗那一刻记下调用者，关窗自己接住。
+  const openerRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     const syncRequest = () => setRequest(requestQueue[0] || null)
@@ -173,10 +176,15 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
           hideClose
           className="w-[calc(100%-2rem)] max-w-[440px] gap-0 overflow-hidden rounded-2xl border-border/80 bg-card !p-0 shadow-[0_18px_45px_-18px_hsl(var(--foreground)/0.35)] sm:!p-0"
           onOpenAutoFocus={(event) => {
+            openerRef.current = document.activeElement as HTMLElement | null
             if (request?.kind === "prompt") {
               event.preventDefault()
               window.setTimeout(() => inputRef.current?.focus(), 0)
             }
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            openerRef.current?.focus()
           }}
         >
           <form noValidate onSubmit={request?.kind === "prompt" ? submitPrompt : (event) => event.preventDefault()}>

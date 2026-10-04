@@ -684,8 +684,8 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
         title={t('projectSettings')}
         subtitle={project.title}
         actions={saveButton}
+        width={760}
         onClose={onClose}
-        confirmModalOpen={showReprocessModal}
       >
         <div className="px-3 py-3 sm:px-4 sm:py-4 lg:px-6">
           {banners}

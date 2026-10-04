@@ -32,13 +32,17 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
->(({ className, children, hideClose = false, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    hideClose?: boolean
+    /** 遮罩那一层也要能被指名（项目页那两扇窗的判据量的就是它），不加这枚口子就得有人复制一遍弹窗壳。 */
+    overlayProps?: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay> & { [dataAttr: `data-${string}`]: string }
+  }
+>(({ className, children, hideClose = false, overlayProps, ...props }, ref) => {
   const tc = useTranslations("common")
 
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay {...overlayProps} />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
