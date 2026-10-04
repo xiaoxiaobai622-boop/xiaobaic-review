@@ -322,6 +322,8 @@ model Project {
   guestMode       Boolean @default(false) // Allow guest access with limited view (videos only, no comments/approval)
   guestLatestOnly Boolean @default(true) // Guests can only view latest version of each video
   guestShowPhotos Boolean @default(false) // Show photo albums to guests (view-only, downloads stay blocked)
+  // 受限项目（对标 frame.io restricted）：true 时仅项目成员（ProjectMember）与团队 OWNER/ADMIN 可见，普通成员不可见。
+  restricted      Boolean @default(false)
 
   // Revision tracking (optional)
   enableRevisions Boolean @default(false)

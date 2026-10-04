@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Building2, FolderKanban, FolderTree, Plus, Eye, EyeOff, RefreshCw, Copy, Check, AlertCircle, ChevronRight, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus } from 'lucide-react'
+import { Building2, FolderKanban, FolderTree, Plus, AlertCircle, ChevronRight, Lock, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
@@ -21,11 +21,8 @@ import ProjectsFolderTree from '@/components/projects/ProjectsFolderTree'
 import { apiFetch, apiPatch, apiPost, apiDelete } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
 import { useTranslations } from 'next-intl'
-import { SharePasswordRequirements } from '@/components/SharePasswordRequirements'
-import { ClientSelector } from '@/components/ClientSelector'
-import { generateSharePasscode } from '@/lib/password-utils'
+import { Switch } from '@/components/ui/switch'
 import type { ViewMode } from '@/components/ViewModeToggle'
-import { copyTextToClipboard } from '@/lib/clipboard'
 import { getActiveTeamId } from '@/lib/team-store'
 import { folderPath, type FolderNode } from '@/lib/project-folders'
 import {
@@ -111,17 +108,9 @@ export default function AdminPage() {
   // New Project Modal state
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [isShareOnly, setIsShareOnly] = useState(false)
-  const [passwordProtected, setPasswordProtected] = useState(false)
-  const [sharePassword, setSharePassword] = useState('')
-  const [showPassword, setShowPassword] = useState(true)
-  const [copied, setCopied] = useState(false)
-  const authMode = 'PASSWORD' as const
+  const [restricted, setRestricted] = useState(false)
   const [projectTitle, setProjectTitle] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
-  const [companyName, setCompanyName] = useState('')
-  const [clientCompanyId, setClientCompanyId] = useState<string | null>(null)
-  const [recipientName, setRecipientName] = useState('')
   const [formError, setFormError] = useState('')
   // Load saved views from API
   useEffect(() => {
@@ -345,30 +334,10 @@ export default function AdminPage() {
     }
   }
 
-  // Password helpers
-  function handleGeneratePassword() {
-    setSharePassword(generateSharePasscode())
-    setCopied(false)
-  }
-
-  async function handleCopyPassword() {
-    if (await copyTextToClipboard(sharePassword)) {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }
-
   function openNewProjectModal() {
     setProjectTitle('')
     setProjectDescription('')
-    setCompanyName('')
-    setClientCompanyId(null)
-    setRecipientName('')
-    setIsShareOnly(false)
-    setPasswordProtected(false)
-    setSharePassword('')
-    setShowPassword(true)
-    setCopied(false)
+    setRestricted(false)
     setFormError('')
     setShowNewProjectModal(true)
   }
@@ -379,30 +348,17 @@ export default function AdminPage() {
       return
     }
 
-    if (passwordProtected && !sharePassword.trim()) {
-      setFormError(t('passwordRequired'))
-      return
-    }
-
     setCreating(true)
     setFormError('')
 
     try {
       const data: Record<string, unknown> = {
         title: projectTitle,
-        authMode: passwordProtected ? authMode : 'NONE',
-        isShareOnly: isShareOnly,
+        authMode: 'NONE',
+        restricted,
       }
 
       if (projectDescription) data.description = projectDescription
-      if (companyName) data.companyName = companyName
-      if (clientCompanyId) data.clientCompanyId = clientCompanyId
-      if (recipientName) data.recipientName = recipientName
-      data.recipientEmail = null
-
-      if (passwordProtected && sharePassword) {
-        data.sharePassword = sharePassword
-      }
 
       const project = await apiPost('/api/projects', data)
       setShowNewProjectModal(false)
@@ -464,127 +420,28 @@ export default function AdminPage() {
               />
             </div>
 
-            <ClientSelector
-              companyName={companyName}
-              onCompanyChange={(name, id) => {
-                setCompanyName(name)
-                setClientCompanyId(id)
-              }}
-              recipientName={recipientName}
-              onRecipientNameChange={setRecipientName}
-              recipientEmail=""
-              onRecipientEmailChange={() => {}}
-              hideEmail
-              disabled={creating}
-            />
-
-            <div className="space-y-4 border rounded-lg p-4 bg-primary-visible border-2 border-primary-visible">
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <Label htmlFor="passwordProtected" className="text-sm font-semibold">
-                    {t('requireAuth')}
-                  </Label>
-                  <p className={`text-xs ${passwordProtected ? 'text-muted-foreground' : 'font-medium text-foreground'}`}>
-                    {passwordProtected ? t('requireAuthDescription') : t('noAuthWarning')}
-                  </p>
-                </div>
-                <input
-                  id="passwordProtected"
-                  type="checkbox"
-                  checked={passwordProtected}
-                  onChange={(e) => {
-                    const next = e.target.checked
-                    setPasswordProtected(next)
-                    if (next && !sharePassword.trim()) setSharePassword(generateSharePasscode())
-                  }}
-                  className="h-5 w-5 rounded border-border text-primary focus:ring-primary mt-1"
-                />
-              </div>
-
-              {passwordProtected && (
-                <div className="space-y-3 pt-2 border-t">
-                  <div className="space-y-2">
-                    <Label>{t('authMethod')}</Label>
-                    <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
-                      {t('passwordOnly')}
-                    </p>
+            {/* 设为受限：对标 frame.io restricted。开 = 仅受邀成员与团队管理员可见，关 = 团队全员可见。 */}
+            <div className="rounded-lg bg-muted/60 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <Lock className="mt-0.5 h-5 w-5 shrink-0" />
+                  <div className="space-y-1">
+                    <Label htmlFor="restrictedToggle" className="text-sm font-semibold">
+                      {t('restrictTitle')}
+                    </Label>
                     <p className="text-xs text-muted-foreground">
-                      {t('passwordDescription')}
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="sharePassword">{t('sharePassword')}</Label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1 min-w-0">
-                        <Input
-                          id="sharePassword"
-                          value={sharePassword}
-                          onChange={(e) => setSharePassword(e.target.value)}
-                          type={showPassword ? 'text' : 'password'}
-                          className="pr-10 font-mono text-sm"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={handleGeneratePassword}
-                        title={t('generatePassword')}
-                        className="flex-shrink-0"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={handleCopyPassword}
-                        title={t('copyPassword')}
-                        className="flex-shrink-0"
-                      >
-                        {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                    {sharePassword && (
-                      <SharePasswordRequirements password={sharePassword} />
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {t('savePasswordWarning')}
+                      {restricted ? t('restrictOnDescription') : t('restrictOffDescription')}
                     </p>
                   </div>
                 </div>
-              )}
-            </div>
-
-            <div className="space-y-2 border-t pt-4">
-              <div className="flex items-center space-x-2">
-                <input
-                  id="isShareOnly"
-                  type="checkbox"
-                  checked={isShareOnly}
-                  onChange={(e) => setIsShareOnly(e.target.checked)}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                <Switch
+                  id="restrictedToggle"
+                  checked={restricted}
+                  disabled={creating}
+                  onCheckedChange={setRestricted}
                 />
-                <Label htmlFor="isShareOnly" className="font-normal cursor-pointer">
-                  {t('shareOnly')}
-                </Label>
               </div>
-              <p className="text-xs text-muted-foreground ml-6">
-                {t('shareOnlyDescription')}
-              </p>
             </div>
-
-            <p className="text-xs text-muted-foreground border-t pt-3">
-              {t('additionalOptions')}
-            </p>
           </div>
           <DialogFooter>
             <DialogClose asChild>

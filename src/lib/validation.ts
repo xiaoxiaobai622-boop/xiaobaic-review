@@ -277,6 +277,8 @@ export const createProjectSchema = z.object({
   dueDate: z.string().datetime().nullable().optional(),
   dueReminder: z.enum(['NONE', 'DAY_BEFORE', 'WEEK_BEFORE']).nullable().optional(),
   isShareOnly: z.boolean().optional(),
+  // 受限项目：仅项目成员与团队 OWNER/ADMIN 可见（frame.io restricted 语义）
+  restricted: z.boolean().optional(),
   previewResolution: z.enum(['720p', '1080p', '2160p']).optional()
 })
 
@@ -309,6 +311,9 @@ export const updateProjectSchema = z.object({
   hideFeedback: z.boolean().optional(),
   timestampDisplay: z.enum(['AUTO', 'TIMECODE']).optional(),
   previewResolution: z.enum(['720p', '1080p', '2160p']).optional(),
+
+  // 受限项目：仅项目成员与团队 OWNER/ADMIN 可见
+  restricted: z.boolean().optional(),
 
   // Transcoding settings
   skipTranscoding: z.boolean().optional(),

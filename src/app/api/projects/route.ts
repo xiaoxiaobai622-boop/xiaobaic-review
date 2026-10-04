@@ -191,7 +191,8 @@ export async function POST(request: NextRequest) {
       restrictCommentsToLatestVersion,
       dueDate,
       dueReminder,
-      isShareOnly
+      isShareOnly,
+      restricted
     } = validation.data
 
     const securityFields = [
@@ -269,10 +270,18 @@ export async function POST(request: NextRequest) {
           applyPreviewLut: settings?.defaultApplyPreviewLut ?? true,
           dueDate: dueDate ? new Date(dueDate) : null,
           dueReminder: dueReminder || null,
+          restricted: restricted || false,
           createdById: admin.id,
           teamId,
         },
       })
+
+      // 受限项目的创建人自动进成员表：否则 MEMBER 角色的创建人自己都看不见自己的受限项目。
+      if (restricted) {
+        await tx.projectMember.create({
+          data: { projectId: newProject.id, userId: admin.id },
+        })
+      }
 
       // Create recipient if email provided (validated by schema)
       if (recipientEmail) {

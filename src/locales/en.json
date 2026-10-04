@@ -265,6 +265,9 @@
 
     "requireAuth": "Require Authentication",
     "requireAuthDescription": "Clients must authenticate to view and approve.",
+    "restrictTitle": "Restrict access",
+    "restrictOnDescription": "Only people directly invited to this project have access.",
+    "restrictOffDescription": "Visible to everyone on the team; anyone with the link can view it.",
     "authMethod": "Authentication Method",
     "passwordOnly": "Password Only",
     "otpOnlyShort": "OTP Only",

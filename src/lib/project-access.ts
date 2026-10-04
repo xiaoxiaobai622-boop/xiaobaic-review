@@ -22,6 +22,19 @@ export function projectAccessWhere(user: AuthUser, teamId?: string | null): Pris
     ...(user.teamRole === 'MEMBER' && user.projectAccessScope === 'ASSIGNED_ONLY'
       ? { members: { some: { userId: user.id } } }
       : {}),
+    // 受限项目（frame.io restricted 语义）：只对项目成员与团队 OWNER/ADMIN 可见，普通成员直接不可见。
+    OR: [
+      { restricted: false },
+      { restricted: true, members: { some: { userId: user.id } } },
+      {
+        restricted: true,
+        team: {
+          members: {
+            some: { userId: user.id, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
+          },
+        },
+      },
+    ],
   }
 }
 
@@ -56,7 +69,26 @@ function projectAccessWhereForUser(user: AuthUser, projectId: string): Prisma.Pr
         },
       },
     },
-    ...assignmentAccess,
+    // 两枚 OR 都要作数，所以都塞进 AND 数组：摊在同一层里后写的 `OR` 会顶掉前面那枚
+    // （JS 对象字面量同名键后者赢），「仅指定项目」的成员于是看得见所有非受限项目 —— 403 变 200。
+    AND: [
+      assignmentAccess,
+      // 与列表同一口径：受限项目只有项目成员和团队 OWNER/ADMIN 打得开。
+      {
+        OR: [
+          { restricted: false },
+          { restricted: true, members: { some: { userId: user.id } } },
+          {
+            restricted: true,
+            team: {
+              members: {
+                some: { userId: user.id, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
+              },
+            },
+          },
+        ],
+      },
+    ],
   }
 }
 
