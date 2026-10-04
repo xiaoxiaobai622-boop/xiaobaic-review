@@ -1,5 +1,9 @@
 version: 2
 updates:
+  # 只让 dependabot 报安全补丁，不要它开日常版本 PR。
+  # open-pull-requests-limit: 0 关掉版本类 PR，安全类更新仍然照发（dependabot 的既定行为）。
+  # 之前这里配了 production/development 分组，结果是它把跨大版本的 29 个包打成一包，
+  # 还把 prisma / @prisma/client 这对必须一起动的包劈成两个 PR，两个 PR 各自 npm ci 都装不起来。
   - package-ecosystem: npm
     directory: "/"
     schedule:
@@ -7,19 +11,17 @@ updates:
       day: monday
       time: "09:00"
       timezone: Asia/Shanghai
-    open-pull-requests-limit: 5
-    groups:
-      production-dependencies:
-        dependency-type: "production"
-      development-dependencies:
-        dependency-type: "development"
+    open-pull-requests-limit: 0
+    versioning-strategy: increase
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
 
   - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
