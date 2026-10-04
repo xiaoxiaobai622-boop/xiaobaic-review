@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ZodError } from 'zod'
 import { prisma } from '@/lib/db'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
@@ -6,6 +7,7 @@ import { decrypt, encrypt } from '@/lib/encryption'
 import { NOTIFICATION_EVENT_TYPES } from '@/lib/external-notifications/constants'
 import { updateNotificationDestinationSchema } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -147,9 +149,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       updatedAt: refreshed!.updatedAt,
     })
   } catch (error) {
-    if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    // Only the caller's own validation failures are safe to echo back; anything else
+    // carries storage details.
+    if (error instanceof ZodError) {
+      return NextResponse.json({ error: error.issues.map(issue => issue.message).join('; ') }, { status: 400 })
     }
+    logError('Failed to update notification destination:', error)
     return NextResponse.json({ error: notificationsMessages.failedToUpdateNotificationDestination || 'Failed to update notification destination' }, { status: 500 })
   }
 }

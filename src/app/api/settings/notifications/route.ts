@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ZodError } from 'zod'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requirePlatformAdmin } from '@/lib/auth'
@@ -139,9 +140,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(serializeDestination(created), { status: 201 })
   } catch (error) {
-    if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    // Only the caller's own validation failures are safe to echo back; anything else
+    // carries storage details.
+    if (error instanceof ZodError) {
+      return NextResponse.json({ error: error.issues.map(issue => issue.message).join('; ') }, { status: 400 })
     }
+    logError('Failed to create notification destination:', error)
     return NextResponse.json({ error: notificationsMessages.failedToCreateNotificationDestination || 'Failed to create notification destination' }, { status: 500 })
   }
 }
