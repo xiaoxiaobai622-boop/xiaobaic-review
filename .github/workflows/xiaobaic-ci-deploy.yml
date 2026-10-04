@@ -43,7 +43,6 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Audit production dependencies
-        continue-on-error: true
         run: npm audit --omit=dev --audit-level=high
 
       - name: Build production application
@@ -420,6 +419,15 @@ jobs:
             docker tag "$DEPLOY_IMAGE" "$live_tag"
             deployed_image_id=$(docker image inspect -f '{{.Id}}' "$live_tag")
             : > "$diag_log"
+            # 等保安全审计留存：--force-recreate 会连旧容器的 json-file 日志一起删掉，
+            # 上限只治无限增长、治不了"每次部署清零"。先把上一版容器的日志落到宿主机，
+            # 由 /etc/logrotate.d/vitransfer-deploy-logs 按 26 周保留。
+            for lc in app worker; do
+              docker logs --tail 20000 "vitransfer-$lc" \
+                > "/var/log/vitransfer-deploy-$lc-$DEPLOY_SHA.log" 2>&1 \
+                && echo "Saved previous $lc container log to /var/log/vitransfer-deploy-$lc-$DEPLOY_SHA.log" \
+                || echo "Failed to save $lc log"
+            done
             docker compose up -d --no-deps --force-recreate app worker
 
             healthy_streak=0
@@ -441,6 +449,30 @@ jobs:
                 if [ "$healthy_streak" -ge 6 ]; then
                   curl --fail --silent --show-error https://vidx.cn/api/health
                   trap - ERR
+
+                  # 镜像债回收：每次部署都留下一枚 2.4GB 镜像（10-04 实测堆到 28.7GB 可回收、
+                  # 磁盘 73%）。只清 7 天以前的 rollback-* 标签，在跑的那枚永不碰。
+                  # rollback 标签和那次部署的 ghcr 标签指向同一个镜像 ID，所以按 ID 强删，
+                  # 只解标签不掉盘。GHCR 上原件仍在，需要时可重拉。
+                  live_image_id=$(docker image inspect -f '{{.Id}}' "$live_tag" 2>/dev/null || true)
+                  cutoff_epoch=$(date -d '7 days ago' +%s)
+                  # 人工保命标签（vitransfer-mps:livebefore-* 这类，非 fast/rollback）钉住的镜像
+                  # 永不回收：它们和某枚 rollback 标签常常是同一个 ID，按 ID 强删会连保命标签一起抹掉。
+                  safety_ids=$(docker images --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' \
+                    | awk '$2 ~ /^vitransfer-mps:/ && $2 !~ /^vitransfer-mps:(fast|rollback-)/ {print $1}')
+                  for stale_tag in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^vitransfer-mps:rollback-'); do
+                    created_epoch=$(date -d "$(docker image inspect -f '{{.Created}}' "$stale_tag" 2>/dev/null | cut -c1-19)" +%s 2>/dev/null || echo 0)
+                    [ "$created_epoch" -lt "$cutoff_epoch" ] || continue
+                    stale_id=$(docker image inspect -f '{{.Id}}' "$stale_tag" 2>/dev/null || true)
+                    [ -n "$stale_id" ] && [ "$stale_id" != "$live_image_id" ] || continue
+                    case " $safety_ids " in
+                      *" $stale_id "*) echo "Kept $stale_tag (pinned by a manual safety tag)"; continue ;;
+                    esac
+                    docker rmi -f "$stale_id" >/dev/null 2>&1 \
+                      && echo "Reclaimed image $stale_id (was $stale_tag)" \
+                      || echo "Skipped $stale_tag (still referenced by a container)"
+                  done
+
                   echo "Deployment completed successfully after 30 seconds stable: $DEPLOY_IMAGE"
                   exit 0
                 fi
