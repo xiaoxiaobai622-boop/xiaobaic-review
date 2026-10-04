@@ -24,7 +24,7 @@ jobs:
       TEMPLATE_ID: ${{ inputs.template_id }}
     steps:
       - name: Update configuration and restart worker
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
