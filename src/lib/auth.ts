@@ -7,6 +7,7 @@ import { revokeToken, isTokenRevoked, isUserTokensRevoked } from './token-revoca
 import {
   isAdminSessionRevoked,
   registerAdminSession,
+  recordAdminSessionActivity,
   revokeAdminSession,
   touchAdminSession,
 } from './studio-session-registry'
@@ -20,6 +21,7 @@ import { getRedis } from './redis'
 import { isShareSessionRevoked, isShareLinkRevoked } from './session-invalidation'
 import { logError, logWarn } from './logging'
 import { getRequestedTeamId } from './team-access'
+import { getAdminSessionTimeoutSeconds } from './settings'
 import { WECHAT_SESSION_COOKIE, verifyWechatSession } from './wechat-auth'
 
 export interface AuthUser {
@@ -193,6 +195,13 @@ export async function verifyAdminAccessToken(token: string): Promise<AdminAccess
     if (await isTokenRevoked(token)) return null
     if (await isUserTokensRevoked(decoded.userId, decoded.iat)) return null
     if (await isAdminSessionRevoked(decoded.sessionId)) return null
+    // Idle is checked here as well, not only when tokens rotate: an access token lives an
+    // hour, so a session that went quiet would otherwise keep serving requests for that
+    // hour after the configured timeout had passed.
+    if (await recordAdminSessionActivity(decoded.sessionId, decoded.userId, await getAdminSessionTimeoutSeconds()) === 'idle') {
+      await revokeAdminSession(decoded.sessionId)
+      return null
+    }
     return decoded
   } catch {
     return null
@@ -281,6 +290,15 @@ export async function refreshAdminTokens(params: {
   // User-level revocation (e.g. password reset, family already killed).
   if (await isUserTokensRevoked(payload.userId, payload.iat)) return null
   if (await isAdminSessionRevoked(payload.sessionId)) return null
+
+  // The configured admin session timeout was only ever handed to the browser, so a
+  // refresh token stayed usable for its full 30 days however long the account had been
+  // silent. Idle is now decided here, on the server, before any token is re-issued.
+  const idleSeconds = await getAdminSessionTimeoutSeconds()
+  if (await recordAdminSessionActivity(payload.sessionId, payload.userId, idleSeconds) === 'idle') {
+    await revokeAdminSession(payload.sessionId)
+    return null
+  }
 
   if (fingerprintHash) {
     const storedFingerprint = await getTokenFingerprint(payload.userId, refreshToken)

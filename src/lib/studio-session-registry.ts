@@ -7,6 +7,7 @@ type AdminSessionRecord = {
   userId: string
   fingerprintHash?: string
   createdAt: number
+  lastActivityAt?: number
 }
 
 function sessionsKey(userId: string) {
@@ -58,6 +59,46 @@ export async function registerAdminSession(
 
   const evictedSessionIds = await redis.zrange(sessionsKey(userId), 0, overflow - 1)
   await Promise.all(evictedSessionIds.map((evictedSessionId) => revokeAdminSession(evictedSessionId)))
+}
+
+/**
+ * Enforce the configured admin idle timeout on the server instead of only in the
+ * browser. Returns 'idle' when the session has been silent longer than idleSeconds,
+ * in which case the caller must not rotate its tokens.
+ *
+ * A missing record is not treated as idle: the registry is a Redis-only structure with
+ * a 30-day TTL, so a restart or an eviction would otherwise log every signed-in person
+ * out at once. The record is re-established instead, and tracking resumes from now.
+ */
+export async function recordAdminSessionActivity(
+  sessionId: string,
+  userId: string,
+  idleSeconds: number
+): Promise<'active' | 'idle'> {
+  const redis = getRedis()
+  const now = Date.now()
+  const raw = await redis.get(sessionKey(sessionId))
+
+  if (!raw) {
+    const record: AdminSessionRecord = { userId, createdAt: now, lastActivityAt: now }
+    await redis.setex(sessionKey(sessionId), ADMIN_SESSION_TTL_SECONDS, JSON.stringify(record))
+    await redis.zadd(sessionsKey(userId), now, sessionId)
+    await redis.expire(sessionsKey(userId), ADMIN_SESSION_TTL_SECONDS)
+    return 'active'
+  }
+
+  const record = JSON.parse(raw) as AdminSessionRecord
+  const lastActivityAt = record.lastActivityAt ?? record.createdAt
+  if (now - lastActivityAt > idleSeconds * 1000) return 'idle'
+
+  // Access tokens live an hour, so refreshes arrive at most hourly. Rewriting the
+  // record on every refresh is a wasted round trip; once a minute is enough.
+  if (now - lastActivityAt > 60_000) {
+    const updated: AdminSessionRecord = { ...record, lastActivityAt: now }
+    await redis.setex(sessionKey(sessionId), ADMIN_SESSION_TTL_SECONDS, JSON.stringify(updated))
+  }
+
+  return 'active'
 }
 
 export async function touchAdminSession(sessionId: string): Promise<void> {
