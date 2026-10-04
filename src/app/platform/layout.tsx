@@ -3,12 +3,11 @@
 import { PlatformAuthProvider } from '@/components/PlatformAuthProvider'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, MessageSquarePlus, Receipt, Settings2, ShieldCheck, UserCog, Users, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, MessageSquarePlus, Settings2, ShieldCheck, UserCog, Users, type LucideIcon } from 'lucide-react'
 
 const sections: Array<{ label: string; href: string; icon: LucideIcon }> = [
   { label: '团队总览', href: '/platform', icon: LayoutDashboard },
   { label: '团队管理', href: '/platform/teams', icon: Users },
-  { label: '订单', href: '/platform/orders', icon: Receipt },
   { label: '平台成员', href: '/platform/users', icon: UserCog },
   { label: '平台设置', href: '/platform/settings', icon: Settings2 },
   { label: '消息与反馈', href: '/platform/messages', icon: MessageSquarePlus },

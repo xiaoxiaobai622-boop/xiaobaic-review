@@ -102,7 +102,7 @@ const STAMP = Date.now().toString(36)
 const DAY = 86_400_000
 // 钉死的到期基准：未来 10 天，整秒（见文件头「断言 5」那段）
 const EXPIRY_MS = (Math.floor(Date.now() / 1000) + 10 * 86_400) * 1000
-const PRICING_TS = new URL('../src/lib/billing-pricing.ts', import.meta.url).href
+const PRICING_TS = new URL('../lib/billing-pricing.ts', import.meta.url).href
 const STATUSES = ['OPEN', 'REPORTED', 'PAID', 'FULFILLED', 'CLOSED']
 // 契约：OrderDto（Task 6 的白名单，17 列）+ 平台端独有的两个名字
 const ROW_KEYS = [...['id', 'reference', 'planKey', 'periods', 'amountCents', 'currency', 'status', 'createdAt',

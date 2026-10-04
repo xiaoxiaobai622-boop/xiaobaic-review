@@ -9,9 +9,9 @@
  *   1. 同进程（默认）：`import { GET }` 真路由，自己造 NextRequest（真 bearer 令牌 + 真 x-team-id）。
  *   2. 真 HTTP（给 `BILLING_CHECK_BASE_URL`）：同样的矩阵打到他正在跑的 `next dev`。
  *
- *   npx tsx --env-file=.env scripts/check-billing-read-routes.mts
+ *   npx tsx --env-file=.env src/disabled-billing/scripts/check-billing-read-routes.mts
  *   BILLING_CHECK_BASE_URL=http://localhost:3000 \
- *     npx tsx --env-file=.env scripts/check-billing-read-routes.mts
+ *     npx tsx --env-file=.env src/disabled-billing/scripts/check-billing-read-routes.mts
  *
  * `--env-file=.env` 是必须的：tsx 不自动读 .env，而 `src/lib/auth.ts` 在模块加载时就取 JWT_SECRET。
  * 真 HTTP 模式只往**用户自己起的** dev server 发请求 —— 不启进程、不跑 build。
@@ -67,15 +67,15 @@ import { mkdir, readdir, stat, unlink, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { PrismaClient } from '@prisma/client'
 import { NextRequest } from 'next/server'
-import { GET as GET_ORDERS, POST as POST_ORDERS } from '../src/app/api/billing/orders/route'
-import { GET as GET_INTENT } from '../src/app/api/billing/orders/[id]/intent/route'
-import { GET as GET_QR } from '../src/app/api/billing/transfer/qr/route'
+import { GET as GET_ORDERS, POST as POST_ORDERS } from '../app/api/billing/orders/route'
+import { GET as GET_INTENT } from '../app/api/billing/orders/[id]/intent/route'
+import { GET as GET_QR } from '../app/api/billing/transfer/qr/route'
 import { issueAdminTokens, verifyCredentials } from '@/lib/auth'
 import { prisma as appPrisma } from '@/lib/db'
 import { getRedis } from '@/lib/redis'
 import { revokeAdminSession } from '@/lib/studio-session-registry'
 import { hashPassword } from '@/lib/encryption'
-import { reportOrderPaid } from '@/lib/billing'
+import { reportOrderPaid } from '@/disabled-billing/lib/billing'
 import { getTransferConfig } from '@/lib/settings'
 
 const PRICE_A = 19900
@@ -555,7 +555,7 @@ function bailIfAborted(next: string): boolean {
 async function main() {
   for (const key of ['JWT_SECRET', 'DATABASE_URL', 'REDIS_HOST']) {
     if (!process.env[key]) {
-      console.error(`缺少 ${key}：请用 \`npx tsx --env-file=.env scripts/check-billing-read-routes.mts\` 运行`)
+      console.error(`缺少 ${key}：请用 \`npx tsx --env-file=.env src/disabled-billing/scripts/check-billing-read-routes.mts\` 运行`)
       process.exit(2)
     }
   }

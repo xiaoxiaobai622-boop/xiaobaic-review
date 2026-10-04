@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/db'
-import { isUnlimitedQuota } from '@/lib/billing-pricing'
 
 export const BETA_PLAN = 'BETA'
 
@@ -11,9 +10,12 @@ export const BETA_QUOTA = {
   maxStorageGB: 10,
 } as const
 
-// `isUnlimitedQuota` 现在住在 `@/lib/billing-pricing`（纯函数模块，无 Prisma import）：
-// 平台队列与客户账单页两枚 `'use client'` 渲染方也要用同一个「不限」口径，
-// 而这一枚文件第一行就 import Prisma，客户端碰不得。
+// 「额度列填 0 或负数 = 不限」这一条口径原来住在 `@/lib/billing-pricing`，
+// 写闸门是全站唯一还在用它的活代码；计费面 10-04 整体搬进 `src/disabled-billing/` 后就地自带一份，
+// 免得一条通向已停功能的 import 把死代码拖回构建产物。搬回来的那天两枚二选一。
+export function isUnlimitedQuota(value: number): boolean {
+  return value <= 0
+}
 
 export function isTeamSubscriptionActive(_team: { subscriptionPlan: string; subscriptionExpiresAt: Date | null }) {
   // 免费内测期没有到期这回事：写闸门照旧调用这里，但只有团队状态能拦下写操作。

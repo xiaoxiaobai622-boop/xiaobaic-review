@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO, LIVE_COMMENT } from '@/lib/db'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
-import { canAccessProject, canAdministerProject } from '@/lib/project-access'
+import { canAccessProject, canAdministerProject, projectViewersWhere } from '@/lib/project-access'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { isSmtpConfigured } from '@/lib/settings'
 import { flushPendingClientNotifications } from '@/lib/notifications'
@@ -120,22 +120,11 @@ export async function GET(
     const smtpConfigured = await isSmtpConfigured()
 
     /**
-     * 身份行那枚人数＝能打开这个项目的人数，按项目算而不是按团队算：本团队的 ACTIVE 成员里，
-     * 角色不是 MEMBER 的、或授权范围不是「仅指定项目」的、或本项目确实认领了他的，才算进来。
-     * 三个条件抄的是 projectAccessWhereForUser（src/lib/project-access.ts:29-46），也就是本端点
-     * 自己拒 403 用的那批人，所以「人数说能进」和「端点真让进」不会各说各话。
+     * 身份行那枚人数＝能打开这个项目的人数。口径不在这里：见 projectViewersWhere
+     * （src/lib/project-access.ts），成员名单走的是同一枚 where，所以「人数说能进」
+     * 和「名单列得见人」不会各说各话。
      */
-    const memberCount = await prisma.teamMember.count({
-      where: {
-        teamId: project.teamId,
-        status: 'ACTIVE',
-        OR: [
-          { role: { not: 'MEMBER' } },
-          { user: { projectAccessScope: { not: 'ASSIGNED_ONLY' } } },
-          { user: { projectMemberships: { some: { projectId: project.id } } } },
-        ],
-      },
-    })
+    const memberCount = await prisma.teamMember.count({ where: projectViewersWhere(project) })
 
     const primaryRecipient = project.recipients?.find((r: any) => r.isPrimary) || project.recipients?.[0]
     const fallbackName = project.companyName || primaryRecipient?.name || 'Client'

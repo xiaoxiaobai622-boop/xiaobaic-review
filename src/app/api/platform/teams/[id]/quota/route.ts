@@ -7,8 +7,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // maxProjects/maxVideos accept 0: readers treat a non-positive allowance as
-// "unlimited" (isUnlimitedQuota in lib/billing-pricing, which lib/platform-access imports for the
-// storage gate and the two client renderers share).
+// "unlimited" (isUnlimitedQuota now lives in lib/platform-access itself; the billing copy
+// moved to src/disabled-billing on 10-04).
 const QUOTA_MINIMUMS: Record<string, number> = {
   maxMembers: 1,
   maxProjects: 0,

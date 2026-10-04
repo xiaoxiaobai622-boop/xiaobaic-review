@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Copy, ReceiptText, RefreshCw } from 'lucide-react'
 import { copyTextToClipboard } from '@/lib/clipboard'
-import type { OrderDto } from '@/lib/billing-dto'
-import { isUnlimitedQuota, type PlanQuota } from '@/lib/billing-pricing'
+import type { OrderDto } from '@/disabled-billing/lib/billing-dto'
+import { isUnlimitedQuota, type PlanQuota } from '@/disabled-billing/lib/billing-pricing'
 
 /**
  * 平台运营队列的**展示层**（Task 12 Step 2）。

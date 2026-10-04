@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
-import { closeOrder, confirmAndFulfill, createOrder, fulfillOrder, loadFulfillmentOrder, reportOrderPaid } from '../src/lib/billing'
-import { BillingError } from '../src/lib/billing-pricing'
+import { closeOrder, confirmAndFulfill, createOrder, fulfillOrder, loadFulfillmentOrder, reportOrderPaid } from '../lib/billing'
+import { BillingError } from '../lib/billing-pricing'
 import { hashPassword } from '@/lib/encryption'
 
 const prisma = new PrismaClient()

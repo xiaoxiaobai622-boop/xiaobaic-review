@@ -207,9 +207,15 @@ async function patchBodies(page: Page) {
   return JSON.parse(String(await evalJs(page, `JSON.stringify((window.__reqs || []).filter(x => x.m === 'PATCH' && x.u.indexOf('/api/projects/') > -1))`)))
 }
 
-/** 孤儿 key 机械判定：基准＝git HEAD 那版设置页用到的 key 全集，一条一条数引用，不手写清单。 */
-function keysFromHead(): { ns: string, key: string }[] {
-  const src = execFileSync('git', ['show', `HEAD:${SETTINGS_FILE}`], { encoding: 'utf8' })
+/**
+ * 孤儿 key 机械判定：基准＝砍那四刀之前那一版设置页（`09c4bd8^`：1067 行的表单原样、108 个 key），
+ * 一条一条数引用，不手写清单。
+ * 基准不能取 HEAD：那次砍完紧接着就提交了，HEAD 那版只剩 13 行的壳、一个 key 都不引用（实测 0 个），
+ * 「孤儿」于是恒为 0——B2 那条 `shouldGone.length > 0` 就成了永远赢不了的空断言。
+ */
+const BASELINE_REF = '09c4bd8^'
+function keysFromBaseline(): { ns: string, key: string }[] {
+  const src = execFileSync('git', ['show', `${BASELINE_REF}:${SETTINGS_FILE}`], { encoding: 'utf8' })
   const out: { ns: string, key: string }[] = []
   const seen = new Set<string>()
   for (const m of src.matchAll(/\b(t|tc)\(\s*'([A-Za-z0-9_]+)'/g)) {
@@ -401,12 +407,12 @@ try {
   check(!/\b(Video|Shield)\b/.test(settingsSrc), 'B1b 那两节的图标 import 也没搭着留在文件里', `→ ${JSON.stringify(['Video', 'Shield'].filter(n => new RegExp(`\\b${n}\\b`).test(settingsSrc)))}`)
 
   const files = sourceFiles('src')
-  const headKeys = keysFromHead()
+  const headKeys = keysFromBaseline()
   const shouldGone = headKeys.filter(k => referenceCount(k.key, files) === 0)
   const shouldStay = headKeys.filter(k => referenceCount(k.key, files) > 0)
   const notCleaned = shouldGone.filter(k => localeHas(k.ns, k.key).length > 0)
   check(shouldGone.length > 0 && notCleaned.length === 0,
-    `B2 孤儿 key 清零（基准＝HEAD 那版设置页用到的 ${headKeys.length} 个 key，机械数引用得 ${shouldGone.length} 个孤儿）`,
+    `B2 孤儿 key 清零（基准＝砍四刀前那版 ${BASELINE_REF} 用到的 ${headKeys.length} 个 key，机械数引用得 ${shouldGone.length} 个孤儿）`,
     notCleaned.length ? `→ 四语言里还在：${notCleaned.slice(0, 12).map(k => `${k.ns}.${k.key}`).join(' ')}` : '→ 全部不在')
   const wronglyGone = shouldStay.filter(k => localeHas(k.ns, k.key).length < 4)
   check(wronglyGone.length === 0,
@@ -425,12 +431,23 @@ try {
     'B4b 服务端与接口的读取者一字未动（/api/share、project-access、PATCH 都还在读这些列）',
     `→ ${JSON.stringify([shareRoute.includes('resolvedProject.guestMode'), accessLib.includes('authMode'), apiRoute.includes('validatedBody.previewResolution')])}`)
 
-  const dirty = execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).split('\n').filter(Boolean)
+  const dirty = execFileSync('git', ['diff', '--numstat'], { encoding: 'utf8' }).split('\n').filter(Boolean)
+    .map((line) => {
+      const [added, deleted, file] = line.split('\t')
+      return { file, added: Number(added), deleted: Number(deleted) }
+    })
   const offLimits = ['src/app/studio/team/settings/page.tsx', 'src/app/studio/projects/new/page.tsx',
-    'src/app/api/share/[token]/route.ts', 'src/lib/project-access.ts', 'prisma/schema.prisma',
+    'src/app/api/share/[token]/route.ts', 'prisma/schema.prisma',
     'src/components/SharePasswordRequirements.tsx', 'src/lib/password-utils.ts']
-  const hitchhikers = offLimits.filter(f => dirty.includes(f))
-  check(hitchhikers.length === 0, 'B5 点名的改动就那一块：这七份文件零 diff', hitchhikers.length ? `→ 被顺手改了 ${hitchhikers.join(' ')}` : '')
+  const hitchhikers = offLimits.filter(f => dirty.some(d => d.file === f))
+  check(hitchhikers.length === 0, 'B5 点名的改动就那一块：这六份文件零 diff', hitchhikers.length ? `→ 被顺手改了 ${hitchhikers.join(' ')}` : '')
+  // project-access 从「零 diff」名单里放出来：10-04 做成员面板时把那套「谁能打开这个项目」的
+  // 判定抽成了一枚导出的 projectViewersWhere（人数、名单、加撤人共用）。那是纯新增，
+  // 一行没删——删一行才叫越界：等于把这次删减没砍掉的读取逻辑顺手改了一遍。
+  const accessDiff = dirty.find(d => d.file === 'src/lib/project-access.ts')
+  check(!accessDiff || accessDiff.deleted === 0,
+    'B5b project-access 只许多、不许改（这一版它只新增了一枚导出函数，删掉的行必须是 0）',
+    accessDiff ? `→ +${accessDiff.added} / -${accessDiff.deleted}` : '→ 本次没碰')
 } finally {
   chrome?.kill()
   rmSync(userDataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 })

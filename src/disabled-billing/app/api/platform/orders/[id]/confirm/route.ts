@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePlatformAuth } from '@/lib/auth'
-import { getPaymentProvider } from '@/lib/payment-provider'
+import { getPaymentProvider } from '@/disabled-billing/lib/payment-provider'
 import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'

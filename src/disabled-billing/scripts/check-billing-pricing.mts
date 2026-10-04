@@ -1,7 +1,7 @@
 import {
   ALLOWED_PERIODS, BillingError, OPEN_ORDER_TTL_MS, ORDER_STATUSES, computeAmountCents,
   computeFulfillmentPreview, isAllowedPeriods, nextExpiryMs, quotaForPlan, randomReference,
-} from '../src/lib/billing-pricing'
+} from '../lib/billing-pricing'
 
 const DAY = 86_400_000
 let passed = 0

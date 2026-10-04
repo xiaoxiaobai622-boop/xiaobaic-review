@@ -1,8 +1,8 @@
 import type { Order, Team, TeamQuota } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { getTransferConfig } from '@/lib/settings'
-import { BillingError } from '@/lib/billing-pricing'
-import { confirmAndFulfill } from '@/lib/billing'
+import { BillingError } from '@/disabled-billing/lib/billing-pricing'
+import { confirmAndFulfill } from '@/disabled-billing/lib/billing'
 
 export type PaymentProviderKey = 'manual' | 'wechat'
 

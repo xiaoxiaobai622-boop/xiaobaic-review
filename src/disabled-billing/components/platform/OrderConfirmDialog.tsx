@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { apiPost } from '@/lib/api-client'
-import type { PlanQuota } from '@/lib/billing-pricing'
+import type { PlanQuota } from '@/disabled-billing/lib/billing-pricing'
 import {
   Dialog,
   DialogClose,
@@ -20,7 +20,7 @@ import {
   quotaText,
   type OrderPreviewWire,
   type PlatformOrderRow,
-} from '@/components/platform/OrderQueue'
+} from '@/disabled-billing/components/platform/OrderQueue'
 
 /**
  * 「确认到账」的二次确认框（Task 12 Step 3，spec §8.2）。

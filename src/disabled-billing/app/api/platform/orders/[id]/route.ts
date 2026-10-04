@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePlatformAuth } from '@/lib/auth'
-import { loadFulfillmentOrder } from '@/lib/billing'
-import { toOrderDto } from '@/lib/billing-dto'
-import { computeFulfillmentPreview, quotaForPlan } from '@/lib/billing-pricing'
+import { loadFulfillmentOrder } from '@/disabled-billing/lib/billing'
+import { toOrderDto } from '@/disabled-billing/lib/billing-dto'
+import { computeFulfillmentPreview, quotaForPlan } from '@/disabled-billing/lib/billing-pricing'
 import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'

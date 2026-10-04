@@ -199,7 +199,7 @@ const TRIGGER = `[...document.querySelectorAll('[data-tutorial="project-info-tri
 const CTX_MENU = '#review-workspace > div.fixed'
 /**
  * 身份块那排菜单（absolute 层，offsetParent 可用）。他 10-04 把设置那三节搬进这里，
- * 于是这排项次的文案就是 EXPECT_NAV 那三项，点第几项浮层就该落在第几节。
+ * 于是这排项次的文案＝EXPECT_NAV 那三节＋「成员管理」（10-04 同日点的第四行），点第几节浮层就该落在第几节。
  */
 const OPEN_MENU = `[...document.querySelectorAll('[role="menu"]')].filter(m => m.offsetParent !== null)[0]`
 const MENU_COUNT = `[...document.querySelectorAll('[role="menu"]')].filter(m => m.offsetParent !== null).length`
@@ -412,8 +412,8 @@ try {
   console.log(`  点身份块 → ${await click(page, TRIGGER)}`)
   check(await waitFor(page, MENU_COUNT, 20_000), 'A1b 项目菜单弹出来了')
   const menuNow = await menuTexts(page)
-  check(JSON.stringify(menuNow) === JSON.stringify(EXPECT_NAV),
-    'A1d 菜单里那三行就是设置那三节（他 10-04 要把这三项搬进这排菜单，原来单列的「项目设置」不再自己占一行）', `→ 实画 ${JSON.stringify(menuNow)}`)
+  check(JSON.stringify(menuNow) === JSON.stringify([...EXPECT_NAV, zh('projectMembers')]),
+    'A1d 菜单里那四行＝设置那三节＋成员管理（他 10-04 要把这三项搬进这排菜单，原来单列的「项目设置」不再自己占一行；同日又点单加第四行成员）', `→ 实画 ${JSON.stringify(menuNow)}`)
   console.log(`  点「${zh('projectDetails')}」→ ${await clickMenuItem(page, zh('projectDetails'))}`)
   check(await waitPanel(page, 60_000), 'A1 点「项目详情」浮层就出来了（他要点的是「不跳整页」）', `→ 浮层 ${await openCount(page)} 枚`)
   const urlAfterMenu = await pathname(page)
@@ -625,10 +625,12 @@ try {
   check(panelSrc.includes("variant") && /'overlay'|'page'|"overlay"|"page"/.test(panelSrc),
     'C1b 组件按 variant 出两种外壳（overlay 浮层 / page 页内），不是两套代码')
   check(routeSrc.includes('ProjectSettingsPanel'), 'C1c 路由文件只是薄薄一层壳，把 projectId 交给同一个组件')
-  // 薄到什么程度不拍脑袋：跟 HEAD 那版（他点单删减后 691 行）比，壳必须不到原样的一半。
-  const headLines = execFileSync('git', ['show', `HEAD:${ROUTE_FILE}`], { encoding: 'utf8' }).split('\n').length
+  // 薄到什么程度不跟 HEAD 比了：搬家本身已经提交（`09c4bd8`），HEAD 那份就是这层薄壳，
+  // 拿壳跟自己的一半比是一条永远不会赢的空断言（实测两边都 13 行）。改成跟内容所在的那份比——
+  // 内容整份在组件里、壳只把 projectId 交出去，谁再把表单抄回路由，壳立刻长成组件的一大截。
+  const panelLines = panelSrc.split('\n').length
   const routeLines = routeSrc.split('\n').length
-  check(routeLines < headLines / 2, `C1d 路由文件薄到 HEAD 那版（${headLines} 行）的一半以下，现在 ${routeLines} 行（表单真搬走了，不是复制一份）`)
+  check(routeLines * 5 < panelLines, `C1d 路由只是壳、内容是那一份（壳 ${routeLines} 行 ↔ 组件 ${panelLines} 行，壳不到五分之一），不是复制一份`)
   const formKeys = ['allowReverseShare', 'allowAssetDownloads', 'restrictCommentsToLatestVersion', 'clientNotificationSchedule']
   const stillInRoute = formKeys.filter(k => new RegExp(`\\b${k}\\b`).test(routeSrc))
   check(stillInRoute.length === 0, 'C1e 路由文件里已经没有那些表单状态与载荷字段（搬＝一边有一边没）', `→ 还剩 ${JSON.stringify(stillInRoute)}`)

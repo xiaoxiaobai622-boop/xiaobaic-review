@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAuth } from '@/lib/auth'
-import { closeOrder } from '@/lib/billing'
+import { closeOrder } from '@/disabled-billing/lib/billing'
 import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'

@@ -60,6 +60,26 @@ function projectAccessWhereForUser(user: AuthUser, projectId: string): Prisma.Pr
   }
 }
 
+/**
+ * 「能打开这个项目的人」的唯一口径：本团队 ACTIVE 成员里，角色不是 MEMBER 的、
+ * 或授权范围不是「仅指定项目」的、或本项目确实认领了他的。三条分支抄上面那枚
+ * projectAccessWhereForUser，也就是端点自己拒 403 用的那批人。
+ *
+ * 身份块那行人数、成员名单、加人撤人后的可见性都必须从这一枚 where 取。多写一份
+ * OR 就是下一次改动的定时炸弹：「人数说能进」和「端点真让进」会各说各话。
+ */
+export function projectViewersWhere(project: { id: string; teamId: string }): Prisma.TeamMemberWhereInput {
+  return {
+    teamId: project.teamId,
+    status: 'ACTIVE',
+    OR: [
+      { role: { not: 'MEMBER' } },
+      { user: { projectAccessScope: { not: 'ASSIGNED_ONLY' } } },
+      { user: { projectMemberships: { some: { projectId: project.id } } } },
+    ],
+  }
+}
+
 export async function canAccessProject(db: DbClient, user: AuthUser, projectId: string) {
   // The request user may not carry the selected team's role (for example on
   // direct video-token requests). Resolve access from the membership stored on

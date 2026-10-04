@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import {
   BillingError, OPEN_ORDER_TTL_MS, computeAmountCents, isAllowedPeriods,
   nextExpiryMs, quotaForPlan, randomReference, type OrderStatus,
-} from '@/lib/billing-pricing'
+} from '@/disabled-billing/lib/billing-pricing'
 
 export type Tx = Prisma.TransactionClient
 

@@ -1,5 +1,5 @@
 import type { Order, Plan } from '@prisma/client'
-import { quotaForPlan, type PlanQuota } from '@/lib/billing-pricing'
+import { quotaForPlan, type PlanQuota } from '@/disabled-billing/lib/billing-pricing'
 
 export type OrderDto = {
   id: string

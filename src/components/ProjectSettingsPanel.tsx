@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, FileText, Save, Share2, Users, X } from 'lucide-react'
+import { ArrowLeft, Calendar, FileText, Save, Share2, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,6 +12,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CollapsibleSection } from '@/components/ui/collapsible-section'
+import { ProjectOverlay } from '@/components/ProjectOverlay'
 import { ReprocessModal } from '@/components/ReprocessModal'
 import { RecipientManager } from '@/components/RecipientManager'
 import { ScheduleSelector } from '@/components/ScheduleSelector'
@@ -55,9 +55,6 @@ interface ProjectSettingsPanelProps {
   initialSection?: ProjectSettingsSection
   onClose?: () => void
 }
-
-/** 浮层与主区之间那条缝：壳层六块栏面之间的缝就是 2px（C2.13/14 定的），这里不另造一档。 */
-const SEAM = 2
 
 export function ProjectSettingsPanel({ projectId, variant, initialSection = 'project-details', onClose }: ProjectSettingsPanelProps) {
   const router = useRouter()
@@ -681,31 +678,22 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
   }
 
   if (variant === 'overlay') {
-    return <SettingsOverlay onClose={onClose} ariaLabel={t('projectSettings')} confirmModalOpen={showReprocessModal}>
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-popover px-3 py-2 sm:px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            data-tutorial="project-settings-close"
-            onClick={onClose}
-            aria-label={tc('close')}
-            className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <X className="h-4 w-4" />
-          </button>
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold">{t('projectSettings')}</h2>
-            <p className="truncate text-xs text-muted-foreground">{project.title}</p>
-          </div>
+    return (
+      <ProjectOverlay
+        tutorial="project-settings"
+        title={t('projectSettings')}
+        subtitle={project.title}
+        actions={saveButton}
+        onClose={onClose}
+        confirmModalOpen={showReprocessModal}
+      >
+        <div className="px-3 py-3 sm:px-4 sm:py-4 lg:px-6">
+          {banners}
+          {sectionsMarkup}
         </div>
-        {saveButton}
-      </div>
-      <div className="px-3 py-3 sm:px-4 sm:py-4 lg:px-6">
-        {banners}
-        {sectionsMarkup}
-      </div>
-      {reprocessModal}
-    </SettingsOverlay>
+        {reprocessModal}
+      </ProjectOverlay>
+    )
   }
 
   return (
@@ -738,74 +726,5 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
         {reprocessModal}
       </div>
     </div>
-  )
-}
-
-interface SettingsOverlayProps {
-  onClose?: () => void
-  ariaLabel: string
-  /** 「重新处理」确认窗开着：Escape 该归它，浮层不能跟着一起消失，那是逼人重填一遍表单。 */
-  confirmModalOpen: boolean
-  children: ReactNode
-}
-
-/**
- * 浮层的外壳：盖住整块主区（顶边贴视口顶——顶栏早没了），窄栏一寸不碰。
- * 位置不写死：量 #main-content 的矩形再内缩一条缝，窗口一变就重量。
- */
-function SettingsOverlay({ onClose, ariaLabel, confirmModalOpen, children }: SettingsOverlayProps) {
-  const panelRef = useRef<HTMLDivElement>(null)
-  const [box, setBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
-
-  useEffect(() => {
-    const measure = () => {
-      const main = document.getElementById('main-content')
-      if (!main) return
-      const b = main.getBoundingClientRect()
-      setBox({ left: b.left, top: b.top, width: b.width, height: b.height })
-    }
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [])
-
-  // 打开时把焦点交给浮层，关掉时还给打开它的那个元素（键盘／读屏不会掉回页面顶部）。
-  useEffect(() => {
-    const returnTo = document.activeElement as HTMLElement | null
-    panelRef.current?.focus()
-    return () => {
-      if (returnTo && document.contains(returnTo)) returnTo.focus()
-    }
-  }, [])
-
-  // 「重新处理」窗开着的时候 Escape 归它，浮层不该跟着一起消失——那是逼人重填一遍表单。
-  useEffect(() => {
-    if (!onClose) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !confirmModalOpen) onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose, confirmModalOpen])
-
-  if (!box || typeof document === 'undefined') return null
-
-  return createPortal(
-    <div data-tutorial="project-settings-overlay" className="fixed z-50" style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
-      <div data-tutorial="project-settings-scrim" className="absolute inset-0 bg-background/80" onClick={onClose} aria-hidden="true" />
-      <div
-        ref={panelRef}
-        data-tutorial="project-settings-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={ariaLabel}
-        tabIndex={-1}
-        className="absolute scrollbar-hidden overflow-y-auto rounded-[8px] bg-popover shadow-elevation-lg outline-none"
-        style={{ inset: SEAM }}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
   )
 }

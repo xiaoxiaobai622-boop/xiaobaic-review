@@ -12,7 +12,8 @@ import { hashPassword } from '../src/lib/encryption'
  *    措辞改成「N 位成员」但数字仍旧是接口给的 memberCount（他上一轮刚纠正过口径，不许换成团队人数）。
  *  B 组 行为：整块是一枚弹出式按钮（对标那排也是整块可点），点开是项目菜单。
  *    菜单原本给了三项（设置／归档／删除），他 10-03 看完截图把后两项点掉；10-04 又把设置那三节
- *    （项目详情／客户信息与通知／客户分享页面）搬进这排，于是菜单＝那三节、点哪项浮层落在哪项。
+ *    （项目详情／客户信息与通知／客户分享页面）搬进这排，于是菜单＝那三节、点哪项浮层落在哪项；
+ *    同日再点单加第四行「成员管理」，开的是同一层浮栏里的成员名单。
  *    B21/B15/B16 是在替「删的是菜单里的行、动作本身还在面板那两枚按钮上、照旧先弹确认窗」作证。
  *    键盘（Escape／方向键）与点外面都要关得掉。
  *  B22/B23/A8/A9/B4/B4b 是他 10-03 第二轮「这个细节真的差，按对标图的样式调」加的红：
@@ -383,8 +384,8 @@ try {
   await shot(page, 'info-menu-open', { x: f.blockRect[0] - 12, y: f.blockRect[1] - 46, width: f.blockRect[2] + 24, height: 240 })
   const expandedNow = String(await evalJs(page, `(() => { const b = ${TRIGGER}; return b ? b.getAttribute('aria-expanded') : null })()`))
   check(expandedNow === 'true', 'B6 弹出后 aria-expanded 翻成 true', `→ ${expandedNow}`)
-  check(JSON.stringify(m1.texts) === JSON.stringify(['项目详情', '客户信息与通知', '客户分享页面']),
-    'B7 菜单里那三行就是设置那三节（他 10-04 把这三项搬进这排菜单，原来单列的「项目设置」不再自己占一行）', `→ ${JSON.stringify(m1.texts)}`)
+  check(JSON.stringify(m1.texts) === JSON.stringify(['项目详情', '客户信息与通知', '客户分享页面', '成员管理']),
+    'B7 菜单里那四行＝设置那三节＋成员管理（他 10-04 把这三项搬进这排菜单，原来单列的「项目设置」不再自己占一行；10-04 又点单加第四行成员）', `→ ${JSON.stringify(m1.texts)}`)
   check(m1.left === (f.blockRect?.[0] ?? -1) && Math.abs(m1.width - m1.triggerWidth) <= 1,
     'B8 菜单与身份块同宽同左缘（对标那块弹层占栏宽 0.94、左缘就贴着那块封面，不是 210px 一张小卡）',
     `→ 块 left ${String(f.blockRect?.[0])} 宽 ${String(f.blockRect?.[2])} / 菜单 left ${m1.left} 宽 ${m1.width}`)
@@ -402,11 +403,11 @@ try {
     return rgb && menuBg ? Number(contrast(rgb, menuBg).toFixed(2)) : null
   }
   const itemRatios = (m1.itemColors || []).map((c: string) => ratio(c))
-  check(itemRatios.length === 3 && itemRatios.every((r: number | null) => r !== null && r >= 4.5),
-    'B19 三行标签字色压菜单底到 4.5:1（getComputedStyle 反查实算，不是我看着还行）', `→ 底 ${String(m1.menuBg)} 比值 ${JSON.stringify(itemRatios)}`)
+  check(itemRatios.length === 4 && itemRatios.every((r: number | null) => r !== null && r >= 4.5),
+    'B19 四行标签字色压菜单底到 4.5:1（getComputedStyle 反查实算，不是我看着还行）', `→ 底 ${String(m1.menuBg)} 比值 ${JSON.stringify(itemRatios)}`)
   const iconRatios = (m1.itemIconColors || []).map((c: string | null) => (c ? ratio(c) : null))
-  check(iconRatios.length === 3 && iconRatios.every((r: number | null) => r !== null && r >= 3),
-    'B19b 三行图标压菜单底到 3:1（WCAG 非文本下限）', `→ ${JSON.stringify(iconRatios)}`)
+  check(iconRatios.length === 4 && iconRatios.every((r: number | null) => r !== null && r >= 3),
+    'B19b 四行图标压菜单底到 3:1（WCAG 非文本下限）', `→ ${JSON.stringify(iconRatios)}`)
   check((m1.itemSizes || []).every((s: string) => s === '14px'), 'B20 菜单行 14px（不吃控件阶梯压平后的 text-sm）', `→ ${JSON.stringify(m1.itemSizes)}`)
 
   console.log(`  Escape → ${JSON.stringify(await pressKey(page, 'Escape'))}`)

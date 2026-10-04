@@ -181,9 +181,13 @@ try {
   report(!/\(project as any\)\.description/.test(ui), 'B2 身份行不再画项目描述', '结构')
   report(/memberCount/.test(ui) && /projectMemberCount/.test(ui), 'B3 身份行改画成员人数', '结构')
   const route = readSource('app/api/projects/[id]/route.ts') || ''
-  report(
-    /teamMember\.count/.test(route) && /ASSIGNED_ONLY/.test(route) && /projectMemberships/.test(route),
-    'B4 详情路由按「能否打开本项目」数人（团队角色 + 授权范围 + 本项目指派）', '结构')
+  // 10-04 成员面板把同一套口径抽进了 projectViewersWhere：那三个条件搬进了 helper，
+  // 这条判据跟着读两份文件——只查路由会把「口径挪了地方」当成「口径丢了」。
+  const access = readSource('lib/project-access.ts') || ''
+  report(/teamMember\.count/.test(route) && /projectViewersWhere/.test(route),
+    'B4 详情路由按 projectViewersWhere 数人（不再是路由自己那份条件）', '结构')
+  report(/status: 'ACTIVE'/.test(access) && /ASSIGNED_ONLY/.test(access) && /projectMemberships/.test(access),
+    'B4b projectViewersWhere 里那三个条件都在（团队角色 + 授权范围 + 本项目指派）', '结构')
 
   for (const locale of LOCALES) {
     const section = readLocale(locale).projects || {}

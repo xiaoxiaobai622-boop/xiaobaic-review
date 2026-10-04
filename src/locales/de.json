@@ -77,7 +77,6 @@
     "videoReviewTagline": "Video Review, Feedback & Lieferung",
     "changing": "Wird geändert..."
   },
-
   "auth": {
     "internalAccess": "Nur für interne Teammitglieder",
     "secureLogin": "Sicher anmelden",
@@ -176,7 +175,6 @@
     "serverNotConfiguredAppDomainRequired": "Server nicht konfiguriert. Die Anwendungsdomäne muss in den Einstellungen festgelegt werden.",
     "failedToIssueDeviceCode": "Gerätecode konnte nicht ausgestellt werden",
     "tooManyTokenRequests": "Zu viele Token-Anfragen.",
-
     "forgotPasswordTitle": "Passwort vergessen",
     "forgotPasswordDescription": "Gib deine E-Mail ein, um Anweisungen zum Zurücksetzen des Passworts zu erhalten.",
     "emailOrUsername": "E-Mail oder Benutzername",
@@ -187,7 +185,6 @@
     "somethingWrong": "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
     "unableToProcess": "Deine Anfrage konnte nicht verarbeitet werden. Bitte versuche es erneut.",
     "requestNewLink": "Neuen Reset-Link anfordern",
-
     "resetPassword": "Passwort zurücksetzen",
     "resetPasswordDescription": "Erstelle ein neues Passwort für dein Konto.",
     "newPassword": "Neues Passwort",
@@ -203,7 +200,6 @@
     "passwordResetSuccess": "Passwort wurde erfolgreich zurückgesetzt.",
     "resetFailed": "Passwort zurücksetzen fehlgeschlagen. Bitte versuche es erneut oder fordere einen neuen Reset-Link an.",
     "passwordsMatch": "Passwörter stimmen überein",
-
     "passwordRequirements": "Passwortanforderungen:",
     "passwordMinChars": "Mindestens 12 Zeichen",
     "passwordUppercase": "Ein Großbuchstabe (A-Z)",
@@ -211,16 +207,13 @@
     "passwordNumber": "Eine Zahl (0-9)",
     "passwordSpecial": "Ein Sonderzeichen (!@#$%^&*...)",
     "passwordMeetsAll": "Passwort erfüllt alle Anforderungen",
-
     "sharePasswordRequirements": "Passwortanforderungen:",
     "sharePasswordMinChars": "Mindestens 4 Zeichen",
     "sharePasswordMeetsAll": "Passwort erfüllt alle Anforderungen",
-
     "currentPassword": "Aktuelles Passwort",
     "changePassword": "Passwort ändern",
     "changePasswordDescription": "Gib dein aktuelles Passwort ein und wähle ein neues"
   },
-
   "nav": {
     "projects": "Projekte",
     "calendar": "Kalender",
@@ -237,7 +230,6 @@
     "dockerHub": "Docker Hub",
     "supportViTransfer": "FrameReview unterstützen"
   },
-
   "projects": {
     "promoteUploadFailed": "Videoversion konnte nicht erstellt werden",
     "bulkOverwrite": "Gleichnamige Videos überschreiben",
@@ -287,7 +279,6 @@
     "createDescription": "Ein neues Videoprojekt für deinen Kunden einrichten",
     "editProject": "Projekt bearbeiten",
     "updateSettings": "Projekteinstellungen aktualisieren",
-
     "titleLabel": "Projekttitel",
     "titleRequired": "Projekttitel *",
     "titlePlaceholder": "z. B. Videoprojekt – Kundenname",
@@ -303,7 +294,6 @@
     "dayBefore": "1 Tag vorher",
     "weekBefore": "1 Woche vorher",
     "reminderHint": "Sendet eine Benachrichtigung vor dem Fälligkeitsdatum",
-
     "requireAuth": "Authentifizierung erforderlich",
     "requireAuthDescription": "Kunden müssen sich authentifizieren, um anzusehen und freizugeben.",
     "authMethod": "Authentifizierungsmethode",
@@ -335,7 +325,6 @@
     "passwordRequired": "Passwort ist für den Passwort-Authentifizierungsmodus erforderlich",
     "titleRequired2": "Projekttitel ist erforderlich",
     "createProject": "Projekt erstellen",
-
     "backToProjects": "Zurück zu Projekten",
     "projectNotFound": "Projekt nicht gefunden",
     "uploadVideos": "Video(s) hochladen",
@@ -352,7 +341,6 @@
     "reviewPaneFailed": "Playback-Zugriff fehlgeschlagen",
     "reviewPaneRetry": "Erneut versuchen",
     "projectSettings": "Projekteinstellungen",
-
     "projectDetails": "Projektdetails",
     "manageRecipients": "Empfänger verwalten",
     "sharePasswordSettings": "Share-Passwort-Einstellungen",
@@ -364,7 +352,6 @@
     "settingsReadOnlyForMembers": "Nur Projektadministratoren können diese Einstellungen ändern. Bitte wende dich an deinen Teamadministrator.",
     "failedToSave": "Einstellungen konnten nicht aktualisiert werden",
     "failedToLoad": "Projekt konnte nicht geladen werden",
-
     "videos": "Videos",
     "visits": "Besuche",
     "downloads": "Downloads",
@@ -372,14 +359,12 @@
     "noProjects": "Keine Projekte gefunden.",
     "noProjectsYet": "Noch keine Projekte",
     "createFirst": "Erstes Projekt erstellen",
-
     "sortAlphabetically": "Alphabetisch sortieren",
     "sortByStatus": "Nach Status sortieren",
     "sortByDate": "Nach Datum sortieren",
     "sortByDueDate": "Nach Fälligkeitsdatum sortieren",
     "aToZ": "A-Z",
     "zToA": "Z-A",
-
     "searchPlaceholder": "Projekte suchen...",
     "clearSearch": "Suche zurücksetzen",
     "searchClients": "Kunden suchen...",
@@ -407,14 +392,26 @@
       "titleDesc": "Titel Z–A",
       "statusPriority": "Statuspriorität"
     },
-
     "statusInReview": "In Prüfung",
     "statusApproved": "Freigegeben",
     "statusShareOnly": "Nur teilen",
     "statusArchived": "Archiviert",
     "projectMemberCount": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
+    "projectMembers": "Mitglieder verwalten",
+    "projectMembersTitle": "Mitglieder von {title}",
+    "projectMembersSection": "Personen mit Zugriff auf dieses Projekt",
+    "projectMembersAddSection": "Mitglieder hinzufügen",
+    "projectMembersSearchPlaceholder": "Name, Telefonnummer oder E-Mail suchen",
+    "projectMembersNoCandidates": "Keine Person passt zur Suche",
+    "projectMembersAllAdded": "Alle im Team können dieses Projekt bereits öffnen",
+    "projectMembersSourceAdmin": "Team-Admin",
+    "projectMembersSourceAllProjects": "Alle Projekte",
+    "projectMembersSourceAssigned": "Diesem Projekt zugeordnet",
+    "projectMembersRemoveBlockedHint": "Diese Person kommt über ihre Teamrolle herein; eine Zuordnung zu entfernen schließt die Tür nicht",
+    "projectMembersAdded": "{name} wurde zu diesem Projekt hinzugefügt",
+    "projectMembersRemoved": "{name} wurde aus diesem Projekt entfernt",
+    "projectMembersRemoveConfirm": "{name} aus diesem Projekt entfernen? Der Zugriff endet, die Stelle im Team bleibt.",
     "projectMenuLabel": "Projektmenü",
-
     "client": "Kunde",
     "folder": "Ordner",
     "folderUnfiled": "Nicht einsortiert",
@@ -456,15 +453,12 @@
     "video": "Video",
     "videosPlural": "Videos",
     "projectsCount": "Projekte",
-
     "company": "Unternehmen",
     "companyPlaceholder": "z. B. XYZ GmbH",
-
     "shareReviewLink": "Review-Link teilen",
     "copyCollectLink": "Sammlungs-Link kopieren",
     "viewAnalytics": "Statistiken anzeigen",
     "projectActions": "Projektaktionen",
-
     "sendNotification": "Benachrichtigung senden",
     "smtpNotConfigured": "SMTP nicht konfiguriert. Bitte konfiguriere E-Mail-Einstellungen unter Einstellungen.",
     "noRecipientsEmail": "Keine Empfänger mit E-Mail-Adressen konfiguriert. Bitte füge mindestens einen Empfänger mit E-Mail in den Einstellungen hinzu.",
@@ -524,21 +518,18 @@
     "noVideosAvailableForReprocessing": "Keine Videos zur Neuverarbeitung verfügbar",
     "failedToReprocessVideos": "Videos konnten nicht neu verarbeitet werden",
     "failedToUnapproveProjectApi": "Freigabe des Projekts konnte nicht aufgehoben werden",
-
     "approveProject": "Projekt freigeben",
     "confirmApproveProject": "Bist du sicher, dass du dieses Projekt freigeben möchtest?",
     "approveFirst": "Zuerst eine Version jedes Videos freigeben",
     "approveFirstLong": "Eine Version jedes Videos freigeben, um die Projektfreigabe zu ermöglichen",
     "approvedSuccessfully": "Projekt erfolgreich freigegeben",
     "failedToApprove": "Projekt konnte nicht freigegeben werden",
-
     "unapproveProject": "Freigabe aufheben",
     "unapprovedSuccessfully": "Projektfreigabe erfolgreich aufgehoben.",
     "videosUnapproved": "Video(s) wurden ebenfalls freigegeben.",
     "noVideosApproved": "Keine Videos waren freigegeben.",
     "videosRemainApproved": "Videos bleiben freigegeben.",
     "failedToUnapprove": "Freigabe des Projekts konnte nicht aufgehoben werden",
-
     "archiveProject": "Projekt archivieren",
     "unarchiveProject": "Archivierung aufheben",
     "archiving": "Wird archiviert...",
@@ -549,21 +540,17 @@
     "unarchivedSuccessfully": "Archivierung des Projekts erfolgreich aufgehoben",
     "failedToArchive": "Projekt konnte nicht archiviert werden",
     "failedToUnarchive": "Archivierung konnte nicht aufgehoben werden",
-
     "deleteProject": "Projekt löschen",
     "deleteConfirm": "Bist du sicher, dass du dieses Projekt löschen möchtest? Alle Videos und Dateien werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
     "deleteLastWarning": "Dies ist deine letzte Warnung. Dauerhaft löschen?",
     "failedToDelete": "Projekt konnte nicht gelöscht werden",
-
     "overdue": "überfällig",
     "dueToday": "Heute fällig",
     "dueTomorrow": "Morgen fällig",
     "daysRemaining": "Tage verbleibend",
     "day": "Tag",
     "days": "Tage",
-
     "enterPassword": "Passwort für Share-Seite eingeben",
-
     "clientSharePage": "Kunden-Share-Seite",
     "clientSharePageDescription": "Kundenzugang, Downloads und Freigabeberechtigungen steuern",
     "failedToCreateProject": "Projekt konnte nicht erstellt werden",
@@ -572,7 +559,6 @@
     "backToProject": "Zurück zum Projekt",
     "loadingVideo": "Video wird geladen...",
     "noVideosReadyForReview": "Noch keine Videos zur Prüfung bereit.",
-
     "projectDetailsDescription": "Grundlegende Projektinformationen und Kundendaten",
     "titleHint": "Der Name dieses Projekts, wie er Kunden und im Admin-Panel angezeigt wird",
     "descriptionHint": "Optionale Beschreibung zur Identifikation und Organisation dieses Projekts",
@@ -660,7 +646,6 @@
     "failedToUpdateVideoApproval": "Video-Freigabe konnte nicht aktualisiert werden",
     "fileSizeMustBePositiveInteger": "fileSize muss eine positive ganze Zahl sein"
   },
-
   "photos": {
     "photos": "Fotos",
     "processing": "Wird verarbeitet…",
@@ -812,7 +797,6 @@
     "deleteGroupConfirm": "Dieses Video mit allen Versionen in den Papierkorb verschieben? Dort können Sie sie 7 Tage lang wiederherstellen, danach werden sie endgültig gelöscht.",
     "deleteGroupFailed": "Löschen fehlgeschlagen. Einige Versionen sind möglicherweise noch vorhanden — Seite neu laden und erneut versuchen.",
     "moveToFolderFailed": "Upload abgeschlossen, das Video konnte jedoch nicht in den Ordner verschoben werden.",
-
     "noVideosAvailable": "Keine Videos verfügbar",
     "loadingVideo": "Video wird geladen...",
     "approvedVersion": "Freigegebene Version",
@@ -826,7 +810,6 @@
     "frameSteppingHint": "Einzelbild-Vorschub pausiert das Video automatisch. Geschwindigkeitsbereich: 0,25x – 2,0x",
     "keyboardShortcuts": "Tastaturkürzel",
     "videoPlaybackControls": "Video-Wiedergabesteuerung",
-
     "videoName": "Videoname",
     "videoNameRequired": "Videoname ist erforderlich",
     "versionLabel": "Versionsbezeichnung (Optional)",
@@ -870,7 +853,6 @@
     "addMoreVideos": "Weitere Videos hinzufügen",
     "startUpload": "Upload starten",
     "uploads": "Uploads",
-
     "assetFiles": "Asset-Dateien (Mehrfach)",
     "selectFilesHint": "Dateien oben auswählen, um sie zur Upload-Warteschlange hinzuzufügen. Du kannst bis zu",
     "filesSimultaneously": "Dateien gleichzeitig hochladen.",
@@ -892,7 +874,6 @@
     "attachmentNotFound": "Anhang nicht gefunden",
     "failedToDeleteAttachment": "Anhang konnte nicht gelöscht werden",
     "mbTotal": "MB gesamt",
-
     "downloadOptions": "Download-Optionen",
     "quickDownload": "Schnell-Download",
     "downloadVideoOnly": "Nur Video herunterladen",
@@ -905,7 +886,6 @@
     "downloadSelectedZip": "ausgewählt als ZIP",
     "preparingDownload": "Download wird vorbereitet...",
     "downloadFailed": "Download fehlgeschlagen",
-
     "loadingAssets": "Assets werden geladen...",
     "failedToLoadAssets": "Assets konnten nicht geladen werden",
     "noAssets": "Keine Assets",
@@ -923,7 +903,6 @@
     "removeThumbnailConfirm": "Als Video-Vorschaubild entfernen? Das systemgenerierte Vorschaubild wird stattdessen verwendet.",
     "failedToSetThumbnail": "Vorschaubild konnte nicht festgelegt werden",
     "failedToRemoveThumbnail": "Vorschaubild konnte nicht entfernt werden",
-
     "copyAssetsTitle": "Assets in eine andere Version kopieren",
     "selectTargetVersion": "Zielversion auswählen",
     "noOtherVersions": "Keine anderen Versionen verfügbar. Zuerst eine neue Version erstellen.",
@@ -938,7 +917,6 @@
     "failedToLoadData": "Daten konnten nicht geladen werden",
     "copyingAssets": "Assets werden kopiert...",
     "copyAssets": "{count} Asset(s) kopieren",
-
     "compareVersions": "Versionen vergleichen",
     "timelineComments": "Kommentare auf der Zeitleiste",
     "comparisonTimeline": "Zeitleiste des Versionsvergleichs",
@@ -958,7 +936,6 @@
     "sideBySideMode": "Nebeneinander-Modus",
     "playbackSpeed": "Wiedergabegeschwindigkeit",
     "cycleSpeed": "Geschwindigkeit wechseln (Ctrl+, / Ctrl+.)",
-
     "downloadApprovedOnly": "Download ist nur für freigegebene Projekte verfügbar",
     "approveVideoVersion": "Diese Videoversion freigeben",
     "viewVideoInfo": "Videoinformationen anzeigen",
@@ -1039,7 +1016,6 @@
     "failedToSetThumbnailApi": "Vorschaubild konnte nicht gesetzt werden",
     "tooManyThumbnailUpdateRequests": "Zu viele Vorschaubild-Aktualisierungsanfragen. Bitte etwas langsamer."
   },
-
   "comments": {
     "feedbackAndDiscussion": "Feedback & Diskussion",
     "hideFeedback": "Feedback-Bereich ausblenden",
@@ -1059,7 +1035,6 @@
     "minutesAgo": "Min. her",
     "hoursAgo": "Std. her",
     "daysAgo": "Tage her",
-
     "commentsRestricted": "Kommentare eingeschränkt",
     "typeMessage": "Nachricht eingeben...",
     "drawOnVideo": "Auf Video zeichnen",
@@ -1076,7 +1051,6 @@
     "clearTimestamp": "Zeitstempel löschen",
     "drawingAttached": "Zeichnung angehängt",
     "removeDrawing": "Zeichnung entfernen",
-
     "anonymous": "Anonym",
     "seekToTimecode": "Zu diesem Timecode springen",
     "reply": "Antworten",
@@ -1084,7 +1058,6 @@
     "deleteReply": "Antwort löschen",
     "hasAnnotation": "Hat Zeichnungsanmerkung",
     "drawingAnnotation": "Zeichnungsanmerkung",
-
     "attachFiles": "Dateien anhängen",
     "attachFilesTitle": "Dateien anhängen",
     "attachFilesDesc": "Dateien auswählen, um sie an deinen Kommentar anzuhängen.",
@@ -1109,7 +1082,6 @@
     "onlyTeamMemberCanResolve": "Nur der Autor oder ein Team-Mitglied kann den Status dieses Kommentars ändern",
     "resolvedMustBeBoolean": "resolved muss ein boolescher Wert sein"
   },
-
   "tutorial": {
     "welcomeTitle": "Willkommen",
     "welcomeDescription": "Auf dieser Seite kannst du Videos ansehen, Feedback geben, endgültige Versionen freigeben und freigegebene Dateien herunterladen. Wir zeigen dir, wie alles funktioniert.",
@@ -1154,7 +1126,6 @@
     "replayTutorial": "Tutorial erneut abspielen",
     "stepOf": "{current} von {total}"
   },
-
   "share": {
     "clientFallback": "Kunde",
     "collectionDescription": "Lade Quelldateien, Referenzen, Dokumente und weitere Projektmaterialien hier hoch.",
@@ -1231,7 +1202,6 @@
     "unableToAccessGuest": "Gastzugang nicht möglich",
     "projectNotFound": "Projekt nicht gefunden",
     "noVideosReady": "Noch keine Videos zur Prüfung bereit. Bitte schauen Sie später wieder vorbei.",
-
     "linkNotFound": "Link nicht gefunden",
     "linkInvalid": "Dieser Share-Link ist ungültig oder abgelaufen.",
     "contactSharer": "Bitte wenden Sie sich an die Person, die ihn mit Ihnen geteilt hat.",
@@ -1247,7 +1217,6 @@
     "allVideos": "Alle Videos",
     "previousVideo": "Vorheriges Video",
     "nextVideo": "Nächstes Video",
-
     "approveThisVersion": "Diese Videoversion freigeben",
     "videoInfo": "Videoinformationen",
     "videoInfoDescription": "Projektdetails und technische Daten der Originaldatei",
@@ -1286,7 +1255,6 @@
     "allFilesUploaded": "Alle Dateien erfolgreich eingereicht",
     "uploadMore": "Weitere hochladen"
   },
-
   "settings": {
     "title": "Globale Einstellungen",
     "description": "Anwendungsweite Einstellungen konfigurieren",
@@ -1344,7 +1312,6 @@
     "fillSmtpFields": "Bitte alle SMTP-Felder ausfüllen, bevor du testest",
     "testEmailSuccess": "Test-E-Mail erfolgreich gesendet! Prüfe deinen Posteingang.",
     "failedToSendTest": "Test-E-Mail konnte nicht gesendet werden",
-
     "branding": {
       "title": "Branding",
       "description": "Unternehmensidentität, Logo, Domain und E-Mail-Vorlagen"
@@ -1440,7 +1407,6 @@
       "privacyDisclosurePlaceholder": "Leer lassen, um den Standard-Datenschutzhinweistext zu verwenden",
       "privacyDisclosureHint": "Falls leer, wird ein generischer Standardtext mit IP-Protokollierung, Sitzungsverfolgung und Kommentaren angezeigt. Dieser kann angepasst werden, um z. B. einen Link zur vollständigen Datenschutzerklärung einzufügen."
     },
-
     "language": {
       "zh": "Chinesisch (vereinfacht)",
       "title": "Sprache",
@@ -1452,7 +1418,6 @@
       "de": "Deutsch",
       "unsupportedLocale": "Nicht unterstützte Locale"
     },
-
     "email": {
       "smtpConfig": "SMTP-Konfiguration",
       "smtpServer": "SMTP-Server",
@@ -1490,7 +1455,6 @@
       "smtpAuthenticationFailed": "Authentifizierung fehlgeschlagen. Bitte SMTP-Zugangsdaten überprüfen.",
       "couldNotConnectToSmtpServer": "Verbindung zum SMTP-Server konnte nicht hergestellt werden. Bitte Einstellungen überprüfen."
     },
-
     "emailTemplates": {
       "headerBranding": "E-Mail-Header-Branding",
       "headerBrandingHint": "Wählen, was im E-Mail-Header angezeigt wird",
@@ -1534,7 +1498,6 @@
       "templateResetToDefault": "Vorlage auf Standard zurückgesetzt",
       "resetConfirm": "Diese Vorlage auf den Standard zurücksetzen? Deine Anpassungen gehen verloren.",
       "example": "Beispiel:",
-
       "templateNames": {
         "NEW_VERSION": "Neue Versions-Benachrichtigung",
         "PROJECT_APPROVED": "Projekt/Lieferung freigegeben",
@@ -1646,7 +1609,6 @@
         "ADMIN_ACTIVITY_SUMMARY": "Neueste Aktualisierungen"
       }
     },
-
     "notifications": {
       "title": "E-Mail & Push-Benachrichtigungen",
       "description": "E-Mail- und Push-Benachrichtigungsziele konfigurieren",
@@ -1668,7 +1630,6 @@
       "pushDescription": "Push-Benachrichtigungen an Gotify, ntfy, Pushover oder Telegram senden.",
       "browserPushDescription": "Push-Benachrichtigungen direkt im Browser empfangen. Funktioniert auf allen deinen Geräten."
     },
-
     "videoProcessing": {
       "title": "Videoverarbeitung",
       "description": "Standard-Transkodierung, Auflösung und LUT-Einstellungen für neue Projekte",
@@ -1694,7 +1655,6 @@
       "autoApproveHint": "Wenn aktiviert, wird das Projekt als FREIGEGEBEN markiert, sobald alle einzelnen Videos mindestens eine freigegebene Version haben.",
       "autoApproveDisableHint": "Deaktivieren, wenn Videos einzeln hochgeladen werden und das Projekt nicht automatisch freigegeben werden soll, bevor alles bereit ist."
     },
-
     "security": {
       "title": "Erweiterte Sicherheitseinstellungen",
       "description": "Erweiterte Sicherheitsoptionen konfigurieren",
@@ -1771,7 +1731,6 @@
       "failedToRemoveIP": "IP konnte nicht aus der Sperrliste entfernt werden",
       "failedToRemoveDomain": "Domain konnte nicht aus der Sperrliste entfernt werden"
     },
-
     "externalNotifications": {
       "sharePageAccess": "Share-Seiten-Zugriff",
       "adminLogin": "Admin-Login",
@@ -1824,7 +1783,6 @@
       "failedToDelete": "Ziel konnte nicht gelöscht werden",
       "failedToQueueTest": "Test-Benachrichtigung konnte nicht in die Warteschlange gestellt werden"
     },
-
     "webPush": {
       "notSupported": "Push-Benachrichtigungen werden in diesem Browser nicht unterstützt.",
       "requirements": "Voraussetzungen:",
@@ -1870,7 +1828,6 @@
       "sendTestTitle": "Test-Benachrichtigung senden",
       "removeTitle": "Abonnement entfernen"
     },
-
     "schedule": {
       "title": "Benachrichtigungsplan",
       "description": "Konfigurieren, wann E-Mail-Benachrichtigungen empfangen werden",
@@ -1901,7 +1858,6 @@
       "sat": "Sa"
     }
   },
-
   "security": {
     "title": "Sicherheitsereignisse",
     "description": "Ereignisse, Rate-Limits und verdächtige Aktivitäten überwachen",
@@ -1948,7 +1904,6 @@
     "openSecuritySettings": "In den Plattform-Einstellungen → Sicherheit aktivieren",
     "loadFailedTitle": "Sicherheitsereignisse konnten nicht geladen werden",
     "loadFailedHint": "Die Anfrage war nicht erfolgreich — diese leere Liste bedeutet nicht, dass nichts aufgezeichnet wurde. Bitte erneut versuchen.",
-
     "deleteEvents": "Sicherheitsereignisse löschen",
     "deleteEventsDescription": "Alte Sicherheitsereignisse aus der Datenbank entfernen. Diese Aktion kann nicht rückgängig gemacht werden.",
     "deleteOlderThan7": "Ereignisse älter als 7 Tage löschen",
@@ -1957,7 +1912,6 @@
     "deleteAllEvents": "Alle Ereignisse löschen",
     "deleteAllConfirm": "ALLE Sicherheitsereignisse löschen? Dadurch werden alle Sicherheitsereignisse im System dauerhaft gelöscht und kann NICHT rückgängig gemacht werden.",
     "deleteOlderConfirm": "Alle Sicherheitsereignisse älter als {days} Tage löschen? Dies kann nicht rückgängig gemacht werden.",
-
     "activeRateLimits": "Aktive Rate-Limits",
     "rateLimitsDescription": "Derzeit gesperrte IPs und Konten aufgrund zu vieler fehlgeschlagener Versuche.",
     "noRateLimits": "Keine aktiven Rate-Limits",
@@ -1974,7 +1928,6 @@
     "failedToClearAll": "Alle Rate-Limits konnten nicht gelöscht werden",
     "failedToDeleteEvents": "Ereignisse konnten nicht gelöscht werden"
   },
-
   "analytics": {
     "backToProject": "Zurück zum Projekt",
     "loadingAnalytics": "Statistiken werden geladen...",
@@ -2007,7 +1960,6 @@
     "unableToProcessRequest": "Anfrage konnte nicht verarbeitet werden",
     "projectNotFound": "Projekt nicht gefunden"
   },
-
   "recipients": {
     "title": "Empfänger",
     "description": "Verwalten, wer Projektbenachrichtigungen und -aktualisierungen erhält",
@@ -2043,7 +1995,6 @@
     "cannotDeleteLastRecipient": "Letzter Empfänger kann nicht gelöscht werden. Mindestens ein Empfänger ist erforderlich.",
     "failedToDeleteRecipientApi": "Empfänger konnte nicht gelöscht werden"
   },
-
   "clientContacts": {
     "tooManyRequests": "Zu viele Anfragen. Bitte etwas langsamer.",
     "failedToFetchContacts": "Kontakte konnten nicht abgerufen werden",
@@ -2055,7 +2006,6 @@
     "failedToUpdateContact": "Kontakt konnte nicht aktualisiert werden",
     "failedToDeleteContact": "Kontakt konnte nicht gelöscht werden"
   },
-
   "reprocess": {
     "title": "Videoverarbeitungseinstellungen geändert",
     "description": "Du hast Einstellungen geändert, die die Videoverarbeitung beeinflussen. Diese Änderungen gelten nur für neu hochgeladene Videos.",
@@ -2071,7 +2021,6 @@
     "saveAndReprocess": "Speichern & Neu verarbeiten",
     "reprocessing": "Wird neu verarbeitet..."
   },
-
   "unapprove": {
     "title": "Projektfreigabe aufheben",
     "description": "Du bist dabei, den Projektstatus von FREIGEGEBEN zurück auf IN PRÜFUNG zu ändern.",
@@ -2087,7 +2036,6 @@
     "unapproveAllButton": "Alle Freigaben aufheben",
     "processing": "Wird verarbeitet..."
   },
-
   "device": {
     "authorizeTitle": "Workflow-Integration autorisieren",
     "authorizeDescription": "Workflow-Integration mit FrameReview verbinden",
@@ -2109,7 +2057,6 @@
     "sessionExpired": "Sitzung abgelaufen. Bitte erneut anmelden.",
     "failedToAuthorize": "Gerät konnte nicht autorisiert werden"
   },
-
   "unsubscribe": {
     "title": "E-Mail-Einstellungen",
     "description": "Von Projekt-E-Mail-Benachrichtigungen abmelden.",
@@ -2121,7 +2068,6 @@
     "hint": "Stoppt nur E-Mail-Benachrichtigungen. Ihr Share-Link funktioniert weiterhin.",
     "tooManyRequestsSlowDown": "Zu viele Anfragen. Bitte etwas langsamer."
   },
-
   "notFound": {
     "title": "Seite nicht gefunden",
     "description": "Die gesuchte Seite existiert nicht.",
@@ -2129,13 +2075,11 @@
     "error404": "Fehler 404",
     "backToProjects": "Zurück zu Projekten"
   },
-
   "session": {
     "inactivityWarning": "Inaktivitätswarnung",
     "logoutCountdown": "Du wirst in {time} aufgrund von Inaktivität abgemeldet.",
     "stayLoggedIn": "Klicke irgendwo oder bewege deine Maus, um angemeldet zu bleiben."
   },
-
   "clients": {
     "title": "Kundenverzeichnis",
     "description": "Kundenunternehmen und Kontakte verwalten",
@@ -2197,7 +2141,6 @@
     "contactLanguageDefault": "Systemstandard",
     "contactLanguageHint": "Wird für E-Mail-Benachrichtigungen an diesen Kontakt verwendet. Als Standard belassen, um die Systemsprache zu verwenden."
   },
-
   "users": {
     "title": "Benutzerverwaltung",
     "description": "Administratorkonten verwalten",
@@ -2294,7 +2237,6 @@
     "copyPassword": "Passwort kopieren",
     "changing": "Wird geändert..."
   },
-
   "calendar": {
     "title": "Kalender",
     "description": "Projektdeadlines und Zeitplanübersicht",
@@ -2328,7 +2270,6 @@
     "fri": "Fr",
     "sat": "Sa"
   },
-
   "controls": {
     "previousFrame": "Vorheriges Bild",
     "nextFrame": "Nächstes Bild",
@@ -2340,14 +2281,12 @@
     "fullscreen": "Vollbild",
     "loop": "Schleife",
     "moreComments": "+{count} weitere",
-
     "showDrawingTools": "Zeichenwerkzeuge anzeigen",
     "strokeThickness": "Strichstärke",
     "opacity": "Deckkraft",
     "hideToolbar": "Werkzeugleiste ausblenden",
     "undo": "Rückgängig",
     "saveAnnotation": "Anmerkung speichern",
-
     "toggleTheme": "Design wechseln",
     "themeLight": "Hell",
     "themeMint": "Minze",
@@ -2358,7 +2297,6 @@
     "gridView": "Rasteransicht",
     "tableView": "Tabellenansicht"
   },
-
   "email": {
     "common": {
       "greeting": "Hallo <strong>{{RECIPIENT_NAME}}</strong>,",
@@ -2515,7 +2453,6 @@
     "textIntro": "Ihr Verifizierungscode für {projectTitle} lautet:",
     "textIgnoreNotice": "Falls Sie diesen Code nicht angefordert haben, können Sie diese E-Mail ignorieren."
   },
-
   "portal": {
     "title": "Bei Ihren Projekten anmelden",
     "subtitle": "Geben Sie die Mobilfunknummer ein, mit der ein Projekt mit Ihnen geteilt wurde. Wir senden Ihnen einen einmaligen Code.",
@@ -2552,56 +2489,6 @@
       "linkFallback": "Wenn die Schaltfläche nicht funktioniert, kopieren Sie diesen Link in Ihren Browser:"
     }
   },
-  "billing": {
-    "title": "Tarif & Verlängerung",
-    "currentPlan": "Aktueller Tarif",
-    "longTerm": "Unbefristet",
-    "unlimited": "Unbegrenzt",
-    "quotaFromOrder": "Kontingent aus Bestellung {reference}",
-    "quotaFromManual": "Kontingent wurde vom Plattform-Team manuell angepasst",
-    "remainingDays": "Noch {days} Tage",
-    "expiredBanner": "Ihr Team ist abgelaufen. Verlängern Sie es, um fortzufahren — Ansicht und Kommentare Ihrer Kunden bleiben unberührt.",
-    "choosePeriod": "Verlängerungszeiträume",
-    "orderTotal": "Summe {amount}",
-    "expiryWillBe": "Ablaufdatum wird {date}",
-    "orderNow": "Bestellung aufgeben",
-    "transferTitle": "Überweisungsangaben",
-    "accountName": "Kontoinhaber",
-    "accountNo": "Kontonummer",
-    "bank": "Bank",
-    "amount": "Betrag",
-    "reference": "Referenzcode",
-    "copyReference": "Referenzcode kopieren",
-    "copied": "Kopiert",
-    "iHavePaid": "Ich habe bezahlt",
-    "reportNotePlaceholder": "Kontoinhaber oder letzte Ziffern der Transaktionsnummer, damit wir die Zahlung finden (optional)",
-    "invoiceNeed": "Rechnung erforderlich",
-    "invoiceTitleLabel": "Rechnungsempfänger",
-    "invoiceTaxNoLabel": "Steuernummer",
-    "awaitingConfirm": "Nach Zahlungseingang aktiv, in der Regel innerhalb eines Werktags",
-    "resumeNotice": "Sie haben bereits eine offene Bestellung, wir setzen sie dort fort",
-    "historyTitle": "Bestellverlauf",
-    "colCreated": "Bestellt am",
-    "colPlan": "Tarif",
-    "colAmount": "Betrag",
-    "colValidUntil": "Gültig bis",
-    "colStatus": "Status",
-    "colNote": "Hinweis",
-    "statusOPEN": "Zahlung offen",
-    "statusREPORTED": "Gemeldet, wartet auf Bestätigung",
-    "statusFULFILLED": "Aktiv",
-    "statusCLOSED": "Geschlossen",
-    "orderFailed": "Bestellung fehlgeschlagen, bitte erneut versuchen",
-    "loadFailed": "Abrechnungsdaten konnten nicht geladen werden",
-    "retry": "Erneut versuchen",
-    "plansTitle": "Verfügbare Tarife",
-    "durationDays": "{days} Tage",
-    "quotaMembers": "Mitglieder",
-    "quotaProjects": "Projekte",
-    "quotaVideos": "Videos",
-    "quotaStorage": "Speicher"
-  },
-
   "privacy": {
     "title": "Datenschutzhinweis",
     "summary": "Diese Plattform verarbeitet einige Ihrer Daten, um den Review-Dienst bereitzustellen.",

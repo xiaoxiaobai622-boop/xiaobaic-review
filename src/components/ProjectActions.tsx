@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, Calendar, Copy, Check, ChevronsUpDown, FileText, Users, Share2 } from 'lucide-react'
+import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, Calendar, Copy, Check, ChevronsUpDown, FileText, Users, Share2, UserPlus } from 'lucide-react'
 import type { ProjectSettingsSection } from './ProjectSettingsPanel'
 import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
@@ -36,9 +36,11 @@ interface ProjectActionsProps {
   onCreateCollectLink: () => void
   /** 这排菜单就是项目设置那三节：按下哪一节，由页面浮起设置面板并落在这一节。 */
   onOpenSettings: (section: ProjectSettingsSection) => void
+  /** 第四项开的是成员窗：同样是页面那一层浮栏，不是第二条路由。 */
+  onOpenMembers: () => void
 }
 
-export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings, onOpenMembers }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -273,11 +275,16 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
     }
   }, [projectMenuOpen])
 
-  // 菜单这一排就是设置面板那三节：关掉菜单，把选中的那节交给页面浮层。
-  const pickSection = (section: ProjectSettingsSection) => {
+  // 菜单这一排＝设置那三节 + 成员窗：关掉菜单，把要开的那层交给页面。
+  // 焦点必须先交回身份块再开浮层：浮层挂载时抓的是 document.activeElement，而这一枚 menuitem
+  // 在同一次提交里就卸掉了，不接住的话关掉浮层后焦点掉回 <body>，键盘和读屏找不回刚才那排。
+  const handoffToOverlay = (open: () => void) => {
     setProjectMenuOpen(false)
-    onOpenSettings(section)
+    triggerRef.current?.focus()
+    open()
   }
+  const pickSection = (section: ProjectSettingsSection) => handoffToOverlay(() => onOpenSettings(section))
+  const pickMembers = () => handoffToOverlay(onOpenMembers)
 
   // bare 时三层外壳换成普通 div：Card 的 bg-card、border 和 shadow 就是那块要拿掉的白底。
   // 名称那行跟着换：整块是一枚 <button>，button 的内容模型不许套 <h3>（CardTitle 就是 h3），
@@ -347,6 +354,11 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                   icon={<Share2 className="h-4 w-4 shrink-0" />}
                   label={t('clientSharePage')}
                   onSelect={() => pickSection('client-share')}
+                />
+                <MenuItem
+                  icon={<UserPlus className="h-4 w-4 shrink-0" />}
+                  label={t('projectMembers')}
+                  onSelect={pickMembers}
                 />
               </div>
             )}

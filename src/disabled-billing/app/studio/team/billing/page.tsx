@@ -8,9 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiFetch, apiPost } from '@/lib/api-client'
-import { isUnlimitedQuota, nextExpiryMs } from '@/lib/billing-pricing'
-import type { OrderDto, PlanCard } from '@/lib/billing-dto'
-import type { PaymentIntent } from '@/lib/payment-provider'
+import { isUnlimitedQuota, nextExpiryMs } from '@/disabled-billing/lib/billing-pricing'
+import type { OrderDto, PlanCard } from '@/disabled-billing/lib/billing-dto'
+import type { PaymentIntent } from '@/disabled-billing/lib/payment-provider'
 
 type BillingQuota = { source: string | null; reference: string | null }
 type BillingTeam = { plan: string | null; expiresAt: string | null; quota: BillingQuota }

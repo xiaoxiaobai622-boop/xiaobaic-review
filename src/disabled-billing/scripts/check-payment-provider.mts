@@ -1,9 +1,9 @@
-import { getPaymentProvider } from '../src/lib/payment-provider'
-import { getTransferConfig } from '../src/lib/settings'
-import { createOrder } from '../src/lib/billing'
-import { BillingError } from '../src/lib/billing-pricing'
+import { getPaymentProvider } from '../lib/payment-provider'
+import { getTransferConfig } from '@/lib/settings'
+import { createOrder } from '../lib/billing'
+import { BillingError } from '../lib/billing-pricing'
 import { hashPassword } from '@/lib/encryption'
-import { prisma } from '../src/lib/db'
+import { prisma } from '@/lib/db'
 
 let passed = 0
 const failures: string[] = []

@@ -8,9 +8,9 @@
  *
  * 跑法 —— **不需要任何口令**（临时身份由脚本自己造，见下面 I-1 那段）：
  *
- *   npx tsx --env-file=.env scripts/check-billing-orders-route.mts
+ *   npx tsx --env-file=.env src/disabled-billing/scripts/check-billing-orders-route.mts
  *   BILLING_CHECK_BASE_URL=http://localhost:3000 \
- *     npx tsx --env-file=.env scripts/check-billing-orders-route.mts
+ *     npx tsx --env-file=.env src/disabled-billing/scripts/check-billing-orders-route.mts
  *
  * `--env-file=.env` 是必须的：tsx 不自动读 .env，而 `src/lib/auth.ts` 在模块加载时就取
  * JWT_SECRET（Prisma 自己会读 DATABASE_URL，JWT 不会）。缺它每个请求都会 401。
@@ -47,7 +47,7 @@
 import { createHash, randomUUID } from 'crypto'
 import { PrismaClient } from '@prisma/client'
 import { NextRequest } from 'next/server'
-import { POST } from '../src/app/api/billing/orders/route'
+import { POST } from '../app/api/billing/orders/route'
 import { issueAdminTokens, verifyCredentials } from '@/lib/auth'
 import { prisma as appPrisma } from '@/lib/db'
 import { getRedis } from '@/lib/redis'
@@ -419,7 +419,7 @@ function finishOnce(): Promise<void> {
 async function main() {
   for (const key of ['JWT_SECRET', 'DATABASE_URL', 'REDIS_HOST']) {
     if (!process.env[key]) {
-      console.error(`缺少 ${key}：请用 \`npx tsx --env-file=.env scripts/check-billing-orders-route.mts\` 运行`)
+      console.error(`缺少 ${key}：请用 \`npx tsx --env-file=.env src/disabled-billing/scripts/check-billing-orders-route.mts\` 运行`)
       process.exit(2)
     }
   }

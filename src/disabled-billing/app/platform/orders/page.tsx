@@ -1,11 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { OrderQueue, type OrderPreviewWire, type QueueFilter, type OrderDetail, type PlatformOrderRow } from '@/components/platform/OrderQueue'
-import { OrderConfirmDialog } from '@/components/platform/OrderConfirmDialog'
+import { OrderQueue, type OrderPreviewWire, type QueueFilter, type OrderDetail, type PlatformOrderRow } from '@/disabled-billing/components/platform/OrderQueue'
+import { OrderConfirmDialog } from '@/disabled-billing/components/platform/OrderConfirmDialog'
 import { appPrompt } from '@/components/AppDialogProvider'
 import { apiFetch, apiPost } from '@/lib/api-client'
-import type { PlanQuota } from '@/lib/billing-pricing'
+import type { PlanQuota } from '@/disabled-billing/lib/billing-pricing'
 
 /**
  * `/platform/orders`：一期唯一的「这笔钱到没到」人工核对台（spec §8.1、§8.2）。
