@@ -118,6 +118,10 @@ export default function ForgotPasswordPage() {
                     {t('backToLogin')}
                   </Link>
                 </div>
+
+                <p className="text-center text-xs leading-5 text-muted-foreground">
+                  手机号注册的账号无需重置密码：返回登录切换「验证码登录」，验证通过即可直接登录。
+                </p>
               </form>
             </CardContent>
           </Card>

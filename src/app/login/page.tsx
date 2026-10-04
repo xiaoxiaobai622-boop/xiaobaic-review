@@ -218,7 +218,11 @@ function LoginForm() {
         })
         const data = await response.json().catch(() => ({}))
         if (!response.ok) {
-          setError(data.error || t('loginFailed'))
+          setError(
+            data.code === 'PHONE_ACCOUNT_CONFLICT'
+              ? '该手机号已绑定其他账号，请改用密码登录'
+              : data.error || t('loginFailed')
+          )
           setLoading(false)
           return
         }
@@ -248,7 +252,8 @@ function LoginForm() {
       const data = await response.json()
 
       if (!response.ok) {
-        setError(data.error || t('loginFailed'))
+        // 本页只收手机号，不透传 API 的「用户名、邮箱或密码错误」通用文案
+        setError(response.status === 401 ? '手机号或密码错误' : (data.error || t('loginFailed')))
         setLoading(false)
         return
       }
@@ -397,6 +402,9 @@ function LoginForm() {
                     data-1p-ignore="true"
                     disabled={loading}
                   />
+                  <div className="flex justify-end">
+                    <Link href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">忘记密码？</Link>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2.5">
@@ -436,6 +444,7 @@ function LoginForm() {
                             : t('sendCode')}
                     </Button>
                   </div>
+                  <p className="text-xs leading-5 text-muted-foreground">未注册的手机号，验证通过后将自动创建账号并登录</p>
                 </div>
               )}
 
