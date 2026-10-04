@@ -12,6 +12,7 @@ import { UserPlus, Edit, Trash2, Search, RefreshCw, AlertCircle, Eye, EyeOff, Co
 import { formatDate } from '@/lib/utils'
 import { apiDelete, apiFetch, apiPost, apiPatch } from '@/lib/api-client'
 import { PasswordRequirements } from '@/components/PasswordRequirements'
+import { passwordRuleHint, validateAccountPassword } from '@/lib/password-policy'
 import { startRegistration } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
 import { getDisplayEmail } from '@/lib/user-contact'
@@ -213,8 +214,8 @@ export default function UsersPage() {
       setError('邮箱或手机号至少填写一项，并设置密码')
       return
     }
-    if (!/^\d{6}$/.test(newUserData.password)) {
-      setError('密码必须是 6 位数字')
+    if (!validateAccountPassword(newUserData.password).isValid) {
+      setError(passwordRuleHint)
       return
     }
     if (newUserData.username && newUserData.username.trim().length < 3) {
@@ -318,8 +319,8 @@ export default function UsersPage() {
       setError(t('newPasswordRequired'))
       return
     }
-    if (!/^\d{6}$/.test(passwordData.password)) {
-      setError('密码必须是 6 位数字')
+    if (!validateAccountPassword(passwordData.password).isValid) {
+      setError(passwordRuleHint)
       return
     }
     if (passwordData.password !== passwordData.confirmPassword) {
@@ -708,9 +709,8 @@ export default function UsersPage() {
                   id="newPassword"
                   type={showPassword ? 'text' : 'password'}
                   value={newUserData.password}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                  inputMode="numeric"
-                  maxLength={6}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                  maxLength={128}
                   className="pr-8 h-8"
                   autoComplete="new-password"
                   data-form-type="other"
@@ -733,9 +733,8 @@ export default function UsersPage() {
                   id="newConfirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={newUserData.confirmPassword}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, confirmPassword: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                  inputMode="numeric"
-                  maxLength={6}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                  maxLength={128}
                   className="pr-8 h-8"
                   autoComplete="new-password"
                   data-form-type="other"
@@ -941,9 +940,8 @@ export default function UsersPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={passwordData.password}
-                  onChange={(e) => setPasswordData(prev => ({ ...prev, password: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                  inputMode="numeric"
-                  maxLength={6}
+                  onChange={(e) => setPasswordData(prev => ({ ...prev, password: e.target.value }))}
+                  maxLength={128}
                   className="pr-10"
                   autoComplete="new-password"
                 />
@@ -963,9 +961,8 @@ export default function UsersPage() {
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                  inputMode="numeric"
-                  maxLength={6}
+                  onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                  maxLength={128}
                   className="pr-10"
                   autoComplete="new-password"
                 />

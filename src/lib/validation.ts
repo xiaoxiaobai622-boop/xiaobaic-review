@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import DOMPurify from 'isomorphic-dompurify'
 import { isValidTimecode } from '@/lib/timecode'
+import { validateAccountPassword } from '@/lib/password-policy'
 import { NextResponse } from 'next/server'
 
 // COMMON SCHEMAS
@@ -16,7 +17,11 @@ export const emailSchema = z
 
 export const passwordSchema = z
   .string()
-  .regex(/^\d{6}$/, 'Password must be exactly 6 digits')
+  .superRefine((password, ctx) => {
+    for (const message of validateAccountPassword(password).errors) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message })
+    }
+  })
 
 export const usernameSchema = z
   .string()

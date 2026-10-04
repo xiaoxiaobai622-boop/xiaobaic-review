@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAdmin } from '@/lib/auth'
-import { hashPassword, validateSixDigitPassword } from '@/lib/encryption'
+import { hashPassword } from '@/lib/encryption'
+import { validateAccountPassword } from '@/lib/password-policy'
 import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createUserSchema } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest) {
     const projectIds = [...new Set(validatedProjectIds)]
 
     // Validate password strength (additional check beyond Zod format validation)
-    const passwordValidation = validateSixDigitPassword(password)
+    const passwordValidation = validateAccountPassword(password)
     if (!passwordValidation.isValid) {
       return NextResponse.json(
         { error: usersMessages.passwordDoesNotMeetRequirements || 'Password does not meet requirements', details: passwordValidation.errors },

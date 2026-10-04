@@ -1,5 +1,7 @@
 'use client'
 
+import { passwordRuleHint } from '@/lib/password-policy'
+
 interface PasswordRequirementsProps {
   password: string
   className?: string
@@ -8,7 +10,7 @@ interface PasswordRequirementsProps {
 export function PasswordRequirements({ className = '' }: PasswordRequirementsProps) {
   return (
     <div className={`text-xs text-muted-foreground ${className}`}>
-      仅需 6 位数字
+      {passwordRuleHint}
     </div>
   )
 }

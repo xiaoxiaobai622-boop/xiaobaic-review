@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { safeParseBodyTolerant } from '@/lib/validation'
 import { verifyPasswordResetTokenWithReason } from '@/lib/password-reset'
-import { hashPassword, validateSixDigitPassword } from '@/lib/encryption'
+import { hashPassword } from '@/lib/encryption'
+import { validateAccountPassword } from '@/lib/password-policy'
 import { invalidateAdminSessions } from '@/lib/session-invalidation'
 import { logSecurityEvent } from '@/lib/video-access'
 import { getRedis } from '@/lib/redis'
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const passwordValidation = validateSixDigitPassword(newPassword)
+    const passwordValidation = validateAccountPassword(newPassword)
     if (!passwordValidation.isValid) {
       return NextResponse.json(
         { error: passwordValidation.errors[0] || 'Invalid password' },

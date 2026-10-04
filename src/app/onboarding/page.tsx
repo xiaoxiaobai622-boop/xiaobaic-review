@@ -12,6 +12,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { setTokens } from '@/lib/token-store'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
+import { passwordRuleHint, validateAccountPassword } from '@/lib/password-policy'
 
 function OnboardingContent() {
   const { user, logout } = useAuth()
@@ -65,8 +66,8 @@ function OnboardingContent() {
       setError('请填写你的显示名称')
       return
     }
-    if (!/^\d{6}$/.test(password)) {
-      setError('密码必须是 6 位数字')
+    if (!validateAccountPassword(password).isValid) {
+      setError(`密码不符合要求：${passwordRuleHint}`)
       return
     }
     if (password !== confirmPassword) {
@@ -163,11 +164,10 @@ function OnboardingContent() {
             <Label htmlFor="onboarding-password">设置密码</Label>
             <PasswordInput
               id="onboarding-password"
-              inputMode="numeric"
-              maxLength={6}
+              maxLength={128}
               value={password}
-              onChange={(event) => setPassword(event.target.value.replace(/\D/g, ''))}
-              placeholder="6 位数字密码"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder={passwordRuleHint}
               required
             />
           </div>
@@ -176,10 +176,9 @@ function OnboardingContent() {
             <Label htmlFor="onboarding-confirm-password">确认密码</Label>
             <PasswordInput
               id="onboarding-confirm-password"
-              inputMode="numeric"
-              maxLength={6}
+              maxLength={128}
               value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value.replace(/\D/g, ''))}
+              onChange={(event) => setConfirmPassword(event.target.value)}
               placeholder="再次输入密码"
               required
             />

@@ -13,6 +13,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { clearTokens } from '@/lib/token-store'
+import { passwordRuleHint, validateAccountPassword } from '@/lib/password-policy'
 
 function safeReviewReturnUrl(): string | null {
   const requested = new URLSearchParams(window.location.search).get('returnUrl')
@@ -427,8 +428,8 @@ function ProfileContent() {
   async function changePassword(event: React.FormEvent) {
     event.preventDefault()
     if (!user?.id) return
-    if (!/^\d{6}$/.test(passwordForm.next)) {
-      setError('新密码必须是 6 位数字')
+    if (!validateAccountPassword(passwordForm.next).isValid) {
+      setError(`新密码不符合要求：${passwordRuleHint}`)
       return
     }
     if (passwordForm.next !== passwordForm.confirm) {
@@ -630,14 +631,14 @@ function ProfileContent() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="new-password">新密码</Label>
-                  <PasswordInput id="new-password" inputMode="numeric" maxLength={6} value={passwordForm.next} onChange={event => setPasswordForm(current => ({ ...current, next: event.target.value.replace(/\D/g, '') }))} required />
+                  <PasswordInput id="new-password" maxLength={128} value={passwordForm.next} onChange={event => setPasswordForm(current => ({ ...current, next: event.target.value }))} required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">确认新密码</Label>
-                  <PasswordInput id="confirm-password" inputMode="numeric" maxLength={6} value={passwordForm.confirm} onChange={event => setPasswordForm(current => ({ ...current, confirm: event.target.value.replace(/\D/g, '') }))} required />
+                  <PasswordInput id="confirm-password" maxLength={128} value={passwordForm.confirm} onChange={event => setPasswordForm(current => ({ ...current, confirm: event.target.value }))} required />
                 </div>
               </div>
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />密码只需 6 位数字</p>
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />{passwordRuleHint}</p>
               <Button type="submit" variant="outline" disabled={passwordSaving} className="gap-2"><KeyRound className="h-4 w-4" />{passwordSaving ? '正在修改...' : '修改密码'}</Button>
             </form>
           </section>

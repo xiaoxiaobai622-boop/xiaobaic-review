@@ -1,5 +1,6 @@
 import { prisma } from './db'
-import { hashPassword, validatePassword } from './encryption'
+import { hashPassword } from './encryption'
+import { validateAccountPassword } from './password-policy'
 import { logError, logMessage } from './logging'
 
 /**
@@ -78,7 +79,7 @@ export async function ensureDefaultAdmin() {
       throw new Error(`Invalid ADMIN_EMAIL format: ${adminEmail}`)
     }
 
-    const adminPasswordCheck = validatePassword(adminPassword)
+    const adminPasswordCheck = validateAccountPassword(adminPassword)
     if (!adminPasswordCheck.isValid) {
       throw new Error(
         `ADMIN_PASSWORD does not meet security requirements: ${adminPasswordCheck.errors.join('; ')}`

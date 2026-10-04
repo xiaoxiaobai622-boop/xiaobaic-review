@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Lock, CheckCircle2, AlertTriangle, Eye, EyeOff } from 'lucide-react'
 import BrandLogo from '@/components/BrandLogo'
+import { passwordRuleHint, validateAccountPassword } from '@/lib/password-policy'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
@@ -46,9 +47,9 @@ export default function ResetPasswordPage() {
       return
     }
 
-    if (!/^\d{6}$/.test(password)) {
+    if (!validateAccountPassword(password).isValid) {
       setStatus('error')
-      setMessage('密码必须是 6 位数字')
+      setMessage(`新密码不符合要求：${passwordRuleHint}`)
       return
     }
 
@@ -151,9 +152,8 @@ export default function ResetPasswordPage() {
                         type={showPassword ? 'text' : 'password'}
                         placeholder={t('newPasswordPlaceholder')}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        inputMode="numeric"
-                        maxLength={6}
+                        onChange={(e) => setPassword(e.target.value)}
+                        maxLength={128}
                         required
                         autoComplete="new-password"
                         autoFocus
@@ -170,7 +170,7 @@ export default function ResetPasswordPage() {
                       </button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      密码只需 6 位数字
+                      {passwordRuleHint}
                     </p>
                   </div>
 
@@ -182,9 +182,8 @@ export default function ResetPasswordPage() {
                         type={showConfirmPassword ? 'text' : 'password'}
                         placeholder={t('confirmPasswordPlaceholder')}
                         value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        inputMode="numeric"
-                        maxLength={6}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        maxLength={128}
                         required
                         autoComplete="new-password"
                         disabled={status === 'loading' || status === 'success'}

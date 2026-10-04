@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAdmin, getConsoleUserFromRequest } from '@/lib/auth'
-import { hashPassword, validateSixDigitPassword, verifyPassword } from '@/lib/encryption'
+import { hashPassword, verifyPassword } from '@/lib/encryption'
+import { validateAccountPassword } from '@/lib/password-policy'
 import { revokeAllUserTokens } from '@/lib/token-revocation'
 import { invalidateAdminSessions } from '@/lib/session-invalidation'
 import { rateLimit } from '@/lib/rate-limit'
@@ -259,7 +260,7 @@ export async function PATCH(
 
     const newPassword = typeof password === 'string' ? password.trim() : ''
     const oldPasswordStr = typeof oldPassword === 'string' ? oldPassword : ''
-    const passwordValidation = validateSixDigitPassword(newPassword)
+    const passwordValidation = validateAccountPassword(newPassword)
 
     if (password !== undefined && !passwordValidation.isValid) {
       return NextResponse.json({ error: passwordValidation.errors[0] }, { status: 400 })
