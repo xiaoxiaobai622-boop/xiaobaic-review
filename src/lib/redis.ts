@@ -1,10 +1,22 @@
 import IORedis from 'ioredis'
+import { readFileSync } from 'fs'
 import { logError, logMessage } from './logging'
 
 let redis: IORedis | null = null
 let redisForQueue: IORedis | null = null
 
 const REDIS_DB = Math.max(0, parseInt(process.env.REDIS_DB || '0', 10) || 0)
+
+/**
+ * `REDIS_PASSWORD_FILE` wins over `REDIS_PASSWORD`. The file form exists because a password
+ * handed over as an environment value ends up in `docker inspect` output, and handing it to
+ * redis-server as `--requirepass <literal>` puts it in argv as well.
+ */
+function redisPassword(): string | undefined {
+  const file = process.env.REDIS_PASSWORD_FILE
+  if (file) return readFileSync(file, 'utf8').trim()
+  return process.env.REDIS_PASSWORD
+}
 
 /**
  * Get or create Redis connection
@@ -20,7 +32,7 @@ export function getRedis(): IORedis {
   redis = new IORedis({
     host: process.env.REDIS_HOST,
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD,
+    password: redisPassword(),
     db: REDIS_DB,
     maxRetriesPerRequest: 3,
     enableReadyCheck: true,
@@ -58,7 +70,7 @@ export function getRedisForQueue(): IORedis {
   redisForQueue = new IORedis({
     host: process.env.REDIS_HOST,
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD,
+    password: redisPassword(),
     db: REDIS_DB,
     maxRetriesPerRequest: null, // Required by BullMQ
     enableReadyCheck: false,     // Required by BullMQ

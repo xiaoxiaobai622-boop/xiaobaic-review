@@ -234,7 +234,17 @@ if [ "$1" = "npm" ] && [ "$2" = "start" ]; then
     # - On first run: Creates all tables from scratch (initial_schema migration)
     # - On updates: Applies only new migrations (e.g., when upgrading to v1.1, v1.2, etc.)
     # - Idempotent: Safe to run multiple times, only applies pending migrations
-    if npx prisma migrate deploy; then
+    # MIGRATION_DATABASE_URL, when present, is the only place the DDL-capable role is used:
+    # the runtime connection is the restricted app role from DATABASE_URL (等保 R9).
+    if [ -n "${MIGRATION_DATABASE_URL:-}" ]; then
+        echo "         Using MIGRATION_DATABASE_URL for DDL (runtime keeps DATABASE_URL)"
+        if DATABASE_URL="$MIGRATION_DATABASE_URL" npx prisma migrate deploy; then
+            echo "[OK] Database migrations completed"
+        else
+            echo "[ERROR] Database migration failed"
+            exit 1
+        fi
+    elif npx prisma migrate deploy; then
         echo "[OK] Database migrations completed"
     else
         echo "[ERROR] Database migration failed"
