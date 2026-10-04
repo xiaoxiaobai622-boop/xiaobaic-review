@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { prisma } from '@/lib/db'
 import {
   fetchFeishuProfileByOpenId,
@@ -43,6 +44,10 @@ export async function GET(request: NextRequest) {
     const videoId = url.searchParams.get('videoId')
     const scope = videoId ? 'video' : 'project'
     const shouldRefreshProfiles = url.searchParams.get('refresh') === '1'
+
+    if (!(await canAccessProject(prisma, user, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
 
     async function refreshBinding(binding: {
       id: string
@@ -116,9 +121,10 @@ export async function GET(request: NextRequest) {
     let uploader
 
     if (scope === 'video' && videoId) {
-      // Single video scope
-      const video = await prisma.video.findUnique({
-        where: { id: videoId },
+      // Single video scope. `videoId` comes from the query string, so it has to be
+      // pinned to the guarded project or it reaches another tenant's video.
+      const video = await prisma.video.findFirst({
+        where: { id: videoId, projectId },
         select: {
           id: true,
           name: true,

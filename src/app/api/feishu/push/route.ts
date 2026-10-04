@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest } from '@/lib/auth'
+import { canAccessProject } from '@/lib/project-access'
 import { prisma } from '@/lib/db'
 import { buildReviewCommentCard, sendMessageCard } from '@/lib/feishu'
 import { logError, logMessage } from '@/lib/logging'
@@ -59,6 +60,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!(await canAccessProject(prisma, user, projectId))) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
     if (scope === 'video' && !videoId) {
       return NextResponse.json(
         { error: 'videoId is required for video scope' },
@@ -89,8 +94,8 @@ export async function POST(request: NextRequest) {
     let uploader
 
     if (scope === 'video') {
-      const video = await prisma.video.findUnique({
-        where: { id: videoId },
+      const video = await prisma.video.findFirst({
+        where: { id: videoId, projectId },
         select: {
           id: true,
           name: true,
