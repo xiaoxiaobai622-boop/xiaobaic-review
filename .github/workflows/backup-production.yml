@@ -52,15 +52,15 @@ jobs:
 
             cat > "$backup_dir/recovery-public.pem" <<'PUBLIC_KEY'
             -----BEGIN PUBLIC KEY-----
-            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAz7ygfYkKIIpjR/4QNa6Z
-            0zpv2WgFiyaxeBuy3UOl9fkMAknkNfom3bf3MPsj5Tv5JgKP3SL04ZL+EjmfYcVK
-            iE1RWSEf7qdaEM/FYkWdtUpk0RaKILuLPen9OZtsHL4mgYEm/zkCpicDmdfFqLUn
-            n9ZvNDc3haMca92TUBzzA041THj1Hgzf6r/xfmWHLU0/zW2LG8np2RKH1TCOxtyo
-            CYOn5/VsjVSxNC090OaT6ilQoP8tgUV9//HlzmAspf7wnVlxOFa3tSGwVTOuODMh
-            S75cRNuNOoJ2Oe0CoRqlTwmlK2AdoASF+nWyQe3yk1n7ajzHrC5VDkF6tL62kK/P
-            uRArJj/DAc8ZdrA5mmMoJTD5D0ZneKv2FOzOhza73tbCl8iyuxk6KNaVJzCYyHKZ
-            sQ3dAMjmIP+0EQgSucGEI3x0Rs4cTughlJjWjr9FiyXCAwLxrRf09hiA0c5sJa/F
-            Dg3aIwSd9wcNd3PIcG5VJ3f7qp8FyECx2iWwCg8vy0bzAgMBAAE=
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAz50yEz0rVpiDHrv2Rs3o
+            yP306OLBVItgmpWZqzeyRLKH/npFuR2Iav2zSm3lnh5iMSzeE8IxjUa+Kxm6vJ+6
+            NYw4VZ23zt7lEjJ3Vy4xvr7IaYR89ylMR+WfmFM9M6CbHVJB2ytxNbqh/v2ptzDG
+            7BQRMT+YMTw0UwiT0UJZb1gBxU7K8TC+7Grf+EliBvwjpo5XrJZE+ip6z2B+unUq
+            V/+q+UXJG4XYQoZH1PyhIQTRPwcK7vqqM8sd7m6oFIiDqOdr2YqIb8N1OmGiCOrz
+            /0IWPeEPAUCGBSKiT7Q6ZZJRp5Kf37zLZow4b3XQGo8CZ+g9EUr/WjQjxfMjrHl5
+            W+IFXbxW6W7C3R8TuWcx/Aze4xqzbo6pv7o9aFAZuDAQgV3CfYMAh3niUt5H4PpH
+            /IIZr+EA7Fy/cXO+ZM8FA6ZMmhnjn9Bw8ro2yXia52TmKp1BeFSMekMwA0hvwyo4
+            BtLegcaxfaOSF5FJTjlAXuhW2JddsQFozF81niQyC7wfAgMBAAE=
             -----END PUBLIC KEY-----
             PUBLIC_KEY
 
