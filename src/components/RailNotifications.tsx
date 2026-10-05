@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-client'
+import { getDesktopBridge } from '@/lib/desktop-bridge'
 import { formatDateTime } from '@/lib/utils'
 
 interface ReplyItem {
@@ -28,6 +29,23 @@ function readSeenAt(): string | null {
 
 function writeSeenAt(value: string) {
   try { localStorage.setItem(SEEN_STORAGE_KEY, value) } catch { /* 隐私模式下存不下，不影响本次会话 */ }
+}
+
+// 桌面通知的水位要单独存：站内红点那套「上次查看时间」得点开面板才推进，
+// 拿它当通知水位会让没点开过面板的人永远收不到，混着写又会互相抹掉水位。
+const DESKTOP_SEEN_STORAGE_KEY = 'desktop_notifications_seen_at'
+
+function readDesktopSeenAt(): string | null {
+  try { return localStorage.getItem(DESKTOP_SEEN_STORAGE_KEY) } catch { return null }
+}
+
+function writeDesktopSeenAt(value: string) {
+  try { localStorage.setItem(DESKTOP_SEEN_STORAGE_KEY, value) } catch { /* 存不下就退化成每次启动重建水位 */ }
+}
+
+/** createdAt 全是同一形态的 ISO 串，字典序即时间序。 */
+function newestOf(values: string[]): string {
+  return values.reduce((max, value) => (value > max ? value : max))
 }
 
 function relativeTime(value: string): string {
@@ -66,6 +84,8 @@ export default function RailNotifications({ className }: { className?: string })
   const [platformUnread, setPlatformUnread] = useState(0)
   // 面板里「哪几条是这次新看到的」按取这批数据之前的水位算，写回水位不能把它一起抹掉。
   const [watermark, setWatermark] = useState<string | null>(null)
+  const desktop = getDesktopBridge()
+  const desktopSeenRef = useRef<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const router = useRouter()
@@ -107,16 +127,63 @@ export default function RailNotifications({ className }: { className?: string })
   useEffect(() => { load(); loadPlatform() }, [load, loadPlatform])
 
   // 30 秒一次，且只在标签页可见时打（和审阅页那套刷新节奏一致）。
+  // 客户端把窗口最小化或收进托盘时页面算「不可见」，而那正是最需要通知的时候，所以桌面端照样打。
+  // 一轮各打一个端点＝每端点每分钟 2 次，两个端点都是每分钟 60 次的限流，撞不上。
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') { load(); loadPlatform() } }
+    const tick = () => { if (document.visibilityState === 'visible' || desktop) { load(); loadPlatform() } }
     const timer = window.setInterval(tick, REFRESH_INTERVAL_MS)
-    const onVisible = () => { if (document.visibilityState === 'visible') { load(); loadPlatform() } }
-    document.addEventListener('visibilitychange', onVisible)
+    document.addEventListener('visibilitychange', tick)
     return () => {
       window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', onVisible)
+      document.removeEventListener('visibilitychange', tick)
     }
-  }, [load, loadPlatform])
+  }, [desktop, load, loadPlatform])
+
+  // 桌面端把每轮新拿到的条目转成系统通知；浏览器里 desktop 是 null，这一整段不跑。
+  useEffect(() => {
+    if (!desktop) return
+    const stamps = [...items, ...platformItems].map((item) => item.createdAt)
+    if (stamps.length === 0) return
+    const newestStamp = newestOf(stamps)
+    const seen = desktopSeenRef.current ?? readDesktopSeenAt()
+    if (!seen) {
+      // 第一轮只定水位、不发通知：不然刚装完就把列表里最新一批全弹一遍。
+      desktopSeenRef.current = newestStamp
+      writeDesktopSeenAt(newestStamp)
+      return
+    }
+    const newReplies = items.filter((item) => item.createdAt > seen)
+    const newMessages = platformItems.filter((item) => item.createdAt > seen)
+    if (newReplies.length > 0) {
+      const newest = newReplies[0]
+      desktop.notify(
+        newReplies.length === 1
+          ? {
+              title: `${newest.authorName} 回复了你`,
+              body: `${newest.projectTitle} · ${newest.videoName}${newest.timecode ? ` · ${newest.timecode}` : ''}`,
+              href: replyHref(newest),
+            }
+          : {
+              title: `${newReplies.length} 条新批注回复`,
+              body: `${newest.authorName} 等 · ${newest.projectTitle}`,
+              href: replyHref(newest),
+            },
+      )
+    }
+    if (newMessages.length > 0) {
+      const newest = newMessages[0]
+      // 平台消息只在面板里出现、没有独立路由，所以点通知只把窗口带回应用。
+      desktop.notify(
+        newMessages.length === 1
+          ? { title: newest.title, body: newest.content }
+          : { title: `${newMessages.length} 条新平台消息`, body: newest.title },
+      )
+    }
+    if (newReplies.length > 0 || newMessages.length > 0) {
+      desktopSeenRef.current = newestStamp
+      writeDesktopSeenAt(newestStamp)
+    }
+  }, [desktop, items, platformItems])
 
   useEffect(() => {
     if (!open) return

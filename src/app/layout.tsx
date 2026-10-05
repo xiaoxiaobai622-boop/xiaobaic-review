@@ -3,6 +3,7 @@ import "./globals.css";
 import { AccentColorProvider } from "@/components/AccentColorProvider";
 import { ServiceWorkerProvider } from "@/components/ServiceWorkerProvider";
 import GlobalActivityTracker from "@/components/GlobalActivityTracker";
+import DesktopBridge from "@/components/DesktopBridge";
 import { StorageConfigProvider, type StorageProvider } from "@/components/StorageConfigProvider";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
@@ -92,6 +93,7 @@ export default async function RootLayout({
             <AppDialogProvider>
               <AccentColorProvider />
               <ServiceWorkerProvider />
+              <DesktopBridge />
               <GlobalActivityTracker />
               <main className="flex-1 min-h-0 flex flex-col">{children}</main>
             </AppDialogProvider>
