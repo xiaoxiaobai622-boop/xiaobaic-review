@@ -163,7 +163,9 @@ wait_for_redis() {
             const redis = new Redis({
                 host: process.env.REDIS_HOST || 'redis',
                 port: parseInt(process.env.REDIS_PORT || '6379'),
-                password: process.env.REDIS_PASSWORD || undefined,
+                password: process.env.REDIS_PASSWORD_FILE
+                    ? require('fs').readFileSync(process.env.REDIS_PASSWORD_FILE, 'utf8').trim()
+                    : (process.env.REDIS_PASSWORD || undefined),
                 maxRetriesPerRequest: 1,
                 retryStrategy: () => null
             });
