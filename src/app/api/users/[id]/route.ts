@@ -13,6 +13,7 @@ import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
+import { hashPhone, phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -214,10 +215,11 @@ export async function PATCH(
         return NextResponse.json({ error: '请输入有效的 11 位手机号' }, { status: 400 })
       }
       const existingPhone = normalizedPhone
-        ? await prisma.user.findFirst({ where: { phone: normalizedPhone, NOT: { id } } })
+        ? await prisma.user.findFirst({ where: { ...phoneWhereOrNone(normalizedPhone), NOT: { id } } })
         : null
       if (existingPhone) return NextResponse.json({ error: '该手机号已被使用' }, { status: 409 })
       updateData.phone = normalizedPhone || null
+      updateData.phoneHash = hashPhone(normalizedPhone)
     }
 
     const normalizedRequestedPhone = phone === undefined ? currentAccess.phone : String(phone).replace(/\D/g, '') || null

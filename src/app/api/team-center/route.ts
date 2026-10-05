@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { getRequestedTeamId } from '@/lib/team-access'
+import { phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
           ...(authResult.email
             ? [{ email: authResult.email.toLowerCase() }]
             : []),
-          ...(authResult.phone ? [{ phone: authResult.phone }] : []),
+          ...(authResult.phone ? [phoneWhereOrNone(authResult.phone)] : []),
         ],
       },
       orderBy: { createdAt: 'desc' },

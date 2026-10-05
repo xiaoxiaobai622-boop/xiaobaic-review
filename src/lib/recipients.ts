@@ -2,6 +2,7 @@ import type { ProjectRecipient } from '@prisma/client'
 import { prisma } from './db'
 import { syncRecipientToDirectory } from './client-directory-sync'
 import { logError } from './logging'
+import { phoneHashField } from './phone-field'
 
 export interface Recipient {
   id?: string
@@ -88,6 +89,7 @@ export async function addRecipient(
       projectId,
       email,
       phone,
+      ...phoneHashField(phone),
       name,
       isPrimary
     }
@@ -129,7 +131,7 @@ export async function updateRecipient(
 
   const recipient = await prisma.projectRecipient.update({
     where: { id: recipientId },
-    data
+    data: data.phone === undefined ? data : { ...data, ...phoneHashField(data.phone) },
   })
 
   // Auto-sync to client directory if name or email changed (fire and forget)

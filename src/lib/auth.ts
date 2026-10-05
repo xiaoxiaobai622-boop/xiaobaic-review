@@ -23,6 +23,7 @@ import { logError, logWarn } from './logging'
 import { getRequestedTeamId } from './team-access'
 import { getAdminSessionTimeoutSeconds } from './settings'
 import { WECHAT_SESSION_COOKIE, verifyWechatSession } from './wechat-auth'
+import { IMPOSSIBLE_PHONE_HASH, hashPhone } from './phone-field'
 
 export interface AuthUser {
   id: string
@@ -496,7 +497,12 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
   try {
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ email: usernameOrEmail }, { username: usernameOrEmail }, { phone: usernameOrEmail }],
+        OR: [
+          { email: usernameOrEmail },
+          { username: usernameOrEmail },
+          { phone: usernameOrEmail },
+          { phoneHash: hashPhone(usernameOrEmail) ?? IMPOSSIBLE_PHONE_HASH },
+        ],
       },
       select: {
         id: true,

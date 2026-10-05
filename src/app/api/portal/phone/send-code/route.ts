@@ -5,6 +5,7 @@ import { getRedis } from '@/lib/redis'
 import { rateLimit } from '@/lib/rate-limit'
 import { hashPhoneCode, PHONE_CODE_TTL_SECONDS, PHONE_REGEX, phoneCodeKey, sendPhoneCode } from '@/lib/phone-auth'
 import { logError } from '@/lib/logging'
+import { phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
   if (limited) return limited
 
   try {
-    const recipient = await prisma.projectRecipient.findFirst({ where: { phone }, select: { id: true } })
+    const recipient = await prisma.projectRecipient.findFirst({ where: phoneWhereOrNone(phone), select: { id: true } })
     if (recipient) {
       const code = String(crypto.randomInt(100000, 1000000))
       await sendPhoneCode(phone, code, {

@@ -5,6 +5,7 @@ import { getRedis } from '@/lib/redis'
 import { rateLimit } from '@/lib/rate-limit'
 import { hashPhoneCode, PHONE_REGEX, phoneCodeKey } from '@/lib/phone-auth'
 import { signPortalSession } from '@/lib/portal-token'
+import { phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '验证码不正确' }, { status: 400 })
   }
 
-  const recipient = await prisma.projectRecipient.findFirst({ where: { phone }, select: { id: true } })
+  const recipient = await prisma.projectRecipient.findFirst({ where: phoneWhereOrNone(phone), select: { id: true } })
   if (!recipient) return NextResponse.json({ error: '该手机号没有项目访问权限' }, { status: 403 })
   await redis.del(key)
   const session = await signPortalSession({ phone })

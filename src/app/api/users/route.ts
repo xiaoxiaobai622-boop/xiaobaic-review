@@ -7,6 +7,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createUserSchema } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { createPhoneOnlyEmail } from '@/lib/user-contact'
+import { hashPhone, phoneWhereOrNone } from '@/lib/phone-field'
 export const runtime = 'nodejs'
 
 // Prevent static generation for this route
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (phone) {
-      const existingPhone = await prisma.user.findUnique({ where: { phone } })
+      const existingPhone = await prisma.user.findFirst({ where: phoneWhereOrNone(phone) })
       if (existingPhone) return NextResponse.json({ error: '该手机号已被使用' }, { status: 409 })
     }
 
@@ -175,6 +176,7 @@ export async function POST(request: NextRequest) {
       data: {
         email: resolvedEmail,
         phone: phone || null,
+        phoneHash: hashPhone(phone),
         username: username || null,
         password: hashedPassword,
         name: name || null,

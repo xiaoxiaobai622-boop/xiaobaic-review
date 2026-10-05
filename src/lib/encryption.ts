@@ -86,6 +86,27 @@ function getEncryptionKey(): Buffer {
 }
 
 /**
+ * Deterministic keyed digest for values that must stay searchable while the stored form is
+ * not readable — a phone number is looked up by equality, so the ciphertext alone cannot
+ * serve. Domain separation keeps each use of the master key on its own subkey, so one
+ * column's digest can never be replayed against another's.
+ */
+const indexSubkeys = new Map<string, Buffer>()
+
+export function hmacIndexValue(value: string, domain: string): string {
+  validateEncryptionKey()
+  const crypto = getCrypto()
+  let subkey = indexSubkeys.get(domain)
+  if (!subkey) {
+    subkey = Buffer.from(
+      crypto.hkdfSync('sha256', Buffer.from(ENCRYPTION_KEY), Buffer.from('vitransfer-index-v1'), Buffer.from(domain), 32),
+    )
+    indexSubkeys.set(domain, subkey)
+  }
+  return crypto.createHmac('sha256', subkey).update(value, 'utf8').digest('hex')
+}
+
+/**
  * Encrypt sensitive data
  * @param text Plain text to encrypt
  * @returns Encrypted string in format: iv:authTag:encryptedData (hex)

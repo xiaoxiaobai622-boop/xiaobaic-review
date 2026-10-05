@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import { randomBytes } from 'crypto'
+import { phoneHashField } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -61,6 +62,7 @@ export async function POST(
       teamId: id,
       email,
       phone,
+      ...phoneHashField(phone),
       role,
       createdById: authResult.id,
       token: randomBytes(24).toString('base64url'),

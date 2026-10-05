@@ -5,6 +5,7 @@ import { getRedis } from '@/lib/redis'
 import { getCurrentUserFromRequest, issueAdminTokens } from '@/lib/auth'
 import { hashPhoneCode, phoneCodeKey, PHONE_REGEX } from '@/lib/phone-auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
   await redis.del(key)
 
-  const target = await prisma.user.findUnique({ where: { phone } })
+  const target = await prisma.user.findFirst({ where: phoneWhereOrNone(phone) })
   if (!target || target.id === currentUser.id) {
     return NextResponse.json({ error: 'No conflicting account found' }, { status: 404 })
   }

@@ -5,6 +5,7 @@ import { parseBearerToken } from '@/lib/auth'
 import { verifyPortalSession } from '@/lib/portal-token'
 import { masterTokensByProject } from '@/lib/share-links'
 import { logError } from '@/lib/logging'
+import { phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     const recipientWhere = session.email
       ? { email: { equals: session.email, mode: 'insensitive' as const } }
-      : { phone: session.phone }
+      : phoneWhereOrNone(session.phone)
 
     const projects = await prisma.project.findMany({
       where: {

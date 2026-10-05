@@ -7,6 +7,7 @@ import { hashPassword } from '@/lib/encryption'
 import { hashPhoneCode, phoneCodeKey, PHONE_REGEX } from '@/lib/phone-auth'
 import { createPhoneOnlyEmail } from '@/lib/user-contact'
 import { rateLimit } from '@/lib/rate-limit'
+import { phoneHashField, phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
   await redis.del(key)
 
   const currentUser = await getCurrentUserFromRequest(request)
-  const existingPhoneUser = await prisma.user.findUnique({ where: { phone } })
+  const existingPhoneUser = await prisma.user.findFirst({ where: phoneWhereOrNone(phone) })
 
   let user
   let isNewUser = false
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
     user = await prisma.user.update({
       where: { id: currentUser.id },
-      data: { phone },
+      data: { phone, ...phoneHashField(phone) },
     })
   } else if (existingPhoneUser) {
     user = existingPhoneUser
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
       data: {
         email,
         phone,
+        ...phoneHashField(phone),
         password: await hashPassword(crypto.randomBytes(24).toString('hex')),
         role: 'MEMBER',
         projectAccessScope: 'ASSIGNED_ONLY',
