@@ -45,6 +45,9 @@ export async function dispatchDurableTask(taskId: string): Promise<boolean> {
     } else if (task.kind === 'PROCESS_PHOTO') {
       await getPhotoQueue().add('process-photo', payload as any, { jobId: task.id })
     } else if (task.kind === 'DELETE_STORAGE') {
+      // Soft by design. The media bucket is versioned, so this leaves every object
+      // recoverable by version id — the only undo path for a whole-project deletion.
+      // Paths that already promise permanence purge versions instead (see purgeFile).
       const paths = Array.isArray(payload.paths) ? payload.paths.filter((value): value is string => typeof value === 'string') : []
       const directories = Array.isArray(payload.directories) ? payload.directories.filter((value): value is string => typeof value === 'string') : []
       for (const path of paths) await deleteFile(path)

@@ -3,7 +3,7 @@ import * as path from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { mkdir } from 'fs/promises'
-import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl, s3FileExists } from './s3-storage'
+import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3PurgeObject, s3PurgeDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl, s3FileExists } from './s3-storage'
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || '/app/uploads'
 
@@ -223,6 +223,27 @@ export async function deleteDirectory(dirPath: string): Promise<void> {
   if (fs.existsSync(fullPath)) {
     await fs.promises.rm(fullPath, { recursive: true, force: true })
   }
+}
+
+/**
+ * Delete that also removes stored versions. Use this only where the product already
+ * promised permanence (recycle-bin purge); elsewhere the versioning window on the
+ * media bucket is the undo path.
+ */
+export async function purgeFile(filePath: string): Promise<void> {
+  if (isS3Mode()) {
+    await s3PurgeObject(filePath)
+    return
+  }
+  await deleteFile(filePath)
+}
+
+export async function purgeDirectory(dirPath: string): Promise<void> {
+  if (isS3Mode()) {
+    await s3PurgeDirectory(dirPath)
+    return
+  }
+  await deleteDirectory(dirPath)
 }
 
 export function getFilePath(filePath: string): string {

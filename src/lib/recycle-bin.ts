@@ -1,6 +1,6 @@
 import { prisma, INCLUDE_DELETED } from './db'
 import type { Prisma, PrismaClient } from '@prisma/client'
-import { deleteDirectory, deleteFile } from './storage'
+import { purgeDirectory, purgeFile } from './storage'
 import { directoryStillUsed, stillReferencedPaths } from './video-storage-paths'
 import { recomputeProjectApprovalStatus } from './project-approval'
 import { logError } from './logging'
@@ -54,11 +54,11 @@ export async function permanentlyDeleteRecycleBinItem(itemId: string, projectId?
   const paths = stringArray(item.paths)
   const keptByOthers = videoId ? await stillReferencedPaths(prisma, paths, [videoId]) : new Set<string>()
   for (const filePath of paths) {
-    if (!keptByOthers.has(filePath)) await deleteFile(filePath)
+    if (!keptByOthers.has(filePath)) await purgeFile(filePath)
   }
   for (const directory of stringArray(item.directories)) {
     if (videoId && (await directoryStillUsed(prisma, directory, videoId))) continue
-    await deleteDirectory(directory)
+    await purgeDirectory(directory)
   }
   await prisma.$transaction(async (tx) => {
     // The retention window is over: now the row goes, and with it the comments,

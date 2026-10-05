@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db'
 import { getWechatMiniAccessToken, isWechatMiniConfigured } from '@/lib/wechat-mini-login'
 import { getRedis } from '@/lib/redis'
 import { logError, logMessage, logWarn } from '@/lib/logging'
-import { deleteFile } from '@/lib/storage'
+import { purgeFile } from '@/lib/storage'
 import sharp from 'sharp'
 
 export const CONTENT_VIOLATION_MESSAGE = '您发布的内容含违规信息，请修改后重试'
@@ -244,7 +244,9 @@ export async function handleWechatMediaCheckCallback(params: {
   }
 
   logWarn(`Wechat media check flagged avatar as risky for trace ${params.traceId}`)
-  await deleteFile(record.key).catch(() => {})
+  // Purged with versions on purpose: a plain delete under bucket versioning would leave
+  // the flagged image retrievable by version id.
+  await purgeFile(record.key).catch(() => {})
 
   const currentUser = await prisma.user.findUnique({
     where: { id: record.userId },

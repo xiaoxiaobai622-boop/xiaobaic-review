@@ -5,6 +5,7 @@ import {
   CopyObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
+  ListObjectVersionsCommand,
   ListMultipartUploadsCommand,
   HeadObjectCommand,
   CreateMultipartUploadCommand,
@@ -416,6 +417,53 @@ export async function s3DeleteDirectory(prefix: string): Promise<void> {
     }
     continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
   } while (continuationToken)
+}
+
+/**
+ * Remove an object together with every stored version and delete marker.
+ *
+ * Versioning turns DeleteObject into a marker: the bytes stay reachable by version id,
+ * which is what an undo window needs and exactly what a data-deletion request must not
+ * leave behind. Anything that claims to delete permanently goes through here.
+ */
+export async function s3PurgeObject(key: string): Promise<void> {
+  invalidateS3FileExistsCache(key)
+  await purgeObjectVersions((version) => version.Key === key, key)
+  markS3FileExistsCache(key, false, S3_FILE_MISSING_CACHE_TTL_MS)
+}
+
+/** Purge every object (and every version of it) under a key prefix. */
+export async function s3PurgeDirectory(prefix: string): Promise<void> {
+  const normalizedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`
+  await purgeObjectVersions(() => true, normalizedPrefix)
+}
+
+async function purgeObjectVersions(accept: (entry: { Key?: string }) => boolean, prefix: string): Promise<void> {
+  const client = getS3Client()
+  const bucket = getS3Bucket()
+  let keyMarker: string | undefined
+  let versionIdMarker: string | undefined
+
+  do {
+    const res = await client.send(
+      new ListObjectVersionsCommand({ Bucket: bucket, Prefix: prefix, KeyMarker: keyMarker, VersionIdMarker: versionIdMarker }),
+      { abortSignal: AbortSignal.timeout(S3_METADATA_TIMEOUT_MS) },
+    )
+    const targets = [...(res.Versions ?? []), ...(res.DeleteMarkers ?? [])]
+      .filter((entry) => typeof entry.Key === 'string' && typeof entry.VersionId === 'string' && accept(entry))
+      // An unversioned bucket reports VersionId "null"; sending that back is an
+      // InvalidArgument, so such entries go through as a plain key delete.
+      .map((entry) => ({ Key: entry.Key as string, VersionId: entry.VersionId === 'null' ? undefined : (entry.VersionId as string) }))
+    for (let index = 0; index < targets.length; index += DELETE_DIRECTORY_CONCURRENCY) {
+      const batch = targets.slice(index, index + DELETE_DIRECTORY_CONCURRENCY)
+      await Promise.all(
+        batch.map((target) => client.send(new DeleteObjectCommand({ Bucket: bucket, Key: target.Key, VersionId: target.VersionId }))),
+      )
+    }
+    keyMarker = res.NextKeyMarker ?? undefined
+    versionIdMarker = res.NextVersionIdMarker ?? undefined
+    if (res.IsTruncated !== true) break
+  } while (true)
 }
 
 /** Return true if the object exists; false on 404; rethrows on any other error. */
