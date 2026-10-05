@@ -238,8 +238,32 @@ async function renewVideoAccessToken(
   )
 }
 
+// Label-wise comparison, so `vidx.cn.evil.com` is no longer treated as our own
+// host the way a plain substring test would.
+function isSameOrSubdomain(host: string, domain: string): boolean {
+  if (!host || !domain) return false
+  return host === domain || host.endsWith('.' + domain)
+}
+
+// HOTLINK_ALLOWED_REFERER_HOSTS=servicewechat.com,m.baidu.com
+let allowedRefererHostsCache: string[] | null = null
+function getAllowedRefererHosts(): string[] {
+  if (allowedRefererHostsCache === null) {
+    allowedRefererHostsCache = (process.env.HOTLINK_ALLOWED_REFERER_HOSTS || '')
+      .split(/[,\s]+/)
+      .map(entry => entry.trim().toLowerCase())
+      .filter(Boolean)
+  }
+  return allowedRefererHostsCache
+}
+
 /**
  * Detect potential hotlinking attempts using referer analysis and session validation
+ *
+ * A Referer is client-controlled, so this is deliberately not an access control:
+ * the signed content token in front of it is. What it does decide is which
+ * *ordinary* referrers our own players use, so BLOCK_STRICT can be turned on
+ * without locking out real viewers.
  */
 export async function detectHotlinking(
   request: NextRequest,
@@ -255,9 +279,10 @@ export async function detectHotlinking(
   if (referer && host) {
     try {
       const refererUrl = new URL(referer)
-      const refererHost = refererUrl.hostname
+      const refererHost = refererUrl.hostname.toLowerCase()
+      const requestHost = host.toLowerCase().split(':')[0]
 
-      if (!refererHost.includes(host) && !host.includes(refererHost)) {
+      if (!isSameOrSubdomain(refererHost, requestHost) && !isSameOrSubdomain(requestHost, refererHost)) {
         const blockedDomains = await getBlockedDomains()
         if (blockedDomains.some(domain => refererHost.includes(domain))) {
           return {
@@ -265,6 +290,10 @@ export async function detectHotlinking(
             reason: `Blocked domain: ${refererHost}`,
             severity: 'CRITICAL'
           }
+        }
+
+        if (getAllowedRefererHosts().some(allowed => isSameOrSubdomain(refererHost, allowed))) {
+          return { isHotlinking: false }
         }
 
         await logSecurityEvent({
