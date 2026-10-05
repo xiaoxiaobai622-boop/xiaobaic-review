@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { cn, getUserColor } from '@/lib/utils'
 
-type AvatarSize = 'xs' | 'sm' | 'md' | 'lg'
+type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 
 const COLOR_MAP: Record<string, { bg: string; ring: string; text: string }> = {
   'border-gray-500': {
@@ -234,6 +234,8 @@ function sizeClasses(size: AvatarSize) {
       return 'h-7 w-7 text-[11px]'
     case 'lg':
       return 'h-10 w-10 text-sm'
+    case 'xl':
+      return 'h-24 w-24 text-3xl'
     case 'md':
     default:
       return 'h-8 w-8 text-xs'

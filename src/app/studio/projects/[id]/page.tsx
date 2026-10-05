@@ -252,6 +252,109 @@ function countVideoComments(comments: any[], videoId: string): number {
  */
 type ProjectOverlayState = { kind: 'settings'; section: ProjectSettingsSection } | { kind: 'members' } | null
 
+/**
+ * 团队有效期，1:1 对标 frame.io 顶栏那组（用户截图实测）：
+ * 琥珀金实底胶囊（#EFB402）+ 深色字「✦ 团队 · 套餐状态」，悬停弹出白色气泡卡
+ * （居中标题带到期日期 + 说明 + 右上角关闭），灰字「还剩 N 天」在胶囊右侧；
+ * 异常态（已停用/等待激活/已到期/临期≤3天）天数标红。
+ */
+function TeamExpiryText() {
+  const [state, setState] = useState<{ plan: string; days: string; danger: boolean; until: string | null; untilCn: string | null } | null>(null)
+  const [tipOpen, setTipOpen] = useState(false)
+  const [hovered, setHovered] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch('/api/team-center', { cache: 'no-store' }).then(async (response) => {
+      if (!response.ok) return
+      const data = await response.json()
+      const team = (data.teams || []).find((item: any) => item.team.id === data.activeTeamId) || data.teams?.[0]
+      if (!team || cancelled) return
+      const current = team.team
+      let plan = '内测'
+      let days = '长期有效'
+      let danger = false
+      let until: string | null = null
+      let untilCn: string | null = null
+      if (current.status === 'DISABLED') {
+        plan = '已停用'
+        days = '已停用'
+        danger = true
+      } else if (current.subscriptionPlan === 'UNACTIVATED') {
+        plan = '等待激活'
+        days = '等待激活'
+        danger = true
+      } else if (current.subscriptionExpiresAt) {
+        const expiry = new Date(current.subscriptionExpiresAt)
+        until = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, '0')}-${String(expiry.getDate()).padStart(2, '0')}`
+        untilCn = `${expiry.getFullYear()}年${expiry.getMonth() + 1}月${expiry.getDate()}日`
+        const remaining = expiry.getTime() - Date.now()
+        if (remaining <= 0) {
+          days = '已到期'
+          danger = true
+        } else {
+          const dayCount = Math.ceil(remaining / (24 * 60 * 60 * 1000))
+          days = `还剩 ${dayCount} 天`
+          danger = dayCount <= 3
+        }
+      }
+      if (!cancelled) setState({ plan, days, danger, until, untilCn })
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  if (!state) return null
+  // 有效期是用户自设的：悬停正文按状态引导去团队设置自助调整，而不是固定话术。
+  const tipTitle = state.plan === '已停用'
+    ? '团队已停用'
+    : state.plan === '等待激活'
+      ? '团队等待激活'
+      : state.untilCn
+        ? (state.days === '已到期' ? `团队有效期已于 ${state.untilCn} 结束` : `团队有效期将于 ${state.untilCn} 结束`)
+        : '团队长期有效'
+  const tipBody = state.plan === '已停用'
+    ? '团队已被平台停用，请联系平台管理员。'
+    : state.plan === '等待激活'
+      ? '激活后团队即可正常使用。'
+      : state.untilCn
+        ? (state.days === '已到期' ? '可在团队设置中重新设置到期时间。' : '可在团队设置中调整到期时间。')
+        : '如需限时管理，可在团队设置中设置到期时间。'
+  return (
+    <span className="relative flex shrink-0 items-center gap-2">
+      <span
+        className={`inline-flex cursor-default items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+          hovered ? 'bg-[#eeb400] text-[#191b29]' : 'bg-[#dee0ed] text-[#eeb400]'
+        }`}
+        onMouseEnter={() => { setHovered(true); setTipOpen(true) }}
+        onMouseLeave={() => { setHovered(false); setTipOpen(false) }}
+      >
+        {/* 四角星 ✦，fill 实心，同 frame.io */}
+        <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
+          <path d="M12 1.5c.75 5.9 4.6 9.75 10.5 10.5-5.9.75-9.75 4.6-10.5 10.5-.75-5.9-4.6-9.75-10.5-10.5C7.4 11.25 11.25 7.4 12 1.5Z" />
+        </svg>
+        团队
+        <span className="opacity-60">•</span>
+        免费内测
+      </span>
+      <span className={`text-xs ${state.danger ? 'font-medium text-destructive' : 'text-muted-foreground'}`}>{state.days}</span>
+      {tipOpen && (
+        <div className="absolute left-1/2 top-full z-50 mt-2 w-72 -translate-x-1/2 rounded-xl bg-popover p-4 text-center shadow-lg">
+          <button
+            type="button"
+            aria-label="关闭"
+            className="absolute right-3 top-3 text-muted-foreground transition-colors hover:text-foreground"
+            onClick={() => setTipOpen(false)}
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <p className="text-sm font-semibold">{tipTitle}</p>
+          <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{tipBody}</p>
+        </div>
+      )}
+    </span>
+  )
+}
+
 export default function ProjectPage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -1289,9 +1392,7 @@ export default function ProjectPage() {
             </Button>
           </Link>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {t('materialSummary', { materials: videoGroupNames.length, versions: workspaceVideos.length })}
-            </span>
+            <TeamExpiryText />
             <Button
               size="default"
               className={projectToolbarButtonClassName}
@@ -1424,6 +1525,10 @@ export default function ProjectPage() {
                   <Button variant="ghost" size="icon" onClick={() => setSortMode(current => current === 'status' ? 'alphabetical' : 'status')} className="h-8 w-8 text-muted-foreground hover:text-foreground" title={sortMode === 'status' ? t('sortAlphabetically') : t('sortByStatus')}>
                     <ArrowUpDown className="h-4 w-4" />
                   </Button>
+                  {/* 素材/版本统计从顶栏挪到这里（用户指定位置）：排序键右侧的空位。 */}
+                  <span className="ml-1 shrink-0 text-xs text-muted-foreground">
+                    {t('materialSummary', { materials: videoGroupNames.length, versions: workspaceVideos.length })}
+                  </span>
                 </div>
               </div>
               {activeFolderId && (

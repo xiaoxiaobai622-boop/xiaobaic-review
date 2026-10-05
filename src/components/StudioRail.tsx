@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CircleHelp, Clock3, LogOut, UserRound, Users } from 'lucide-react'
+import { CircleHelp, LogOut, UserRound } from 'lucide-react'
 import { AllApplication, Config } from '@icon-park/react'
 import { useAuth } from '@/components/AuthProvider'
 import { initialsFromName } from '@/components/InitialsAvatar'
@@ -12,7 +12,6 @@ import RailSearch from '@/components/RailSearch'
 import RailFeedback from '@/components/RailFeedback'
 import RailNotifications from '@/components/RailNotifications'
 import ThemeToggle from '@/components/ThemeToggle'
-import { apiFetch } from '@/lib/api-client'
 import { getContactEmail } from '@/lib/user-contact'
 import { useTranslations } from 'next-intl'
 
@@ -49,37 +48,7 @@ function RailAvatar({ name, src }: { name: string; src?: string | null }) {
   )
 }
 
-/** 团队有效期：内测期没有到期这回事，只有被平台停用才亮红点。 */
-function TeamExpiryBadge() {
-  const [label, setLabel] = useState<string | null>(null)
-  const [danger, setDanger] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    apiFetch('/api/team-center', { cache: 'no-store' }).then(async (response) => {
-      if (!response.ok) return
-      const data = await response.json()
-      const team = (data.teams || []).find((item: any) => item.team.id === data.activeTeamId) || data.teams?.[0]
-      if (!team || cancelled) return
-      const disabled = team.team.status === 'DISABLED'
-      setLabel(disabled ? '已停用' : '长期有效')
-      setDanger(disabled)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [])
-
-  if (!label) return null
-  return (
-    <Link
-      href="/studio/team?tab=team"
-      className={`relative ${RAIL_ICON_BUTTON} text-muted-foreground hover:text-accent-foreground`}
-      title={`团队 ${label}`}
-    >
-      <Clock3 className={`h-[20px] w-[20px] ${danger ? 'text-destructive' : ''}`} />
-      {danger && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
-    </Link>
-  )
-}
+/** 团队有效期已迁到项目页顶栏（纯文字样式，对标 frame.io 顶栏的「还剩 N 天」）。 */
 
 /**
  * 工作台左侧图标栏：承载原顶栏的全部功能（团队切换、项目/团队导航、
@@ -135,8 +104,6 @@ export default function StudioRail() {
       </RailItem>
 
       <div className="flex-1" aria-hidden />
-
-      <TeamExpiryBadge />
 
       {/* 内层 select 点击后会一直占着焦点，focus-within 的环会常驻（用户明确不要外框），所以这里不打焦点环。 */}
       <ThemeToggle compact className="h-[44px] w-[44px] rounded-lg outline-none" />

@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Camera, Check, KeyRound, LogOut, MessageCircle, MessageSquare, RefreshCw, Save, UserRound } from 'lucide-react'
+import { ArrowLeft, Camera, Check, KeyRound, Link2, LogOut, MessageSquare, RefreshCw, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
+import StudioRail from '@/components/StudioRail'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -454,18 +455,43 @@ function ProfileContent() {
     }
   }
 
+  // 顶栏居中标题跟随滚动（对标 frame.io 设置页）：滚到哪一段就显示哪一段的名字。
+  // 注意：内嵌浏览器（IAB）滚动不走 window scroll 事件，所以用 300ms 轮询而不是监听 scroll。
+  const [sectionTitle, setSectionTitle] = useState('个人资料')
+  useEffect(() => {
+    if (loading) return
+    const recompute = () => {
+      // 取「顶边已越过顶栏下沿」的最后一段，跟人眼看到的当前段一致。
+      const line = 96
+      let current = '个人资料'
+      for (const id of ['profile-title', 'wechat-title', 'password-title']) {
+        const el = document.getElementById(id)
+        if (el && el.getBoundingClientRect().top <= line) current = el.textContent || current
+      }
+      setSectionTitle(current)
+    }
+    recompute()
+    const timer = window.setInterval(recompute, 300)
+    return () => window.clearInterval(timer)
+  }, [loading])
+
   if (loading) {
     return <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">正在加载个人资料...</div>
   }
 
   return (
-    <div className="min-h-dvh bg-background">
-      <header className="flex h-14 items-center justify-between border-b border-border/70 px-4 sm:px-6">
+    // 个人中心从后台进入：左侧窄图标栏保留（对标 frame.io 设置页常驻 rail）。
+    <div className="flex min-h-dvh bg-background">
+      <StudioRail />
+      <div className="flex min-w-0 flex-1 flex-col">
+      <header className="relative flex items-center justify-between gap-4 border-b border-border pb-3 lg:mb-[2px] lg:shrink-0 lg:rounded-[8px] lg:border-b-0 lg:bg-popover lg:px-4 lg:py-3">
         <div>
           <Button asChild variant="ghost" size="sm" className="gap-2">
             <a href={visibleReturnUrl || (user?.role === 'ADMIN' ? '/studio/projects' : '/')}><ArrowLeft className="h-4 w-4" />返回</a>
           </Button>
         </div>
+        {/* 顶栏居中标题：滚动到哪一段就显示哪一段，对标 frame.io 设置页的顶栏。 */}
+        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium sm:block">{sectionTitle}</div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <Button variant="ghost" size="sm" onClick={logout} className="gap-2 text-muted-foreground">
@@ -474,172 +500,168 @@ function ProfileContent() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-8 lg:py-16">
-        <div className="mb-12">
-          <div className="mb-2 text-sm font-medium text-primary">账户</div><h1 className="text-4xl font-semibold tracking-tight">个人中心</h1><p className="mt-3 text-base text-muted-foreground">管理你的个人资料、账号绑定和通知设置</p>
-        </div>
-        <div className="grid gap-12 lg:grid-cols-[180px_minmax(0,1fr)]">
-        <aside className="self-start lg:sticky lg:top-8">
-          <div className="flex items-center gap-4 border-b border-border pb-6 lg:flex-col lg:items-start">
-          <div className="relative">
-            <InitialsAvatar name={displayName} src={avatarUrl} size="lg" isInternal={user?.role === 'ADMIN'} />
-            <label className="absolute bottom-0 right-0 flex h-6 w-6 translate-x-1/3 translate-y-1/3 cursor-pointer items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">
-              <Camera className="h-3 w-3" />
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="sr-only"
-                disabled={avatarUploading}
-                onChange={(event) => void handleAvatarChange(event.target.files?.[0] || null)}
-              />
-            </label>
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold">{displayName}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{user?.role === 'ADMIN' ? '管理员' : '团队成员'}</p>
-          </div>
-          </div>
-          <nav className="mt-6 hidden space-y-1 lg:block" aria-label="个人中心导航">
-            <a href="#profile-title" className="block rounded-md bg-primary/10 px-3 py-2 text-sm font-medium text-primary">个人资料</a>
-            <a href="#wechat-title" className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">账号连接</a>
-            <a href="#password-title" className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">安全设置</a>
+      {/* 面板之间用 2px 画布缝分隔（项目中心同款），不再是竖分界线。 */}
+      <div className="flex flex-1 items-stretch gap-[2px]">
+        <aside className="hidden w-60 shrink-0 lg:block lg:rounded-[8px] lg:bg-popover">
+          <nav aria-label="个人中心导航" className="sticky top-14 px-4 py-6">
+            <p className="mb-1 px-2 text-xs font-medium text-muted-foreground">个人</p>
+            <a href="#profile-title" className="flex items-center gap-2.5 rounded-md bg-primary/10 px-2 py-2 text-sm font-medium text-primary">
+              <UserRound className="h-4 w-4" />个人资料
+            </a>
+            <p className="mb-1 mt-6 px-2 text-xs font-medium text-muted-foreground">帐户</p>
+            <a href="#wechat-title" className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <Link2 className="h-4 w-4" />账号连接
+            </a>
+            <p className="mb-1 mt-6 px-2 text-xs font-medium text-muted-foreground">安全性</p>
+            <a href="#password-title" className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <KeyRound className="h-4 w-4" />安全设置
+            </a>
           </nav>
         </aside>
 
-        <div className="min-w-0 space-y-14">
-          <section aria-labelledby="profile-title" className="scroll-mt-8">
-            <div className="mb-5 flex items-center gap-2">
-              <UserRound className="h-5 w-5 text-primary" />
-              <h2 id="profile-title" className="text-lg font-semibold">个人资料</h2>
+        <div className="min-w-0 flex-1 lg:rounded-[8px] lg:bg-popover">
+          <div className="mx-auto max-w-[915px] space-y-12 px-6 py-8 sm:px-10">
+          <section aria-labelledby="profile-title" className="scroll-mt-10">
+            <h2 id="profile-title" className="text-base font-semibold">个人信息</h2>
+            <p className="mb-5 mt-1 text-sm text-muted-foreground">设置您的个人资料。</p>
+
+            <div className="flex items-center gap-5 rounded-xl bg-muted/70 p-6">
+              <div className="relative shrink-0">
+                <InitialsAvatar name={displayName} src={avatarUrl} size="xl" isInternal={user?.role === 'ADMIN'} />
+                <label className="absolute -bottom-1 -right-1 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">
+                  <Camera className="h-3.5 w-3.5" />
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="sr-only"
+                    disabled={avatarUploading}
+                    onChange={(event) => void handleAvatarChange(event.target.files?.[0] || null)}
+                  />
+                </label>
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-xl font-semibold">{displayName}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{form.phone || '尚未绑定手机号'} · {user?.role === 'ADMIN' ? '管理员' : '团队成员'}</p>
+              </div>
             </div>
+
             {requirePhone && (
-              <div className="mb-4 rounded-md border border-warning-visible bg-warning-visible px-3 py-2 text-sm text-warning">
+              <div className="mt-4 rounded-md border border-warning-visible bg-warning-visible px-3 py-2 text-sm text-warning">
                 进入团队后台前需要先绑定手机号。
               </div>
             )}
-            <form onSubmit={saveProfile} className="max-w-2xl space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="profile-name">显示名称</Label>
-                <Input id="profile-name" value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} placeholder="你的姓名或昵称" />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="profile-phone">手机号</Label>
-                  <div className="flex gap-2">
-                    <Input id="profile-phone" type="tel" value={form.phone} readOnly aria-describedby="phone-help" className="bg-muted/40" placeholder="尚未绑定手机号" />
-                    <Button type="button" variant="outline" onClick={() => void changePhone()}>更换手机号</Button>
-                  </div>
+
+            <div className="mt-4 rounded-xl bg-muted/70">
+              <form onSubmit={saveProfile} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <p className="text-sm font-medium">显示名称</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">在整个工作台展示的名字。</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="profile-name"
+                    value={form.name}
+                    onChange={event => setForm(current => ({ ...current, name: event.target.value }))}
+                    placeholder="你的姓名或昵称"
+                    className="h-9 w-52 bg-background"
+                  />
+                  <Button type="submit" disabled={saving} size="sm" className="gap-2">{saving ? '正在保存...' : '保存'}</Button>
+                </div>
+              </form>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-5 py-4">
+                <div>
+                  <p className="text-sm font-medium">手机号</p>
+                  <p className="mt-0.5 max-w-md text-xs text-muted-foreground">更换手机号需要先验证当前手机号验证码或登录密码，再验证新手机号。</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground">{form.phone || '尚未绑定'}</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void changePhone()}>更换手机号</Button>
                 </div>
               </div>
-              <p id="phone-help" className="text-xs text-muted-foreground">更换手机号需要先验证当前手机号验证码或登录密码，再验证新手机号。</p>
-              <div className="flex items-center gap-3">
-                <Button type="submit" disabled={saving} className="gap-2"><Save className="h-4 w-4" />{saving ? '正在保存...' : '保存资料'}</Button>
+            </div>
+          </section>
+
+          <section aria-labelledby="wechat-title" className="scroll-mt-10">
+            <h2 id="wechat-title" className="text-base font-semibold">账号连接</h2>
+            <p className="mb-5 mt-1 text-sm text-muted-foreground">绑定第三方账号后可以快速登录并接收通知。</p>
+            <div className="rounded-xl bg-muted/70">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <p className="text-sm font-medium">微信账号</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">使用微信扫一扫完成绑定，绑定后可使用微信快速登录。</p>
+                </div>
+                <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>立即绑定</WechatMiniQrLogin>
               </div>
-            </form>
-          </section>
-
-          <section aria-labelledby="wechat-title" className="scroll-mt-8 border-t border-border pt-8">
-            <div className="mb-4 flex items-center gap-2">
-              <MessageCircle className="h-5 w-5 text-[#07c160]" />
-              <div><h2 id="wechat-title" className="text-lg font-semibold">微信账号</h2><p className="mt-1 text-sm text-muted-foreground">绑定后可使用微信快速登录。</p></div>
-            </div>
-            <div className="flex max-w-2xl items-center justify-between gap-4 rounded-md border border-border px-4 py-3.5">
-              <div><p className="text-sm font-medium">尚未绑定微信</p><p className="mt-1 text-xs text-muted-foreground">使用微信扫一扫完成绑定</p></div>
-              <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage('微信绑定成功')}>立即绑定</WechatMiniQrLogin>
-            </div>
-          </section>
-
-          <section aria-labelledby="feishu-title" className="border-t border-border pt-8">
-            <div className="mb-5 flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              <h2 id="feishu-title" className="text-lg font-semibold">飞书通知</h2>
-            </div>
-            <div className="max-w-2xl space-y-4">
-              {feishuBinding === null ? (
-                <p className="text-sm text-muted-foreground">加载中...</p>
-              ) : feishuBinding.bound ? (
-                <>
-                  <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <InitialsAvatar
-                          name={feishuBinding.nickname || '飞书用户'}
-                          src={feishuAvatarSrc}
-                          size="md"
-                          title={feishuBinding.nickname || '飞书用户'}
-                        />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{feishuBinding.nickname || '飞书用户'}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">飞书姓名与头像</p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-sm text-green-600 dark:text-green-400">已绑定</span>
-                    </div>
-                    {feishuBinding.profileSyncError && (
-                      <p className="mt-3 text-xs leading-5 text-warning">{feishuBinding.profileSyncError}</p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button type="button" variant="outline" className="gap-2" onClick={() => void bindFeishu()} disabled={feishuRefreshing || feishuLoading}>
-                      <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                      重新绑定并更新资料
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-2" onClick={() => void refreshFeishuProfile()} disabled={feishuRefreshing || feishuLoading}>
-                      <RefreshCw className={`h-4 w-4 ${feishuRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                      {feishuRefreshing ? '同步中...' : '同步资料'}
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-2" onClick={() => void unbindFeishu()} disabled={feishuLoading || feishuRefreshing}>
-                      {feishuLoading ? '解绑中...' : '解除绑定'}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">当前状态：</span>
-                      <span className="text-muted-foreground">未绑定</span>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      绑定飞书后，可以及时收到逐帧审阅批注意见通知。
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-5 py-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  {feishuBinding?.bound && (
+                    <InitialsAvatar
+                      name={feishuBinding.nickname || '飞书用户'}
+                      src={feishuAvatarSrc}
+                      size="md"
+                      title={feishuBinding.nickname || '飞书用户'}
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">飞书通知</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {feishuBinding === null
+                        ? '加载中...'
+                        : feishuBinding.bound
+                          ? `已绑定：${feishuBinding.nickname || '飞书用户'}`
+                          : '绑定飞书后，可以及时收到逐帧审阅批注意见通知。'}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => void bindFeishu()}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    绑定飞书
-                  </Button>
-                </>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {feishuBinding === null ? null : feishuBinding.bound ? (
+                    <>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void bindFeishu()} disabled={feishuRefreshing || feishuLoading}>
+                        重新绑定并更新资料
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void refreshFeishuProfile()} disabled={feishuRefreshing || feishuLoading}>
+                        <RefreshCw className={`h-4 w-4 ${feishuRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                        {feishuRefreshing ? '同步中...' : '同步资料'}
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void unbindFeishu()} disabled={feishuLoading || feishuRefreshing}>
+                        {feishuLoading ? '解绑中...' : '解除绑定'}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" onClick={() => void bindFeishu()}>
+                      绑定飞书
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {feishuBinding?.profileSyncError && (
+                <p className="border-t border-border/60 px-5 py-3 text-xs leading-5 text-warning">{feishuBinding.profileSyncError}</p>
               )}
             </div>
           </section>
 
-          <section aria-labelledby="password-title" className="scroll-mt-8 border-t border-border pt-8">
-            <div className="mb-5 flex items-center gap-2">
-              <KeyRound className="h-5 w-5 text-primary" />
-              <h2 id="password-title" className="text-lg font-semibold">修改密码</h2>
-            </div>
-            <form onSubmit={changePassword} className="max-w-2xl space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="current-password">当前密码</Label>
-                <PasswordInput id="current-password" value={passwordForm.current} onChange={event => setPasswordForm(current => ({ ...current, current: event.target.value }))} required />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+          <section aria-labelledby="password-title" className="scroll-mt-10">
+            <h2 id="password-title" className="text-base font-semibold">安全设置</h2>
+            <p className="mb-5 mt-1 text-sm text-muted-foreground">定期更新密码可以让账号更安全。</p>
+            <form onSubmit={changePassword} className="rounded-xl bg-muted/70 p-5">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="current-password">当前密码</Label>
+                  <PasswordInput id="current-password" value={passwordForm.current} onChange={event => setPasswordForm(current => ({ ...current, current: event.target.value }))} required className="bg-background" />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="new-password">新密码</Label>
-                  <PasswordInput id="new-password" maxLength={128} value={passwordForm.next} onChange={event => setPasswordForm(current => ({ ...current, next: event.target.value }))} required />
+                  <PasswordInput id="new-password" maxLength={128} value={passwordForm.next} onChange={event => setPasswordForm(current => ({ ...current, next: event.target.value }))} required className="bg-background" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">确认新密码</Label>
-                  <PasswordInput id="confirm-password" maxLength={128} value={passwordForm.confirm} onChange={event => setPasswordForm(current => ({ ...current, confirm: event.target.value }))} required />
+                  <PasswordInput id="confirm-password" maxLength={128} value={passwordForm.confirm} onChange={event => setPasswordForm(current => ({ ...current, confirm: event.target.value }))} required className="bg-background" />
                 </div>
               </div>
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />{passwordRuleHint}</p>
-              <Button type="submit" variant="outline" disabled={passwordSaving} className="gap-2"><KeyRound className="h-4 w-4" />{passwordSaving ? '正在修改...' : '修改密码'}</Button>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />{passwordRuleHint}</p>
+                <Button type="submit" variant="outline" size="sm" disabled={passwordSaving} className="gap-2"><KeyRound className="h-4 w-4" />{passwordSaving ? '正在修改...' : '修改密码'}</Button>
+              </div>
             </form>
           </section>
 
@@ -749,9 +771,10 @@ function ProfileContent() {
               {error || message}
             </div>
           )}
+          </div>
         </div>
-        </div>
-      </main>
+      </div>
+      </div>
     </div>
   )
 }
