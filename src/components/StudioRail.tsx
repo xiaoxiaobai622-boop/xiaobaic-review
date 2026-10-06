@@ -79,13 +79,13 @@ export default function StudioRail() {
   const contactEmail = getContactEmail(user.email)
   const displayName = user.name || user.phone || contactEmail || '微信用户'
 
-  // 窄栏自己带这条左留白带（lg:pl-5 让图标坐在带正中），这样每个 /studio 页面看到的栏宽都一样：
-  // 以前只有项目页容器自己补了 lg:pl-5，团队管理等页面没有 ⇒ 同样的栏在那边看着窄一截。
-  // lg:w-[71.25px] ＝ 原来的 w-14(52.5) ＋ 原来那条 lg:mr-5(18.75) 的空带：整列足迹和图标绝对位置
-  // 一寸没动（判据 A16/A17），只是把空带并进栏面，右边不再留一条没涂装的白缝。
+  // 窄栏自己带这条左留白带，这样每个 /studio 页面看到的栏宽都一样：以前只有项目页容器自己补了
+  // lg:pl-5，团队管理等页面没有 ⇒ 同样的栏在那边看着窄一截。
+  // lg 档 56px：图标 44px 居中后中心在 x=28，内容区左缘跟着走到 56（判据 A16/A17 记的就是这两个数）。
+  // 根字号是 15px（globals.css:10），所以基础档 w-14 其实是 52.5px，只有窄屏用得到。
   return (
     <aside
-      className="sticky top-0 z-40 flex h-screen w-14 shrink-0 flex-col items-center gap-2 bg-background py-3 lg:w-[71.25px] lg:pl-5 lg:pr-5"
+      className="sticky top-0 z-40 flex h-screen w-14 shrink-0 flex-col items-center gap-2 bg-background py-3 lg:w-[56px]"
       style={{ backgroundImage: 'var(--rail-gradient)' }}
     >
       <TeamSwitcher compact />

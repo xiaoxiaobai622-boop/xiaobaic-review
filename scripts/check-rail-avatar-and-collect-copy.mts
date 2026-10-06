@@ -395,21 +395,21 @@ try {
 
   const hits = USERS.map(u => facts[u.key]?.hit)
   const rails = USERS.map(u => facts[u.key]?.railW)
-  // 栏宽不由我按像素凑：`w-14` 在 :root{font-size:15px}（globals.css:10）下是 52.5px，
-  // lg 那档的 71.25 ＝ 52.5 ＋ 并进栏面的那条 18.75 空带（原来挂在 lg:mr-5 上）。
+  // 栏宽不由我按像素凑：根字号 15px 下 `w-14` 是 52.5px，lg 档改成 56px（他要把窄栏收窄）。
   // 这里断的是「四个账号量到同一个数 ＋ 类一字没动」，真正钉住位置的是下面的 A16/A17。
   const hitOk = hits.every(h => h?.w === 44 && h?.h === 44)
     && new Set(rails).size === 1
-    && ['w-14', 'lg:w-[71.25px]', 'lg:pl-5', 'lg:pr-5'].every(c => String(facts.photo?.railCls).split(' ').includes(c))
+    && ['w-14', 'lg:w-[56px]'].every(c => String(facts.photo?.railCls).split(' ').includes(c))
   check(hitOk, 'A11 四个账号一致：命中区还是 44×44、四个账号量到同一个栏宽（栏宽是类给的，不是我按像素凑的）',
     `→ ${USERS.map(u => `${u.key}:${JSON.stringify(facts[u.key]?.hit)}@${facts[u.key]?.railW}`).join(' ')} 类 ${facts.photo?.railCls}`)
 
-  // 「右边那条空白填掉」不许变成「把内容挤走」，也不许挪图标：图标位置与内容区左缘都是他先前调过的。
+  // 「右边那条空白填掉」不许变成「把内容挤走」；栏宽这次是他主动要收窄的，所以内容区左缘和图标
+  // 中心都跟着挪了，挪到哪由这两个数钉住，别再让人顺手改回去。
   const nextLefts = USERS.map(u => Number(facts[u.key]?.nextLeft))
-  check(nextLefts.every(v => v === 71), 'A16 内容区左缘没动：窄栏这条足迹仍是 0→71px（52.5 栏宽 ＋ 18.75 空带，改的是涂装范围不是列宽）',
+  check(nextLefts.every(v => v === 56), 'A16 内容区左缘在 56px：窄栏 71→56 之后整列足迹就到这儿（他这次要收窄的结果）',
     `→ ${USERS.map((u, i) => `${u.key}:${nextLefts[i]}`).join(' ')}`)
   const cxs = USERS.map(u => Number(facts[u.key]?.avatarCx))
-  check(cxs.every(v => Math.abs(v - 36) <= 1), 'A17 图标绝对位置一寸没挪：头像中心 x=36（他调过的水平居中参照物）',
+  check(cxs.every(v => Math.abs(v - 28) <= 1), 'A17 头像中心 x=28：44px 图标在 56px 栏里居中（栏收窄后参照物从 36 挪到这里）',
     `→ ${USERS.map((u, i) => `${u.key}:${cxs[i]}`).join(' ')}`)
   check(USERS.every(u => Number(facts[u.key]?.railRight) >= Number(facts[u.key]?.nextLeft) - 2),
     'A18 窄栏画到边：栏面右缘顶到内容区，中间不再留那条 20px 空带',
