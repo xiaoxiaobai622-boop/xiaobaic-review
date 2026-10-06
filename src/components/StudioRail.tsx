@@ -133,7 +133,6 @@ export default function StudioRail() {
           <div className="absolute left-full bottom-0 ml-2 w-56 rounded-lg border border-border bg-card shadow-elevation-lg z-50">
             <div className="px-3 py-2.5 border-b border-border">
               <p className="text-sm font-medium truncate">{displayName}</p>
-              {user.name && contactEmail && <p className="text-xs text-muted-foreground truncate">{contactEmail}</p>}
               <p className="text-xs text-muted-foreground mt-0.5">
                 {user.teamRole === 'OWNER' ? '创建人' : user.teamRole === 'ADMIN' ? '管理员' : user.teamRole === 'MEMBER' ? '成员' : '未加入团队'}
               </p>
