@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isWechatWebConfigured, verifyWechatSession, WECHAT_SESSION_COOKIE } from '@/lib/wechat-auth'
+import { maskPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 
@@ -18,7 +19,8 @@ export async function GET(request: NextRequest) {
   // A scan that granted no nickname still has the linked account's name — the
   // mini-program flow writes 微信用户 there. Without this the reviewer identity
   // reaching the upload panel is null and 上传者 falls back to 匿名.
-  const displayName = identity.nickname || identity.user?.name || identity.user?.phone || '微信用户'
+  // The number becomes a label other people on the project can read, so it goes out masked.
+  const displayName = identity.nickname || identity.user?.name || maskPhone(identity.user?.phone) || '微信用户'
 
   return NextResponse.json({
     configured: isWechatWebConfigured(),

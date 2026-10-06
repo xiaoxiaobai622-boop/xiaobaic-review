@@ -5,6 +5,7 @@ import { canAccessProject, canAdministerProject, projectViewersWhere } from '@/l
 import { requireProjectWritable } from '@/lib/team-writeable'
 import { rateLimit } from '@/lib/rate-limit'
 import { logError } from '@/lib/logging'
+import { maskPhone } from '@/lib/phone-field'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
@@ -47,7 +48,8 @@ async function loadView(projectId: string, teamId: string, canManage: boolean) {
       avatarUrl: viewer.user.avatarUrl,
       // 联系方式只在管理员这侧给：普通成员看名单是为了认人，不是拿同事邮箱去群发。
       email: canManage ? viewer.user.email : null,
-      phone: canManage ? viewer.user.phone : null,
+      // 名单是批量展示，不是联系方式导出：手机号只给掩码。
+      phone: canManage ? maskPhone(viewer.user.phone) : null,
       source,
       canRemove: source === 'assigned',
     }
@@ -74,7 +76,7 @@ async function loadView(projectId: string, teamId: string, canManage: boolean) {
       name: row.user.name || row.user.username || null,
       avatarUrl: row.user.avatarUrl,
       email: row.user.email,
-      phone: row.user.phone,
+      phone: maskPhone(row.user.phone),
     })),
     memberCount: members.length,
     canManage,

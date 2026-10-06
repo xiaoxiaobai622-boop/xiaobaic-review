@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { maskPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
       content: a.content,
       createdAt: a.createdAt,
       broadcast: a.userId === null,
-      targetName: a.user?.name || a.user?.phone || a.user?.email || null,
+      targetName: a.user?.name || maskPhone(a.user?.phone) || a.user?.email || null,
       readCount: a._count.reads,
     })),
   })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAuth } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { maskPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
       user: {
         id: f.user.id,
         name: f.user.name,
-        contact: f.user.phone || f.user.email || null,
+        contact: maskPhone(f.user.phone) || f.user.email || null,
       },
     })),
   })

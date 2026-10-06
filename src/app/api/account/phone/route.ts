@@ -7,7 +7,7 @@ import { verifyPassword } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { hashPhoneCode, PHONE_REGEX, sendPhoneCode } from '@/lib/phone-auth'
 import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '@/lib/user-contact'
-import { phoneHashField, phoneWhereOrNone } from '@/lib/phone-field'
+import { hashPhone, phoneHashField, phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status })
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
       if (await prisma.user.findFirst({ where: phoneWhereOrNone(phone), select: { id: true } })) return fail('该手机号已绑定其他账号，请更换号码', 409)
       if (Number(await redis.eval(consume, 1, grantKey, grantValue)) !== 1) return fail('身份验证已过期，请重新验证', 403)
       const updated = await prisma.user.updateMany({
-        where: { id: user.id, phone: user.phone },
+        where: { id: user.id, phoneHash: hashPhone(user.phone) },
         data: { phone, ...phoneHashField(phone), ...(isPhoneOnlyEmail(user.email) ? { email: createPhoneOnlyEmail(phone) } : {}) },
       })
       if (!updated.count) return fail('手机号已发生变化，请刷新页面重试', 409)

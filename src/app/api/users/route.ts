@@ -7,7 +7,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createUserSchema } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { createPhoneOnlyEmail } from '@/lib/user-contact'
-import { hashPhone, phoneWhereOrNone } from '@/lib/phone-field'
+import { hashPhone, phoneWhereOrNone, withMaskedPhone } from '@/lib/phone-field'
 export const runtime = 'nodejs'
 
 // Prevent static generation for this route
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ users })
+    return NextResponse.json({ users: users.map(withMaskedPhone) })
   } catch (error) {
     return NextResponse.json(
       { error: usersMessages.unableToProcessRequest || 'Unable to process request' },
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
       select: USER_SUMMARY_SELECT,
     })
 
-    return NextResponse.json({ user }, { status: 201 })
+    return NextResponse.json({ user: withMaskedPhone(user) }, { status: 201 })
   } catch (error) {
     return NextResponse.json(
       { error: usersMessages.operationFailed || 'Operation failed' },

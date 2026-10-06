@@ -87,6 +87,8 @@ export default function UsersPage() {
     projectAccessScope: 'ALL_PROJECTS',
     projectIds: [] as string[],
   })
+  // 列表里别人的号只给掩码，展开要走带审计的接口。
+  const [revealingPhone, setRevealingPhone] = useState(false)
 
   // Password form
   const [passwordData, setPasswordData] = useState({
@@ -269,6 +271,20 @@ export default function UsersPage() {
     setShowEditUserModal(true)
   }
 
+  async function revealEditPhone() {
+    if (!editingUser) return
+    setRevealingPhone(true)
+    setError('')
+    try {
+      const data = await apiPost<{ phone: string | null }>(`/api/users/${editingUser.id}/reveal-phone`, {})
+      setEditFormData(prev => ({ ...prev, phone: data.phone || '' }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法获取手机号')
+    } finally {
+      setRevealingPhone(false)
+    }
+  }
+
   async function handleEditUser() {
     if (!editingUser || (!editFormData.email && !editFormData.phone)) {
       setError('邮箱和手机号至少保留一项')
@@ -281,7 +297,8 @@ export default function UsersPage() {
     try {
       await apiPatch(`/api/users/${editingUser.id}`, {
         email: editFormData.email,
-        phone: editFormData.phone || null,
+        // 掩码原样留着就是「这一栏没动」：提交它是写进一个假号码，提交空值等于解绑。
+        ...(editFormData.phone.includes('*') ? {} : { phone: editFormData.phone || null }),
         username: editFormData.username || null,
         name: editFormData.name || null,
         role: editFormData.role,
@@ -797,7 +814,19 @@ export default function UsersPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="editPhone">手机号</Label>
-              <Input id="editPhone" type="tel" inputMode="numeric" maxLength={11} placeholder="用于手机号登录" value={editFormData.phone} onChange={(e) => setEditFormData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))} autoComplete="off" />
+              <div className="relative">
+                <Input id="editPhone" type="tel" inputMode="numeric" maxLength={11} placeholder="用于手机号登录" className="pr-10" value={editFormData.phone} onChange={(e) => setEditFormData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))} autoComplete="off" />
+                <button
+                  type="button"
+                  onClick={() => void revealEditPhone()}
+                  disabled={!editFormData.phone || revealingPhone}
+                  title="查看完整号码（每次查看都记入安全审计）"
+                  aria-label="查看完整号码"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  {revealingPhone ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="editUsername">{t('username')}</Label>

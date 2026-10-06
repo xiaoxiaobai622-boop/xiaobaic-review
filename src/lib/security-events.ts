@@ -57,6 +57,9 @@ type SecurityEventType =
   | 'SECURITY_EVENTS_PURGED'
   | 'SECURITY_LOGGING_DISABLED'
 
+  // Personal Data Access Events
+  | 'PERSONAL_DATA_REVEALED'
+
 type SecurityEventSeverity = 'INFO' | 'WARNING' | 'CRITICAL'
 
 interface SecurityEventMetadata {
@@ -334,6 +337,12 @@ const SECURITY_EVENT_METADATA: Record<SecurityEventType, SecurityEventMetadata> 
     description: 'The security event logging switch was turned off. Recorded so a quiet stop of the audit trail is still visible.',
     category: 'Security',
     severity: 'CRITICAL',
+  },
+  PERSONAL_DATA_REVEALED: {
+    label: 'Phone Number Revealed',
+    description: 'A masked phone number was expanded to its full value. The number itself is not stored in the event, only who revealed whose and from where.',
+    category: 'Security',
+    severity: 'WARNING',
   },
 }
 

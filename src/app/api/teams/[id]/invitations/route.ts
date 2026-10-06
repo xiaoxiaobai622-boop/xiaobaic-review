@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import { randomBytes } from 'crypto'
-import { phoneHashField } from '@/lib/phone-field'
+import { phoneHashField, withMaskedPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,7 +34,7 @@ export async function GET(
       acceptedAt: true,
     },
   })
-  return NextResponse.json({ invites })
+  return NextResponse.json({ invites: invites.map(withMaskedPhone) })
 }
 
 export async function POST(
@@ -70,5 +70,5 @@ export async function POST(
     },
   })
 
-  return NextResponse.json({ invite }, { status: 201 })
+  return NextResponse.json({ invite: withMaskedPhone(invite) }, { status: 201 })
 }

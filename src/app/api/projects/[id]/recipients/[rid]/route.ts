@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
 import { logError } from '@/lib/logging'
+import { withMaskedPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 
@@ -98,7 +99,7 @@ export async function PATCH(
       await invalidateSessionsByEmail(currentRecipient.email)
     }
 
-    return NextResponse.json({ recipient })
+    return NextResponse.json({ recipient: withMaskedPhone(recipient) })
   } catch (error: any) {
     logError('Failed to update recipient:', error)
 

@@ -1,7 +1,18 @@
+import { hashPhone } from './phone-field'
+
 const PHONE_ONLY_EMAIL_DOMAIN = 'phone.local'
 
+/**
+ * Placeholder mailbox for an account that only has a phone number. It must not carry the
+ * number: that would move the plaintext into the email column and undo the encryption of the
+ * phone column. The digest prefix is deterministic, so re-deriving it for the same number
+ * yields the same address and the unique index behaves as it did before. `phone-` plus 40 hex
+ * stays inside the 64-character local part.
+ */
 export function createPhoneOnlyEmail(phone: string): string {
-  return `phone-${phone}@${PHONE_ONLY_EMAIL_DOMAIN}`
+  const digest = hashPhone(phone)
+  if (!digest) throw new Error('无法生成占位邮箱：手机号无效')
+  return `phone-${digest.slice(0, 40)}@${PHONE_ONLY_EMAIL_DOMAIN}`
 }
 
 export function isPhoneOnlyEmail(email: string | null | undefined): boolean {

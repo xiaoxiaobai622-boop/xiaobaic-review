@@ -6,6 +6,7 @@ import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
+import { withMaskedPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -107,7 +108,10 @@ export async function GET(
   }
 
   if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
-  const response = NextResponse.json({ team, currentRole: membership.role })
+  // 成员名单是批量展示：别人的号只给掩码，自己那行保持明文。
+  const members = team.members.map((member: any) =>
+    member.user?.id === authResult.id ? member : { ...member, user: withMaskedPhone(member.user) })
+  const response = NextResponse.json({ team: { ...team, members }, currentRole: membership.role })
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
   response.headers.set('Pragma', 'no-cache')
   response.headers.set('Expires', '0')

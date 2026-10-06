@@ -4,6 +4,7 @@ import { getAuthContext } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createCommentSchema, safeParseBody } from '@/lib/validation'
 import { getPrimaryRecipient } from '@/lib/recipients'
+import { maskPhone } from '@/lib/phone-field'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { sanitizeComment } from '@/lib/comment-sanitization'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -219,8 +220,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 署名会写进评论并被项目里其他人和客户看到，所以兜底用掩码号码，不留全号。
     const accountAuthorName = authContext.user.name?.trim()
-      || authContext.user.phone
+      || maskPhone(authContext.user.phone)
       || authContext.user.email
 
     // Enforce configurable max comment attachments

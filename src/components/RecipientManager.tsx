@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import { Mail, Phone, Edit, Trash2, Plus, Star, Check, Bell, BellOff, User } from 'lucide-react'
+import { Mail, Phone, Edit, Trash2, Plus, Star, Check, Bell, BellOff, User, Eye } from 'lucide-react'
 import { apiFetch, apiPost, apiPatch, apiDelete } from '@/lib/api-client'
 
 interface Recipient {
@@ -45,6 +45,8 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
   const [editEmail, setEditEmail] = useState('')
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
+  // 列表里的客户号码只是掩码，展开要走带审计的接口。
+  const [revealingPhone, setRevealingPhone] = useState(false)
 
   const loadRecipients = useCallback(async () => {
     setLoading(true)
@@ -71,6 +73,8 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
   const [companyContacts, setCompanyContacts] = useState<CompanyContact[]>([])
   const [showContactDropdown, setShowContactDropdown] = useState(false)
   const nameInputRef = useRef<HTMLDivElement>(null)
+  // 展开号码用的是编辑面板当前那一行，请求回来时得确认还是同一行。
+  const revealTargetRef = useRef<string | null>(null)
 
   useEffect(() => {
     async function loadCompanyContacts() {
@@ -182,6 +186,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
 
   const startEdit = (recipient: Recipient) => {
     setEditingId(recipient.id!)
+    revealTargetRef.current = recipient.id!
     setEditEmail(recipient.email || '')
     setEditName(recipient.name || '')
     setEditPhone(recipient.phone || '')
@@ -189,9 +194,26 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
 
   const cancelEdit = () => {
     setEditingId(null)
+    revealTargetRef.current = null
     setEditEmail('')
     setEditName('')
     setEditPhone('')
+  }
+
+  const revealEditPhone = async () => {
+    const targetId = revealTargetRef.current
+    if (!targetId) return
+    setRevealingPhone(true)
+    try {
+      const data = await apiPost<{ phone: string | null }>(
+        `/api/projects/${projectId}/recipients/${targetId}/reveal-phone`, {})
+      // 这一趟请求还没回来时面板可能已经换成了另一行：号码只写回它所属的那一行。
+      if (revealTargetRef.current === targetId) setEditPhone(data.phone || '')
+    } catch (error) {
+      onError(error instanceof Error ? error.message : '无法获取手机号')
+    } finally {
+      setRevealingPhone(false)
+    }
   }
 
   const saveEdit = async () => {
@@ -206,7 +228,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
       onError(t('invalidEmail'))
       return
     }
-    if (editPhone && !/^1[3-9]\d{9}$/.test(editPhone)) {
+    if (editPhone && !editPhone.includes('*') && !/^1[3-9]\d{9}$/.test(editPhone)) {
       onError('请输入正确的 11 位手机号')
       return
     }
@@ -215,7 +237,8 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
       await apiPatch(`/api/projects/${projectId}/recipients/${editingId}`, {
         name: editName || null,
         email: editEmail || null,
-        phone: editPhone || null,
+        // 掩码原样留着就是「这一栏没动」：提交它是写进一个假号码，提交空值等于解绑客户的手机号。
+        ...(editPhone.includes('*') ? {} : { phone: editPhone || null }),
       })
 
       cancelEdit()
@@ -277,7 +300,19 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor={`edit-phone-${recipient.id}`}>手机号</Label>
-                    <Input id={`edit-phone-${recipient.id}`} type="tel" inputMode="numeric" maxLength={11} value={editPhone} onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, ''))} placeholder="用于客户中心验证码登录" />
+                    <div className="relative">
+                      <Input id={`edit-phone-${recipient.id}`} type="tel" inputMode="numeric" maxLength={11} className="pr-10" value={editPhone} onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, ''))} placeholder="用于客户中心验证码登录" />
+                      <button
+                        type="button"
+                        onClick={() => void revealEditPhone()}
+                        disabled={!editPhone || revealingPhone}
+                        title="查看完整号码（每次查看都记入安全审计）"
+                        aria-label="查看完整号码"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor={`edit-email-${recipient.id}`}>{t('clientEmail')}</Label>

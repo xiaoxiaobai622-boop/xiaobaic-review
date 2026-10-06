@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
 import { canAccessProject } from '@/lib/project-access'
 import { getProjectRecipients, addRecipient } from '@/lib/recipients'
+import { withMaskedPhone } from '@/lib/phone-field'
 import { z } from 'zod'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -51,7 +52,7 @@ export async function GET(
     }
     const recipients = await getProjectRecipients(projectId)
 
-    return NextResponse.json({ recipients })
+    return NextResponse.json({ recipients: recipients.map(withMaskedPhone) })
   } catch (error) {
     logError('Failed to fetch recipients:', error)
     return NextResponse.json(
@@ -103,7 +104,7 @@ export async function POST(
     // Add recipient
     const recipient = await addRecipient(projectId, email, name, isPrimary, phone)
 
-    return NextResponse.json({ recipient }, { status: 201 })
+    return NextResponse.json({ recipient: withMaskedPhone(recipient) }, { status: 201 })
   } catch (error: any) {
     logError('Failed to add recipient:', error)
 

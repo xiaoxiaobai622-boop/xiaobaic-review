@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest, requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
+import { withMaskedPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,7 +26,7 @@ export async function GET(
       user: { select: { id: true, name: true, email: true, phone: true } },
     },
   })
-  return NextResponse.json({ requests })
+  return NextResponse.json({ requests: requests.map((entry) => ({ ...entry, user: withMaskedPhone(entry.user) })) })
 }
 
 export async function POST(

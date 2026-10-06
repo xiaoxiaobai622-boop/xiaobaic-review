@@ -13,7 +13,7 @@ import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
-import { hashPhone, phoneWhereOrNone } from '@/lib/phone-field'
+import { hashPhone, phoneWhereOrNone, withMaskedPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -78,7 +78,8 @@ export async function GET(
       )
     }
 
-    return NextResponse.json({ user })
+    // 自己的档案给明文，管理员看别人只给掩码：全号要走留痕的查看接口。
+    return NextResponse.json({ user: authResult.id === id ? user : withMaskedPhone(user) })
   } catch (error) {
     logError('Error fetching user:', error)
     // SECURITY: Generic message
@@ -338,7 +339,7 @@ export async function PATCH(
     }
 
     return NextResponse.json({
-      user,
+      user: authResult.id === id ? user : withMaskedPhone(user),
       message: securityMessage || usersMessages.userUpdatedSuccessfully || 'User updated successfully'
     })
   } catch (error) {
