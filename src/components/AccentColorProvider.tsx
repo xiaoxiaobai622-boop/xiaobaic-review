@@ -89,13 +89,11 @@ export function AccentColorProvider() {
       const isDark = root.classList.contains('dark')
       const hslValue = customTriplet ?? (isDark ? preset?.dark : preset?.light)
       if (!hslValue) return
-      const [h, s] = hslValue.split(' ')
       root.style.setProperty('--primary', hslValue)
       root.style.setProperty('--ring', hslValue)
       root.style.setProperty('--accent-foreground', hslValue)
-      // Visible background is the same hue pushed to an extreme: a pale wash in
-      // light mode, a deep tint in dark, so badges keep contrast against text.
-      root.style.setProperty('--primary-visible', isDark ? `${h} ${s} 20%` : `${h} ${s} 95%`)
+      // --primary-visible 故意不内联写：那层强调底洗归样式表，每套主题自己定值。
+      // 以前这里按强调色现算一枚 20%/95% 压上去，主题里挑好的数永远看不见（深色那枚 #32374c 就是这么没的）。
     }
 
     write()

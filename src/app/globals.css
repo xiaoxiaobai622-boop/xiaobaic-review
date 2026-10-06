@@ -10,23 +10,22 @@
     font-size: 15px;
 
     /* Base colors - light theme (soft grey instead of white) */
-    --background: 220 14% 92%;
+    --background: 228 30% 94.15%;
     --foreground: 0 0% 13%;
 
     /* The studio rail's pink wash is anchored to the bottom of the column, not
        stretched over 100vh — a full-height ramp turns the whole lower half of
        the sidebar pink. The span is his call, not mine: 260px was "too much
        pink", 110px (the bottom two icon slots) he asked to see at 130. #f3c1f5
-       is sampled off his shot, the far stop is each theme's own background.
-       Dark mode → none. */
+       is sampled off his shot, the far stop is each theme's own background. */
     --rail-gradient: linear-gradient(to top, #f3c1f5 0, hsl(var(--background)) 130px);
 
     /* Card colors - elevated surfaces (slightly lighter than background) */
-    --card: 220 14% 96%;
+    --card: 213 17% 95.55%;
     --card-foreground: 0 0% 13%;
 
     /* Popover colors */
-    --popover: 220 14% 96%;
+    --popover: 0 0% 100%;
     --popover-foreground: 0 0% 13%;
 
     /* Primary - Trust Navy */
@@ -41,7 +40,8 @@
     /* Muted - subtle backgrounds */
     --muted: 220 14% 89%;
     /* Small text sits here (1065 uses), so this is the AA floor for the whole
-       admin: 45% measured 3.93:1 on the light canvas, 40% gives 4.76:1.
+       admin: 45% measured 3.93:1 on the light canvas, 40% gives 4.92:1 (5.17 on
+       the card).
        frame.io's equivalent step (`--colors-text-tertiary`, 27 refs) is 4.78:1. */
     --muted-foreground: 0 0% 40%;
 
@@ -110,34 +110,38 @@
    */
   .dark {
     color-scheme: dark;
-    /* 画布：对标 base = grey-0 纯黑，栏面浮在它上面靠色差分层（缝就是画布） */
+    /* 深色这两档是他自己从屏幕上吸出来的数，别再拿对标的 CSS 字面值或旧截图来"纠正"：
+       页面底（也是 2px 缝与窄栏露出来的那层）＝ #000000；栏面/卡片/浮层＝ #1f2432。 */
     --background: 0 0% 0%;
     --foreground: 0 0% 100%;
-    --rail-gradient: none;
+    /* 这里刻意不再写 --rail-gradient: none（那是 875485a 关掉的）：粉洗直接吃 :root 那串，
+       它的远端是「本主题自己的画布」，深色下就收进纯黑——深浅两套的层次关系因此一致：
+       画布/缝最暗（#000000），栏面浮起一档（#1f2432），控件与悬浮选中再浮一档（#262a3b），
+       强调底洗再浮一档（#32374c）。 */
 
     /* Card colors - elevated dark surfaces */
-    --card: 227 23% 16%;
+    --card: 222 24% 15.75%;
     --card-foreground: 0 0% 100%;
 
-    /* Popover colors：对标 sheet-background 与 card 同色，深色下浮层不再比卡片亮一档 */
-    --popover: 227 23% 16%;
+    /* Popover：他自己点的 #13141c，比卡片暗一档（不再是"浮层与卡片同色"） */
+    --popover: 229 20% 9.1%;
     --popover-foreground: 0 0% 100%;
 
-    /* Primary - 对标品牌紫 #5b53ff */
+    /* Primary - 对标品牌紫（整数 HSL 到不了 #5b53ff，落地 #5a52ff） */
     --primary: 243 100% 66%;
     --primary-foreground: 0 0% 100%;
-    --primary-visible: 243 100% 20%;
+    --primary-visible: 227 21% 24.6%;
 
     /* Secondary - 控件面：grey-alpha-15 压在 card 上 */
-    --secondary: 228 20% 20%;
+    --secondary: 229 22% 19%;
     --secondary-foreground: 0 0% 100%;
 
     /* Muted - subtle dark backgrounds */
-    --muted: 228 20% 20%;
-    --muted-foreground: 232 12% 69%;
+    --muted: 229 22% 19%;
+    --muted-foreground: 233 11% 69%;
 
     /* Accent - 悬浮/选中面：对标 hover 与 pressed 是同一枚 grey-alpha-15；行内文字走 text-primary */
-    --accent: 228 20% 20%;
+    --accent: 229 22% 19%;
     --accent-foreground: 0 0% 100%;
 
     /* Success - #21c17b */
@@ -147,7 +151,7 @@
 
     /* Warning - #f0cd33（黄底配深字，压白字只有 1.56） */
     --warning: 49 86% 57%;
-    --warning-foreground: 227 23% 16%;
+    --warning-foreground: 229 26% 13%;
     --warning-visible: 49 86% 20%;
 
     /* Destructive - #f43350 */
@@ -161,8 +165,8 @@
     --info-visible: 223 100% 20%;
 
     /* Border and input - #fff@15% 压在 card 上 */
-    --border: 227 11% 28%;
-    --input: 227 11% 28%;
+    --border: 223 12% 28%;
+    --input: 223 12% 28%;
     --ring: 243 100% 66%;
 
     /* Shadows - adapted for dark mode */
@@ -182,38 +186,32 @@
    * Mint — the third choice in the theme toggle (`<html data-theme='mint'>`).
    * A light theme, so no `.dark` class.
    *
-   * Palette taken from a reference gradient the owner picked: leaf green
-   * hsl(130 30% 63%) fading through desaturated sage hsl(95 18% 78%) into warm
-   * white hsl(40 30% 92%). The gradient maps onto UI roles rather than being
-   * applied uniformly: the warm end is the canvas, the grey-green middle is
-   * chrome (nav rails, hover, inset rows, hairlines), the saturated green is
-   * kept for selection and the primary, and the type carries the deep sage.
-   * Distribution matters more than the values — dyeing --background the same
-   * green as the rail turns the whole app into glass.
+   * The canvas, card, accent and both foregrounds are the exact hexes the owner
+   * picked (#dff0e9 / #f5f5f5 / #d0dfd9 / #000000); the rest of the block is still
+   * the original reference gradient. Type is pure black, so labels on the primary
+   * are black too.
    *
-   * The admin's accent colour normally reaches --primary, --ring,
-   * --accent-foreground and --primary-visible as inline styles on <html>, which
-   * would outrank these rules; AccentColorProvider stops writing them while
-   * data-theme is 'mint' so the stylesheet wins. --primary is the reference
-   * green darkened (its literal #7fbb8a gives white labels only 2.1:1), which
-   * puts every text pair here at or above AA: white on primary 4.58, accent
-   * label on the selected pill 5.19, primary on --primary-visible 4.02,
-   * body on canvas 10.80, muted text on card 5.78.
+   * The admin's accent colour normally reaches --primary, --ring and
+   * --accent-foreground as inline styles on <html>, which would outrank these
+   * rules; AccentColorProvider stops writing them while data-theme is 'mint' so
+   * the stylesheet wins. Measured pairs: body on canvas 17.78, black label on
+   * --primary 4.61, accent label on --accent 5.22, muted text on card 5.29,
+   * --primary on --primary-visible 3.99 (large text / icons only).
    */
   :root[data-theme='mint'] {
     color-scheme: light;
 
-    --background: 40 33% 97%; /* #faf8f5 — warm end, a whisper not a wash */
-    --foreground: 128 24% 20%; /* #273f2a — the tint lives in the type */
+    --background: 155.29 36.17% 90.78%; /* #dff0e9 */
+    --foreground: 0 0% 0%; /* #000000 */
 
-    --card: 0 0% 100%;
-    --card-foreground: 128 24% 20%;
+    --card: 0 0% 96.08%; /* #f5f5f5 */
+    --card-foreground: 0 0% 0%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 128 24% 20%;
 
-    --primary: 128 27% 40%; /* #4a8252 — reference green, darkened for white labels */
-    --primary-foreground: 0 0% 100%;
+    --primary: 128 27% 40%; /* #4a8252 — reference green */
+    --primary-foreground: 0 0% 0%;
     --primary-visible: 125 34% 93%; /* #e7f3e8 */
 
     --secondary: 100 18% 88%; /* #dfe6db — grey-green middle: chrome, hover, inset rows */
@@ -222,7 +220,7 @@
     --muted: 100 18% 88%;
     --muted-foreground: 100 8% 38%; /* #5e6959 */
 
-    --accent: 125 26% 84%; /* #cce1cd — selection keeps the real green */
+    --accent: 156 18.99% 84.51%; /* #d0dfd9 */
     --accent-foreground: 128 26% 30%; /* #39603e */
 
     --border: 100 14% 82%; /* #cfd8cb */
