@@ -98,63 +98,72 @@
     --admin-header-height: 0px;
   }
 
-  /* Dark Mode Theme */
+  /*
+   * Dark Mode Theme — 值照抄 next.frame.io 的 `.theme-dark` ＋ `.brand-fio`（2026-10-04 从它的
+   * CSS bundle 里抓的字面量，不是肉眼调）：base grey-0 #000、card 与 sheet 同为 grey-12 #1f2332、
+   * 控件面/悬浮/按下都是 grey-alpha-15 #393d4f@35%、文字 #fff / #d4d6e6@75% / #bdc0d4@71%、
+   * 描边 grey-light-alpha-20 #fff@15%、品牌 #5b53ff、告警四色照它的 alert 档。
+   * 我们这套 token 是 HSL 三元组、不带 alpha，所以凡是"半透明压在栏面上"的值一律按压在
+   * card(#1f2332) 上算成实色：控件面 #282c3c、次级文字 #a7a9b9、描边 #404451。
+   * 对标自己也没有达标的一对：白字压 #21c17b 只有 2.34、压 #f0cd33 是 1.56（所以黄色那枚
+   * 的字仍是深色），这两处照抄字面值没偷偷调深，要调等他点单。
+   */
   .dark {
     color-scheme: dark;
-    /* Base colors - dark theme */
-    --background: 0 0% 7%;
-    --foreground: 0 0% 98%;
+    /* 画布：对标 base = grey-0 纯黑，栏面浮在它上面靠色差分层（缝就是画布） */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
     --rail-gradient: none;
 
     /* Card colors - elevated dark surfaces */
-    --card: 0 0% 12%;
-    --card-foreground: 0 0% 98%;
+    --card: 227 23% 16%;
+    --card-foreground: 0 0% 100%;
 
-    /* Popover colors */
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 98%;
+    /* Popover colors：对标 sheet-background 与 card 同色，深色下浮层不再比卡片亮一档 */
+    --popover: 227 23% 16%;
+    --popover-foreground: 0 0% 100%;
 
-    /* Primary - High-contrast blue */
-    --primary: 209 100% 60%;
+    /* Primary - 对标品牌紫 #5b53ff */
+    --primary: 243 100% 66%;
     --primary-foreground: 0 0% 100%;
-    --primary-visible: 209 100% 20%;
+    --primary-visible: 243 100% 20%;
 
-    /* Secondary - Dark gray */
-    --secondary: 240 4% 20%;
-    --secondary-foreground: 0 0% 98%;
+    /* Secondary - 控件面：grey-alpha-15 压在 card 上 */
+    --secondary: 228 20% 20%;
+    --secondary-foreground: 0 0% 100%;
 
     /* Muted - subtle dark backgrounds */
-    --muted: 240 4% 20%;
-    --muted-foreground: 0 0% 65%;
+    --muted: 228 20% 20%;
+    --muted-foreground: 232 12% 69%;
 
-    /* Accent - elevated surface */
-    --accent: 240 4% 20%;
-    --accent-foreground: 209 100% 60%;
+    /* Accent - 悬浮/选中面：对标 hover 与 pressed 是同一枚 grey-alpha-15；行内文字走 text-primary */
+    --accent: 228 20% 20%;
+    --accent-foreground: 0 0% 100%;
 
-    /* Success - Bright Green (#30D158) */
-    --success: 145 73% 52%;
+    /* Success - #21c17b */
+    --success: 154 71% 44%;
     --success-foreground: 0 0% 100%;
-    --success-visible: 145 73% 20%;
+    --success-visible: 154 71% 20%;
 
-    /* Warning - Bright Orange (#FF9F0A) */
-    --warning: 37 100% 52%;
-    --warning-foreground: 0 0% 13%;
-    --warning-visible: 37 100% 20%;
+    /* Warning - #f0cd33（黄底配深字，压白字只有 1.56） */
+    --warning: 49 86% 57%;
+    --warning-foreground: 227 23% 16%;
+    --warning-visible: 49 86% 20%;
 
-    /* Destructive - Bright Red (#FF453A) */
-    --destructive: 3 100% 61%;
+    /* Destructive - #f43350 */
+    --destructive: 351 90% 58%;
     --destructive-foreground: 0 0% 100%;
-    --destructive-visible: 3 100% 20%;
+    --destructive-visible: 351 90% 20%;
 
-    /* Info - Bright Light Blue */
-    --info: 200 100% 60%;
+    /* Info - #3f74ff */
+    --info: 223 100% 62%;
     --info-foreground: 0 0% 100%;
-    --info-visible: 200 100% 20%;
+    --info-visible: 223 100% 20%;
 
-    /* Border and input - more visible in dark mode */
-    --border: 240 4% 25%;
-    --input: 240 4% 25%;
-    --ring: 209 100% 60%;
+    /* Border and input - #fff@15% 压在 card 上 */
+    --border: 227 11% 28%;
+    --input: 227 11% 28%;
+    --ring: 243 100% 66%;
 
     /* Shadows - adapted for dark mode */
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
