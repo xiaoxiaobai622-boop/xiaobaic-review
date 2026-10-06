@@ -8,12 +8,12 @@ import { invalidateAdminSessions } from '@/lib/session-invalidation'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '@/lib/user-contact'
+import { isPhoneOnlyEmail } from '@/lib/user-contact'
 import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
-import { hashPhone, phoneWhereOrNone, withMaskedPhone } from '@/lib/phone-field'
+import { createPhoneOnlyEmail, hashPhone, phoneWhereOrNone, withMaskedPhone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'

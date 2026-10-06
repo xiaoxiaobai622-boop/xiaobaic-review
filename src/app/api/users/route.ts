@@ -6,8 +6,7 @@ import { validateAccountPassword } from '@/lib/password-policy'
 import { rateLimit } from '@/lib/rate-limit'
 import { validateRequest, createUserSchema } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { createPhoneOnlyEmail } from '@/lib/user-contact'
-import { hashPhone, phoneWhereOrNone, withMaskedPhone } from '@/lib/phone-field'
+import { createPhoneOnlyEmail, hashPhone, phoneWhereOrNone, withMaskedPhone } from '@/lib/phone-field'
 export const runtime = 'nodejs'
 
 // Prevent static generation for this route

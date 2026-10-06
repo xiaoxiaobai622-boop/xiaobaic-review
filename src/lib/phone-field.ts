@@ -1,4 +1,5 @@
 import { decrypt, encrypt, hmacIndexValue } from './encryption'
+import { PHONE_ONLY_EMAIL_DOMAIN } from './user-contact'
 
 // Phone numbers are personal data that must not sit in the database as plain text, but they
 // are also looked up by equality (login, "this number is already bound", recipient portals).
@@ -25,6 +26,19 @@ export function hashPhone(raw: string | null | undefined): string | null {
 /** Write payload for the digest column. Clearing the number must clear the digest too. */
 export function phoneHashField(raw: string | null | undefined): { phoneHash: string | null } {
   return { phoneHash: hashPhone(raw) }
+}
+
+/**
+ * Placeholder mailbox for an account that only has a phone number. It must not carry the
+ * number: that would move the plaintext into the email column and undo the encryption of the
+ * phone column. The digest prefix is deterministic, so re-deriving it for the same number
+ * yields the same address and the unique index behaves as it did before. `phone-` plus 40 hex
+ * stays inside the 64-character local part.
+ */
+export function createPhoneOnlyEmail(phone: string): string {
+  const digest = hashPhone(phone)
+  if (!digest) throw new Error('无法生成占位邮箱：手机号无效')
+  return `phone-${digest.slice(0, 40)}@${PHONE_ONLY_EMAIL_DOMAIN}`
 }
 
 /**

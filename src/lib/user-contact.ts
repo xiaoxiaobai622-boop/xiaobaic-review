@@ -1,19 +1,8 @@
-import { hashPhone } from './phone-field'
+// Pure string shaping only: this module is imported by client components (StudioRail and
+// friends read getContactEmail to label the signed-in user), so nothing here may reach
+// src/lib/encryption.ts — that would ship the server's key validation into the browser bundle.
 
-const PHONE_ONLY_EMAIL_DOMAIN = 'phone.local'
-
-/**
- * Placeholder mailbox for an account that only has a phone number. It must not carry the
- * number: that would move the plaintext into the email column and undo the encryption of the
- * phone column. The digest prefix is deterministic, so re-deriving it for the same number
- * yields the same address and the unique index behaves as it did before. `phone-` plus 40 hex
- * stays inside the 64-character local part.
- */
-export function createPhoneOnlyEmail(phone: string): string {
-  const digest = hashPhone(phone)
-  if (!digest) throw new Error('无法生成占位邮箱：手机号无效')
-  return `phone-${digest.slice(0, 40)}@${PHONE_ONLY_EMAIL_DOMAIN}`
-}
+export const PHONE_ONLY_EMAIL_DOMAIN = 'phone.local'
 
 export function isPhoneOnlyEmail(email: string | null | undefined): boolean {
   return Boolean(email?.endsWith(`@${PHONE_ONLY_EMAIL_DOMAIN}`))

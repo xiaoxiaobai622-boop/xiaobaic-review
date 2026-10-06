@@ -37,7 +37,13 @@ async function getBcrypt() {
 // Skip validation during build or if explicitly disabled
 const skipValidation = process.env.SKIP_ENV_VALIDATION === '1'
 
-if (!skipValidation && !process.env.ENCRYPTION_KEY) {
+// This module can be dragged into a browser bundle by an indirect import (src/lib/db.ts reaches
+// it from shared modules such as src/i18n/locale.ts). The check is about the server's own
+// environment, so it must not run there: in a client bundle NODE_ENV is 'production' and
+// ENCRYPTION_KEY is always absent, which used to throw on load and blank the whole page tree.
+const isServer = typeof window === 'undefined'
+
+if (isServer && !skipValidation && !process.env.ENCRYPTION_KEY) {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('ENCRYPTION_KEY must be set in production. See README for setup instructions.')
   } else {

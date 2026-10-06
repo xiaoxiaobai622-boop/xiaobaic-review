@@ -6,8 +6,8 @@ import { getRedis } from '@/lib/redis'
 import { verifyPassword } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { hashPhoneCode, PHONE_REGEX, sendPhoneCode } from '@/lib/phone-auth'
-import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '@/lib/user-contact'
-import { hashPhone, phoneHashField, phoneWhereOrNone } from '@/lib/phone-field'
+import { isPhoneOnlyEmail } from '@/lib/user-contact'
+import { createPhoneOnlyEmail, hashPhone, phoneHashField, phoneWhereOrNone } from '@/lib/phone-field'
 
 export const runtime = 'nodejs'
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status })

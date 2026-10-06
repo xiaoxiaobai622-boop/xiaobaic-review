@@ -1,6 +1,6 @@
 import { prisma } from '../src/lib/db'
-import { hashPhone } from '../src/lib/phone-field'
-import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '../src/lib/user-contact'
+import { createPhoneOnlyEmail, hashPhone } from '../src/lib/phone-field'
+import { isPhoneOnlyEmail } from '../src/lib/user-contact'
 
 /**
  * 把库里已经是明文手机号的历史行改成密文。

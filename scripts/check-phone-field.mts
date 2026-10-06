@@ -1,6 +1,6 @@
 import { prisma, INCLUDE_DELETED } from '../src/lib/db'
-import { hashPhone, normalizePhone, phoneHashField, wherePhone, phoneWhereOrNone, maskPhone, withMaskedPhone, IMPOSSIBLE_PHONE_HASH } from '../src/lib/phone-field'
-import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '../src/lib/user-contact'
+import { createPhoneOnlyEmail, hashPhone, normalizePhone, phoneHashField, wherePhone, phoneWhereOrNone, maskPhone, withMaskedPhone, IMPOSSIBLE_PHONE_HASH } from '../src/lib/phone-field'
+import { isPhoneOnlyEmail } from '../src/lib/user-contact'
 import { revealPhoneNumber } from '../src/lib/personal-data-reveal'
 
 /**
