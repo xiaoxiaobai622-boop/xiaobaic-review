@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Building2, Plus, Search, Users, Trash2, Edit, FolderKanban, User, Mail, ChevronRight, RefreshCw, AlertCircle, Check, Globe } from 'lucide-react'
 import { apiFetch, apiPost, apiPatch, apiDelete } from '@/lib/api-client'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { SUPPORTED_LOCALES, LOCALE_NAMES } from '@/i18n/locale'
+import { SUPPORTED_LOCALES, LOCALE_NAMES } from '@/i18n/supported-locales'
 import { logError } from '@/lib/logging'
 
 interface ClientContact {

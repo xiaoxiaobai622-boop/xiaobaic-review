@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { SUPPORTED_LOCALES, LOCALE_NAMES } from '@/i18n/locale'
+import { SUPPORTED_LOCALES, LOCALE_NAMES } from '@/i18n/supported-locales'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'

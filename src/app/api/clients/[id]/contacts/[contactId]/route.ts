@@ -5,7 +5,8 @@ import { getRequestedTeamId, resolveActiveTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeText } from '@/lib/security/html-sanitization'
 import { safeParseBody } from '@/lib/validation'
-import { SUPPORTED_LOCALES, getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { SUPPORTED_LOCALES } from '@/i18n/supported-locales'
 import { logError } from '@/lib/logging'
 
 

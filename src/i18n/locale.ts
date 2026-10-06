@@ -1,14 +1,5 @@
 import { prisma } from '@/lib/db'
 
-export const SUPPORTED_LOCALES = ['zh', 'en', 'nl', 'de'] as const
-
-export const LOCALE_NAMES: Record<string, string> = {
-  zh: '简体中文',
-  en: 'English',
-  nl: 'Nederlands',
-  de: 'Deutsch',
-}
-
 // The configured locale is read on nearly every API request. Keep the value
 // process-local for a short period while coalescing concurrent cache misses.
 // A short TTL keeps admin language changes reasonably fresh without putting a

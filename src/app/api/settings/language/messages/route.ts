@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { SUPPORTED_LOCALES, getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { SUPPORTED_LOCALES } from '@/i18n/supported-locales'
 
 export const runtime = 'nodejs'
 
