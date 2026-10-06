@@ -1,5 +1,5 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '../src/lib/db'
+import { hashPhone } from '../src/lib/phone-field'
 import { createPhoneOnlyEmail, isPhoneOnlyEmail } from '../src/lib/user-contact'
 
 /**
@@ -68,38 +68,42 @@ async function main() {
     if (stillPlain !== 0) { console.log('    ✗ 还有明文残留，别往下走'); await prisma.$disconnect(); process.exit(1) }
   }
 
-  // 占位邮箱以前写作 `phone-<号码>@phone.local`，那是手机号的第二份明文（email 列没有加密）。
-  // 换成摘要形式。判据不猜格式，而是「用这行的手机号重算一遍占位邮箱」，与库里存的不一致才改写，
-  // 所以同一个人重跑一次就是 no-op。
-  const stalePlaceholderEmails = async () => prisma.user.findMany({
-    where: { email: { startsWith: 'phone-' } },
-    select: { id: true, email: true, phone: true },
-  }).then(rows => rows.filter(row => row.phone
-    && isPhoneOnlyEmail(row.email)
-    && row.email !== createPhoneOnlyEmail(row.phone)))
+  // email 列以前会把手机号本身写进去，生产实测有两种形状：`phone-<号码>@phone.local`（占位账号）与
+  // `qa-phone-<号码>@mle6x.test`（测试账号）。所以判据不认前缀，只认「这行的邮箱里出现了它自己的号码」，
+  // 改写时保留原形状、把那段数字换成摘要——同一个人重跑一次就是 no-op。
+  const phoneDigits = (phone: string | null) => (phone ? phone.replace(/\D/g, '') : '')
+  const emailCarriesOwnPhone = (row: { email: string | null; phone: string | null }) => {
+    const digits = phoneDigits(row.phone)
+    return digits.length >= 7 && !!row.email && row.email.includes(digits)
+  }
+  const scrubbedEmail = (row: { email: string; phone: string | null }) => {
+    const digits = phoneDigits(row.phone)
+    if (isPhoneOnlyEmail(row.email)) return createPhoneOnlyEmail(row.phone!)
+    return row.email.replace(digits, hashPhone(digits)!.slice(0, 40))
+  }
 
-  const placeholderTotal = await prisma.user.count({ where: { email: { startsWith: 'phone-', endsWith: '@phone.local' } } })
-  const orphanPlaceholders = await prisma.user.findMany({
-    where: { email: { startsWith: 'phone-', endsWith: '@phone.local' }, phone: null },
-    select: { id: true },
-  })
-  const staleEmails = await stalePlaceholderEmails()
+  const emailRows = await prisma.user.findMany({ select: { id: true, email: true, phone: true } })
+  const staleEmails = emailRows.filter(row => emailCarriesOwnPhone(row))
+  // 没有手机号却有 11 位连续数字的邮箱 ⇒ 换算不出摘要，脚本不猜，点名中止。
+  const orphans = emailRows.filter(row => !row.phone && /\d{11}/.test(row.email || ''))
+
   if (!dryRun) {
     for (const row of staleEmails) {
-      await prisma.user.update({ where: { id: row.id }, data: { email: createPhoneOnlyEmail(row.phone!) } })
+      await prisma.user.update({ where: { id: row.id }, data: { email: scrubbedEmail(row as { email: string; phone: string | null }) } })
     }
   }
-  console.log(`  占位邮箱：phone- 占位共 ${placeholderTotal} 行，${dryRun ? '待改写（没写库）' : '需改写'} ${staleEmails.length} 行`)
-  if (orphanPlaceholders.length) {
-    console.log(`  ✗ 有 ${orphanPlaceholders.length} 行占位邮箱没有手机号可换算（${orphanPlaceholders.slice(0, 5).map(r => r.id).join(', ')}），号码仍留在 email 里，需人工处理，中止`)
+  console.log(`  邮箱带号码：${dryRun ? '待改写' : '已改写'} ${staleEmails.length} 行（其中占位邮箱 ${staleEmails.filter(r => isPhoneOnlyEmail(r.email)).length} 行）`)
+  if (orphans.length) {
+    console.log(`  ✗ 有 ${orphans.length} 行邮箱里躺着 11 位数字但这行没绑手机号（${orphans.slice(0, 5).map(r => r.id).join(', ')}），换算不出摘要，需人工处理，中止`)
     await prisma.$disconnect()
     process.exit(1)
   }
 
   if (dryRun) { await prisma.$disconnect(); process.exit(0) }
 
-  if ((await stalePlaceholderEmails()).length) {
-    console.log('  ✗ 占位邮箱改写后仍有带号码的，别往下走')
+  const recheckEmails = await prisma.user.findMany({ select: { id: true, email: true, phone: true } })
+  if (recheckEmails.filter(row => emailCarriesOwnPhone(row)).length) {
+    console.log('  ✗ 邮箱改写后仍带号码，别往下走')
     await prisma.$disconnect()
     process.exit(1)
   }
