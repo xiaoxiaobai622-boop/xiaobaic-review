@@ -49,6 +49,8 @@ export function useCommentManagement({
   const [optimisticComments, setOptimisticComments] = useState<CommentWithReplies[]>([])
   const [newComment, setNewComment] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<'PICTURE' | 'AUDIO' | 'SUBTITLE' | 'EDITING' | 'OTHER' | null>(null)
+  // 批注可见范围（对标 frame.io 的 公共/内部）：只影响共享端能否看到，isInternal 的来源语义不动。
+  const [commentVisibility, setCommentVisibility] = useState<'PUBLIC' | 'INTERNAL'>('PUBLIC')
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null) // Internal: still use seconds for video player integration
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -463,6 +465,7 @@ export function useCommentManagement({
       authorName: commentAuthorName,
       authorEmail: isInternalComment ? adminUser?.email || null : null,
       category: selectedCategory,
+      visibility: commentVisibility,
       isInternal: isInternalComment,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -499,6 +502,7 @@ export function useCommentManagement({
         timecode,
         content: commentContent,
         category: selectedCategory,
+        visibility: commentVisibility,
       }
 
       if (annotationForComment) {
@@ -673,6 +677,8 @@ export function useCommentManagement({
     comments,
     newComment,
     selectedCategory,
+    commentVisibility,
+    setCommentVisibility,
     selectedTimestamp,
     selectedTimecodeEnd,
     isSelectingTimecodeEnd,

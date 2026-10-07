@@ -142,7 +142,12 @@ export async function GET(request: NextRequest) {
     })
 
     // Sanitize the response data
-    const sanitizedComments = allComments.map((comment: any) =>
+    // 内部可见范围（visibility=INTERNAL）的批注对共享链接查看者隐藏；工作室成员（管理员或登录者）全可见。
+    const visibleComments = isAdmin || isAuthenticated
+      ? allComments
+      : allComments.filter((comment: any) => comment.visibility !== 'INTERNAL')
+
+    const sanitizedComments = visibleComments.map((comment: any) =>
       sanitizeComment(
         comment,
         isAdmin,
@@ -211,6 +216,7 @@ export async function POST(request: NextRequest) {
       assetIds,
       annotations,
       category,
+      visibility,
     } = validation.data
 
     if (!authContext.user) {
@@ -355,6 +361,9 @@ export async function POST(request: NextRequest) {
         authorEmail: finalAuthorEmail,
         category: category || null,
         isInternal,
+        // 可见范围只有工作室登录者能选（公开/内部）；共享链接端一律公开。
+        // 注意别用 isInternal 承载这个开关：它驱动 Apprise 推送和评论队列类型，见上面的守卫注释。
+        visibility: !authContext.shareContext && visibility === 'INTERNAL' ? 'INTERNAL' : 'PUBLIC',
         parentId: parentId || null,
         userId: authContext.user?.id || null,
         annotations: annotations || undefined,

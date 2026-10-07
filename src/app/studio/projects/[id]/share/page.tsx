@@ -1123,6 +1123,7 @@ export default function AdminSharePage() {
                   recipients={project.recipients || []}
                   shareToken={null}
                   showShortcutsButton={true}
+                  showComposerCategoryPicker={false}
                   timestampDisplayMode={timestampDisplayMode}
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}

@@ -3,7 +3,7 @@
 import { memo, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
-import { Trash2, Brush, Check } from 'lucide-react'
+import { Trash2, Brush, Check, Users } from 'lucide-react'
 import DOMPurify from 'isomorphic-dompurify'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachments from './CommentAttachments'
@@ -221,7 +221,16 @@ function MessageBubble({
             )}
 
             <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                {(comment as any).visibility === 'INTERNAL' && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                    title="仅限拥有权限的成员查看"
+                  >
+                    <Users className="h-3 w-3" />
+                    内部
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground">
                   {formatMessageTime(comment.createdAt)}
                 </span>

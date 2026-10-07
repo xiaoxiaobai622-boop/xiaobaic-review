@@ -445,6 +445,9 @@ export const createCommentSchema = z.object({
   authorName: safeStringSchema(1, 255).optional().nullable(),
   authorEmail: emailSchema.optional().nullable(),
   category: z.enum(['PICTURE', 'AUDIO', 'SUBTITLE', 'EDITING', 'OTHER']).optional().nullable(),
+  // 批注可见范围：PUBLIC = 成员与共享链接查看者均可见；INTERNAL = 仅限拥有权限的成员查看。
+  // 只有工作室登录者的选择会被采纳；共享链接端由服务端强制 PUBLIC（route 里守卫）。
+  visibility: z.enum(['PUBLIC', 'INTERNAL']).optional(),
   recipientId: cuidSchema.optional().nullable(),
   parentId: cuidSchema.optional(),
   assetIds: z.array(z.string()).max(50).optional(),

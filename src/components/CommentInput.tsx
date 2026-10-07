@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
-import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square } from 'lucide-react'
+import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square, Smile, Globe, Users, ChevronDown, Check } from 'lucide-react'
 import { formatCommentTimestamp, secondsToTimecode } from '@/lib/timecode'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachmentButton from './CommentAttachmentButton'
+import EmojiPicker from './EmojiPicker'
 import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
 import { cn } from '@/lib/utils'
 import type { DrawingTool } from '@/types/annotations'
@@ -23,6 +24,10 @@ interface CommentInputProps {
   onCategoryChange?: (category: CommentCategory | null) => void
   /** 默认渲染；页内批注栏显式关掉，审片页不受影响。 */
   showCategoryPicker?: boolean
+  /** 批注可见范围（对标 frame.io 的 公共/内部）；只在工作室侧渲染，共享端由服务端强制公开。 */
+  visibility?: 'PUBLIC' | 'INTERNAL'
+  onVisibilityChange?: (visibility: 'PUBLIC' | 'INTERNAL') => void
+  showVisibilitySelector?: boolean
   /** 「Enter 发送」提示 + 发送钮搬进输入框内、和左下角画笔同一圈；页内批注栏传 true，审片页保持原样。 */
   sendInsideComposer?: boolean
 
@@ -75,6 +80,9 @@ export default function CommentInput({
   selectedCategory = null,
   onCategoryChange,
   showCategoryPicker = true,
+  visibility = 'PUBLIC',
+  onVisibilityChange,
+  showVisibilitySelector = true,
   sendInsideComposer = false,
   selectedTimestamp,
   selectedVideoFps,
@@ -105,6 +113,60 @@ export default function CommentInput({
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null)
+  // 表情面板与可见范围下拉的开关；点击输入框外自动收起。
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const [visOpen, setVisOpen] = useState(false)
+  const composerRef = useRef<HTMLDivElement | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const emojiBtnRef = useRef<HTMLButtonElement | null>(null)
+  const visBtnRef = useRef<HTMLButtonElement | null>(null)
+  const emojiPanelRef = useRef<HTMLDivElement | null>(null)
+  const visPanelRef = useRef<HTMLDivElement | null>(null)
+
+  function toggleEmojiPicker() {
+    setEmojiOpen(open => !open)
+    setVisOpen(false)
+  }
+
+  function toggleVisibilityDropdown() {
+    setVisOpen(open => !open)
+    setEmojiOpen(false)
+  }
+
+  // 注意：不要监听 scroll 收起面板——内嵌浏览器的滚动事件非常频繁（容器微调也触发），
+  // 面板会在打开后约 1 秒被误关（实测）。收起只靠点击外部。
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent | PointerEvent) {
+      const target = event.target as Node
+      const insideComposer = composerRef.current?.contains(target)
+      const insideEmojiPanel = emojiPanelRef.current?.contains(target)
+      const insideVisPanel = visPanelRef.current?.contains(target)
+      if (!insideComposer && !insideEmojiPanel && !insideVisPanel) {
+        setEmojiOpen(false)
+        setVisOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [])
+
+  function insertEmoji(emoji: string) {
+    const el = textareaRef.current
+    if (!el) {
+      onCommentChange(newComment + emoji)
+      return
+    }
+    // 在光标处插入；没有选区就落在光标后。
+    const start = el.selectionStart ?? newComment.length
+    const end = el.selectionEnd ?? start
+    const next = newComment.slice(0, start) + emoji + newComment.slice(end)
+    onCommentChange(next)
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + emoji.length
+      el.setSelectionRange(pos, pos)
+    })
+  }
 
   useEffect(() => {
     const clearActiveTool = () => setActiveDrawingTool(null)
@@ -245,9 +307,10 @@ export default function CommentInput({
             </div>
           )}
 
-          <div className="flex flex-col gap-1">
+          <div className="relative flex flex-col gap-1">
             <div className="relative">
               <Textarea
+                ref={textareaRef}
                 placeholder={t('typeMessage')}
                 value={newComment}
                 onChange={(e) => onCommentChange(e.target.value)}
@@ -346,6 +409,19 @@ export default function CommentInput({
                     maxFiles={maxCommentAttachments}
                   />
                 )}
+                {onVisibilityChange && !commentsDisabled && (
+                  <button
+                    ref={emojiBtnRef}
+                    type="button"
+                    onClick={toggleEmojiPicker}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="添加表情符号"
+                    aria-expanded={emojiOpen}
+                    title="添加表情符号"
+                  >
+                    <Smile className="h-4 w-4" />
+                  </button>
+                )}
                 {timestampLabel && !currentVideoRestricted && newComment.trim().length > 0 && (
                   <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-foreground">
                     <button
@@ -375,6 +451,21 @@ export default function CommentInput({
                   : 'flex h-7 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1'}
               />
               <div className="flex shrink-0 items-center gap-1.5">
+                {showVisibilitySelector && onVisibilityChange && (
+                  <button
+                    ref={visBtnRef}
+                    type="button"
+                    onClick={toggleVisibilityDropdown}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent"
+                    aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
+                    aria-expanded={visOpen}
+                    title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}
+                  >
+                    {visibility === 'INTERNAL' ? <Users className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+                    <span>{visibility === 'INTERNAL' ? '内部' : '公共'}</span>
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                )}
                 {!sendInsideComposer && (
                   <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
                 )}
@@ -396,6 +487,55 @@ export default function CommentInput({
                   </Button>
                 )}
               </div>
+
+              {/* 表情面板与可见范围下拉：absolute 挂在输入区上方（外壳 overflow 已放开）。 */}
+              {emojiOpen && (
+                <div ref={emojiPanelRef} className="absolute bottom-full left-0 z-50 mb-1">
+                  <EmojiPicker
+                    onSelect={insertEmoji}
+                    onClose={() => setEmojiOpen(false)}
+                  />
+                </div>
+              )}
+              {visOpen && (
+                <div
+                  ref={visPanelRef}
+                  className="absolute bottom-full right-0 z-50 mb-1 w-64 rounded-xl border border-border bg-popover p-1 shadow-lg"
+                  role="menu"
+                  aria-label="批注可见范围"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { onVisibilityChange?.('PUBLIC'); setVisOpen(false) }}
+                    className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted"
+                  >
+                    <Globe className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2 text-sm font-medium">
+                        公开评论
+                        {visibility === 'PUBLIC' && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">所有成员及共享链接查看者均可见</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { onVisibilityChange?.('INTERNAL'); setVisOpen(false) }}
+                    className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted"
+                  >
+                    <Users className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2 text-sm font-medium">
+                        内部评论
+                        {visibility === 'INTERNAL' && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">仅限拥有权限的成员查看</span>
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           {(attachmentError || attachmentNotice) && (

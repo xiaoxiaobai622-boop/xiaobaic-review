@@ -49,6 +49,10 @@ interface CommentSectionProps {
   showInfoButton?: boolean
   /** 标签这条线整体关掉（头部筛选下拉 + 输入框下那排胶囊）；页内批注栏传 false，审片页保持原样。 */
   showCategoryPicker?: boolean
+  /** 只关输入框下面的那排分类胶囊；头部「全部标签」筛选不受影响。默认跟随 showCategoryPicker。 */
+  showComposerCategoryPicker?: boolean
+  /** 批注可见范围选择器（公开/内部）：共享链接客户端页传 false——服务端对共享端一律强制公开。 */
+  showVisibilitySelector?: boolean
   /** 「Enter 发送」提示 + 发送钮搬进输入框内、和画笔同一排；页内批注栏传 true，审片页保持原样。 */
   sendInsideComposer?: boolean
   onMobileExpandedChange?: (expanded: boolean) => void
@@ -79,6 +83,8 @@ export default function CommentSection({
   showToggleButton = false,
   showInfoButton = true,
   showCategoryPicker = true,
+  showComposerCategoryPicker,
+  showVisibilitySelector = true,
   sendInsideComposer = false,
   onMobileExpandedChange,
   isReviewAuthenticated = false,
@@ -133,6 +139,8 @@ export default function CommentSection({
     handleAttachmentErrorChange,
     handleStartDrawing,
     handleSetTimecodeEnd,
+    commentVisibility,
+    setCommentVisibility,
   } = useCommentManagement({
     projectId,
     initialComments,
@@ -557,7 +565,8 @@ export default function CommentSection({
         </div>
 
         {/* Input Area - Desktop and non-collapsible mobile */}
-        {composerTarget && createPortal(<div className="flex-shrink-0 overflow-hidden rounded-[6px]">
+        {/* overflow-visible：表情面板/可见范围下拉要从输入区向上冒出来，裁剪壳会把它们剪没。 */}
+        {composerTarget && createPortal(<div className="flex-shrink-0 rounded-[6px]">
           <CommentInput
           newComment={newComment}
           onCommentChange={handleCommentChange}
@@ -565,9 +574,11 @@ export default function CommentSection({
           loading={loading}
           selectedCategory={selectedCategory}
           onCategoryChange={handleCategoryChange}
-          showCategoryPicker={showCategoryPicker}
-          sendInsideComposer={sendInsideComposer}
-          selectedTimestamp={selectedTimestamp}
+          showCategoryPicker={showComposerCategoryPicker ?? showCategoryPicker}
+          visibility={commentVisibility}
+          onVisibilityChange={setCommentVisibility}
+          showVisibilitySelector={showVisibilitySelector}
+          sendInsideComposer={sendInsideComposer}          selectedTimestamp={selectedTimestamp}
           selectedVideoFps={selectedVideoFps}
           selectedVideoDurationSeconds={currentVideoDuration}
           timestampDisplayMode={timestampDisplayMode}
