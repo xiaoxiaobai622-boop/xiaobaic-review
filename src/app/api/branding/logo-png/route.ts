@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getFilePath } from '@/lib/storage'
+import { getFilePath, fileExists, downloadFile } from '@/lib/storage'
 import { buildLogoSvg } from '@/lib/brand'
 import fs from 'fs/promises'
+import type { Readable } from 'node:stream'
 import sharp from 'sharp'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -25,6 +26,12 @@ function pngResponse(png: Buffer): NextResponse {
   })
 }
 
+async function readAll(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks)
+}
+
 /**
  * Serve logo as PNG for email clients
  * Uses custom uploaded logo if available, otherwise the built-in product mark
@@ -35,16 +42,9 @@ export async function GET() {
   const settingsMessages = messages?.settings || {}
 
   try {
-    const customLogoPath = getFilePath(STORAGE_PATH)
-    let hasCustomLogo = false
-    try {
-      await fs.access(customLogoPath)
-      hasCustomLogo = true
-    } catch {
-      // File doesn't exist
-    }
-    
-    if (hasCustomLogo) {
+    // Read through the storage abstraction: the upload writes there, so probing
+    // the container's own disk made an uploaded logo invisible in S3 mode.
+    if (await fileExists(STORAGE_PATH)) {
       const pngPath = getFilePath(CACHE_PATH)
       try {
         const cachedPng = await fs.readFile(pngPath)
@@ -53,7 +53,7 @@ export async function GET() {
         // No cached PNG
       }
 
-      const svgData = await fs.readFile(customLogoPath)
+      const svgData = await readAll(await downloadFile(STORAGE_PATH))
       const pngBuffer = await sharp(svgData)
         .resize({ height: 88, withoutEnlargement: false })
         .png()
