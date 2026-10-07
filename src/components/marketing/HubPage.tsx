@@ -34,7 +34,7 @@ export async function hubMetadata(group: HubGroup): Promise<Metadata> {
       title: hub.title,
       description: hub.description,
       url,
-      images: [{ url: '/brand/logo.png', width: 256, height: 256, alt: BRAND.zh }],
+      images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
     },
     robots: { index: true, follow: true },
   }

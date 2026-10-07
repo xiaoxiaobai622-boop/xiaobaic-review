@@ -18,9 +18,9 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: BRAND.zh,
       locale: 'zh_CN',
       url: site,
-      images: [{ url: '/brand/logo.png', width: 256, height: 256, alt: BRAND.zh }],
+      images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
     },
-    twitter: { card: 'summary', title: BRAND.zh, images: ['/brand/logo.png'] },
+    twitter: { card: 'summary_large_image', title: BRAND.zh, images: ['/og/brand-1200x630.png'] },
     robots: { index: true, follow: true },
   }
 }

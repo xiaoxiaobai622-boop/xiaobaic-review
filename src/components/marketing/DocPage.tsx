@@ -36,7 +36,7 @@ export async function docMetadata(group: string, slug: string): Promise<Metadata
       // `resolve-metadata.js` 的 `case 'openGraph'` 是整体替换，不是深合并：这一页一旦带
       // openGraph，layout 那份（含 images）就整块被顶掉，og:image 会直接消失。所以 images
       // 必须在页级再写一遍，和 `(marketing)/layout.tsx` 保持同一张图。
-      images: [{ url: '/brand/logo.png', width: 256, height: 256, alt: BRAND.zh }],
+      images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
     },
     robots: { index: true, follow: true },
   }

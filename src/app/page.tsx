@@ -21,7 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
       locale: 'zh_CN',
       url: `${site}/`,
       // 与 `(marketing)/layout.tsx` 同一张图；换成 1200×630 的分享卡片图要另做一张素材。
-      images: [{ url: '/brand/logo.png', width: 256, height: 256, alt: BRAND.zh }],
+      images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
     },
   }
 }

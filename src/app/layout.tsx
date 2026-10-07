@@ -41,17 +41,21 @@ export async function generateMetadata(): Promise<Metadata> {
         shortcut: customFavicon,
       }
     : {
-        icon: [{ url: '/brand/logo.png', type: 'image/png' }],
-        apple: [
-          { url: '/brand/logo.png', sizes: '256x256', type: 'image/png' },
+        icon: [
+          { url: '/brand/icon.svg', type: 'image/svg+xml' },
+          { url: '/brand/logo-192.png', sizes: '192x192', type: 'image/png' },
         ],
-        shortcut: '/brand/logo.png',
+        apple: [{ url: '/brand/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+        shortcut: '/brand/icon.svg',
       }
 
   return {
     title: { default: BRAND.tabTitle, template: BRAND.titleTemplate },
     description: BRAND.description,
     robots: { index: true, follow: true },
+    // 挂在根 layout 是因为 Google 的资源型验证要求整站每页都带这枚 meta；它是公开的
+    // （渲染在每页 <head>），不是凭据。去掉这行等于让 Search Console 的验证状态失效。
+    verification: { google: 'jcbUCYdaa4CZ9pyjSOvZ5vQhZRC2tfHjwTarSqENXuo' },
     manifest: '/manifest.json',
     icons,
     appleWebApp: {

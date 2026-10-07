@@ -21,7 +21,7 @@ export async function BrandLd() {
           alternateName: BRAND.en,
           url: site,
           description: BRAND.description,
-          logo: { '@type': 'ImageObject', '@id': `${site}/#logo`, url: `${site}/brand/logo.png` },
+          logo: { '@type': 'ImageObject', '@id': `${site}/#logo`, url: `${site}/brand/logo-512.png` },
         }}
       />
       <JsonLd
