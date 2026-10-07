@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { BRAND } from '@/lib/marketing/brand'
+import { BrandLd } from '@/components/marketing/BrandLd'
 
 /**
  * 营销路由的 metadata 基座：绝对 URL 只在 `(marketing)` 内取（根 layout 每请求都跑，
@@ -32,6 +33,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function MarketingLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="flex min-h-dvh flex-col bg-[#f4f5f7] text-[#171a20]">
+      <BrandLd />
       <header className="border-b border-[#dfe2e7] bg-white">
         <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-5">
           <Link href="/" className="font-semibold text-[15px]">{BRAND.zh}</Link>

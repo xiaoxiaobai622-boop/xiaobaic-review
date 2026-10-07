@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { escapeHtml, getDoc, loadDocs, type MarketingDoc } from '@/lib/marketing/content'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { BRAND } from '@/lib/marketing/brand'
+import { HUBS } from '@/lib/marketing/hubs'
 import { MarkdownBody } from '@/components/marketing/MarkdownBody'
 import { JsonLd } from '@/components/marketing/JsonLd'
 
@@ -29,6 +30,9 @@ export async function docMetadata(group: string, slug: string): Promise<Metadata
       description: doc.description,
       url,
       publishedTime: doc.updatedOn,
+      // 同一个日期填两个槽：抓取器（含大模型的回答引擎）看的是 `modified_time`，只给
+      // `published_time` 会被读成"这篇写完就没动过"。
+      modifiedTime: doc.updatedOn,
       // `resolve-metadata.js` 的 `case 'openGraph'` 是整体替换，不是深合并：这一页一旦带
       // openGraph，layout 那份（含 images）就整块被顶掉，og:image 会直接消失。所以 images
       // 必须在页级再写一遍，和 `(marketing)/layout.tsx` 保持同一张图。
@@ -65,6 +69,8 @@ export async function DocPage({
   const related = doc.related
     .map((key) => docs.get(key))
     .filter((item): item is MarketingDoc => item !== undefined)
+  const site = await getSiteUrlFromRequest()
+  const url = `${site}/${group}/${slug}`
 
   return (
     <article className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
@@ -114,6 +120,33 @@ export async function DocPage({
           </ul>
         </nav>
       )}
+
+      {/* 作者/发布方按 `@id` 指回 `BrandLd` 那个节点，不再各页复制一份组织信息。
+          `datePublished` 与 `dateModified` 同值：文稿只有"最后核对于"这一个日期，没有独立的上线日，
+          编一个发布日就是给模型喂假数据。 */}
+      <JsonLd
+        value={{
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          '@id': `${url}#article`,
+          headline: doc.h1,
+          name: doc.title,
+          description: doc.description,
+          inLanguage: 'zh-CN',
+          datePublished: doc.updatedOn,
+          dateModified: doc.updatedOn,
+          author: { '@id': `${site}/#organization` },
+          publisher: { '@id': `${site}/#organization` },
+          isPartOf: {
+            '@type': 'CollectionPage',
+            '@id': `${site}/${group}#hub`,
+            url: `${site}/${group}`,
+            name: HUBS[group].title,
+          },
+          mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+          url,
+        }}
+      />
 
       <JsonLd
         value={{

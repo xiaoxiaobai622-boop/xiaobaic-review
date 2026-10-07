@@ -49,7 +49,7 @@ export async function generateMetadata(): Promise<Metadata> {
       }
 
   return {
-    title: { default: BRAND.zh, template: BRAND.titleTemplate },
+    title: { default: BRAND.tabTitle, template: BRAND.titleTemplate },
     description: BRAND.description,
     robots: { index: true, follow: true },
     manifest: '/manifest.json',

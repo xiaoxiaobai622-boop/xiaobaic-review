@@ -57,15 +57,26 @@ for (const p of [...PAGES.map(x => ({ ...x, kind: 'page' })), ...HUBS.map(path =
   has(body, /<meta property="og:image"/, `${p.path} og:image`)
   has(body, /<meta property="og:url"/, `${p.path} og:url`)
   has(body, /<html[^>]*lang="zh"/, `${p.path} lang=zh`)
+  has(body, /application\/ld\+json/, `${p.path} 有 JSON-LD`)
+  // CSP 是 nonce 制（`src/proxy.ts`），内联脚本不带 nonce 就是浏览器直接拒执行——图谱等于没写。
+  const ldTags = body.match(/<script[^>]*application\/ld\+json[^>]*>/g) || []
+  report(ldTags.length > 0 && ldTags.every((t) => /nonce=/.test(t)), `${p.path} 每块 JSON-LD 都带 nonce`)
+  has(body, /"@type":"Organization"/, `${p.path} 有 Organization 节点（品牌实体锚点）`)
+  has(body, /"@type":"WebSite"/, `${p.path} 有 WebSite 节点`)
   if (p.kind === 'page') {
     has(body, new RegExp(`<h1[^>]*>${esc(p.h1)}`), `${p.path} H1 正确`)
     for (const h2 of p.h2) has(body, new RegExp(`<h2[^>]*>${esc(h2)}`), `${p.path} H2「${h2}」`)
     has(body, /href="\/login"/, `${p.path} 有指向 /login 的 CTA`)
-    has(body, /application\/ld\+json/, `${p.path} 有 JSON-LD`)
+    has(body, /"@type":"Article"/, `${p.path} 有 Article 节点`)
+    has(body, /"@type":"FAQPage"/, `${p.path} 有 FAQPage 节点`)
+    has(body, /<meta property="article:modified_time"/, `${p.path} 有 article:modified_time`)
     // 旧包名只禁在对外可见的内容里。根布局会把 next-intl 字典整包塞进 <script>，其中键名 `viTransfer`
     // 是应用自身的 i18n 键（值已是 FrameReview），不属于内容页文案；所以只扫正文与 JSON-LD。
     const visible = body.replace(/<script(?![^>]*application\/ld\+json)[\s\S]*?<\/script>/g, '')
     report(!/vitransfer/i.test(visible), `${p.path} 不含 vitransfer`)
+  } else {
+    has(body, /"@type":"SoftwareApplication"/, `${p.path} 有 SoftwareApplication 节点`)
+    has(body, /"@type":"BreadcrumbList"/, `${p.path} 有 BreadcrumbList 节点`)
   }
 }
 
@@ -86,6 +97,26 @@ report(sm.status === 200 && /<urlset/.test(sm.body), 'sitemap.xml 是合法 XML'
 for (const p of [...PAGES.map(x => x.path), ...HUBS]) {
   report(sm.body.includes(`<loc>${SITE}${p}</loc>`), `sitemap 含 ${p}`)
 }
+
+// 大模型抓取器（GPTBot / OAI-SearchBot / PerplexityBot / ClaudeBot）读的两样东西：
+// 页面里的 schema.org 图谱，和站点的 /llms.txt 目录。目录整份由六篇 frontmatter 生成，
+// 所以这里的断言同时也是"目录没和文稿脱节"。
+const llms = await html('/llms.txt')
+report(llms.status === 200, '/llms.txt 返回 200')
+report((llms.res?.headers.get('content-type') ?? '').startsWith('text/plain'), '/llms.txt 是 text/plain')
+report(llms.body.startsWith('# 逐帧审阅（FrameReview）'), '/llms.txt 首行是品牌名')
+report(!/<\/?[a-z][a-z0-9]*>/i.test(llms.body), '/llms.txt 里没有 HTML 标记')
+for (const p of [...PAGES.map(x => x.path), ...HUBS, '/']) {
+  report(llms.body.includes(`${SITE}${p}`), `/llms.txt 收录 ${p}`)
+}
+report(llms.body.includes('老版本会被新传的那版顶掉、看不到了吗？'), '/llms.txt 带文稿里的 FAQ 问句')
+
+const home = await html('/')
+report(home.status === 200 && /"@type":"Organization"/.test(home.body), '首页有 Organization 节点')
+// 首页此前整页没有 canonical 也没有 og:*（www 与 apex 两份 200 同内容，没有主 URL 信号）。
+report(home.status === 200 && new RegExp(`<link rel="canonical" href="${esc(SITE)}/"\\/?>`).test(home.body), '首页 canonical 指向 SITE/')
+report(home.body.includes('<meta property="og:url"'), '首页有 og:url')
+report(home.body.includes('<meta property="og:image"'), '首页有 og:image')
 
 console.log(failed ? `\n${failed} 项失败` : '\n全部通过')
 process.exit(failed ? 1 : 0)
