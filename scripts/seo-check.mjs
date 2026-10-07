@@ -117,6 +117,8 @@ report(home.status === 200 && /"@type":"Organization"/.test(home.body), '首页�
 report(home.status === 200 && new RegExp(`<link rel="canonical" href="${esc(SITE)}/"\\/?>`).test(home.body), '首页 canonical 指向 SITE/')
 report(home.body.includes('<meta property="og:url"'), '首页有 og:url')
 report(home.body.includes('<meta property="og:image"'), '首页有 og:image')
+// Google 站长验证靠这枚 meta；根 layout 一改就容易静默丢掉，掉了验证状态就废。
+report(home.body.includes('<meta name="google-site-verification"'), '首页有 google-site-verification')
 
 console.log(failed ? `\n${failed} 项失败` : '\n全部通过')
 process.exit(failed ? 1 : 0)
