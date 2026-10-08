@@ -1,27 +1,34 @@
+/*
+ * 营销首页（固定深色）。视觉世界照 frame.io/zh-cn 首页实测：
+ * 画布近黑 #05050a，每章压一层淡紫玻璃（对标实测 rgba(157,157,255,.05) 压在黑上），
+ * 章与章之间透画布当缝；主标 80px 级、字距收到 -0.03em（对标 -0.045em，中文照抄会挤），
+ * 产品截图放大到右出血并装进描边玻璃面板。首页不吃访问者存的主题（见 src/lib/theme.ts）。
+ */
+
 .page {
   position: relative;
   min-height: 100svh;
-  background: #0a0a12;
-  color: #fff;
+  background: #05050a;
+  color: #fcfcfc;
   letter-spacing: 0;
+  color-scheme: dark;
 }
 
-/* ── Hero 区：紫色渐变（Frame.io 式），含导航 + hero + 平台 4 列 ── */
+/* ── 首屏区：近黑 + 极淡紫环境层 ────────────────────────────── */
 
 .heroZone {
   position: relative;
-  overflow: hidden;
+  overflow: clip;
   background:
-    radial-gradient(1100px 520px at 78% -8%, rgba(96, 78, 200, 0.28), transparent 62%),
-    radial-gradient(900px 620px at -12% 68%, rgba(70, 56, 170, 0.22), transparent 60%),
-    linear-gradient(178deg, #191736 0%, #100f20 46%, #05050a 100%);
+    radial-gradient(1200px 620px at 82% -14%, rgba(104, 86, 214, 0.16), transparent 66%),
+    linear-gradient(178deg, #0a0912 0%, #07070d 52%, #05050a 100%);
 }
 
 .heroZone::after {
   content: '';
   position: absolute;
   inset: 0;
-  opacity: 0.07;
+  opacity: 0.05;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.3'/%3E%3C/svg%3E");
   pointer-events: none;
 }
@@ -31,29 +38,23 @@
   z-index: 1;
 }
 
-/* ── ColorBends 光带背景层（reactbits 风格）── */
+/* 装饰层铺满整块首屏（对标 frame.io 那枚 1696×1347 的 HeroGradient_canvas）。
+   但强度必须带方向：紫色光带整屏等强度就会变成玻璃球。这里用一条斜向线性蒙版把亮带推到
+   画面中间偏右（素材格那一圈），主标题那一侧压到只剩一点边——径向蒙版会在下沿留出一道
+   看得见的弧边，线性不会。H46 量的就是「字压在画出来的像素上」还剩多少对比。
+   pointer-events 保持 none：指针事件由 ColorBends 自己在 window 上听。 */
 
 .bendsWrap {
   position: absolute;
   inset: 0;
   z-index: 0;
-}
-
-.bendsWrap::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(10, 9, 26, 0.55) 0%,
-    rgba(10, 9, 26, 0.12) 26%,
-    rgba(5, 5, 10, 0.18) 68%,
-    rgba(5, 5, 10, 0.88) 100%
-  );
+  opacity: 0.78;
+  filter: saturate(0.92);
+  mask-image: linear-gradient(104deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.78) 24%, #000 56%, rgba(0, 0, 0, 0.84) 82%, rgba(0, 0, 0, 0.62) 100%);
   pointer-events: none;
 }
 
-/* ── 头顶公告条：与导航之间有分割 ── */
+/* ── 公告条（会滚走，导航随后粘住） ────────────────────────── */
 
 .promoBar {
   display: flex;
@@ -61,9 +62,9 @@
   justify-content: center;
   gap: 10px;
   padding: 9px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(10, 9, 26, 0.55);
-  color: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(9, 8, 20, 0.6);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 12.5px;
 }
 
@@ -80,7 +81,61 @@
   color: #c3caff;
 }
 
-/* ── 下拉菜单 ── */
+/* ── 导航：粘顶，滚动后压一层模糊背板 ──────────────────────── */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  width: min(1520px, calc(100% - 48px));
+  height: 68px;
+  margin: 0 auto;
+  border-bottom: 1px solid transparent;
+  transition: background 220ms ease, border-color 220ms ease, backdrop-filter 220ms ease;
+}
+
+.headerStuck {
+  width: 100%;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: rgba(5, 5, 10, 0.82);
+  backdrop-filter: blur(16px) saturate(1.4);
+}
+
+/* 粘顶时把内层重新收成原来的宽度，模糊背板才敢通栏 */
+.headerInner {
+  display: flex;
+  align-items: center;
+  width: min(1520px, calc(100% - 48px));
+  height: 68px;
+  margin: 0 auto;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  font-size: 16.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.brandMark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+}
+
+.headerNav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 0 0 0 40px;
+}
 
 .navItem {
   position: relative;
@@ -114,7 +169,7 @@
   padding: 7px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  background: rgba(16, 16, 30, 0.97);
+  background: rgba(12, 12, 22, 0.97);
   box-shadow: 0 18px 44px rgba(4, 3, 16, 0.55);
   opacity: 0;
   visibility: hidden;
@@ -146,62 +201,6 @@
   color: #fff;
 }
 
-/* 头部胶囊比 hero CTA 小一号 */
-.header .pillPrimary {
-  height: 40px;
-  padding: 0 18px;
-  font-size: 13.5px;
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  width: min(1520px, calc(100% - 48px));
-  height: 64px;
-  margin: 0 auto;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: #fff;
-  font-size: 16.5px;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.brandMark {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(12, 12, 24, 0.4);
-  backdrop-filter: blur(10px);
-}
-
-.headerNav {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  margin: 0 0 0 40px;
-}
-
-.headerLink {
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 13.5px;
-  font-weight: 520;
-  text-decoration: none;
-  transition: color 160ms ease;
-}
-
-.headerLink:hover {
-  color: #fff;
-}
-
 .headerRight {
   display: flex;
   align-items: center;
@@ -209,17 +208,21 @@
   margin-left: auto;
 }
 
+.headerLink,
 .loginLink {
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 13.5px;
-  font-weight: 550;
+  font-weight: 540;
   text-decoration: none;
   transition: color 160ms ease;
 }
 
+.headerLink:hover,
 .loginLink:hover {
   color: #fff;
 }
+
+/* ── 胶囊按钮 ──────────────────────────────────────────────── */
 
 .pillPrimary {
   display: inline-flex;
@@ -232,6 +235,7 @@
   color: #131320;
   font-size: 14.5px;
   font-weight: 620;
+  letter-spacing: -0.005em;
   text-decoration: none;
   transition: transform 160ms ease, background 160ms ease;
 }
@@ -248,9 +252,9 @@
   justify-content: center;
   gap: 7px;
   padding: 0 24px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 100px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
   font-size: 14.5px;
   font-weight: 550;
@@ -260,7 +264,14 @@
 
 .pillGhost:hover {
   border-color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.11);
+}
+
+/* 头部那枚比首屏 CTA 小一号 */
+.header .pillPrimary {
+  height: 40px;
+  padding: 0 18px;
+  font-size: 13.5px;
 }
 
 .pillPrimary:focus-visible,
@@ -268,7 +279,9 @@
 .brand:focus-visible,
 .headerLink:focus-visible,
 .loginLink:focus-visible,
-.footerIcp:focus-visible {
+.navBtn:focus-visible,
+.footerIcp:focus-visible,
+.footerCol a:focus-visible {
   outline: 2px solid #8a93ff;
   outline-offset: 3px;
   border-radius: 4px;
@@ -279,95 +292,92 @@
   border-radius: 999px;
 }
 
+/* 选中文字也是这套深色的一部分：浏览器默认那层蓝紫在暗底上会糊成一片。 */
+.page ::selection {
+  background: rgba(138, 147, 255, 0.32);
+  color: #fff;
+}
+
+/* ── 栅格：对标实测两把尺 ─────────────────────────────────────
+   frame.io/zh-cn 在 1711 宽的窗口里：正文栅格 1080（左右各空 18%），
+   首屏/视觉用宽栅格（左右各空 10%），章节标题栏只有 436、正文栏 252。
+   上一版我把内容铺到 97% 屏宽，那就是「像文档不像杂志」的根因。 */
+
+.wrapWide {
+  width: min(1240px, calc(100% - 2 * clamp(20px, 10vw, 200px)));
+  margin-inline: auto;
+}
+
+.wrapText {
+  width: min(1120px, calc(100% - 2 * clamp(20px, 18vw, 320px)));
+  margin-inline: auto;
+}
+
+/* ── 首屏构图：文案 42% / 产品图 58%（16:9），图右出血 ───────── */
+
 .hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
   align-items: center;
-  gap: 48px;
-  width: 100%;
-  padding: 96px 0 120px;
-  padding-left: max(48px, calc((100vw - 1520px) / 2 + 48px));
-}
-
-.heroCopy > * {
-  animation: riseIn 700ms cubic-bezier(0.22, 0.8, 0.32, 1) both;
-}
-
-.heroCopy > *:nth-child(2) { animation-delay: 90ms; }
-.heroCopy > *:nth-child(3) { animation-delay: 180ms; }
-
-.heroShot {
-  animation: shotIn 900ms cubic-bezier(0.22, 0.8, 0.32, 1) 200ms both;
-}
-
-@keyframes riseIn {
-  from { opacity: 0; transform: translateY(22px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes shotIn {
-  from { opacity: 0; transform: translateY(30px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  gap: clamp(32px, 5vw, 88px);
+  width: min(1520px, calc(100% - 2 * clamp(20px, 10vw, 200px)));
+  margin-inline: auto;
+  min-height: calc(100svh - 168px);
+  padding: 84px 0 96px;
 }
 
 .heroCopy h1 {
   margin: 0;
-  font-size: clamp(46px, 5.4vw, 104px);
+  /* 42% 那一栏在 1440 上约 490px：字号超过 ~66px，「让每一条意见，」就要断成四行 */
+  font-size: clamp(38px, 4.5vw, 66px);
   font-weight: 600;
   line-height: 1.06;
-  letter-spacing: -0.02em;
-  text-shadow: 0 8px 40px rgba(10, 8, 30, 0.4);
+  letter-spacing: -0.04em;
+  text-wrap: balance;
 }
 
 .heroCopy p {
-  max-width: 540px;
-  margin: 22px 0 0;
-  color: #dedfee;
-  font-size: 16px;
-  line-height: 1.85;
+  max-width: 34ch;
+  margin: 24px 0 0;
+  color: rgba(236, 236, 255, 0.68);
+  font-size: 15px;
+  line-height: 1.5;
   text-wrap: pretty;
 }
 
 .heroActions {
   display: flex;
   gap: 12px;
-  margin-top: 30px;
+  margin-top: 34px;
 }
 
 .heroShot {
   position: relative;
-  margin-right: -10px;
-  filter: drop-shadow(0 40px 80px rgba(5, 4, 18, 0.6));
-}
-
-/* 截图轻微透视，右侧出血 */
-.heroShot::before {
-  content: '';
-  position: absolute;
-  inset: -6% -10%;
-  background: radial-gradient(55% 55% at 55% 45%, rgba(130, 118, 255, 0.28), transparent 70%);
-  filter: blur(8px);
-  pointer-events: none;
-}
-
-.heroShot {
-  margin-right: -56px;
+  /* 顶到浏览器右边缘出血：负右边距正好等于 .hero 那一栏右侧的全部留白
+     （容器外的 clamp(20px,10vw,200px) 一半 ＋ 自身内边距）。min() 里的 1520px 必须和
+     .hero 自己那枚 min() 同值，否则 1920 那一档会算多、把媒体顶出视口。
+     对标 frame.io 首屏那枚产品画面——它顶到右边缘、底部被裁，不是装进卡片里的一张图。 */
+  margin-right: calc((min(1520px, 100vw - 2 * clamp(20px, 10vw, 200px)) - 100vw) / 2);
 }
 
 .heroShot .shotImg {
   position: relative;
   display: block;
-  width: 101%;
+  width: 100%;
   height: auto;
-  border-radius: 14px;
-  transform: perspective(1600px) rotateY(-5deg) rotateX(1.2deg);
-  box-shadow: 0 30px 90px rgba(4, 3, 16, 0.7);
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  object-position: left top;
+  /* 对标实测：媒体圆角只有 5px、无描边、无阴影；右边出血了所以只留左侧两个圆角 */
+  border: 0;
+  border-radius: 5px 0 0 5px;
+  box-shadow: none;
 }
 
 .heroCue {
   position: absolute;
-  bottom: 18px;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 3;
@@ -376,8 +386,8 @@
   height: 38px;
   place-items: center;
   border-radius: 999px;
-  color: rgba(255, 255, 255, 0.66);
-  animation: cueFloat 2.4s ease-in-out infinite;
+  color: rgba(255, 255, 255, 0.6);
+  animation: cueFloat 2.6s ease-in-out infinite;
   transition: color 160ms ease;
 }
 
@@ -385,55 +395,206 @@
   color: #fff;
 }
 
-/* ── 平台 4 列（承接紫色渐变） ── */
+/* ── 平台能力四列（仍属首屏区） ────────────────────────────── */
 
 .platformIntro {
-  width: min(1520px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 24px 0 104px;
+  padding: 12px 0 112px;
 }
 
 .eyebrow {
-  margin: 0 0 18px;
+  margin: 0 0 20px;
   color: #9aa3ff;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 620;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.02em;
 }
 
 .duoHead {
+  max-width: 15em;
   margin: 0;
-  font-size: clamp(28px, 3.2vw, 52px);
+  font-size: clamp(28px, 3.2vw, 48px);
   font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
 }
 
 .duoHead .muted {
-  color: rgba(234, 234, 255, 0.48);
+  color: rgba(236, 236, 255, 0.42);
 }
 
 .sectionLead {
-  max-width: 560px;
-  margin: 14px 0 0;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 14px;
-  line-height: 1.8;
+  max-width: 30ch;
+  margin: 18px 0 0;
+  color: rgba(236, 236, 255, 0.62);
+  font-size: 15px;
+  line-height: 1.5;
   text-wrap: pretty;
 }
 
+/* ── 章节：玻璃面板 + 2px 缝透画布 ─────────────────────────── */
+
+.chapter {
+  padding: 2px;
+  background: #05050a;
+}
+
+.panel {
+  border-radius: 26px;
+  background:
+    radial-gradient(1000px 520px at var(--lx, 88%) var(--ly, -6%), rgba(157, 157, 255, 0.18), transparent 68%),
+    #0c0d16;
+}
+
+/* 章与章之间换光源：对标实测每一屏自带一个 radial 光源、圆心不固定（他们第一屏是 at 0% 1.38%）。
+   滚起来光斑跟着换位置，这才是「背景跟着滚动走」的实际来处——不是一条分割线，也不是描边。 */
+.panelAlt {
+  --lx: 6%;
+  --ly: 104%;
+}
+
+.panelInner {
+  width: min(1320px, calc(100% - 2 * clamp(20px, 12vw, 240px)));
+  margin: 0 auto;
+  padding: clamp(72px, 9vw, 128px) 0;
+}
+
+.intro {
+  width: min(100%, 460px);
+}
+
+.panel .pillGhost {
+  margin-top: 28px;
+}
+
+.shotImg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 并排行：窄文案栏 + 大视觉，对标 SideBySide 那一档 800px 行高 */
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(32px, 5vw, 88px);
+  min-height: clamp(520px, 46vw, 760px);
+  margin-top: clamp(48px, 6vw, 88px);
+}
+
+/* 反向行要连列宽一起换过来：只改 order 的话，文案会掉进那条 1fr 的宽轨。 */
+.rowFlip {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+}
+
+.rowFlip > .rowCopy {
+  order: 2;
+}
+
+.rowFlip > .rowShot {
+  order: 1;
+}
+
+.rowCopy h3 {
+  margin: 0;
+  font-size: clamp(22px, 2vw, 28px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.rowCopy > p {
+  max-width: 34ch;
+  margin: 14px 0 0;
+  color: rgba(236, 236, 255, 0.62);
+  font-size: 15px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.rowShot {
+  position: relative;
+  margin: 0;
+}
+
+.rowShot > figure,
+.rowShotImg {
+  position: relative;
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 34px 86px rgba(0, 0, 0, 0.55);
+}
+
+.rowShot figcaption {
+  margin-top: 14px;
+  color: rgba(236, 236, 255, 0.58);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* 章内要点：竖着排在文案栏里，不再横着铺三列 */
+
+.tickList {
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tickItem {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tickItem:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.tickIcon {
+  color: #8a93ff;
+}
+
+.tickItem h4 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fcfcfc;
+}
+
+.tickItem p {
+  margin: 5px 0 0;
+  color: rgba(236, 236, 255, 0.56);
+  font-size: 13.5px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+/* 章一：四列平台能力（首屏区，仍走正文栅格） */
+
 .pointCols {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px 32px;
+  margin-top: 56px;
+}
+
+.platformIntro .pointCols {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 28px;
-  margin-top: 44px;
+  gap: 32px;
+  margin-top: 48px;
 }
 
 .pointIcon {
   color: #8a93ff;
-}
-
-.pointIcon {
   transition: color 200ms ease, transform 200ms ease;
 }
 
@@ -443,143 +604,185 @@
 }
 
 .pointCol h3 {
-  margin: 11px 0 0;
-  font-size: 14px;
-  font-weight: 560;
+  margin: 14px 0 0;
+  font-size: 15px;
+  font-weight: 580;
   line-height: 1.4;
+  letter-spacing: -0.01em;
   color: #fcfcfc;
 }
 
 .pointCol p {
-  margin: 7px 0 0;
-  color: rgba(234, 234, 255, 0.56);
-  font-size: 13px;
-  line-height: 1.75;
+  margin: 8px 0 0;
+  color: rgba(236, 236, 255, 0.56);
+  font-size: 13.5px;
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 
-/* ── 深色圆角面板 ── */
-
-.panelWrap {
-  padding: 7px 10px;
-  background: #05050a;
-}
-
-.panel {
-  border-radius: 26px;
-  background:
-    radial-gradient(760px 340px at 88% 0%, rgba(96, 84, 214, 0.16), transparent 62%),
-    #0b0b12;
-}
-
-.panelInner {
-  width: min(1360px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 104px 0 96px;
-}
-
-.panel .pillGhost {
-  margin-top: 26px;
-}
-
-.panelShot {
-  margin: 48px calc(-1 * clamp(0px, 6vw, 110px)) 56px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
-}
-
-.shotImg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-/* 三步流程 */
+/* 章二：三步流程横条 */
 
 .stepsRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 40px;
-  margin-top: 44px;
+  gap: 1px;
+  margin-top: 64px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .step {
   position: relative;
-  padding-top: 4px;
+  padding: 30px 28px 32px;
+  background: #0b0b13;
 }
 
 .stepNum {
-  position: absolute;
-  top: -8px;
-  right: 0;
-  color: rgba(255, 255, 255, 0.07);
-  font-size: 54px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
+  color: rgba(154, 163, 255, 0.72);
+  font-size: 12px;
+  font-weight: 640;
+  letter-spacing: 0.14em;
   font-variant-numeric: tabular-nums;
 }
 
 .step h3 {
-  margin: 0;
-  font-size: 14.5px;
-  font-weight: 630;
+  margin: 14px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 .step p {
-  margin: 8px 0 0;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 12.5px;
-  line-height: 1.75;
+  margin: 9px 0 0;
+  color: rgba(236, 236, 255, 0.56);
+  font-size: 13.5px;
+  line-height: 1.55;
 }
 
-/* ── CTA ── */
+.permCard {
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.permRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 18px;
+  border-radius: 12px;
+  color: rgba(236, 236, 255, 0.82);
+  font-size: 14px;
+}
+
+.permRow + .permRow {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.permRow:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.permNote {
+  margin-left: auto;
+  color: rgba(236, 236, 255, 0.54);
+  font-size: 12.5px;
+}
+
+.permOn {
+  color: #9aa3ff;
+}
+
+/* 章四：静音循环影像条 */
+
+/* 数据/引用块：对标 Pothole 那一档（窄栏大字 + 出处），只用我们自己的事实 */
+.quote {
+  max-width: 30ch;
+  padding: clamp(56px, 7vw, 96px) 0;
+}
+
+.quote p {
+  margin: 0;
+  font-size: clamp(24px, 2.6vw, 36px);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.quote .muted {
+  color: rgba(236, 236, 255, 0.42);
+}
+
+.quoteCite {
+  margin: 22px 0 0;
+  color: rgba(236, 236, 255, 0.5);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── 收尾 CTA ──────────────────────────────────────────────── */
 
 .ctaBand {
-  padding: 96px 24px;
+  padding: 2px;
+  background: #05050a;
+}
+
+.ctaInner {
+  padding: 104px 24px 112px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 26px;
   background:
-    radial-gradient(820px 340px at 50% 132%, rgba(110, 95, 235, 0.4), transparent 66%),
-    #05050a;
+    radial-gradient(900px 360px at 50% 128%, rgba(157, 157, 255, 0.16), transparent 68%),
+    #0b0b13;
   text-align: center;
 }
 
 .ctaBand h2 {
   margin: 0;
-  font-size: clamp(26px, 3.2vw, 42px);
+  font-size: clamp(30px, 3.4vw, 48px);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  line-height: 1.04;
+  letter-spacing: -0.04em;
 }
 
 .ctaBand p {
-  margin: 13px 0 0;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
+  margin: 16px auto 0;
+  max-width: 34ch;
+  color: rgba(236, 236, 255, 0.62);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .ctaBand .heroActions {
   justify-content: center;
-  margin-top: 28px;
+  margin-top: 32px;
 }
 
-/* ── 页脚：品牌栏 + 链接栏 + 备案行 ── */
+/* ── 页脚：分组站点地图（只链站内真存在的路由） ────────────── */
 
 .siteFooter {
-  padding: 64px 24px 26px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2px 2px 0;
   background: #05050a;
 }
 
 .footerInner {
-  width: min(1360px, 100%);
+  width: min(1240px, calc(100% - 2 * clamp(20px, 12vw, 240px)));
   margin: 0 auto;
+  padding: 72px 0 26px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .footerGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
-  gap: 48px;
-  padding-bottom: 44px;
+  grid-template-columns: minmax(0, 1.7fr) repeat(4, minmax(0, 1fr));
+  gap: 40px;
+  padding-bottom: 48px;
 }
 
 .footerBrandCol {
@@ -590,31 +793,32 @@
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 15px;
   font-weight: 640;
+  letter-spacing: -0.01em;
 }
 
 .footerDesc {
-  margin: 14px 0 0;
-  max-width: 320px;
-  color: rgba(255, 255, 255, 0.42);
+  margin: 16px 0 0;
+  max-width: 34ch;
+  color: rgba(236, 236, 255, 0.56);
   font-size: 13px;
-  line-height: 1.8;
+  line-height: 1.85;
 }
 
 .footerCol h4 {
   margin: 4px 0 16px;
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 12.5px;
-  font-weight: 560;
-  letter-spacing: 0.04em;
+  color: rgba(236, 236, 255, 0.52);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
 }
 
 .footerCol a {
   display: block;
   padding: 5px 0;
-  color: rgba(255, 255, 255, 0.66);
+  color: rgba(236, 236, 255, 0.68);
   font-size: 13.5px;
   text-decoration: none;
   transition: color 160ms ease;
@@ -628,31 +832,100 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px 0 2px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .footerCopy {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(236, 236, 255, 0.52);
   font-size: 12px;
 }
 
 .footerIcp {
   margin-left: auto;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(236, 236, 255, 0.54);
   font-size: 12px;
-  line-height: 1.6;
   text-decoration: none;
   transition: color 160ms ease;
 }
 
 .footerIcp:hover {
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.84);
+}
+
+/* ── 进入动效：首屏一次编排，章节两种交替（不做同款齐步） ─── */
+
+.heroCopy > * {
+  animation: riseIn 720ms cubic-bezier(0.22, 0.8, 0.32, 1) both;
+}
+
+.heroCopy > *:nth-child(2) { animation-delay: 90ms; }
+.heroCopy > *:nth-child(3) { animation-delay: 180ms; }
+
+.heroShot {
+  animation: shotIn 920ms cubic-bezier(0.22, 0.8, 0.32, 1) 200ms both;
+}
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shotIn {
+  from { opacity: 0; transform: translateY(26px) scale(0.988); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes cueFloat {
   0%, 100% { transform: translate(-50%, 0); }
   50% { transform: translate(-50%, 7px); }
+}
+
+/* CSS Modules 只准局部类名做选择器（裸 [data-*] 会让整条 CSS 图编译失败、全站 500） */
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 620ms cubic-bezier(0.22, 0.8, 0.32, 1), transform 620ms cubic-bezier(0.22, 0.8, 0.32, 1);
+}
+
+.revealSide {
+  transform: translateY(34px) scale(0.994);
+}
+
+.revealOn {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── 窄屏 ──────────────────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  /* 窄下来就退回「文案在上、视觉在下」的单列，行高不再撑 800 */
+  .row,
+  .rowFlip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+    min-height: 0;
+  }
+
+  .rowFlip > .rowCopy,
+  .rowFlip > .rowShot {
+    order: 0;
+  }
+
+  .rowCopy {
+    max-width: 560px;
+  }
+
+  .pointCols,
+  .platformIntro .pointCols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 32px;
+  }
+
+  .footerGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 960px) {
@@ -663,82 +936,67 @@
 
   .hero {
     grid-template-columns: 1fr;
-    gap: 40px;
+    gap: 44px;
+    min-height: 0;
     padding: 56px 24px 84px;
   }
 
   .heroShot {
-    margin-right: 0;
+    /* 窄屏这一栏自己还有 24px 内边距，出血量＝容器外那段留白的一半 ＋ 这 24px */
+    margin-right: calc((min(1520px, 100vw - 2 * clamp(20px, 10vw, 200px)) - 100vw) / 2 - 24px);
   }
 
-  .heroShot {
-    margin-right: 0;
-  }
-
-  .heroShot .shotImg {
-    width: 100%;
-    transform: none;
-  }
-
-  .pointCols {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 26px;
+  .panelInner {
+    width: calc(100% - 64px);
+    padding: 80px 0 72px;
   }
 
   .stepsRow {
     grid-template-columns: 1fr;
-    gap: 28px;
   }
 }
 
 @media (max-width: 720px) {
-  .header {
+  .header,
+  .headerInner {
     width: calc(100% - 32px);
   }
 
-  .hero {
-    width: calc(100% - 32px);
+  /* 390 那一屏放不下「联系我们」，页脚里同一枚入口还在 */
+  .headerRight {
+    gap: 14px;
   }
 
-  .heroCopy > * {
-  animation: riseIn 700ms cubic-bezier(0.22, 0.8, 0.32, 1) both;
-}
+  .headerRight .headerLink {
+    display: none;
+  }
 
-.heroCopy > *:nth-child(2) { animation-delay: 90ms; }
-.heroCopy > *:nth-child(3) { animation-delay: 180ms; }
-
-.heroShot {
-  animation: shotIn 900ms cubic-bezier(0.22, 0.8, 0.32, 1) 200ms both;
-}
-
-@keyframes riseIn {
-  from { opacity: 0; transform: translateY(22px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes shotIn {
-  from { opacity: 0; transform: translateY(30px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.heroCopy h1 {
+  .heroCopy h1 {
     font-size: 38px;
+    letter-spacing: -0.02em;
   }
 
   .heroActions {
     flex-wrap: wrap;
   }
 
+  .wrapWide,
+  .wrapText,
   .platformIntro {
     width: calc(100% - 32px);
   }
 
-  .pointCols {
+  .platformIntro {
+    padding-bottom: 72px;
+  }
+
+  .pointCols,
+  .platformIntro .pointCols {
     grid-template-columns: 1fr;
   }
 
-  .panelWrap {
-    padding: 6px;
+  .panel {
+    border-radius: 20px;
   }
 
   .panelInner {
@@ -746,8 +1004,13 @@
     padding: 56px 0 52px;
   }
 
-  .ctaBand {
+  .ctaInner {
     padding: 72px 18px;
+    border-radius: 20px;
+  }
+
+  .footerInner {
+    width: calc(100% - 32px);
   }
 
   .footerGrid {
@@ -768,16 +1031,20 @@
 
 @media (prefers-reduced-motion: reduce) {
   .heroCue,
-  .heroCopy > * {
+  .heroCopy > *,
+  .heroShot {
     animation: none;
   }
 
-  .heroCopy > * {
+  .reveal {
     opacity: 1;
+    transform: none;
+    transition: none;
   }
 
   .pillPrimary,
-  .pillGhost {
+  .pillGhost,
+  .header {
     transition: none;
   }
 }

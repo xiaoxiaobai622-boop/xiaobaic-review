@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
 
 /**
- * 首页那两张配图（public/home/review-ui.png、comments-detail.png）是从本地演示数据截的，
+ * 首页那两张配图（public/home/review-ui.png、review-comments.png）是从本地演示数据截的，
  * 结果把「百度网盘同步空间」的广告片、PREVIEW-111 水印和 Admin 随手敲的「ces / 1 / 2」
  * 一起烧进了公网营销图。这里造一条干净的替代素材：一支真能播的片子＋五条读得通的中文批注，
  * 停在审片页就能截。
@@ -21,6 +21,9 @@ const TEAM_SLUG = 'home-demo'
 const PROJECT_TITLE = '屿见 · 城市夜景品牌片'
 const VIDEO_NAME = '屿见_城市夜景_定稿'
 const VIDEO_VERSION = 3
+/** 收录短链的码不进文件：给了环境变量就用它，否则复用这个项目上已有的那一枚，
+ *  都没有才现随机一枚 —— 三条路都指向同一枚，脚本重跑走 upsert 不堆行。 */
+const DEMO_COLLECT_FROM_ENV = process.env.HOME_DEMO_COLLECT_TOKEN || ''
 const SOURCE_CLIP = 'public/home/film-set.mp4'
 const STORAGE_ROOT = process.env.STORAGE_ROOT || './uploads'
 /** 与 src/lib/platform-access.ts 的 BETA_QUOTA 同口径（那枚文件第一行 import Prisma，这里不引）。 */
@@ -93,43 +96,106 @@ async function main() {
       },
     })
 
-  // 素材：仓库自带的营销循环片（public/home/film-set.mp4，已在仓库里公开过）拉到 1920 宽，
-  // 免得截图里出现「960×506」这种一看就是测试件的分辨率。
+  // 演示片换成三枚 1920×1080 真片：Mixkit 免费商用授权（https://mixkit.co/license/#videoFree，
+  // 无需署名）。源片落在 git 忽略的 uploads/marketing-src/ 下，仓库里不留几十兆的二进制；
+  // 找不到就退回仓库自带那枚 960×506 模板片——能跑，但首页配图会糊成马赛克。
+  const CLIP_SOURCES: Record<string, string> = {
+    night: 'uploads/marketing-src/night-city-aerial.mp4',
+    set: 'uploads/marketing-src/set-behind-scenes.mp4',
+    dusk: 'uploads/marketing-src/dusk-drone.mp4',
+  }
   const videoDir = join(STORAGE_ROOT, 'teams', team.id, 'projects', project.id, 'videos')
   mkdirSync(videoDir, { recursive: true })
-  const key = `teams/${team.id}/projects/${project.id}/videos/original-home-demo.mp4`
-  const file = join(STORAGE_ROOT, 'teams', team.id, 'projects', project.id, 'videos', 'original-home-demo.mp4')
-  sh('ffmpeg', ['-v', 'error', '-y', '-i', SOURCE_CLIP, '-vf', 'scale=1920:-2:flags=lanczos,fps=24',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-movflags', '+faststart', file])
-  const meta = ffprobeJson(file)
 
-  const videoData = {
-    version: VIDEO_VERSION, versionLabel: `v${VIDEO_VERSION}`,
-    originalFileName: `${VIDEO_NAME}.mov`, originalFileSize: BigInt(statSync(file).size),
-    originalStoragePath: key, fileType: 'video/mp4',
-    uploadedBy: user.id, uploadedByName: user.name ?? undefined,
-    duration: meta.duration, width: meta.width, height: meta.height, fps: meta.fps, codec: meta.codec,
-    status: 'READY' as const, approved: false,
+  type Clip = { key: string; file: string; meta: { duration: number; width: number; height: number; fps: number; codec: string } }
+  async function prepareClip(name: string, src: string): Promise<Clip> {
+    const key = `teams/${team.id}/projects/${project.id}/videos/original-${name}.mp4`
+    const file = join(STORAGE_ROOT, key)
+    // 一枚 1080p 片子转一遍要几分钟，源片没变就别重转。
+    if (existsSync(file) && statSync(file).mtimeMs > statSync(src).mtimeMs) {
+      return { key, file, meta: ffprobeJson(file) }
+    }
+    const srcMeta = ffprobeJson(src)
+    if (srcMeta.width < 1900) {
+      console.log(`⚠️ ${src} 只有 ${srcMeta.width}×${srcMeta.height}，放大到 1920 必然发糊——首页配图的高清上限就在这枚源片上`)
+    }
+    sh('ffmpeg', ['-v', 'error', '-y', '-i', src, '-vf', 'scale=1920:-2:flags=lanczos,fps=24',
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-movflags', '+faststart', file])
+    return { key, file, meta: ffprobeJson(file) }
   }
-  const video = await prisma.video.findUnique({ where: { projectId_name_version: { projectId: project.id, name: VIDEO_NAME, version: VIDEO_VERSION } } })
-    ? await prisma.video.update({
-      where: { projectId_name_version: { projectId: project.id, name: VIDEO_NAME, version: VIDEO_VERSION } },
-      data: videoData,
-    })
-    : await prisma.video.create({ data: { projectId: project.id, name: VIDEO_NAME, ...videoData } })
+  const clips: Record<string, Clip> = {}
+  for (const [name, src] of Object.entries(CLIP_SOURCES)) {
+    clips[name] = await prepareClip(name, existsSync(src) ? src : SOURCE_CLIP)
+  }
 
-  // 缩略图给素材卡用；没有它卡片会退成一枚图标。
-  const thumbDir = join(videoDir, video.id)
-  mkdirSync(thumbDir, { recursive: true })
-  sh('ffmpeg', ['-v', 'error', '-y', '-ss', '4', '-i', file, '-frames:v', '1', '-q:v', '2', join(thumbDir, 'thumbnail.jpg')])
-  await prisma.video.update({ where: { id: video.id }, data: { thumbnailPath: `${key.replace('original-home-demo.mp4', '')}${video.id}/thumbnail.jpg` } })
+  // 素材网格要像真项目：12 条素材分给三枚片子，同名排 v1/v2/v3，缩略图各取一个时间点。
+  // at 是「占片长比例」而不是秒数：三枚片子时长差三倍（43.75 / 14.4 / 12.6 秒），
+  // 写死秒数会取到片尾淡出的黑帧，卡片就成了一块黑板。
+  const ASSETS: { name: string; clip: keyof typeof CLIP_SOURCES; versions: { v: number; at: number }[] }[] = [
+    { name: VIDEO_NAME, clip: 'night', versions: [{ v: 1, at: 0.046 }, { v: 2, at: 0.16 }, { v: VIDEO_VERSION, at: 0.091 }] },
+    { name: '屿见_城市夜景_横版', clip: 'night', versions: [{ v: 1, at: 0.274 }, { v: 2, at: 0.366 }] },
+    { name: '屿见_预告片_30s', clip: 'night', versions: [{ v: 1, at: 0.434 }, { v: 2, at: 0.526 }] },
+    { name: '屿见_城市夜景_无人机', clip: 'dusk', versions: [{ v: 1, at: 0.069 }, { v: 2, at: 0.183 }] },
+    { name: '屿见_导演剪辑_加长版', clip: 'dusk', versions: [{ v: 1, at: 0.251 }, { v: 2, at: 0.297 }] },
+    { name: '客户反馈_调色参考', clip: 'dusk', versions: [{ v: 1, at: 0.137 }] },
+    { name: '片场花絮_灯位记录', clip: 'set', versions: [{ v: 1, at: 0.069 }, { v: 2, at: 0.206 }] },
+    { name: '录音棚_补录花絮', clip: 'set', versions: [{ v: 1, at: 0.137 }] },
+    { name: '屿见_城市夜景_竖版', clip: 'night', versions: [{ v: 1, at: 0.754 }] },
+    { name: '屿见_主视觉_静帧', clip: 'night', versions: [{ v: 1, at: 0.114 }] },
+    { name: '客户反馈_字幕版', clip: 'night', versions: [{ v: 1, at: 0.594 }, { v: 2, at: 0.686 }] },
+    { name: '屿见_片尾字幕_走查', clip: 'night', versions: [{ v: 1, at: 0.64 }] },
+  ]
+
+  let main: { row: { id: string }; clip: Clip } | null = null
+  for (const asset of ASSETS) {
+    const clip = clips[asset.clip]
+    const base = {
+      originalFileName: `${asset.name}.mov`, originalFileSize: BigInt(statSync(clip.file).size),
+      originalStoragePath: clip.key, fileType: 'video/mp4',
+      uploadedBy: user.id, uploadedByName: user.name ?? undefined,
+      duration: clip.meta.duration, width: clip.meta.width, height: clip.meta.height,
+      fps: clip.meta.fps, codec: clip.meta.codec, status: 'READY' as const, approved: false,
+    }
+    for (const { v, at } of asset.versions) {
+      const where = { projectId_name_version: { projectId: project.id, name: asset.name, version: v } }
+      const row = await prisma.video.upsert({
+        where,
+        update: { ...base, version: v, versionLabel: `v${v}` },
+        create: { projectId: project.id, name: asset.name, version: v, versionLabel: `v${v}`, ...base },
+      })
+      const dir = join(videoDir, row.id)
+      mkdirSync(dir, { recursive: true })
+      const dur = clip.meta.duration
+      // 片头淡入、片尾淡出都是黑帧，写死一个时间点就会截出黑板：
+      // 在整片 10%–90% 之间均分八个候选点，取最亮那张，同分时用排得靠前的（保住素材之间的差异）。
+      const sharp = (await import('sharp')).default
+      const thumb = join(dir, 'thumbnail.jpg')
+      const span = 0.8
+      const picks = [at, ...Array.from({ length: 8 }, (_, k) => 0.1 + span * (k / 7))]
+      let best = -1
+      for (const [i, frac] of picks.entries()) {
+        const sec = Math.min(Math.max(dur * Math.min(0.95, Math.max(0.05, frac)), 0.4), dur - 0.6)
+        const probe = join(dir, `probe-${i}.jpg`)
+        sh('ffmpeg', ['-v', 'error', '-y', '-ss', sec.toFixed(2), '-i', clip.file, '-frames:v', '1', '-q:v', '2', probe])
+        const mean = (await sharp(probe).grayscale().stats()).channels[0].mean
+        // 只有明显更亮（+8）才换掉前一张，否则保留靠前的时间点
+        if (mean > best + 8) { best = mean; rmSync(thumb, { force: true }); execFileSync('mv', [probe, thumb]) } else rmSync(probe, { force: true })
+      }
+      await prisma.video.update({ where: { id: row.id }, data: { thumbnailPath: `${clip.key.replace(/original-[^/]+\.mp4$/, '')}${row.id}/thumbnail.jpg` } })
+      if (asset.name === VIDEO_NAME && v === VIDEO_VERSION) main = { row, clip }
+    }
+  }
+  if (!main) throw new Error('演示素材没建起来')
+  const video = main.row
+  const meta = main.clip.meta
+  const thumbPrefix = `${main.clip.key.replace(/original-[^/]+\.mp4$/, '')}${video.id}/thumbnail.jpg`
 
   const COMMENTS = [
-    { sec: 3.5, name: '白浪', category: 'EDITING', internal: true, content: '片头字幕起早了，演员还没入画就压上来，往后挪 12 帧。' },
-    { sec: 11.25, name: '陈屿', category: 'PICTURE', internal: false, resolved: true, content: '这段调色偏品红，肤色照 v2 那一版再走一遍。' },
-    { sec: 13.5, name: '白浪', category: 'PICTURE', internal: true, replyTo: 1, content: '收到，按 v2 的肤色重出一版，今晚发你确认。' },
-    { sec: 19.8, name: '李声', category: 'AUDIO', internal: true, content: '现场收音有空调底噪，这一句最明显，麻烦补一轨。' },
+    { sec: 3.5, name: '白浪', category: 'EDITING', internal: true, content: '片头字幕起早了，楼群还没进画就压上来，往后挪 12 帧。' },
+    { sec: 11.25, name: '陈屿', category: 'PICTURE', internal: false, resolved: true, content: '这段调色偏品红，霓虹和车灯那一片照 v2 再走一遍。' },
+    { sec: 13.5, name: '白浪', category: 'PICTURE', internal: true, replyTo: 1, content: '收到，按 v2 的品红重出一版，今晚发你确认。' },
+    { sec: 19.8, name: '李声', category: 'AUDIO', internal: true, content: '环境声有一层底噪，这一段车流最明显，麻烦补一轨。' },
     { sec: 31.3, name: '赵一', category: 'OTHER', internal: false, content: '片尾 logo 停留加到 2 秒，现在刚读完品牌名就切了。' },
   ]
   await prisma.comment.deleteMany({ where: { videoId: video.id } })
@@ -147,10 +213,26 @@ async function main() {
     made.push(created.id)
   }
 
+  // 首页「素材收录」那一行要能真打开一张收录页：建一条不要密码、只给上传权的收录短链。
+  const hadCollect = await prisma.shareLink.findFirst({
+    where: { projectId: project.id, type: 'COLLECT' }, select: { token: true }, orderBy: { createdAt: 'asc' },
+  })
+  const collectToken = DEMO_COLLECT_FROM_ENV || hadCollect?.token || randomBytes(4).toString('hex')
+  const collectWhere = { token: collectToken }
+  await prisma.shareLink.upsert({
+    where: collectWhere,
+    update: { projectId: project.id, name: '屿见 · 城市夜景回传', type: 'COLLECT', scopeType: 'PROJECT', scopeId: '', permissions: ['upload'], authMode: 'NONE', sharePassword: null, status: 'ACTIVE' },
+    create: { token: collectToken, projectId: project.id, name: '屿见 · 城市夜景回传', type: 'COLLECT', scopeType: 'PROJECT', scopeId: '', permissions: ['upload'], authMode: 'NONE', status: 'ACTIVE' },
+  })
+
+  const assetCount = (await prisma.video.groupBy({ by: ['name'], where: { projectId: project.id } })).length
+  const versionCount = await prisma.video.count({ where: { projectId: project.id } })
+
   console.log(JSON.stringify({
     projectUrl: `/studio/projects/${project.id}`, projectId: project.id, videoId: video.id,
-    video: { name: VIDEO_NAME, ...meta, bytes: Number(videoData.originalFileSize) },
-    comments: made.length, thumbKey: `${key.replace('original-home-demo.mp4', '')}${video.id}/thumbnail.jpg`,
+    video: { name: VIDEO_NAME, ...meta, bytes: Number(statSync(main.clip.file).size) },
+    assets: assetCount, versions: versionCount, collectUrl: `/${collectToken}`,
+    comments: made.length, thumbKey: thumbPrefix,
     login: { email: EMAIL, ...(generated ? { password } : { password: '取自 HOME_DEMO_PASSWORD' }) },
   }, null, 1))
 }

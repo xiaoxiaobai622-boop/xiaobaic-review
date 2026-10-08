@@ -8,6 +8,10 @@ const nextConfig = {
   // This is required when running with Webpack on environments without the
   // native Turbopack SWC bindings.
   serverExternalPackages: ['ioredis'],
+  // 营销页那四张界面截图里全是小字，默认只放行 q=75，WebP 在暗底小字上会糊成一团。
+  images: {
+    qualities: [75, 90],
+  },
   // Increase body size limit for TUS chunked uploads
   // TUS uploads can send chunks larger than 10MB (default Next.js limit)
   // Set to 100MB to handle large video chunks safely

@@ -7,8 +7,9 @@ import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
 
 /**
- * 给首页两张配图重截真图：public/home/review-ui.png（1440×900）与 comments-detail.png（1440×430）。
+ * 给首页三张章节配图重截真图：review-comments.png（4:3）、versions-grid.png、collect-upload.png。
  * 数据来自 scripts/build-home-demo.mts 造的那条演示素材（屿见 · 城市夜景品牌片）。
+ * 首屏那一格 10-08 起换成真录屏，由 scripts/capture-home-movie.mts 出 hero.mp4 ＋ hero-poster.jpg。
  *
  * 登录只在浏览器里做（会话指纹绑设备头＋UA，Node 侧令牌在浏览器一刷就烧掉整枚会话）。
  * 口令：设了 HOME_DEMO_PASSWORD 就用它；没设就当场改一枚随机的、只在本次进程里用，不落文件。
@@ -24,8 +25,8 @@ const OUT_DIR = RECON ? join(tmpdir(), 'home-shots') : 'public/home'
 const EMAIL = 'home-demo@xiaobaic.local'
 /** 画面停在这一秒：片头字幕那条批注（00:03:12）刚过，画面里人和监视器都在。 */
 const PARK_AT_SEC = 4.2
-/** 第二张＝视口底部这条横带的高度，与旧图 comments-detail.png 的原生高度一致。 */
-const BAND_H = 430
+/** 首屏那一格是 16:9，归录屏脚本管；这三张章节配图统一按 4:3 取景。 */
+const TALL_H = 1080
 const prisma = new PrismaClient()
 const stamp = Date.now()
 const cdpPort = 9300 + (stamp % 600)
@@ -94,11 +95,16 @@ async function openPage() {
   const page = { browserContextId, targetId, sessionId, s: (m: string, p: Record<string, unknown> = {}) => send(m, p, sessionId) }
   await page.s('Page.enable')
   await page.s('Runtime.enable')
-  await page.s('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
+  await setViewport(page, 900)
   return page
 }
 
 type Page = Awaited<ReturnType<typeof openPage>>
+
+/** 取景高度按图改：deviceScaleFactor=2 ⇒ 1440×H 的 CSS 视口落成 2880×2H，再缩回 1440 宽。 */
+async function setViewport(page: { s: (m: string, p?: Record<string, unknown>) => Promise<any> }, height: number) {
+  await page.s('Emulation.setDeviceMetricsOverride', { width: 1440, height, deviceScaleFactor: 3, mobile: false })
+}
 
 async function evalJs(page: Page, expression: string) {
   const r = await page.s('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
@@ -129,17 +135,30 @@ async function shot(page: Page, file: string, clip?: { x: number; y: number; wid
   return file
 }
 
-/** 2x 的取景缩回旧图的原生宽度（1440），文件契约与 <Image width height> 保持一致。 */
-function downscale(file: string) {
-  if (RECON) return
-  execFileSync('sips', ['--resampleWidth', '1440', file, '--out', file], { stdio: 'ignore' })
+/**
+ * 取景按 CSS 宽度定，不按"整屏"定：这三张是章节里的 1:1 裁片（对标 frame.io 把界面裁成可读碎片），
+ * 槽位实测 616 CSS px 宽，所以裁片本身只有 700 CSS px 上下。拍的时候 deviceScaleFactor=3 保清晰，
+ * 落盘再收到 2 倍 CSS 宽——判据 H52 就是拿 naturalWidth/2 当"当初裁下去的 CSS 宽度"来算放大率的。
+ *
+ * 收尺寸这件事排到关浏览器之后再做：sips 是同步阻塞的，夹在 CDP 流程中间会把 ws 的消息泵停住，
+ * 下一次 Page.navigate 就 60 秒超时（实测踩过）。
+ */
+const resizes: { file: string; cssWidth: number }[] = []
+function downscale(file: string, cssWidth: number) {
+  if (!RECON) resizes.push({ file, cssWidth })
+}
+/** 关完浏览器再统一收尺寸：sips 是同步阻塞的，会把 CDP 的 ws 消息泵停住。 */
+function flushResizes() {
+  for (const r of resizes) execFileSync('sips', ['--resampleWidth', String(Math.round(r.cssWidth * 2)), r.file, '--out', r.file], { stdio: 'ignore' })
 }
 
 async function loginInBrowser(page: Page, password: string) {
   const deviceId = `home-shots-${stamp}`
   await page.s('Page.addScriptToEvaluateOnNewDocument', {
     // 那枚黑色「N」是 next dev 的工具徽标（<nextjs-portal>），线上不存在，营销图里更不该出现。
+    // theme 必须在第一个文档脚本期就钉成 dark：主题 bootstrap 也在这个时机跑，晚一步首页就拍到浅色那套。
     source: `localStorage.setItem('vitransfer_device_id', ${JSON.stringify(deviceId)});
+      localStorage.setItem('theme', 'dark');
       (() => {
         const add = () => {
           const host = document.head || document.documentElement
@@ -189,13 +208,21 @@ async function main() {
     where: { team: { slug: 'home-demo' } }, orderBy: { createdAt: 'desc' },
     select: { id: true, title: true, _count: { select: { videos: true, comments: true } } },
   })
+  // 批注都挂在最新那一版上，取片子必须按版本号倒着取，否则拿到 v1 就是一屏空批注。
   const video = await prisma.video.findFirst({
     where: { project: { team: { slug: 'home-demo' } } },
-    select: { id: true, name: true, duration: true, width: true, height: true, status: true },
+    orderBy: { version: 'desc' },
+    select: { id: true, name: true, version: true, duration: true, width: true, height: true, status: true },
   })
   check(Boolean(user && team && project && video), '演示数据在本地库里齐了',
     `→ ${JSON.stringify({ user: user?.name, team: team?.name, project: project?.title, videos: project?._count.videos, comments: project?._count.comments, video: video?.name, status: video?.status })}`)
   if (!project || !video) throw new Error('先跑 scripts/build-home-demo.mts')
+  const REVIEW_URL = `/studio/projects/${project.id}/share?video=${encodeURIComponent(video.name)}`
+  // 收录短链的码不写进文件，从演示项目上现查（build-home-demo.mts 建的那一枚）。
+  const collect = await prisma.shareLink.findFirst({
+    where: { projectId: project.id, type: 'COLLECT' }, select: { token: true }, orderBy: { createdAt: 'asc' },
+  })
+  check(Boolean(collect), '演示项目上有收录短链')
 
   const password = process.env.HOME_DEMO_PASSWORD || randomBytes(9).toString('base64url')
   if (!process.env.HOME_DEMO_PASSWORD) {
@@ -208,8 +235,9 @@ async function main() {
 
   const page = await openPage()
   console.log('登录：', await loginInBrowser(page, password))
+  await setViewport(page, TALL_H)
   // 整页审片面＝双击素材卡时 router.push 的那个地址（AdminVideoManager 的 handleCardDoubleClick）。
-  await run(page, `/studio/projects/${project.id}/share?video=${encodeURIComponent(video.name)}`)
+  await run(page, REVIEW_URL)
   // Page.navigate 立刻返回，旧文档还挂在 DOM 上；不等它卸掉，waitFor 会拿上一屏的 video 假通过。
   await waitFor(page, `!document.querySelector('video')`, 60_000)
   const gotVideo = await waitFor(page, `document.querySelector('video') && document.querySelector('video').videoWidth > 0`, 90_000)
@@ -234,15 +262,14 @@ async function main() {
     })
   })()`)))
   console.log('几何：', JSON.stringify(geo))
-  // 第二张是视口底部 BAND_H 高的横带：时间轴＋批注钉＋播控条＋批注输入框，画面上沿要留在带子里。
-  const bandTop = geo.innerHeight - BAND_H
-  check(geo.videoBottom > bandTop && geo.videoBottom < geo.innerHeight,
-    '横带切到画面下沿与时间轴', `→ video 底边 ${geo.videoBottom}，带子从 ${bandTop} 起`)
+  // 画面、时间轴、批注钉三样都得整块在视口里，不许切掉播控条。
+  check(geo.videoBottom > 0 && geo.videoBottom < geo.innerHeight,
+    '取景里画面整块可见', `→ video 底边 ${geo.videoBottom}，视口高 ${geo.innerHeight}`)
+  check(geo.pins >= 3 && geo.timecodes >= 4, '取景里批注钉与时间码都在画面里', `→ ${geo.pins} 枚钉 / ${geo.timecodes} 串时间码`)
   check(geo.devBadgeVisible === false, 'next dev 徽标不在画面里', `→ ${geo.devBadge} 枚`)
+  check(geo.scrollH <= geo.innerHeight + 2, '审片页在这档视口里不出滚动条（截图不会切半行）', `→ scrollH ${geo.scrollH}`)
 
-  const a = await shot(page, join(OUT_DIR, RECON ? 'recon-full.png' : 'review-ui.png'))
-
-  // 第二张要对上「点击时间轴上的批注标记…弹出时间码气泡」这句 alt：把鼠标真的停在一枚钉上。
+  // 这张要对上「点击时间轴上的批注标记…弹出时间码气泡」这句 alt：把鼠标真的停在一枚钉上。
   const pinAt = async (i: number) => JSON.parse(String(await evalJs(page, `(() => {
     const bs = [...document.querySelectorAll('button[data-testid="comment-marker"]')].filter(b => b.offsetParent !== null)
     const b = bs[${i}] || bs[0]
@@ -340,14 +367,80 @@ async function main() {
     return JSON.stringify({ before, after })
   })()`)))
 
-  const b = await shot(page, join(OUT_DIR, RECON ? 'recon-band.png' : 'comments-detail.png'), {
-    x: 0, y: bandTop, width: geo.innerWidth, height: BAND_H,
-  })
-  console.log('截图：', a, b)
-  downscale(a)
-  downscale(b)
+  // 这张改成 1:1 裁片：以帧预览气泡为中心切一块 700×470，画面下沿、气泡、时间轴三样都在框里，
+  // 气泡左右居中。上一版整屏 1440 缩进 616 的槽位（0.43 倍），界面里的 14px 正文变成 6px 读不动；
+  // 高度也不许再往下贪，下面那块是空的评论输入框，收进来就是一大片死黑。
+  const BR: number[] = bub.rect || [geo.video.x + 40, geo.videoBottom - 300, 300, 148]
+  const cropB = {
+    x: Math.max(0, Math.min(geo.innerWidth - 700, Math.round(BR[0] + BR[2] / 2 - 350))),
+    y: Math.max(0, Math.min(geo.innerHeight - 470, Math.round(BR[1] - 250))),
+    width: 700, height: 470,
+  }
+  check(cropB.x + cropB.width <= geo.innerWidth && cropB.y + cropB.height <= geo.innerHeight,
+    '批注裁片整块落在视口里', JSON.stringify(cropB))
+  const b = await shot(page, join(OUT_DIR, RECON ? 'recon-tall.png' : 'review-comments.png'), cropB)
+  downscale(b, cropB.width)
+
+  // 项目工作区：素材卡上的 v1/v2/v3 与右侧版本列表，给「版本与定稿」那一行。
+  await run(page, `/studio/projects/${project.id}`)
+  await waitFor(page, `!document.querySelector('video')`, 30_000)
+  const gridOk = await waitFor(page, `document.body.innerText.includes(${JSON.stringify(video.name)}) && document.body.innerText.includes('v3')`, 90_000)
+  check(gridOk, '工作区画出素材卡与版本标记')
+  // 卡片缩略图是一张张异步补上的，而且视口外的还在懒加载：
+  // 先滚到底把加载触发起来、再滚回来，然后等「所有 img 都画完」，否则截出来是一排黑板。
+  await evalJs(page, `scrollTo(0, document.documentElement.scrollHeight)`)
+  await sleep(1500)
+  await evalJs(page, `scrollTo(0, 0)`)
+  const thumbs = await waitFor(page,
+    `(() => { const im = [...document.querySelectorAll('img')]; return im.length > 6 && im.every(i => i.complete && i.naturalWidth > 0) })()`, 60_000)
+  check(thumbs, '素材卡的缩略图全部落地（含视口外懒加载的那几张）',
+    `→ ${String(await evalJs(page, `[...document.querySelectorAll('img')].filter(i => i.complete && i.naturalWidth > 0).length`))}/${String(await evalJs(page, `document.querySelectorAll('img').length`))} 张`)
+  await sleep(900)
+  // 这张也改成 1:1 裁片：从第一张素材卡起切 700×520，两列卡、版本角标、卡上的名字都读得动。
+  // 上一版是整宽 1440 缩进 616 槽位，卡名和 v1/v2/v3 全糊成一团。
+  const grid = JSON.parse(String(await evalJs(page, `(() => {
+    const im = [...document.querySelectorAll('img')].filter(i => i.naturalWidth > 60).map(i => i.getBoundingClientRect())
+    if (!im.length) return 'null'
+    return JSON.stringify({
+      left: Math.round(Math.min(...im.map(r => r.left))), top: Math.round(Math.min(...im.map(r => r.top))),
+      card: Math.round(Math.max(...im.map(r => r.width))),
+    })
+  })()`)))
+  check(Boolean(grid), '量到第一张素材卡的位置', JSON.stringify(grid))
+  const cropC = grid ? { x: Math.max(0, grid.left - 16), y: Math.max(0, grid.top - 72), width: 700, height: 520 } : undefined
+  check(Boolean(grid) && grid.card * 2 + 64 <= 700, `版本裁片装得下两列卡（单卡实测 ${grid?.card}px）`)
+  const c = await shot(page, join(OUT_DIR, RECON ? 'recon-grid.png' : 'versions-grid.png'), cropC)
+  if (cropC) downscale(c, cropC.width)
+
+  // 收录页：客户视角那条上传面（不注册就能传）。
+  await setViewport(page, TALL_H)
+  await run(page, `/${collect?.token}?mode=collect`)
+  const collectOk = await waitFor(page, `(() => { const t = document.body.innerText; return /上传|拖|选择文件|回传/.test(t) })()`, 90_000)
+  check(collectOk, '收录页画出上传面')
+  if (!collectOk) console.log('页面文字：', String(await evalJs(page, `document.body.innerText.slice(0, 500)`)).replace(/\n+/g, ' ⏎ '))
+  await sleep(1200)
+  // 收录页就一张居中的卡，整屏截出来四周全是空的；按卡的包围盒切一块，留 40px 边。
+  const card = JSON.parse(String(await evalJs(page, `(() => {
+    const label = [...document.querySelectorAll('h1,h2,h3,p,div,span')].find(e => e.children.length === 0 && (e.textContent || '').trim() === '上传收录文件')
+    if (!label) return 'null'
+    let n = label.parentElement
+    while (n && n.getBoundingClientRect().width < 420) n = n.parentElement
+    if (!n) return 'null'
+    const b = n.getBoundingClientRect()
+    return JSON.stringify({ x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) })
+  })()`)))
+  check(Boolean(card), '收录页找到那张上传卡', JSON.stringify(card))
+  const pad = 40
+  const clip = card
+    ? { x: Math.max(0, card.x - pad), y: Math.max(0, card.y - pad), width: card.w + pad * 2, height: card.h + pad * 2 }
+    : undefined
+  const d = await shot(page, join(OUT_DIR, RECON ? 'recon-collect.png' : 'collect-upload.png'), clip)
+  if (clip) downscale(d, clip.width)
+
+  console.log('截图：', b, c, d)
 
   await page.s('Target.closeTarget', { targetId: page.targetId }).catch(() => null)
+  flushResizes()
   console.log(failures.length ? `\n${failures.length} 条 FAIL：${failures.join('；')}` : '\n全部 PASS')
 }
 

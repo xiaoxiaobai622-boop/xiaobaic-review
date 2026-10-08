@@ -6,11 +6,25 @@
  * 转成 TypeScript 并收紧了类型；着色器逻辑与上游一致。
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './ColorBends.css'
 
 const MAX_COLORS = 8
+
+/** 拖尾：指针走过的地方注入一团会指数衰减的亮斑，机制抄对标那套 splat + densityDissipation，
+ *  但不引第二套引擎——十个点以内直接在现有那一个 pass 里按高斯叠。 */
+const TRAIL_POINTS = 10
+/** 相邻两枚点的最小间距（NDC，0.03 ≈ 22px）：慢速移动时不让点挤成一坨。 */
+const TRAIL_MIN_STEP = 0.03
+/** NDC 半径（横向 1 = 半屏宽），0.15 ≈ 108px：够看清"光跟着手走"，又不会糊成一片。 */
+const TRAIL_RADIUS = 0.15
+/** 亮度衰减到 1/e 的秒数；判据在指针归位后 600ms 取样。 */
+const TRAIL_TAU = 0.9
+/** 拖尾是加在合成结果之后的**附加光**，所以这一档和"画面上亮多少"是线性的：0.16 实测峰值加约 22 个
+ *  通道亮度单位。之前那个 1.4 是配着"抬 alpha"的旧合成写的，换成附加光后会顶满成一枚大白点。
+ *  另外真实鼠标一秒推上百个点，全靠着色器那句 1-exp(-Σ) 软饱和压住，否则光标那一点直接饱和。 */
+const TRAIL_STRENGTH = 0.16
 
 const frag = `
 #define MAX_COLORS ${MAX_COLORS}
@@ -31,6 +45,9 @@ uniform float uNoise;
 uniform int uIterations;
 uniform float uIntensity;
 uniform float uBandWidth;
+uniform vec4 uTrail[${TRAIL_POINTS}]; // xy = NDC 位置，z = 这一团还剩多亮
+uniform float uTrailRadius;
+uniform vec3 uTrailColor;
 varying vec2 vUv;
 
 void main() {
@@ -95,6 +112,23 @@ void main() {
 
     col *= uIntensity;
 
+    // 拖尾：指针划过留一团会指数衰减的亮斑。坐标用未旋转的屏幕空间，所以尾迹钉在划过的位置上、
+    // 不跟着条带漂；它作为**附加光**加在合成结果之后，不再被条带自己那道 alpha(≈0.25) 乘一遍，
+    // 所以 strength 与"画面上亮多少"是线性的、可直接算。
+    float glow = 0.0;
+    vec2 tp = vUv * 2.0 - 1.0;
+    tp.x *= uCanvas.x / uCanvas.y;
+    for (int i = 0; i < ${TRAIL_POINTS}; i++) {
+      float k = uTrail[i].z;
+      if (k <= 0.0) continue;
+      vec2 c = uTrail[i].xy;
+      c.x *= uCanvas.x / uCanvas.y;
+      float d = length(tp - c) / uTrailRadius;
+      glow += k * exp(-d * d);
+    }
+    // 软饱和：真实鼠标一秒能推上百个点，硬 min() 会让光标那一点直接顶满＝一枚大白点。
+    glow = (1.0 - exp(-glow)) * ${TRAIL_STRENGTH.toFixed(2)};
+
     if (uNoise > 0.0001) {
       float n = fract(sin(dot(gl_FragCoord.xy + vec2(uTime), vec2(12.9898, 78.233))) * 43758.5453123);
       col += (n - 0.5) * uNoise;
@@ -102,7 +136,7 @@ void main() {
     }
 
     vec3 rgb = (uTransparent > 0) ? col * a : col;
-    gl_FragColor = vec4(rgb, a);
+    gl_FragColor = vec4(rgb + uTrailColor * glow, a);
 }
 `
 
@@ -131,6 +165,8 @@ export interface ColorBendsProps {
   iterations?: number
   intensity?: number
   bandWidth?: number
+  /** 打开后指针划过画布会留下一条指数衰减的亮尾。 */
+  trail?: boolean
 }
 
 export default function ColorBends({
@@ -150,6 +186,7 @@ export default function ColorBends({
   iterations = 1,
   intensity = 1.5,
   bandWidth = 6,
+  trail = false,
 }: ColorBendsProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -161,6 +198,17 @@ export default function ColorBends({
   const pointerTargetRef = useRef(new THREE.Vector2(0, 0))
   const pointerCurrentRef = useRef(new THREE.Vector2(0, 0))
   const pointerSmoothRef = useRef(8)
+  // 拖尾：最近 TRAIL_POINTS 个指针采样点，各自带落点时刻，亮度按 TRAIL_TAU 指数衰减。
+  const trailRef = useRef<{ x: number; y: number; t: number }[]>([])
+  // 系统要求减少动效：这一层只画一帧，不排下一帧，也不跟指针走。
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const sync = () => setReduced(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
 
   useEffect(() => {
     const container = containerRef.current
@@ -191,6 +239,9 @@ export default function ColorBends({
         uIterations: { value: iterations },
         uIntensity: { value: intensity },
         uBandWidth: { value: bandWidth },
+        uTrail: { value: Array.from({ length: TRAIL_POINTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
+        uTrailRadius: { value: TRAIL_RADIUS },
+        uTrailColor: { value: new THREE.Vector3(0.55, 0.5, 1.0) },
       },
       premultipliedAlpha: true,
       transparent: true,
@@ -200,11 +251,24 @@ export default function ColorBends({
     const mesh = new THREE.Mesh(geometry, material)
     scene.add(mesh)
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: false,
-      powerPreference: 'high-performance',
-      alpha: true,
-    })
+    const renderer = (() => {
+      try {
+        return new THREE.WebGLRenderer({
+          antialias: false,
+          powerPreference: 'high-performance',
+          alpha: true,
+        })
+      } catch {
+        // 纯装饰层：没有 WebGL 的环境（无头截图、显卡被拉黑）不能把整页带崩。
+        return null
+      }
+    })()
+    if (!renderer) {
+      materialRef.current = null
+      geometry.dispose()
+      material.dispose()
+      return
+    }
     rendererRef.current = renderer
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
@@ -245,8 +309,17 @@ export default function ColorBends({
       const amt = Math.min(1, dt * pointerSmoothRef.current)
       cur.lerp(tgt, amt)
       material.uniforms.uPointer.value.copy(cur)
+
+      const now = performance.now()
+      const trail = material.uniforms.uTrail.value as THREE.Vector4[]
+      for (let i = 0; i < TRAIL_POINTS; i++) {
+        const p = trailRef.current[i]
+        if (!p) trail[i].set(0, 0, 0, 0)
+        else trail[i].set(p.x, p.y, Math.exp(-(now - p.t) / 1000 / TRAIL_TAU), 0)
+      }
+
       renderer.render(scene, camera)
-      rafRef.current = requestAnimationFrame(loop)
+      if (!reduced) rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
 
@@ -270,6 +343,7 @@ export default function ColorBends({
     mouseInfluence,
     noise,
     parallax,
+    reduced,
     scale,
     speed,
     transparent,
@@ -310,6 +384,8 @@ export default function ColorBends({
       else vec.set(0, 0, 0)
     }
     material.uniforms.uColorCount.value = arr.length
+    // 拖尾既不跟条带那支 #8f7bff（偏蓝、亮度权重只有 0.53，叠在同色底上等于没叠），也不用近白
+    // （(0.85,0.85,1) 那档实测就是一枚大白点）——取一条更亮的紫，读起来是"光"不是"洞"。
 
     material.uniforms.uTransparent.value = transparent ? 1 : 0
     if (renderer) renderer.setClearColor(0x000000, transparent ? 0 : 1)
@@ -334,19 +410,37 @@ export default function ColorBends({
     const material = materialRef.current
     const container = containerRef.current
     if (!material || !container) return
+    // 减少动效：这一层根本不跟指针，尾也一枚都不留（H57 量的就是"划过去画布一字节都不变"）。
+    if (reduced) {
+      trailRef.current = []
+      return
+    }
 
     const handlePointerMove = (e: PointerEvent) => {
       const rect = container.getBoundingClientRect()
-      const x = ((e.clientX - rect.left) / (rect.width || 1)) * 2 - 1
-      const y = -((e.clientY - rect.top) / (rect.height || 1) * 2 - 1)
+      // 这层压在内容底下、自己不吃指针事件，所以只能听 window；坐标夹回 ±1，
+      // 鼠标划出这一屏之外时不许把着色器推到界外（推出去就回不来了）。
+      const nx = ((e.clientX - rect.left) / (rect.width || 1)) * 2 - 1
+      const ny = -(((e.clientY - rect.top) / (rect.height || 1)) * 2 - 1)
+      const x = Math.max(-1, Math.min(1, nx))
+      const y = Math.max(-1, Math.min(1, ny))
       pointerTargetRef.current.set(x, y)
+      if (!trail) return
+      const last = trailRef.current[trailRef.current.length - 1]
+      // 真实鼠标一秒能推上百个点，不拉开间距就全堆在光标那一处 —— 那就是他看到的"大白点"。
+      if (last && Math.hypot(x - last.x, y - last.y) < TRAIL_MIN_STEP) return
+      const now = performance.now()
+      // 只留最近 TRAIL_POINTS 枚、且还没衰完的（4τ 后剩不到 2%，留着是占位）。
+      const kept = trailRef.current.filter((p) => now - p.t < TRAIL_TAU * 4000)
+      kept.push({ x, y, t: now })
+      trailRef.current = kept.slice(-TRAIL_POINTS)
     }
 
-    container.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointermove', handlePointerMove)
     return () => {
-      container.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointermove', handlePointerMove)
     }
-  }, [])
+  }, [reduced, trail])
 
   return <div ref={containerRef} className={`color-bends-container ${className ?? ''}`} style={style} />
 }
