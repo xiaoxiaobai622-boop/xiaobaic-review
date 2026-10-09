@@ -303,8 +303,8 @@ export default function HomeClient() {
               className={styles.shotImg}
               src="/home/hero.mp4"
               poster="/home/hero-poster.jpg"
-              width={1920}
-              height={1080}
+              width={1600}
+              height={900}
               muted
               loop
               playsInline

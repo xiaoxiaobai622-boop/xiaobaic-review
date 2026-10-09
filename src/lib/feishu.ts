@@ -8,6 +8,7 @@
  */
 
 import { logError, logMessage } from './logging'
+import { BRAND } from './marketing/brand'
 
 // ============================================================================
 // Configuration
@@ -346,7 +347,7 @@ export function buildReviewCommentCard({
   content += `\n\n━━━━━━━━━━━━━━\n审阅人：${reviewerName}`
 
   return {
-    title: '🎬 MLE6 逐帧审阅批注意见',
+    title: `🎬 ${BRAND.zh}批注意见`,
     content,
   }
 }

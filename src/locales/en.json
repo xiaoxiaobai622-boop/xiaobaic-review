@@ -761,6 +761,7 @@
     "failedToGenerateDownloadLink": "Failed to generate download link"
   },
   "videos": {
+    "versionLabelAutomatic": "Version numbers are generated automatically and can't be changed.",
     "tooManyRequestsSlowDown": "Too many requests. Please slow down.",
     "uploadVideo": "Upload Video",
     "uploadVideos": "Upload Videos",
@@ -2340,6 +2341,7 @@
   },
 
   "calendar": {
+    "noDueDate": "No due date",
     "title": "Calendar",
     "description": "Project deadlines and timeline overview",
     "notFound": "Not found",

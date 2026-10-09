@@ -625,7 +625,7 @@ model ProjectUpload {
 
   uploadCompletedAt DateTime? // null until file transfer finishes; orphaned records stay null
 
-  transcodeStatus   String  @default("NONE") // NONE, PROCESSING, ERROR
+  transcodeStatus   String  @default("NONE") // NONE, PROCESSING, READY, ERROR — the worker writes these (src/worker), and tsconfig excludes src/worker from type checking, so this list is the contract: keep it in step with the literals there.
   transcodeProgress Int     @default(0)
   transcodeError    String?
   sourceVideoId     String? @unique

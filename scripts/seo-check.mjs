@@ -116,7 +116,17 @@ report(home.status === 200 && /"@type":"Organization"/.test(home.body), '首页�
 // 首页此前整页没有 canonical 也没有 og:*（www 与 apex 两份 200 同内容，没有主 URL 信号）。
 report(home.status === 200 && new RegExp(`<link rel="canonical" href="${esc(SITE)}/"\\/?>`).test(home.body), '首页 canonical 指向 SITE/')
 report(home.body.includes('<meta property="og:url"'), '首页有 og:url')
-report(home.body.includes('<meta property="og:image"'), '首页有 og:image')
+// 只断「有 og:image」是假绿：10-08 实测首页画的是 http://localhost:4321/og/brand-1200x630.png
+// （相对路径 + 根 layout 没有 metadataBase），微信/推特分享就没有图。所以断它是绝对址，
+// 而且 origin 必须跟同一页的 canonical 一致——origin 从页面自己派生，dev 与生产都成立。
+const metaHref = (re) => home.body.match(re)?.[1] ?? ''
+const originOf = (href) => { try { return new URL(href, `${SITE}/`).origin } catch { return '' } }
+const canonicalOrigin = originOf(metaHref(/<link rel="canonical" href="([^"]+)"\s*\/?>/))
+const ogImageHref = metaHref(/<meta property="og:image" content="([^"]+)"\s*\/?>/)
+report(
+  /^https?:\/\/\S+/.test(ogImageHref) && !!canonicalOrigin && originOf(ogImageHref) === canonicalOrigin,
+  `首页 og:image 是绝对址且与 canonical 同源（不是 localhost 兜底）`,
+)
 // Google 站长验证靠这枚 meta；根 layout 一改就容易静默丢掉，掉了验证状态就废。
 report(home.body.includes('<meta name="google-site-verification"'), '首页有 google-site-verification')
 

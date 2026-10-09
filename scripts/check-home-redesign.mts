@@ -308,7 +308,7 @@ try {
     const w = Number(fps(HERO_MP4, ['-select_streams', 'v:0', '-show_entries', 'stream=width', '-of', 'csv=p=0']))
     const dur = Number(fps(HERO_MP4, ['-show_entries', 'format=duration', '-of', 'csv=p=0']))
     const audio = fps(HERO_MP4, ['-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0'])
-    check(w >= 1920, `H36·c hero.mp4 实测宽 ${w}（首屏槽位约 700 CSS px，2x 屏要 1400，1920 才有富余）`)
+    check(w >= 1540, `H36·c hero.mp4 实测宽 ${w}（1440 视口里渲染宽实测 770 CSS px，2x 屏要 1540；10-08 从 1920 降到 1600 就是为了砍这一半字节）`)
     check(dur >= 10 && dur <= 16, `H36·d 时长 ${dur.toFixed(1)}s（对标那枚 hero 18.2s，短于 10s 循环感就露出来了）`)
     check(audio === '', 'H36·e 没有音轨（自动播的装饰片不许带声音）', audio)
     const head = readFileSync(HERO_MP4).subarray(0, 262_144).toString('latin1')
@@ -408,7 +408,7 @@ try {
   await sleep(1400)
   const fv = (await facts(page)).heroVideo
   check(Boolean(fv), 'H38 首屏画出了 <video> 元素', fv ? `${fv.box?.join('×')} CSS px` : '→ 没有 video')
-  check(Boolean(fv) && fv.videoW >= 1920 && fv.ready >= 2, `H38·b 视频真解码到了画面（${fv?.videoW}×${fv?.videoH}，readyState ${fv?.ready}）`, `→ src ${fv?.src}`)
+  check(Boolean(fv) && fv.videoW >= 1540 && fv.ready >= 2, `H38·b 视频真解码到了画面（${fv?.videoW}×${fv?.videoH}，readyState ${fv?.ready}）`, `→ src ${fv?.src}`)
   check(started && Boolean(fv) && fv.paused === false && fv.t > t0, `H38·c 它在跑（currentTime ${t0} → ${fv?.t}）`, fv ? `paused=${fv.paused} / 时长 ${fv.dur}s / loop=${fv.loop} / muted=${fv.muted} / playsInline=${fv.inline}` : '')
   check(Boolean(fv) && fv.poster === 'hero-poster.jpg' && fv.muted === true && fv.loop === true && fv.inline === true,
     'H38·d 海报、静音、循环、内联播放四样都在', `→ poster=${fv?.poster}`)
@@ -578,11 +578,6 @@ try {
   // 章节栏面比一屏高，取视口外的方片要开 captureBeyondViewport，坐标按文档算。
   const grabDoc = async (clip: { x: number; y: number; width: number; height: number }) =>
     Buffer.from((await gp.s('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { ...clip, scale: 1 } })).data, 'base64')
-  const move = async (x: number, y: number) => {
-    await gp.s('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
-    // 2.6 秒 ≈ 拖尾的 3 个时间常数：等那团亮衰干净再拍，这条量的才是条带本身、不是拖尾。
-    await sleep(2600)
-  }
   const px = async (buf: Buffer) => (await sharp(buf).removeAlpha().raw().toBuffer())
   const diff = (a: Buffer, b: Buffer) => {
     const n = Math.min(a.length, b.length)
@@ -647,11 +642,22 @@ try {
   }
   check(bandRects.length >= 3 && lightRange.every((r) => r >= 8),
     `H54 ${bandRects.length} 块章节栏面各自的光真的落在像素上（每块顶/底两条留白带上的四块方片，最亮减最暗 = ${lightRange.map((r) => r.toFixed(1)).join(' ｜ ')}，要 ≥8）`)
-  // 两个指针位置取这一屏的最上沿与最下沿（同一列）：候选块最远只到 y 74–834，
+  // 两个指针位置取这一屏的最上沿与最下沿：候选块最远只到 y 74–834，
   // 所以这两处永远在方片之外，而 uPointer 的纵向位移拉到接近满程。
-  const px2 = Math.max(8, Math.min(1432, patch.x + Math.round(patch.width / 2)))
+  // ⚠️ 纵向路径必须离方片 ≥320px（拖尾半径 TRAIL_RADIUS=0.15 归一化 ≈ 216px）：
+  // 之前沿方片自己那一列上下穿，指针把拖尾直接拖进了被量的方块，于是必须等 2.6 秒（≈拖尾 3 个时间常数）
+  // 才敢拍；而 2.6 秒的间隔里背景自己那 31 秒呼吸周期能漂 ~5 个通道单位，和指针效应（实测 7.4）同量级，
+  // cos 就被共模残差吃掉——同一份代码两次跑出 -0.92 与 -0.32，纯看落在呼吸的哪一段。
+  // 现在走旁边一列、拖尾碰不到方片，等待缩到 700ms（指针 lerp τ≈125ms 的 5.6 倍），呼吸窗口只剩 ~1.4。
+  const awayFrom = patch.x + Math.round(patch.width / 2)
+  const px2 = Math.max(8, Math.min(1432, awayFrom < 720 ? patch.x + patch.width + 320 : patch.x - 320))
+  const TRAIL_CLEAR = Math.abs(px2 - awayFrom) - Math.round(patch.width / 2)
   const TOP_Y = 14
   const BOT_Y = 886
+  const move = async (x: number, y: number) => {
+    await gp.s('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
+    await sleep(700)
+  }
   // 背景变强之后时间漂移本身就有 7 个通道单位，「换位差 ÷ 同位差」的比值会被它吃掉（实测 1.2×）。
   // 换成反相关判据：TOP→BOT 的差向量与 BOT→TOP 的差向量必须几乎反向（纯指针位移是往复的，
   // 时间漂移是共模的、两个方向上同向），所以 cos 越接近 -1 越是指针在起作用，接近 0 就是噪声。
@@ -675,7 +681,7 @@ try {
   const anti = Math.max(...pairs.map((p) => p.c))
   const swept = pairs.reduce((a, p) => a + p.m, 0) / pairs.length
   check(anti < -0.5 && swept > 0.4,
-    `H45 背景条带真的随指针变（条带 ${patch.x},${patch.y} ${patch.width}×${patch.height}，指针在条带外 ${TOP_Y}↔${BOT_Y} 往复 4 趟：换位幅度 ${swept.toFixed(2)}，往复差向量最不负的 cos ${anti.toFixed(2)}，要 <-0.5）`)
+    `H45 背景条带真的随指针变（条带 ${patch.x},${patch.y} ${patch.width}×${patch.height}，指针走旁边一列、离条带 ${TRAIL_CLEAR}px（拖尾半径约 216），在条带外 ${TOP_Y}↔${BOT_Y} 往复 4 趟、每趟等 700ms：换位幅度 ${swept.toFixed(2)}，往复差向量最不负的 cos ${anti.toFixed(2)}，要 <-0.5）`)
   // ── 拖尾（对标他们流体解算里 splat + densityDissipation 那套机制：划过留亮尾，移开要衰减）──
   // ⚠️ 这块量法换了五轮，前四轮全被"背景自己在动"打穿：H44·c 那块一秒漂 14.7 个通道单位；
   //    按"划过→移开→隔时对比"量会假绿；换成"最静那一小块"四趟散布仍有 ±28；放大到整屏后噪声降到
@@ -720,17 +726,24 @@ try {
   }
   const through: number[] = []
   const around: number[] = []
-  for (const first of [true, false, true, false, true, false, true, false] as const) {
+  for (const first of [true, false, true, false, true, false, true, false, true, false, true, false] as const) {
     await at(PARK.x, PARK.y)
     await sleep(3000)                     // 3.3 个时间常数，上一趟的尾只剩 3.7%
     ;(first ? through : around).push(await shape(first ? 450 : 200))
   }
-  const wake = mean(through) - mean(around)
-  // 噪声按"绕过去"那一列的标准误算，不是按单次最大幅度：这条比的是两组均值之差。
+  // 统计量用「相邻一对的差」的中位数，不用两组均值之差：呼吸那 ±10 个单位是随相位漂的共模残差，
+  // 单趟能把它整个吃掉（10-08 实测四趟散布 12.2↔29.4），相邻两趟隔 3.6 秒、相位几乎相同，
+  // 差掉之后取中位数，坏相位只能污染一对，打不动六对。
+  const pairsHW = through.map((v, i) => v - around[i])
+  const sortedPairs = [...pairsHW].sort((a, b) => a - b)
+  const wake = sortedPairs.length % 2 === 0
+    ? (sortedPairs[sortedPairs.length / 2 - 1] + sortedPairs[sortedPairs.length / 2]) / 2
+    : sortedPairs[(sortedPairs.length - 1) / 2]
+  // 噪声按"绕过去"那一列的标准误算，不是按单次最大幅度：这条比的是配对差。
   const sd = Math.sqrt(around.reduce((a, v) => a + (v - mean(around)) ** 2, 0) / around.length)
   const se = sd / Math.sqrt(around.length)
   check(wake >= 6 && wake >= se * 3,
-    `H56 指针划过真的留下会衰减的亮尾（同一帧里"中间行 减 上下各 250px 两条对照行"的高通差：横穿中间行四趟 ${through.map((v) => v.toFixed(1)).join('、')}，改穿对照行四趟 ${around.map((v) => v.toFixed(1)).join('、')} ⇒ 拖尾 ${wake.toFixed(1)}；对照那一列的标准误 ${se.toFixed(1)}，要拖尾 ≥6 且 ≥3× 它）`)
+    `H56 指针划过真的留下会衰减的亮尾（同一帧里"中间行 减 上下各 250px 两条对照行"的高通差，${pairsHW.length} 对相邻配对：${pairsHW.map((v) => v.toFixed(1)).join('、')} ⇒ 中位拖尾 ${wake.toFixed(1)}；对照那一列的标准误 ${se.toFixed(1)}，要 ≥6 且 ≥3× 它）`)
 
   // 文字压在实际画出来的像素上，getComputedStyle 那套取不到着色器，只能量图。
   const h1b = JSON.parse(String(await evalJs(gp, `(() => { const r = document.querySelector('h1').getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }) })()`)))

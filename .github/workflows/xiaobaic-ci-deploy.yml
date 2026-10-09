@@ -45,6 +45,12 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      # 10-08 漂移台账 12：这类 bug（写走存储抽象、读走裸 fs；同一资源的多条出口没对齐）
+      # 编译器与 build 全看不见——tsconfig 排除了 src/worker，build 也不读 manifest。
+      # 只跑零凭据、零网络、零数据库的静态判据；会读写数据库的那批判据刻意不进 CI。
+      - name: Run static regression judgments
+        run: npm run check:static
+
       - name: Build production application
         env:
           SKIP_ENV_VALIDATION: "1"
@@ -92,6 +98,9 @@ jobs:
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           build-args: |
             APP_VERSION=${{ github.sha }}
+            # 留空＝静态资源仍从站点自己出（现状）。填 https://static.vidx.cn 之类，
+            # CDN 那侧必须先配好：`/_next/static/*` 长缓存＋回源到本站，且证书生效。
+            ASSET_PREFIX=${{ vars.ASSET_PREFIX }}
             SKIP_NPM_AUDIT=true
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -3,9 +3,17 @@ import * as path from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { mkdir } from 'fs/promises'
-import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3PurgeObject, s3PurgeDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl, s3FileExists } from './s3-storage'
+import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3PurgeObject, s3PurgeDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl, s3FileExists, s3GetObjectSize } from './s3-storage'
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || '/app/uploads'
+
+/**
+ * Scratch directory for in-flight TUS uploads. It deliberately lives *inside*
+ * STORAGE_ROOT: that path is the one volume both the app and the worker
+ * container mount, so the worker's stale-chunk sweep can actually see the files
+ * the app wrote. A `/tmp` path made that cleanup a silent no-op.
+ */
+export const TUS_TMP_DIR = path.join(STORAGE_ROOT, '.tus-tmp')
 
 /** True when STORAGE_PROVIDER=s3 is set. */
 export function isS3Mode(): boolean {
@@ -200,6 +208,22 @@ export async function fileExists(filePath: string): Promise<boolean> {
     return fs.existsSync(validatePath(filePath))
   } catch {
     return false
+  }
+}
+
+/**
+ * Byte size of a stored file through the same abstraction that wrote it, or
+ * null when it isn't there. Callers that only checked `fs.stat(...).size`
+ * could not see objects living in the bucket.
+ */
+export async function getStoredFileSize(filePath: string): Promise<number | null> {
+  if (isS3Mode()) {
+    return s3GetObjectSize(filePath)
+  }
+  try {
+    return fs.statSync(validatePath(filePath)).size
+  } catch {
+    return null
   }
 }
 

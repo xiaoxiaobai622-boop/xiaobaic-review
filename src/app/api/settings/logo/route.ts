@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
-import { initStorage, uploadFile, deleteFile, getFilePath } from '@/lib/storage'
+import { initStorage, uploadFile, deleteFile } from '@/lib/storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
-import { ACCENT_PRESET_KEYS } from '@/lib/accent'
-import fs from 'fs/promises'
+import { LOGO_SOURCE_KEY, LOGO_PNG_KEY } from '@/lib/brand'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import DOMPurify from 'isomorphic-dompurify'
@@ -13,29 +12,17 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_SIZE_BYTES = 300 * 1024
-const STORAGE_PATH = 'branding/logo.svg'
-const PNG_CACHE_PATH = 'branding/logo.png'
-const DEFAULT_CACHE_PREFIX = 'branding/default-logo-'
 
 /**
- * Clear all cached logo PNGs (custom and default)
- * Called whenever logo changes to ensure fresh generation
+ * Clear the cached PNG of the custom logo so the next render rasterises the
+ * new SVG. Only the custom logo has a cache now — the built-in mark is rendered
+ * per request (see api/branding/logo-png).
  */
 async function clearAllLogoPngCaches(): Promise<void> {
-  // Delete custom logo PNG cache
   try {
-    await deleteFile(PNG_CACHE_PATH)
+    await deleteFile(LOGO_PNG_KEY)
   } catch {
     // Ignore if doesn't exist
-  }
-  
-  // Delete all default logo PNG caches (one per accent colour)
-  for (const color of ACCENT_PRESET_KEYS) {
-    try {
-      await fs.unlink(getFilePath(`${DEFAULT_CACHE_PREFIX}${color}.png`))
-    } catch {
-      // Ignore if doesn't exist
-    }
   }
 }
 
@@ -112,7 +99,7 @@ export async function POST(request: NextRequest) {
   try {
     await initStorage()
     const sanitizedBuffer = Buffer.from(sanitized, 'utf-8')
-    await uploadFile(STORAGE_PATH, sanitizedBuffer, sanitizedBuffer.byteLength, 'image/svg+xml')
+    await uploadFile(LOGO_SOURCE_KEY, sanitizedBuffer, sanitizedBuffer.byteLength, 'image/svg+xml')
 
     // Clear all cached PNGs so the new logo is used everywhere
     await clearAllLogoPngCaches()
@@ -128,7 +115,7 @@ export async function POST(request: NextRequest) {
       })
     } catch (dbError) {
       // DB upsert failed — remove orphaned file from disk
-      await deleteFile(STORAGE_PATH).catch((cleanupError) => {
+      await deleteFile(LOGO_SOURCE_KEY).catch((cleanupError) => {
         logError('[SETTINGS:LOGO] Failed to rollback orphaned logo file', cleanupError)
       })
       throw dbError
@@ -158,7 +145,7 @@ export async function DELETE(request: NextRequest) {
 
   try {
     await initStorage()
-    await deleteFile(STORAGE_PATH)
+    await deleteFile(LOGO_SOURCE_KEY)
     
     // Clear all cached PNGs so the default logo is used
     await clearAllLogoPngCaches()

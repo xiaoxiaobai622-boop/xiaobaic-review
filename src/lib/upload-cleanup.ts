@@ -2,10 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { prisma } from './db'
 import { logError, logMessage } from './logging'
-import { isS3Mode } from './storage'
+import { isS3Mode, TUS_TMP_DIR } from './storage'
 import { s3AbortIncompleteMultipartUploadsOlderThan } from './s3-storage'
 
-const TUS_UPLOAD_DIR = '/tmp/vitransfer-tus-uploads'
 const MAX_AGE_HOURS = 24 // Remove files older than 24 hours
 const INCOMPLETE_S3_MULTIPART_MAX_AGE_HOURS = 24
 
@@ -14,17 +13,17 @@ const INCOMPLETE_S3_MULTIPART_MAX_AGE_HOURS = 24
  * This should be run periodically (e.g., via cron job)
  */
 export async function cleanupOrphanedUploads() {
-  if (!fs.existsSync(TUS_UPLOAD_DIR)) {
+  if (!fs.existsSync(TUS_TMP_DIR)) {
     return
   }
 
   try {
-    const files = fs.readdirSync(TUS_UPLOAD_DIR)
+    const files = fs.readdirSync(TUS_TMP_DIR)
     const now = Date.now()
 
     for (const file of files) {
       try {
-        const filePath = path.join(TUS_UPLOAD_DIR, file)
+        const filePath = path.join(TUS_TMP_DIR, file)
         const stats = fs.statSync(filePath)
 
         if (!stats.isFile()) {

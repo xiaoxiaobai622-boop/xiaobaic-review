@@ -4,13 +4,11 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSmtpConfigured } from '@/lib/settings'
-import { getFilePath } from '@/lib/storage'
-import { ACCENT_PRESET_KEYS, accentCacheKey, isValidAccentColor } from '@/lib/accent'
+import { isValidAccentColor } from '@/lib/accent'
 import { flushPendingAdminNotifications } from '@/lib/notifications'
 import { invalidateEmailSettingsCache } from '@/lib/email'
 import { getConfiguredLocale, invalidateConfiguredLocaleCache, loadLocaleMessages } from '@/i18n/locale'
 import { SUPPORTED_LOCALES } from '@/i18n/supported-locales'
-import fs from 'fs/promises'
 import { logError, logMessage } from '@/lib/logging'
 
 export const runtime = 'nodejs'
@@ -428,20 +426,6 @@ export async function PATCH(request: NextRequest) {
     if (language !== undefined) invalidateConfiguredLocaleCache()
 
     invalidateEmailSettingsCache()
-
-    // If accent color changed, invalidate cached default logo PNGs
-    if (accentColor !== undefined) {
-      const defaultCachePrefix = 'branding/default-logo-'
-      // Presets are enumerable; a custom colour is not, so drop its own key too.
-      const staleCaches = new Set<string>([...ACCENT_PRESET_KEYS, accentCacheKey(accentColor)])
-      for (const color of staleCaches) {
-        try {
-          await fs.unlink(getFilePath(`${defaultCachePrefix}${color}.png`))
-        } catch {
-          // Ignore if file doesn't exist
-        }
-      }
-    }
 
     // Flush pending admin notifications when schedule changes
     if (previousAdminSchedule !== null && adminNotificationSchedule !== previousAdminSchedule) {

@@ -647,7 +647,33 @@
     "videoNotFoundOrDoesNotBelongToProject": "Video niet gevonden of hoort niet bij dit project",
     "failedToGenerateToken": "Token genereren mislukt",
     "failedToUpdateVideoApproval": "Video-goedkeuring bijwerken mislukt",
-    "fileSizeMustBePositiveInteger": "fileSize moet een positief geheel getal zijn"
+    "fileSizeMustBePositiveInteger": "fileSize moet een positief geheel getal zijn",
+    "archivedSection": "Gearchiveerd",
+    "attentionTitle": "Aandacht nodig",
+    "batchApprove": "Goedkeuren",
+    "batchArchive": "Archiveren",
+    "batchManage": "Batchbeheer",
+    "clickToCollapse": "Klik om in te klappen",
+    "clickToExpand": "Klik om uit te vouwen",
+    "containsArchived": "{count} gearchiveerd",
+    "deleteConfirmBody": "Hiermee verwijdert u “{title}” definitief, met alle video’s en reacties. Dit kan niet ongedaan worden gemaakt.",
+    "deleteConfirmTitle": "Project verwijderen",
+    "dueOn": "Verloopt op {date}",
+    "linkCopied": "Deellink gekopieerd",
+    "menuApprove": "Markeren als goedgekeurd",
+    "menuArchive": "Archiveren",
+    "menuCopyLink": "Deellink kopiëren",
+    "menuPin": "Vastzetten",
+    "menuRestore": "Herstellen",
+    "menuUnpin": "Losmaken",
+    "overdueCount": "{count} verlopen",
+    "overdueDays": "{days} dagen verlopen",
+    "pinnedSection": "Vastgezet",
+    "progressApproved": "{approved}/{total} goedgekeurd",
+    "selectAllProjects": "Alles selecteren",
+    "selectProject": "Project selecteren",
+    "selectedCount": "geselecteerd",
+    "statDueSoon": "Verloopt over 7 dagen"
   },
   "photos": {
     "photos": "Foto's",
@@ -1017,7 +1043,8 @@
     "thumbnailReverted": "Teruggezet naar automatisch gegenereerde thumbnail",
     "thumbnailUpdated": "Thumbnail succesvol bijgewerkt",
     "failedToSetThumbnailApi": "Thumbnail instellen mislukt",
-    "tooManyThumbnailUpdateRequests": "Te veel thumbnail-updates. Probeer het later opnieuw."
+    "tooManyThumbnailUpdateRequests": "Te veel thumbnail-updates. Probeer het later opnieuw.",
+    "versionLabelAutomatic": "Het versienummer wordt automatisch aangemaakt en kan niet worden gewijzigd."
   },
   "comments": {
     "feedbackAndDiscussion": "Feedback & Discussie",
@@ -2272,7 +2299,8 @@
     "wed": "Wo",
     "thu": "Do",
     "fri": "Vr",
-    "sat": "Za"
+    "sat": "Za",
+    "noDueDate": "Geen vervaldatum"
   },
   "controls": {
     "previousFrame": "Vorig Frame",

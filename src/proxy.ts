@@ -54,6 +54,15 @@ export async function proxy(request: NextRequest) {
     } catch {}
   }
 
+  // `/_next/static/**` 被 assetPrefix 挪去 CDN 时，脚本/样式/字体三条指令必须一起放行。
+  // 读构建期内联的那枚（next.config 的 `env.BUILD_ASSET_PREFIX`）而不是运行期 env：
+  // runner 容器没配 `ASSET_PREFIX`，读运行期会得到空串，于是线上静默白屏、本地却看不出来。
+  let assetOrigin = ''
+  try {
+    const prefix = (process.env.BUILD_ASSET_PREFIX || '').trim()
+    if (prefix) assetOrigin = ` ${new URL(prefix).origin}`
+  } catch {}
+
   const connectSrc = [
     "'self'",
     'blob:',
@@ -81,11 +90,11 @@ export async function proxy(request: NextRequest) {
 
   const cspDirectives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}'${developmentScriptSource} https://static.cloudflareinsights.com`,
+    `script-src 'self' 'nonce-${nonce}'${developmentScriptSource}${assetOrigin} https://static.cloudflareinsights.com`,
     "script-src-attr 'none'",
-    "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com ${NEURALYN_ORIGIN}${extraMediaOrigins}`,
-    "font-src 'self' data:",
+    `style-src 'self' 'unsafe-inline'${assetOrigin}`,
+    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com ${NEURALYN_ORIGIN}${extraMediaOrigins}${assetOrigin}`,
+    `font-src 'self' data:${assetOrigin}`,
     `connect-src ${connectSrc}`,
     `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN} ${NEURALYN_ORIGIN}${extraMediaOrigins}`,
     "object-src 'none'",

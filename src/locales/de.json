@@ -647,7 +647,33 @@
     "videoNotFoundOrDoesNotBelongToProject": "Video nicht gefunden oder gehört nicht zu diesem Projekt",
     "failedToGenerateToken": "Token konnte nicht generiert werden",
     "failedToUpdateVideoApproval": "Video-Freigabe konnte nicht aktualisiert werden",
-    "fileSizeMustBePositiveInteger": "fileSize muss eine positive ganze Zahl sein"
+    "fileSizeMustBePositiveInteger": "fileSize muss eine positive ganze Zahl sein",
+    "archivedSection": "Archiviert",
+    "attentionTitle": "Erfordert Aufmerksamkeit",
+    "batchApprove": "Freigeben",
+    "batchArchive": "Archivieren",
+    "batchManage": "Stapelverwaltung",
+    "clickToCollapse": "Klicken zum Einklappen",
+    "clickToExpand": "Klicken zum Ausklappen",
+    "containsArchived": "{count} archiviert",
+    "deleteConfirmBody": "Dadurch wird „{title}“ mit allen Videos und Kommentaren endgültig gelöscht. Dieser Vorgang kann nicht rückgängig gemacht werden.",
+    "deleteConfirmTitle": "Projekt löschen",
+    "dueOn": "Fällig am {date}",
+    "linkCopied": "Freigabelink kopiert",
+    "menuApprove": "Als freigegeben markieren",
+    "menuArchive": "Archivieren",
+    "menuCopyLink": "Freigabelink kopieren",
+    "menuPin": "Anheften",
+    "menuRestore": "Wiederherstellen",
+    "menuUnpin": "Lösen",
+    "overdueCount": "{count} überfällig",
+    "overdueDays": "{days} Tage überfällig",
+    "pinnedSection": "Angeheftet",
+    "progressApproved": "{approved}/{total} freigegeben",
+    "selectAllProjects": "Alle auswählen",
+    "selectProject": "Projekt auswählen",
+    "selectedCount": "ausgewählt",
+    "statDueSoon": "Fällig in 7 Tagen"
   },
   "photos": {
     "photos": "Fotos",
@@ -1017,7 +1043,8 @@
     "thumbnailReverted": "Auf systemgeneriertes Vorschaubild zurückgesetzt",
     "thumbnailUpdated": "Vorschaubild erfolgreich aktualisiert",
     "failedToSetThumbnailApi": "Vorschaubild konnte nicht gesetzt werden",
-    "tooManyThumbnailUpdateRequests": "Zu viele Vorschaubild-Aktualisierungsanfragen. Bitte etwas langsamer."
+    "tooManyThumbnailUpdateRequests": "Zu viele Vorschaubild-Aktualisierungsanfragen. Bitte etwas langsamer.",
+    "versionLabelAutomatic": "Die Versionsnummer wird automatisch erstellt und kann nicht geändert werden."
   },
   "comments": {
     "feedbackAndDiscussion": "Feedback & Diskussion",
@@ -2272,7 +2299,8 @@
     "wed": "Mi",
     "thu": "Do",
     "fri": "Fr",
-    "sat": "Sa"
+    "sat": "Sa",
+    "noDueDate": "Kein Fälligkeitsdatum"
   },
   "controls": {
     "previousFrame": "Vorheriges Bild",

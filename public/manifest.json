@@ -2,7 +2,7 @@
   "name": "逐帧审阅",
   "short_name": "逐帧审阅",
   "description": "专业视频审阅、版本管理与素材收录平台",
-  "start_url": "/admin",
+  "start_url": "/studio",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#0a0a0a",
@@ -17,24 +17,24 @@
   "screenshots": [],
   "shortcuts": [
     {
-      "name": "Projects",
-      "url": "/admin/projects",
-      "description": "View all projects"
+      "name": "项目",
+      "url": "/studio/projects",
+      "description": "打开项目列表"
     },
     {
-      "name": "Clients",
-      "url": "/admin/clients",
-      "description": "Manage clients"
+      "name": "客户",
+      "url": "/studio/clients",
+      "description": "管理客户"
     },
     {
-      "name": "Settings",
-      "url": "/admin/settings",
-      "description": "Open settings"
+      "name": "团队",
+      "url": "/studio/team",
+      "description": "查看团队成员"
     },
     {
-      "name": "Users",
-      "url": "/admin/users",
-      "description": "Manage users"
+      "name": "日程",
+      "url": "/studio/calendar",
+      "description": "打开交付日程"
     }
   ]
 }

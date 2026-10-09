@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getFilePath, fileExists, downloadFile } from '@/lib/storage'
-import { buildLogoSvg } from '@/lib/brand'
-import fs from 'fs/promises'
+import { fileExists, downloadFile, uploadFile } from '@/lib/storage'
+import { buildLogoSvg, LOGO_SOURCE_KEY, LOGO_PNG_KEY } from '@/lib/brand'
 import type { Readable } from 'node:stream'
 import sharp from 'sharp'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -10,11 +9,6 @@ import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const STORAGE_PATH = 'branding/logo.svg'
-const CACHE_PATH = 'branding/logo.png'
-// v2: the mark stopped following the admin accent, so old cached PNGs must not be reused.
-const DEFAULT_CACHE_PATH = 'branding/default-logo-v2.png'
 
 function pngResponse(png: Buffer): NextResponse {
   return new NextResponse(new Uint8Array(png), {
@@ -44,47 +38,41 @@ export async function GET() {
   try {
     // Read through the storage abstraction: the upload writes there, so probing
     // the container's own disk made an uploaded logo invisible in S3 mode.
-    if (await fileExists(STORAGE_PATH)) {
-      const pngPath = getFilePath(CACHE_PATH)
-      try {
-        const cachedPng = await fs.readFile(pngPath)
-        return pngResponse(cachedPng)
-      } catch {
-        // No cached PNG
+    if (await fileExists(LOGO_SOURCE_KEY)) {
+      // The cache goes through the same abstraction as its invalidation
+      // (`deleteFile(LOGO_PNG_KEY)` in settings/logo); reading it off the local
+      // disk while deleting it from the bucket left emails serving the first
+      // logo forever.
+      if (await fileExists(LOGO_PNG_KEY)) {
+        try {
+          return pngResponse(await readAll(await downloadFile(LOGO_PNG_KEY)))
+        } catch (error) {
+          logError('[BRANDING:LOGO-PNG] Cache read failed, regenerating:', error)
+        }
       }
 
-      const svgData = await readAll(await downloadFile(STORAGE_PATH))
+      const svgData = await readAll(await downloadFile(LOGO_SOURCE_KEY))
       const pngBuffer = await sharp(svgData)
         .resize({ height: 88, withoutEnlargement: false })
         .png()
         .toBuffer()
 
       try {
-        await fs.writeFile(pngPath, pngBuffer)
-      } catch {
-        // Ignore cache write errors
+        await uploadFile(LOGO_PNG_KEY, pngBuffer, pngBuffer.length, 'image/png')
+      } catch (error) {
+        logError('[BRANDING:LOGO-PNG] Cache write failed:', error)
       }
 
       return pngResponse(pngBuffer)
     }
 
-    const defaultCachePath = getFilePath(DEFAULT_CACHE_PATH)
-    try {
-      const cachedPng = await fs.readFile(defaultCachePath)
-      return pngResponse(cachedPng)
-    } catch {
-      // No cached PNG
-    }
-
+    // The built-in mark is a deterministic render of a 3KB string, so it is not
+    // cached at all: a cached copy needs an invalidation path, and the last one
+    // (a `-v2` filename plus two loops deleting names that no longer exist) was
+    // the bug rather than the guard.
     const pngBuffer = await sharp(Buffer.from(buildLogoSvg(88)))
       .png()
       .toBuffer()
-
-    try {
-      await fs.writeFile(defaultCachePath, pngBuffer)
-    } catch {
-      // Ignore cache write errors
-    }
 
     return pngResponse(pngBuffer)
   } catch (error) {

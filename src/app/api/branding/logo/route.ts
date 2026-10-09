@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server'
 import { isS3Mode, getFilePath } from '@/lib/storage'
 import { s3FileExists, s3GetPresignedDownloadUrl } from '@/lib/s3-storage'
+import { LOGO_SOURCE_KEY } from '@/lib/brand'
 import fs from 'fs/promises'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// The key the upload endpoint writes to. Reading it off the local disk alone
-// silently served the pre-S3 file forever, so every custom logo upload looked
-// like it "reverted"; the object store is probed first, same as /api/branding/favicon.
-const STORAGE_PATH = 'branding/logo.svg'
+// The key the upload endpoint writes to — shared, not re-spelled here, because
+// reading it off the local disk alone silently served the pre-S3 file forever,
+// so every custom logo upload looked like it "reverted"; the object store is
+// probed first, same as /api/branding/favicon.
+const STORAGE_PATH = LOGO_SOURCE_KEY
 
 export async function GET() {
   const locale = await getConfiguredLocale().catch(() => 'en')

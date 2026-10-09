@@ -31,6 +31,16 @@ const EMAIL = 'home-demo@xiaobaic.local'
 const PARK_AT_SEC = 4.2
 const OUT_W = 1920
 const OUT_H = 1080
+/**
+ * 出片目标尺寸：视口必须按 1920×1080 录（UI 小字要按原生像素收，缩放前不留遗憾），
+ * 但成片只留 1600×900 —— 首屏那枚 <video> 在 1440 视口里实测渲染宽 770 CSS px，
+ * 2x 屏要 1540，1600 已经带了一点富余；再往上是白花的字节（1920 那档实测 2.43MB，1600 这档 1.20MB）。
+ * 上限由 scripts/check-home-media-budget.mts 的 M1 钉着，这里用同一个数。
+ */
+const ENC_W = 1600
+const ENC_H = 900
+const MP4_MAX_BYTES = 1_250_000
+const POSTER_MAX_BYTES = 150 * 1024
 /** 目标帧率：演示源片就是 24fps 编的，收帧实测 17fps 上下，往 24 重采样比往 30 少造一倍空帧。 */
 const ENC_FPS = 24
 /** 录到第几秒喊停（判据那头发 10–16s 的窗口，这里取中间偏上，留出交互动作的时间）。 */
@@ -372,10 +382,10 @@ async function main() {
   // 海报直接取成片的第一帧：另截一张必然和第一帧差一点，加载那一瞬会闪一下。
   if (!DRY) {
     const sharp = (await import('sharp')).default
-    await sharp(frame0).jpeg({ quality: 88, mozjpeg: true }).toFile(POSTER)
+    await sharp(frame0).resize({ width: ENC_W }).jpeg({ quality: 74, mozjpeg: true, progressive: true }).toFile(POSTER)
     const pm = await sharp(POSTER).metadata()
-    check(pm.width === OUT_W && pm.height === OUT_H, `海报 ${pm.width}×${pm.height} 与成片同尺寸`)
-    check(statSync(POSTER).size < 400 * 1024, `海报 ${(statSync(POSTER).size / 1024).toFixed(0)}KB`, '→ 首屏加载前铺的那张，太大就拖 LCP')
+    check(pm.width === ENC_W && pm.height === ENC_H, `海报 ${pm.width}×${pm.height} 与成片同尺寸`)
+    check(statSync(POSTER).size < POSTER_MAX_BYTES, `海报 ${(statSync(POSTER).size / 1024).toFixed(0)}KB < ${(POSTER_MAX_BYTES / 1024).toFixed(0)}KB`, '→ 首屏加载前铺的那张，太大就拖 LCP')
   }
 
   const mp4 = DRY ? '/tmp/hero-dry.mp4' : MP4
@@ -383,14 +393,15 @@ async function main() {
     '-v', 'error', '-y',
     // 按实测帧率喂帧，再重采样到 ENC_FPS：不这么写会把 17fps 的收帧当成 24fps 播，快一倍半。
     '-framerate', rec.fps.toFixed(4), '-i', join(frameDir, '%05d.jpg'),
-    '-vf', `fps=${ENC_FPS},scale=${OUT_W}:${OUT_H}:flags=lanczos,setsar=1`,
-    '-c:v', 'libx264', '-preset', 'slow', '-crf', '30', '-pix_fmt', 'yuv420p',
+    '-vf', `fps=${ENC_FPS},scale=${ENC_W}:${ENC_H}:flags=lanczos,setsar=1`,
+    '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '32', '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart', '-an', mp4,
   ], { stdio: 'inherit' })
   const bytes = statSync(mp4).size
   const dur = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }).trim()
   const audio = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }).trim()
-  check(bytes < 3 * 1024 * 1024, `hero.mp4 ${(bytes / 1024 / 1024).toFixed(2)}MB < 3MB`)
+  check(bytes < MP4_MAX_BYTES, `hero.mp4 ${(bytes / 1024).toFixed(0)}KB < ${(MP4_MAX_BYTES / 1024).toFixed(0)}KB`,
+    bytes >= MP4_MAX_BYTES ? '→ 超预算：先把 CRF 抬一档或确认渲染宽（判据 M1 同一枚数）' : '')
   check(Number(dur) >= 10 && Number(dur) <= 16, `成片时长 ${Number(dur).toFixed(1)}s 落在 10–16s`)
   check(audio === '', '没有音轨', audio)
   if (DRY) console.log('DRY：没写 public/home')

@@ -466,6 +466,26 @@ async function purgeObjectVersions(accept: (entry: { Key?: string }) => boolean,
   } while (true)
 }
 
+/**
+ * Byte size of a stored object, or null when it is not there. Deliberately
+ * uncached: callers use it to verify a transfer they just finished.
+ */
+export async function s3GetObjectSize(key: string): Promise<number | null> {
+  const bucket = getS3Bucket()
+  try {
+    const res = await getS3Client().send(
+      new HeadObjectCommand({ Bucket: bucket, Key: key }),
+      { abortSignal: AbortSignal.timeout(S3_METADATA_TIMEOUT_MS) },
+    )
+    return res.ContentLength ?? null
+  } catch (err: unknown) {
+    if (isS3NotFoundError(err)) return null
+    const e = err as { $metadata?: { httpStatusCode?: number }; message?: string }
+    const status = e?.$metadata?.httpStatusCode
+    throw new Error(`S3 HeadObject failed for key "${key}"${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? String(err)}`)
+  }
+}
+
 /** Return true if the object exists; false on 404; rethrows on any other error. */
 export async function s3FileExists(key: string): Promise<boolean> {
   // Validate the configured bucket even when a cached result is available,

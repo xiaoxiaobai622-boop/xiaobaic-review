@@ -3,7 +3,7 @@ import { FileStore } from '@tus/file-store'
 import { prisma } from '@/lib/db'
 import { ALL_ALLOWED_EXTENSIONS } from '@/lib/asset-validation'
 import { ALLOWED_PHOTO_TYPES } from '@/lib/file-validation'
-import { getFilePath, initStorage, isS3Mode, moveFile } from '@/lib/storage'
+import { getFilePath, initStorage, isS3Mode, moveFile, fileExists, getStoredFileSize, TUS_TMP_DIR } from '@/lib/storage'
 import path from 'path'
 import fs from 'fs'
 import { Readable } from 'stream'
@@ -14,12 +14,11 @@ import { handleReverseShareUploadNotification } from '@/lib/upload-notifications
 import { canUserAdministerUploadTarget } from '@/lib/s3-upload-auth'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 
-const TUS_UPLOAD_DIR = '/tmp/vitransfer-tus-uploads'
 const ABSOLUTE_MAX_UPLOAD_SIZE_BYTES = 1000 * 1024 * 1024 * 1024 // 1000 GB hard safety cap
 const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.avi', '.webm', '.mkv']
 
-if (!fs.existsSync(TUS_UPLOAD_DIR)) {
-  fs.mkdirSync(TUS_UPLOAD_DIR, { recursive: true })
+if (!fs.existsSync(TUS_TMP_DIR)) {
+  fs.mkdirSync(TUS_TMP_DIR, { recursive: true })
 }
 
 /**
@@ -33,7 +32,7 @@ function tusError(status: number, body: string) {
 const tusServer: Server = new Server({
   path: '/api/uploads',
   datastore: new FileStore({
-    directory: TUS_UPLOAD_DIR,
+    directory: TUS_TMP_DIR,
   }),
 
   maxSize: ABSOLUTE_MAX_UPLOAD_SIZE_BYTES,
@@ -214,7 +213,7 @@ const tusServer: Server = new Server({
   },
 
   async onUploadFinish(_req, upload) {
-    const tusFilePath = path.join(TUS_UPLOAD_DIR, upload.id)
+    const tusFilePath = path.join(TUS_TMP_DIR, upload.id)
     const videoId = upload.metadata?.videoId as string
     const assetId = upload.metadata?.assetId as string
     const projectUploadId = upload.metadata?.projectUploadId as string
@@ -412,9 +411,13 @@ async function ensureTusFileStored(
   validate: (filePath: string, filename?: string) => Promise<void>,
   contentType: string,
 ): Promise<number> {
-  const finalPath = getFilePath(finalStoragePath)
-  if (fs.existsSync(finalPath)) {
-    const storedSize = fs.statSync(finalPath).size
+  // Ask the storage abstraction whether the final object is already there. This
+  // used to be `fs.existsSync(getFilePath(...))`, which is never true in S3 mode
+  // — so a retried finish re-ran the transfer, found the temp file already
+  // consumed by the first `moveFile`, and failed forever with
+  // "Uploaded file not found on disk".
+  const storedSize = await getStoredFileSize(finalStoragePath)
+  if (storedSize !== null) {
     if (upload.size && storedSize !== upload.size) throw new Error('Stored upload size does not match TUS metadata')
     return storedSize
   }

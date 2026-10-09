@@ -13,6 +13,9 @@ import { BRAND } from '@/lib/marketing/brand'
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
   return {
+    // 根 layout 没有 metadataBase（那里取基址一抛就是全站 500），所以相对路径的分享图
+    // 必须在这一段自己带上基座——10-08 线上实测首页 og:image 曾渲染成 http://localhost:4321/…
+    metadataBase: new URL(site),
     description: '面向影视团队的在线审片、版本管理、素材收录与安全交付平台。',
     alternates: { canonical: `${site}/` },
     openGraph: {

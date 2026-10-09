@@ -52,6 +52,11 @@ RUN npx prisma generate
 
 ARG APP_VERSION
 ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
+# 静态资源换出口（`/_next/static/**`）。留空＝维持同源直出，与今天完全一样。
+# 值只在这一次 build 里用：next.config 会把它同时写进 assetPrefix 和内联常量
+# `BUILD_ASSET_PREFIX`，所以 runner 容器不需要再配一遍（CSP 读的就是内联那枚）。
+ARG ASSET_PREFIX=
+ENV ASSET_PREFIX=${ASSET_PREFIX}
 ENV SKIP_ENV_VALIDATION=1
 ENV NEXT_PHASE=phase-production-build
 RUN npm run build && rm -rf .next/cache

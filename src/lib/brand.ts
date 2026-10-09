@@ -25,3 +25,12 @@ export function buildFaviconSvg(size: number): string {
 export function buildLogoSvg(size: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 256 256" role="img" aria-label="逐帧审阅">${MARK_BODY}</svg>`
 }
+
+/**
+ * Storage keys for the branding images — declared once because the route that
+ * writes a cache and the routes that invalidate it used to spell the names
+ * separately and one of them drifted (10-08 audit item 8).
+ */
+export const LOGO_SOURCE_KEY = 'branding/logo.svg'
+/** Rasterised copy of the operator's uploaded SVG, kept in the same store. */
+export const LOGO_PNG_KEY = 'branding/logo.png'

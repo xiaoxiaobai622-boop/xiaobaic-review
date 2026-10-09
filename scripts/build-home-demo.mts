@@ -24,7 +24,9 @@ const VIDEO_VERSION = 3
 /** 收录短链的码不进文件：给了环境变量就用它，否则复用这个项目上已有的那一枚，
  *  都没有才现随机一枚 —— 三条路都指向同一枚，脚本重跑走 upsert 不堆行。 */
 const DEMO_COLLECT_FROM_ENV = process.env.HOME_DEMO_COLLECT_TOKEN || ''
-const SOURCE_CLIP = 'public/home/film-set.mp4'
+/** 兜底原料不住在 public：那目录整个进镜像、随线上发布，而这三枚片子只有 `night/set/dusk`
+ *  源片缺失时才用得上（见下面 CLIP_SOURCES）。放在 scripts/ 下，runner 阶段不 COPY 它。 */
+const SOURCE_CLIP = 'scripts/fixtures/film-set.mp4'
 const STORAGE_ROOT = process.env.STORAGE_ROOT || './uploads'
 /** 与 src/lib/platform-access.ts 的 BETA_QUOTA 同口径（那枚文件第一行 import Prisma，这里不引）。 */
 const BETA_QUOTA = { maxMembers: 5, maxProjects: 0, maxVideos: 0, maxStorageGB: 10 }

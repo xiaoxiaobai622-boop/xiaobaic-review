@@ -868,13 +868,12 @@ try {
   check(switcher.includes("'成员管理'"), 'D12 身份块那份判据已把第四行算进去（旧判据不跟着改就是假绿）')
 
   // ── E 组：四语言 ───────────────────────────────────────────────────────
-  // 这一排就是面板与菜单实际消费的 key：projectMembersEmpty 早就没有消费者了
-  // （空态分「一个人都没剩下」和「搜不到」两句，见 C19），留着它只会让 E1 断一句界面画不出来的话。
-  const KEYS = ['projectMembers', 'projectMembersTitle', 'projectMembersSection', 'projectMembersAddSection',
-    'projectMembersSearchPlaceholder', 'projectMembersNoCandidates', 'projectMembersAllAdded',
-    'projectMembersSourceAdmin', 'projectMembersSourceAllProjects',
-    'projectMembersSourceAssigned', 'projectMembersRemoveBlockedHint', 'projectMembersAdded', 'projectMembersRemoved',
-    'projectMembersRemoveConfirm']
+  // 这份清单从两个消费方源码里机械抽（面板 + 项目卡的席位那一行），不再手抄：
+  // 手抄过一回，代码用到第 15 枚 `projectMemberCount` 而清单还是 14 枚，E1 继续替
+  // 不存在的覆盖面作证。以后面板加一句文案，E1 自动要求四语言都补。
+  const KEYS = [...new Set([...`${panelSrc}\n${actions}`.matchAll(/t\(\s*['"`](projectMember[A-Za-z]*)['"`]/g)].map(m => m[1]))]
+    .sort()
+  check(KEYS.length >= 14, 'E0 成员这条路的 key 清单是从源码抽出来的（少于 14 枚说明抽取正则失效）', `→ 抽到 ${KEYS.length} 枚：${KEYS.join('/')}`)
   const locales = ['zh', 'en', 'de', 'nl'] as const
   for (const locale of locales) {
     const section = JSON.parse(readFileSync(`src/locales/${locale}.json`, 'utf8')).projects || {}
