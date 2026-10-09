@@ -1,7 +1,7 @@
 # Compatibility build file for Docker installations without the buildx plugin.
 # Runtime contents match Dockerfile; only BuildKit-only copy/cache flags are omitted.
 
-FROM node:24-alpine3.23 AS base
+FROM node:25-alpine3.23 AS base
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
