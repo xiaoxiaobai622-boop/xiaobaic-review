@@ -65,7 +65,7 @@
 
 同期 Googlebot 10-09 共 23 次，其中 16 次是 `_next` 静态资源 ⇒ 它在渲染页面；`/robots.txt` 累计 87 次、`/` 34 次、`/sitemap.xml` 6 次。⇒ **AI 抓取器（GPTBot/ClaudeBot/Perplexity/OAI-Search）从 10-05 起就在读内容页，百度今天加入**；仍没被碰过的是两个枢纽页 `/features`、`/compare` 与 `/llms.txt`。
 
-### ⚠️ 10-09 线上全量验收查出 1 个真 bug（尚未修复上线）
+### ⚠️ 10-09 线上全量验收查出的两个问题（10-09 晚已复测，状态见下）
 
 `SEO_CHECK_BASE=https://vidx.cn node scripts/seo-check.mjs` → **193 通过 / 1 失败**：
 
@@ -76,8 +76,7 @@ FAIL 首页 og:image 是绝对址且与 canonical 同源（不是 localhost 兜�
 ```
 
 根因：根 layout 没有 `metadataBase`（那里取基址一抛就是全站 500），而首页 `openGraph.images` 给的是相对路径，于是 Next 用默认基座 `http://localhost:<内部端口>` 拼。**影响面**：首页在微信/飞书/Google/AI 引擎里的分享卡片没有图。
-**修复状态**：`src/app/page.tsx` 里已加上 `metadataBase: new URL(site)`，但**这份改动还在工作树、未提交**（`git log -S` 查不到对应提交），本机 dev 实测该断言已转绿；线上镜像是 10-08 16:46 那次构建，仍带 bug。⇒ 需要提交 + 部署才算修完。
-**连带观察**：加上 `metadataBase` 后，本机首页 canonical 从 `http://127.0.0.1:3000/` 变成不带尾斜杠的 `http://127.0.0.1:3000`，导致 `首页 canonical 指向 SITE/` 这条断言在本机转红（线上仍是带斜杠的）。是否有意需确认——`sitemap.xml` 里写的是 `https://vidx.cn/`，两者不一致会留下一个小的重复口径。
+**修复状态（10-09 晚复测）**：① 首页 `og:image` 的 `metadataBase` 修复已随 `5c221ec` 提交并部署，**线上实测已是 `https://vidx.cn/og/brand-1200x630.png`** ✅。② 但那次改动带来第二个问题：首页 canonical 与 og:url 被 Next 归一成**不带尾斜杠**的 `https://vidx.cn`，而 `sitemap.xml` 里首页那条是 `<loc>https://vidx.cn/</loc>` —— 同一个页面两个地址。已把 `src/app/sitemap.ts` 的首页那条改成不带斜杠（跟 canonical 对齐；归一是 Next 做的，反过来对不齐），断言同步改为按不带斜杠判，并新增 `sitemap 首页那条与 canonical 同形`。本机 `node scripts/seo-check.mjs` → **195 条全绿**；线上仍红这一条，因为改后的 sitemap 还没部署。
 
 ### ⚠️ 一个把结论整个带偏的探针错误
 

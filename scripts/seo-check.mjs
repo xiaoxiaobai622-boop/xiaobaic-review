@@ -94,6 +94,7 @@ report(/Sitemap: https?:\/\//.test(robots.body), 'robots.txt 有绝对 Sitemap �
 
 const sm = await html('/sitemap.xml')
 report(sm.status === 200 && /<urlset/.test(sm.body), 'sitemap.xml 是合法 XML')
+report(sm.body.includes(`<loc>${SITE}</loc>`), 'sitemap 首页那条与 canonical 同形（不带尾斜杠）')
 for (const p of [...PAGES.map(x => x.path), ...HUBS]) {
   report(sm.body.includes(`<loc>${SITE}${p}</loc>`), `sitemap 含 ${p}`)
 }
@@ -114,7 +115,9 @@ report(llms.body.includes('老版本会被新传的那版顶掉、看不到了�
 const home = await html('/')
 report(home.status === 200 && /"@type":"Organization"/.test(home.body), '首页有 Organization 节点')
 // 首页此前整页没有 canonical 也没有 og:*（www 与 apex 两份 200 同内容，没有主 URL 信号）。
-report(home.status === 200 && new RegExp(`<link rel="canonical" href="${esc(SITE)}/"\\/?>`).test(home.body), '首页 canonical 指向 SITE/')
+// 根路径 canonical 被 Next 归一成**不带尾斜杠**（线上实测 `https://vidx.cn`），断言就按这个形判；
+// sitemap 的首页那条必须跟它一模一样，差一个斜号等于给同一个页面两个地址。
+report(home.status === 200 && new RegExp(`<link rel="canonical" href="${esc(SITE)}"\\/?>`).test(home.body), '首页 canonical 是 SITE（不带尾斜杠）')
 report(home.body.includes('<meta property="og:url"'), '首页有 og:url')
 // 只断「有 og:image」是假绿：10-08 实测首页画的是 http://localhost:4321/og/brand-1200x630.png
 // （相对路径 + 根 layout 没有 metadataBase），微信/推特分享就没有图。所以断它是绝对址，

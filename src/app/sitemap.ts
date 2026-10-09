@@ -14,7 +14,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = await getSiteUrlFromRequest()
   const now = new Date()
 
-  const statics: MetadataRoute.Sitemap = [`${site}/`, `${site}/features`, `${site}/compare`, `${site}/privacy`, `${site}/terms`].map(
+  // 首页这条**不带尾斜杠**：Next 渲染根路径 canonical 时会把 `https://vidx.cn/` 归一成
+  // `https://vidx.cn`（10-09 线上实测），两边不一致就等于给同一个页面两个地址。
+  const statics: MetadataRoute.Sitemap = [site, `${site}/features`, `${site}/compare`, `${site}/privacy`, `${site}/terms`].map(
     (url) => ({ url, lastModified: now }),
   )
 
