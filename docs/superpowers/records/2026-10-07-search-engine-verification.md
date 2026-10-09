@@ -2,7 +2,7 @@
 
 站点：`https://vidx.cn/`（逐帧审阅 / FrameReview）
 记录人：Qoder 会话（在业主登录态下操作）；业主本人负责所有登录、滑块验证、部署触发。
-一句话结论：**上线三天"零抓取"的状态在今天结束前被打破——Googlebot、Bingbot、OAI-SearchBot 三家都已在抓；三家站长平台的归属验证全部完成，百度资源通道仍为 0 配额（暂缓）。**
+一句话结论（**10-09 更正**）：**引擎其实从 09-30 起就一直在抓**——Googlebot 每天都有（09-30 五十次、10-01 七十三次、10-07 七十六次、10-09 二十三次），GPTBot / OAI-SearchBot 几乎天天来，Bingbot 从 10-01 起，Baiduspider 10-08 也出现过一次。本文上一版写的"上线三天零抓取"是**取证探针用错字段造成的假结论**，详见 §二。当天真正完成的是三家站长平台的归属验证；仍未解决的是**内容页被抓到的次数极少**（全窗口只有 `/features/versions` 6 次、`/compare/fenzhen` 2 次、`/compare/netdisk-wechat` 2 次）以及索引量还没出数。
 
 ---
 
@@ -38,11 +38,59 @@
 2026-10-07T10:10:22Z  66.249.66.196    /robots.txt                          200  Googlebot
 ```
 
-当日 UA 家族命中合计（含 `www.vidx.access.log`）：**Bingbot 12 / Googlebot 7 / OAI-Search 3**。
+### 按天 × 引擎的真实命中（10-09 重测，含已压缩的历史日志）
 
-⚠️ 明细里另有两行 `223.91.64.231` 带 Googlebot UA 的记录是**取证时我自己 curl 的**，不是引擎，不计入结论。
+| 日期 | Googlebot | Bingbot | GPTBot | OAI-Search | Baiduspider | Perplexity |
+|---|---|---|---|---|---|---|
+| 09-30 | 50 | – | 26 | 4 | – | – |
+| 10-01 | 73 | 22 | – | 1 | – | – |
+| 10-02 | 1 | 4 | 51 | 5 | – | – |
+| 10-03 | 18 | – | 7 | 3 | – | – |
+| 10-04 | 3 | – | 1 | 5 | – | – |
+| 10-05 | 1 | 2 | 19 | 4 | – | – |
+| 10-06 | 2 | – | 1 | 4 | – | 1 |
+| 10-07 | 76 | 6 | 2 | 6 | – | – |
+| 10-08 | 8 | 15 | 1 | 2 | 1 | – |
+| 10-09（至 15:41 CST） | 23 | – | – | 2 | – | – |
 
-对照基线（10-06 23:2x 测得）：09-30 11:46 → 10-06 15:19 UTC 共 20,940 行日志里，11 种引擎/大模型爬虫 UA **命中 0 次**；`/robots.txt` 的 58 次请求 UA 全为空（扫描器）。
+引擎抓过的 URL 按类别拆开看（**10-09 第二次更正**：上一版只数了当前日志文件、没算 `.gz`，把内容页抓取的量低估了）：
+
+| 日期 | 引擎 | 抓到内容页/AI 层的次数 |
+|---|---|---|
+| 10-05 | GPTBot | **8** |
+| 10-06 | Googlebot / GPTBot / ClaudeBot / Perplexity / OAI-Search / 其他 | 各 1（合计 6） |
+| 10-07 | Googlebot | 2 |
+| 10-08 | 其他 | 3 |
+| **10-09** | **Baiduspider** | **10**（百度验证后第二天就开始抓内容页） |
+
+同期 Googlebot 10-09 共 23 次，其中 16 次是 `_next` 静态资源 ⇒ 它在渲染页面；`/robots.txt` 累计 87 次、`/` 34 次、`/sitemap.xml` 6 次。⇒ **AI 抓取器（GPTBot/ClaudeBot/Perplexity/OAI-Search）从 10-05 起就在读内容页，百度今天加入**；仍没被碰过的是两个枢纽页 `/features`、`/compare` 与 `/llms.txt`。
+
+### ⚠️ 10-09 线上全量验收查出 1 个真 bug（尚未修复上线）
+
+`SEO_CHECK_BASE=https://vidx.cn node scripts/seo-check.mjs` → **193 通过 / 1 失败**：
+
+```
+FAIL 首页 og:image 是绝对址且与 canonical 同源（不是 localhost 兜底）
+线上实测：<meta property="og:image" content="http://localhost:4321/og/brand-1200x630.png">
+内容页对照：<meta property="og:image" content="https://vidx.cn/og/brand-1200x630.png">   ← 正确
+```
+
+根因：根 layout 没有 `metadataBase`（那里取基址一抛就是全站 500），而首页 `openGraph.images` 给的是相对路径，于是 Next 用默认基座 `http://localhost:<内部端口>` 拼。**影响面**：首页在微信/飞书/Google/AI 引擎里的分享卡片没有图。
+**修复状态**：`src/app/page.tsx` 里已加上 `metadataBase: new URL(site)`，但**这份改动还在工作树、未提交**（`git log -S` 查不到对应提交），本机 dev 实测该断言已转绿；线上镜像是 10-08 16:46 那次构建，仍带 bug。⇒ 需要提交 + 部署才算修完。
+**连带观察**：加上 `metadataBase` 后，本机首页 canonical 从 `http://127.0.0.1:3000/` 变成不带尾斜杠的 `http://127.0.0.1:3000`，导致 `首页 canonical 指向 SITE/` 这条断言在本机转红（线上仍是带斜杠的）。是否有意需确认——`sitemap.xml` 里写的是 `https://vidx.cn/`，两者不一致会留下一个小的重复口径。
+
+### ⚠️ 一个把结论整个带偏的探针错误
+
+10-06 那次测得"20,940 行里 11 种爬虫 **0 命中**"，据此写了"零抓取"。今天复查发现**根因是取 UA 的字段用错**：这台机器的 Caddy 访问日志里 `user_agent` 对象是 `null`，UA 只在 `.request.headers["User-Agent"][0]`。同一份日志、同一时间窗实测对照：
+
+```
+jq -r '.user_agent.original // "-"'          | grep -icE 'googlebot|bingbot'  →  0
+jq -r '(.request.headers["User-Agent"])[0]'  | grep -icE 'googlebot|bingbot'  → 21
+```
+
+⇒ 凡是"日志里有没有某类 UA"的结论，必须用 `request.headers["User-Agent"]`，用 `user_agent.original` 会稳定假绿。复查命令已按这个改。
+
+⚠️ 明细里另有几行 `223.91.64.231` 带 Googlebot UA 的记录是**取证时我自己 curl 的**，不是引擎，不计入结论。
 
 ---
 
@@ -72,6 +120,7 @@
 3. **备案号悬挂口径**（合规，与 SEO 无关）：页脚与营销页挂的是**主体号** `桂ICP备2026022852号`，腾讯云要求悬挂**网站号** `…-1`；`src/components/LegalDoc.tsx:52` 另有 `…2026017259号-2`。改哪一枚需业主指定，未动。
 4. **站点领域 30 天锁定**：保存值为「影视动漫 + 工具服务及在线查询 + 其它」，其中「其它」是百度默认帮勾、提交前取消未生效所致；验证成功后 30 天内只能改一次。
 5. **百度列表残留**一条未验证的 `https://www.vidx.cn/` 记录，未删。
+6. **真正的瓶颈是"抓取深度"，不是"有没有人来"**：引擎天天来，但 87 次里绝大多数是 `/robots.txt`，内容页只有 3 个 URL 被碰过（`/features/versions` 6、`/compare/fenzhen` 2、`/compare/netdisk-wechat` 2），两个枢纽页和 `/llms.txt` 至今 0 次。**排除了一个常见猜测**：不是内链问题——线上首页 SSR HTML 里 8 条链接全都在（`/features`、`/compare` 各 1–3 次，六篇各 1–2 次，实测 `grep 'href="/\(features\|compare\)'`），`/features` 也正常链向它那 3 篇。⇒ 剩下的可解释点主要是 **GSC 那条「无法读取此站点地图」还没恢复**（Google 拿不到 URL 清单，只能靠首页一层链接碰运气），以及新站权重本身。下一步该做的是用 GSC「网址检查」逐个查内容页收录状态，而不是再推 IndexNow。
 
 ---
 
