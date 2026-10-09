@@ -211,11 +211,11 @@ check(prefixConst && /assetPrefix:\s*ASSET_PREFIX\s*\|\|\s*undefined/.test(nextC
   'C1 next.config 的 assetPrefix 只认构建期常量（空＝行为一字不变）',
   prefixConst ? 'const ASSET_PREFIX → assetPrefix' : '没找到单一来源')
 check(/BUILD_ASSET_PREFIX:\s*ASSET_PREFIX/.test(nextConfig),
-  'C2 同一枚值以 BUILD_ASSET_PREFIX 内联进产物（运行期容器里没有 ASSET_PREFIX）',
+  'C2 同一枚值以 BUILD_ASSET_PREFIX 内联进产物（edge bundle 只认内联，CSP 靠它）',
   'env.BUILD_ASSET_PREFIX = ASSET_PREFIX')
-// CSP 读的是内联那枚，不是运行期 env —— 读错的那一次是静默白屏，不是报错。
+// CSP 读内联那枚而不是运行期 env：读错的那一次是静默白屏，不是报错。
 check(proxySrc.includes("process.env.BUILD_ASSET_PREFIX"),
-  'C3 CSP 取构建期内联的那枚（runner 容器没配运行期 env，读 ASSET_PREFIX 会永远为空）',
+  'C3 CSP 取构建期内联的那枚（不赌运行期有没有配 env）',
   'process.env.BUILD_ASSET_PREFIX')
 check(!/process\.env\.ASSET_PREFIX\b(?!_)/.test(proxySrc.replace(/BUILD_ASSET_PREFIX/g, '@')),
   'C4 proxy.ts 里没有第二枚取值口径', 'ASSET_PREFIX 直读 0 次')
@@ -227,6 +227,16 @@ check(cspLines.length === 4, 'C5a 四条资源指令都被扫到（少一条＝�
 check(Boolean(assetVar) && cspLines.every(l => l.includes(assetVar)),
   'C5 script-src／style-src／img-src／font-src 四条都拼上这枚 origin',
   assetVar ? `变量 ${assetVar}，命中 ${cspLines.filter(l => l.includes(assetVar)).length}/${cspLines.length} 条` : '没找到那枚变量')
+// `next start` 在运行期重新求值 next.config.js，而 Docker 的 ARG 不跨 stage。
+// 只在 builder 里配一次的后果是实测出来的，不是推出来的：线上 /login 的 17 枚静态标签里
+// 有 6 枚仍打在源站（CSS、webpack runtime、polyfills、main-app 等），只有构建期被内联过
+// 前缀的那批路由 chunk 走了 CDN。半套前缀不会报错，只会让一半流量白留在应用容器上。
+const runnerStage = read('Dockerfile').split(/^FROM\s+\S+\s+AS\s+runner\s*$/m)[1] ?? ''
+const runnerArg = /^ARG\s+ASSET_PREFIX\b/m.test(runnerStage)
+const runnerEnv = /^ENV\s+ASSET_PREFIX=/m.test(runnerStage)
+check(Boolean(runnerStage) && runnerArg && runnerEnv,
+  'C6 runner 段自己声明 ARG + ENV ASSET_PREFIX（否则 SSR 那半边永远不带前缀）',
+  `runner 段 ${runnerStage.length} 字节，ARG ${runnerArg ? '✓' : '✗'} / ENV ${runnerEnv ? '✓' : '✗'}`)
 
 console.log(`\n合计 ${pass} PASS / ${fail} FAIL`)
 process.exit(fail === 0 ? 0 : 1)

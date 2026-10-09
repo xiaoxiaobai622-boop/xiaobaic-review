@@ -53,8 +53,9 @@ RUN npx prisma generate
 ARG APP_VERSION
 ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
 # 静态资源换出口（`/_next/static/**`）。留空＝维持同源直出，与今天完全一样。
-# 值只在这一次 build 里用：next.config 会把它同时写进 assetPrefix 和内联常量
-# `BUILD_ASSET_PREFIX`，所以 runner 容器不需要再配一遍（CSP 读的就是内联那枚）。
+# 这一枚只管 build：next.config 把它写进 assetPrefix，同时内联一份常量
+# `BUILD_ASSET_PREFIX` 给 CSP 用。runner 还要单独再配一遍（见下面），因为
+# `next start` 会在运行期重新求值 next.config.js。
 ARG ASSET_PREFIX=
 ENV ASSET_PREFIX=${ASSET_PREFIX}
 ENV SKIP_ENV_VALIDATION=1
@@ -64,6 +65,12 @@ RUN npm run build && rm -rf .next/cache
 # === Production ===
 FROM base AS runner
 WORKDIR /app
+
+# ARG 不跨 stage，而且 `next start` 在运行期会重新求值 next.config.js：runner 里少了这一枚，
+# 构建期内联过前缀的那批路由 chunk 走 CDN、SSR 现场画的 CSS／webpack runtime／polyfills 却
+# 留在源站，半套前缀不报错、只是把一半流量白留在应用容器上（判据 C6 钉着这两行）。
+ARG ASSET_PREFIX=
+ENV ASSET_PREFIX=${ASSET_PREFIX}
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.title="ViTransfer"
