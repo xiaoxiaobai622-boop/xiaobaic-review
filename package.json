@@ -10,7 +10,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "check:static": "tsx scripts/check-drift-guards.mts && tsx scripts/check-branding-read-paths.mts && tsx scripts/check-dual-video-sync.mts && tsx scripts/check-team-writeable.mts && tsx scripts/check-home-media-budget.mts",
+    "check:static": "tsx scripts/check-drift-guards.mts && tsx scripts/check-branding-read-paths.mts && tsx scripts/check-dual-video-sync.mts && tsx scripts/check-team-writeable.mts && tsx scripts/check-home-media-budget.mts && tsx scripts/check-playback-drift.mts",
     "postinstall": "prisma generate",
     "worker": "tsx src/worker/index.ts"
   },

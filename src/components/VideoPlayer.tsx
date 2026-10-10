@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, LoaderCircle, Play, Pause, SkipBack, SkipFor
 import CustomVideoControls from './CustomVideoControls'
 import VideoComparison from './VideoComparison'
 import { getFiniteDuration, isTimeBuffered } from '@/lib/media-buffer'
+import { judgeSeekDrift } from '@/lib/playback-drift'
 import ProjectInfo from './ProjectInfo'
 import AnnotationOverlay from './AnnotationOverlay'
 import AnnotationCanvas from './AnnotationCanvas'
@@ -270,6 +271,10 @@ export default function VideoPlayer({
   const pendingSeekRef = useRef<PendingSeek | null>(null)
   const seekResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seekResumePendingRef = useRef(false)
+  // 连续两次 timeupdate 的播放头采样，用来分辨「停在目标外等分片」和
+  // 「画面早就自己往前走了、这个 seek 其实没落地」。
+  const previousSampleRef = useRef<number | null>(null)
+  const seekDriftRef = useRef<number | null>(null)
 
   // Keep the UI responsive while a media element is waiting for its first
   // segment. The media events below remain the source of truth once playback
@@ -465,6 +470,7 @@ export default function VideoPlayer({
   const handlePlaybackError = useCallback((info: PlaybackFailureInfo) => {
     playIntentRef.current = false
     pendingSeekRef.current = null
+    seekDriftRef.current = null
     setIsPlaying(false)
     setIsBuffering(false)
     setIsSeeking(false)
@@ -734,6 +740,8 @@ export default function VideoPlayer({
 
     currentTimeRef.current = 0
     lastTimeUpdateRef.current = 0
+    previousSampleRef.current = null
+    seekDriftRef.current = null
     setCurrentTimeState(0)
     setVideoDuration(0)
     setIsPlaying(false)
@@ -803,6 +811,7 @@ export default function VideoPlayer({
     }
 
     pendingSeekRef.current = { time: target, resume: shouldResume }
+    seekDriftRef.current = null
     setIsSeeking(true)
     setIsBuffering(!isTimeBuffered(video, target))
 
@@ -1042,13 +1051,37 @@ export default function VideoPlayer({
     if (!video) return
 
     const time = clampMediaTime(video, video.currentTime)
+    const previousSample = previousSampleRef.current
+    previousSampleRef.current = time
     const pendingSeek = pendingSeekRef.current
 
     // A source can emit one more timeupdate for its previous buffer after a
     // seek. Keep the requested position visible until the new range is ready.
     if (pendingSeek) {
       const pendingTarget = getPendingSeekTarget(video, pendingSeek)
-      if (Math.abs(time - pendingTarget) > 0.5) return
+      if (Math.abs(time - pendingTarget) > judgeSeekDrift.NEAR_TARGET_SECONDS) {
+        const drift = judgeSeekDrift({
+          targetTime: pendingTarget,
+          playheadTime: time,
+          previousDriftTime: seekDriftRef.current,
+          paused: video.paused,
+        })
+        seekDriftRef.current = drift.driftTime
+        if (!drift.stale) return
+        // 播放头连着两次自己往前走 ⇒ 这个目标永远不会落地。丢掉它并关圈，
+        // 否则 playing / seeked / canplay 都不会再来，圈就永久钉在转。
+        pendingSeekRef.current = null
+        setIsSeeking(false)
+        setIsBuffering(false)
+      } else {
+        seekDriftRef.current = null
+      }
+    } else if (previousSample !== null && !video.paused
+      && time - previousSample >= judgeSeekDrift.PROGRESS_SECONDS - 1e-9) {
+      // 通用兜底：timeupdate 能带着播放头前进就证明没在等数据。真卡住时这个
+      // 事件根本不会发，所以这条不会误关——它正是 requestPlay 打开圈又提前
+      // return 那条路唯一的出口。
+      setIsBuffering(false)
     }
 
     currentTimeRef.current = time

@@ -187,10 +187,11 @@ const STATIC_CHECKS = [
   'check-dual-video-sync.mts',
   'check-team-writeable.mts',
   'check-home-media-budget.mts',
+  'check-playback-drift.mts',
 ]
 const staticEntry: string = pkg?.scripts?.['check:static'] ?? ''
 check(STATIC_CHECKS.every(s => staticEntry.includes(s)),
-  'D21 package.json 的 check:static 收齐四枚静态判据',
+  `D21 package.json 的 check:static 收齐 ${STATIC_CHECKS.length} 枚静态判据`,
   staticEntry ? `缺 ${STATIC_CHECKS.filter(s => !staticEntry.includes(s)).join(' ') || '无'}` : '没有 check:static 这一条')
 const verifyJob = workflow.split('\njobs:\n')[1]?.split('\n  image:')?.[0] ?? ''
 check(verifyJob.includes('npm run check:static'),
