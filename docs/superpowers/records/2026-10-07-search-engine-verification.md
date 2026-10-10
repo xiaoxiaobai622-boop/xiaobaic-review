@@ -76,7 +76,7 @@ FAIL 首页 og:image 是绝对址且与 canonical 同源（不是 localhost 兜�
 ```
 
 根因：根 layout 没有 `metadataBase`（那里取基址一抛就是全站 500），而首页 `openGraph.images` 给的是相对路径，于是 Next 用默认基座 `http://localhost:<内部端口>` 拼。**影响面**：首页在微信/飞书/Google/AI 引擎里的分享卡片没有图。
-**修复状态（10-09 晚复测）**：① 首页 `og:image` 的 `metadataBase` 修复已随 `5c221ec` 提交并部署，**线上实测已是 `https://vidx.cn/og/brand-1200x630.png`** ✅。② 但那次改动带来第二个问题：首页 canonical 与 og:url 被 Next 归一成**不带尾斜杠**的 `https://vidx.cn`，而 `sitemap.xml` 里首页那条是 `<loc>https://vidx.cn/</loc>` —— 同一个页面两个地址。已把 `src/app/sitemap.ts` 的首页那条改成不带斜杠（跟 canonical 对齐；归一是 Next 做的，反过来对不齐），断言同步改为按不带斜杠判，并新增 `sitemap 首页那条与 canonical 同形`。本机 `node scripts/seo-check.mjs` → **195 条全绿**；线上仍红这一条，因为改后的 sitemap 还没部署。
+**修复状态（10-09 晚复测）**：① 首页 `og:image` 的 `metadataBase` 修复已随 `5c221ec` 提交并部署，**线上实测已是 `https://vidx.cn/og/brand-1200x630.png`** ✅。② 但那次改动带来第二个问题：首页 canonical 与 og:url 被 Next 归一成**不带尾斜杠**的 `https://vidx.cn`，而 `sitemap.xml` 里首页那条是 `<loc>https://vidx.cn/</loc>` —— 同一个页面两个地址。已把 `src/app/sitemap.ts` 的首页那条改成不带斜杠（跟 canonical 对齐；归一是 Next 做的，反过来对不齐），断言同步改为按不带斜杠判，并新增 `sitemap 首页那条与 canonical 同形`。本机 `node scripts/seo-check.mjs` → **195 条全绿**。**10-09 晚已部署（`d31fe95` 的 workflow_dispatch 14:47 success），线上复跑 `SEO_CHECK_BASE=https://vidx.cn` → 195 条全绿、0 失败**：sitemap 首页那条现在是 `<loc>https://vidx.cn</loc>`，与首页 canonical `https://vidx.cn` 同形。
 
 ### ⚠️ 一个把结论整个带偏的探针错误
 
