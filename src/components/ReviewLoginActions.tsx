@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, LogIn, LogOut, Phone, Settings, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -34,10 +34,17 @@ interface ReviewLoginActionsProps {
 
 const PHONE_REGEX = /^1[3-9]\d{9}$/
 
-/** Placeholder emails are internal identifiers, not contact info, so they never reach the UI. */
-function contactNameOf(user: { name?: string | null; phone?: string | null; email?: string | null }): string | null {
+/**
+ * Placeholder emails are internal identifiers, not contact info, so they never reach the UI.
+ * `wechatFallback` comes from the caller because this runs outside the component: the
+ * "WeChat user" default is interface text and has to follow the active language.
+ */
+function contactNameOf(
+  user: { name?: string | null; phone?: string | null; email?: string | null },
+  wechatFallback: string,
+): string | null {
   const email = getContactEmail(user.email)
-  return user.name || user.phone || email || (user.email ? '微信用户' : null)
+  return user.name || user.phone || email || (user.email ? wechatFallback : null)
 }
 
 function notifyReviewAuth(authenticated: boolean, name: string | null = null, email: string | null = null) {
@@ -49,6 +56,7 @@ function notifyReviewAuth(authenticated: boolean, name: string | null = null, em
 
 export default function ReviewLoginActions({ onIdentityChange, compact = false, openSignal = 0, onOpenChange }: ReviewLoginActionsProps) {
   const t = useTranslations('share')
+  const ta = useTranslations('auth')
   const [session, setSession] = useState<WechatSession | null>(null)
   const [passwordUser, setPasswordUser] = useState<{ id: string; name: string | null; email: string; phone?: string | null; role?: string; avatarUrl?: string | null } | null>(null)
   const [open, setOpen] = useState(false)
@@ -85,41 +93,73 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
     setCooldown(0)
   }
 
+  // The review surfaces pass a fresh inline function on every render, so the callback
+  // lives in a ref: the session poll must not restart because a parent re-rendered.
+  const identityChangeRef = useRef(onIdentityChange)
+  useEffect(() => { identityChangeRef.current = onIdentityChange }, [onIdentityChange])
+  const wechatUserLabel = t('wechatUser')
+
+  const refreshSession = useCallback(async () => {
+    let authResponse: Response
+    let wechatResponse: Response
+    try {
+      ;[authResponse, wechatResponse] = await Promise.all([
+        apiFetch('/api/auth/session', { cache: 'no-store' }),
+        fetch('/api/auth/wechat/session', { cache: 'no-store' }),
+      ])
+    } catch {
+      // 取不到答案不等于没登录。留着已知状态，回到前台时再问一次——把网络抖动报成
+      // 「未登录」会把正在审的人踢成陌生人，还逼他重新登录。
+      return
+    }
+
+    const wechatData: WechatSession = wechatResponse.ok
+      ? await wechatResponse.json().catch(() => ({ configured: false, authenticated: false }))
+      : { configured: false, authenticated: false }
+    setSession(wechatData)
+
+    // 401 is a real answer (apiFetch already tried to refresh). Anything else, such as a
+    // 5xx or a proxy error page, is not evidence that this person signed out.
+    if (!authResponse.ok && authResponse.status !== 401) return
+    const authData = authResponse.ok ? await authResponse.json().catch(() => null) : null
+
+    if (authData?.authenticated && authData.user) {
+      const identity = {
+        id: authData.user.id,
+        name: contactNameOf(authData.user, wechatUserLabel),
+        email: authData.user.email,
+        phone: authData.user.phone,
+        role: authData.user.role,
+        avatarUrl: authData.user.avatarUrl,
+      }
+      setPasswordUser(identity)
+      const email = getContactEmail(authData.user.email) || null
+      identityChangeRef.current?.({ name: identity.name, email })
+      notifyReviewAuth(true, identity.name, email)
+    } else if (wechatData.authenticated && wechatData.user) {
+      const name = wechatData.user.name || null
+      identityChangeRef.current?.({ name, email: null })
+      notifyReviewAuth(true, name)
+    } else {
+      setPasswordUser(null)
+    }
+  }, [wechatUserLabel])
+
   useEffect(() => {
-    Promise.all([
-      apiFetch('/api/auth/session', { cache: 'no-store' }),
-      fetch('/api/auth/wechat/session', { cache: 'no-store' }),
-    ])
-      .then(async ([authResponse, wechatResponse]) => {
-        const authData = authResponse.ok ? await authResponse.json() : null
-        const wechatData = wechatResponse.ok ? await wechatResponse.json() : { configured: false, authenticated: false }
-        setSession(wechatData)
-        if (authData?.authenticated && authData.user) {
-          setPasswordUser({
-            id: authData.user.id,
-            name: contactNameOf(authData.user),
-            email: authData.user.email,
-            phone: authData.user.phone,
-            role: authData.user.role,
-            avatarUrl: authData.user.avatarUrl,
-          })
-          const name = contactNameOf(authData.user)
-          const email = getContactEmail(authData.user.email) || null
-          onIdentityChange?.({ name, email })
-          notifyReviewAuth(true, name, email)
-        } else if (wechatData.authenticated && wechatData.user) {
-          const name = wechatData.user.name || null
-          onIdentityChange?.({ name, email: null })
-          notifyReviewAuth(true, name)
-        } else {
-          setPasswordUser(null)
-        }
-      })
-      .catch(() => {
-        setPasswordUser(null)
-        setSession({ configured: false, authenticated: false })
-      })
-  }, [onIdentityChange])
+    refreshSession()
+  }, [refreshSession])
+
+  useEffect(() => {
+    const onForeground = () => {
+      if (document.visibilityState === 'visible') refreshSession()
+    }
+    window.addEventListener('focus', onForeground)
+    document.addEventListener('visibilitychange', onForeground)
+    return () => {
+      window.removeEventListener('focus', onForeground)
+      document.removeEventListener('visibilitychange', onForeground)
+    }
+  }, [refreshSession])
 
   useEffect(() => {
     if (openSignal > 0) {
@@ -156,7 +196,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         body: JSON.stringify({ email: phone.trim(), password }),
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || '登录失败，请检查手机号和密码')
+      if (!response.ok) throw new Error(data.error || ta('invalidUsernameEmailOrPassword'))
 
       if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
         setTokens({ accessToken: data.tokens.accessToken, refreshToken: data.tokens.refreshToken })
@@ -167,7 +207,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         window.location.href = `/onboarding?returnUrl=${encodeURIComponent(currentReturnUrl())}`
         return
       }
-      const identity = { id: data.user?.id || '', name: contactNameOf(data.user), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
+      const identity = { id: data.user?.id || '', name: contactNameOf(data.user, wechatUserLabel), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
       setPasswordUser(identity)
       const email = getContactEmail(identity.email) || null
       onIdentityChange?.({ name: identity.name, email })
@@ -175,7 +215,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
       updateOpen(false)
       setPassword('')
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : '登录失败，请稍后重试')
+      setError(loginError instanceof Error ? loginError.message : ta('loginFailed'))
     } finally {
       setLoading(false)
     }
@@ -184,7 +224,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
   const handleSendCode = async () => {
     setError('')
     if (!PHONE_REGEX.test(phone)) {
-      setError('请输入正确的 11 位手机号')
+      setError(ta('invalidPhone'))
       return
     }
     setSendingCode(true)
@@ -198,11 +238,11 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         body: JSON.stringify({ phone }),
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || '验证码发送失败，请稍后再试')
+      if (!response.ok) throw new Error(data.error || ta('smsSendFailed'))
       setCodeSent(true)
       setCooldown(60)
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : '验证码发送失败，请稍后再试')
+      setError(sendError instanceof Error ? sendError.message : ta('smsSendFailed'))
     } finally {
       setSendingCode(false)
     }
@@ -212,11 +252,11 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
     event.preventDefault()
     setError('')
     if (!PHONE_REGEX.test(phone)) {
-      setError('请输入正确的 11 位手机号')
+      setError(ta('invalidPhone'))
       return
     }
     if (!/^\d{6}$/.test(code)) {
-      setError('请输入 6 位验证码')
+      setError(ta('invalidCode'))
       return
     }
 
@@ -231,7 +271,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         body: JSON.stringify({ phone, code }),
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || '登录失败')
+      if (!response.ok) throw new Error(data.error || ta('loginFailed'))
 
       if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
         setTokens({ accessToken: data.tokens.accessToken, refreshToken: data.tokens.refreshToken })
@@ -242,7 +282,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         window.location.href = `/onboarding?returnUrl=${encodeURIComponent(currentReturnUrl())}`
         return
       }
-      const identity = { id: data.user?.id || '', name: contactNameOf(data.user), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
+      const identity = { id: data.user?.id || '', name: contactNameOf(data.user, wechatUserLabel), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
       setPasswordUser(identity)
       const email = getContactEmail(identity.email) || null
       onIdentityChange?.({ name: identity.name, email })
@@ -251,7 +291,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
       setCode('')
       setCodeSent(false)
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : '登录失败，请稍后重试')
+      setError(loginError instanceof Error ? loginError.message : ta('loginFailed'))
     } finally {
       setLoading(false)
     }
@@ -276,7 +316,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
     role: session.user.role,
     avatarUrl: session.user.avatarUrl || null,
   } : null)
-  const displayName = currentUser?.name || '已登录'
+  const displayName = currentUser?.name || ta('loggedInShort')
   const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'OWNER'
   const profileHref = currentUser?.id
     ? `/profile?returnUrl=${encodeURIComponent(typeof window === 'undefined' ? '/' : currentReturnUrl())}`
@@ -309,10 +349,10 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
                 <div className="min-w-0"><p className="truncate text-sm font-medium">{displayName}</p>{secondaryContact && <p className="truncate text-xs text-muted-foreground">{secondaryContact}</p>}</div>
               </div>
               <Link href={profileHref} role="menuitem" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-muted">
-                <UserCircle className="h-4 w-4" />个人中心
+                <UserCircle className="h-4 w-4" />{ta('personalCenter')}
               </Link>
               {isAdmin && <Link href="/studio/projects" role="menuitem" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-muted">
-                <ShieldCheck className="h-4 w-4" />后台入口
+                <ShieldCheck className="h-4 w-4" />{ta('consoleEntry')}
               </Link>}
               <button type="button" role="menuitem" onClick={logout} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
                 <LogOut className="h-4 w-4" />{t('logout')}
@@ -335,17 +375,15 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
                 <BrandLogo height={36} />
                 <div>
                   <p className="text-sm font-semibold text-[#17191f] dark:text-white">逐帧审阅</p>
-                  <p className="text-xs text-black/50 dark:text-white/50">申请使用权限：Xiaobai-v001</p>
                 </div>
               </div>
               <div className="flex min-h-0 flex-1 items-end justify-center overflow-hidden pb-2 pt-4">
                 <AnimatedCharacters isTyping={focusedField === 'phone'} showPassword={passwordVisible} passwordLength={password.length} />
               </div>
-              <p className="relative z-10 px-7 pb-6 text-xs text-black/45 dark:text-white/45">目前仅限内部团队成员访问</p>
             </section>
 
             <section className="relative flex min-w-0 items-center justify-center px-6 py-8 sm:px-10">
-              <Button type="button" variant="ghost" size="icon" className="absolute right-4 top-4 h-8 w-8 text-muted-foreground" onClick={() => updateOpen(false)} aria-label="关闭登录窗口">
+              <Button type="button" variant="ghost" size="icon" className="absolute right-4 top-4 h-8 w-8 text-muted-foreground" onClick={() => updateOpen(false)} aria-label={ta('closeLoginDialog')}>
                 <X className="h-4 w-4" />
               </Button>
 
@@ -355,63 +393,61 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
               <div className="mb-7">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 id="review-login-title" className="text-2xl font-semibold tracking-tight text-foreground">手机号登录</h2>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">登录后进入工作室审片后台</p>
+                    <h2 id="review-login-title" className="text-2xl font-semibold tracking-tight text-foreground">{ta('phoneLogin')}</h2>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{ta('signInDescription')}</p>
                   </div>
                   <Button type="button" variant="ghost" className="h-8 px-2 text-muted-foreground" onClick={() => setView('wechat')}>
-                    微信扫码
+                    {ta('wechatQrShortcut')}
                   </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 rounded-md bg-muted p-1" role="tablist" aria-label="登录方式">
-                <button type="button" onClick={() => switchMode('password')} className={`h-9 rounded text-sm font-medium transition-colors ${mode === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}>密码登录</button>
+              <div className="grid grid-cols-2 rounded-md bg-muted p-1" role="tablist" aria-label={ta('loginMethod')}>
+                <button type="button" onClick={() => switchMode('password')} className={`h-9 rounded text-sm font-medium transition-colors ${mode === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}>{ta('passwordLogin')}</button>
                 <button type="button" onClick={() => switchMode('sms')} className={`h-9 rounded text-sm font-medium transition-colors ${mode === 'sms' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}>
-                  <Phone className="mr-1.5 inline h-3.5 w-3.5" />验证码登录
+                  <Phone className="mr-1.5 inline h-3.5 w-3.5" />{ta('smsLogin')}
                 </button>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="review-phone">手机号</Label>
-                <Input id="review-phone" name="review-phone" type="tel" inputMode="numeric" autoComplete="off" data-lpignore="true" data-1p-ignore="true" placeholder="请输入手机号" value={phone} onChange={(event) => { const next = event.target.value.replace(/\D/g, '').slice(0, 11); setPhone(next); if (mode === 'sms') { setCode(''); setCodeSent(false); setCooldown(0) } }} onFocus={() => setFocusedField('phone')} onBlur={() => setFocusedField(null)} autoFocus required />
+                <Label htmlFor="review-phone">{ta('phone')}</Label>
+                <Input id="review-phone" name="review-phone" type="tel" inputMode="numeric" autoComplete="off" data-lpignore="true" data-1p-ignore="true" placeholder={ta('phonePlaceholder')} value={phone} onChange={(event) => { const next = event.target.value.replace(/\D/g, '').slice(0, 11); setPhone(next); if (mode === 'sms') { setCode(''); setCodeSent(false); setCooldown(0) } }} onFocus={() => setFocusedField('phone')} onBlur={() => setFocusedField(null)} autoFocus required />
               </div>
               {mode === 'password' ? (
                 <div className="space-y-2">
-                  <Label htmlFor="review-password">密码登录</Label>
-                  <PasswordInput id="review-password" name="review-password" autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="请输入密码" value={password} onChange={(event) => setPassword(event.target.value)} onFocus={() => setFocusedField('password')} onBlur={() => setFocusedField(null)} onVisibilityChange={setPasswordVisible} required />
+                  <Label htmlFor="review-password">{ta('passwordLogin')}</Label>
+                  <PasswordInput id="review-password" name="review-password" autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder={ta('passwordPlaceholder')} value={password} onChange={(event) => setPassword(event.target.value)} onFocus={() => setFocusedField('password')} onBlur={() => setFocusedField(null)} onVisibilityChange={setPasswordVisible} required />
                   <div className="flex justify-end pt-0.5">
-                    <a href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">忘记密码？</a>
+                    <a href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">{ta('forgotPassword')}</a>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="review-code">验证码</Label>
+                  <Label htmlFor="review-code">{ta('verificationCode')}</Label>
                   <div className="flex gap-2">
-                    <Input id="review-code" name="review-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 位验证码" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} required />
+                    <Input id="review-code" name="review-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder={ta('verificationCodePlaceholder')} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} required />
                     <Button type="button" variant="outline" className="h-11 w-32 shrink-0" disabled={sendingCode || cooldown > 0 || phone.length !== 11} onClick={handleSendCode}>
-                      {sendingCode ? '发送中...' : cooldown > 0 ? `${cooldown}s` : codeSent ? '重新发送' : '获取验证码'}
+                      {sendingCode ? ta('sendingCode') : cooldown > 0 ? `${cooldown}s` : codeSent ? ta('resendCode') : ta('sendCode')}
                     </Button>
                   </div>
                 </div>
               )}
               {error && <p className="rounded-md border border-destructive/30 bg-destructive-visible px-3 py-2 text-sm text-destructive" aria-live="polite">{error}</p>}
               <Button type="submit" className="h-11 w-full" disabled={loading || !phone || (mode === 'password' ? !password : code.length !== 6 || !codeSent)}>
-                {loading ? '正在登录...' : '登录'}
+                {loading ? ta('signingIn') : ta('signIn')}
               </Button>
-              <p className="pt-2 text-center text-xs text-muted-foreground lg:hidden">目前仅限内部团队成员访问</p>
             </form>
               </>
             ) : (
               <div className="w-full max-w-[360px] text-center">
-                <h2 id="review-login-title" className="text-2xl font-semibold tracking-tight text-foreground">微信扫码登录</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">请使用微信扫码，登录后进入审片</p>
+                <h2 id="review-login-title" className="text-2xl font-semibold tracking-tight text-foreground">{ta('wechatQrLogin')}</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{ta('wechatScanHint')}</p>
                 <WechatMiniQrLogin inline returnUrl={currentReturnUrl()} className="mt-5" />
                 <div className="mt-5">
                   <Button type="button" variant="ghost" className="h-10 text-muted-foreground" onClick={() => setView('phone')}>
-                    <Phone className="mr-2 h-4 w-4" />使用手机号登录
+                    <Phone className="mr-2 h-4 w-4" />{ta('usePhoneLogin')}
                   </Button>
                 </div>
-                <p className="pt-2 text-center text-xs text-muted-foreground lg:hidden">目前仅限内部团队成员访问</p>
-              </div>
+                </div>
             )}
             </section>
           </div>

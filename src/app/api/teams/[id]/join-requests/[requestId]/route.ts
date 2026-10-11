@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { notifyApplicantOfJoinDecision } from '@/lib/join-request-notifications'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
@@ -74,6 +75,15 @@ export async function PATCH(
       data: { status: 'REJECTED', reviewedById: authResult.id, reviewedAt: new Date() },
     })
   }
+
+  // 决定落库了就得让申请人知道，否则 TA 只能自己反复回来看那张卡。
+  // 这里不 await：通知挂了也不能把审批打成失败（辅助函数自己兜异常）。
+  const notified = await prisma.team.findUnique({ where: { id }, select: { name: true } })
+  void notifyApplicantOfJoinDecision({
+    applicantUserId: joinRequest.userId,
+    teamName: notified?.name ?? id,
+    approved: decision === 'APPROVED',
+  })
 
   return NextResponse.json({ success: true })
 }

@@ -52,7 +52,7 @@ export default function JoinTeamPage() {
     setSuccess('')
     try {
       await apiPost(`/api/teams/${team.id}/join-requests`, { message })
-      setSuccess('申请已提交，等待团队创建人或管理员审核。')
+      setSuccess('申请已提交。对方会在「团队管理 → 席位成员」里审批。')
     } catch (err) {
       setError(err instanceof Error ? err.message : '申请失败')
     } finally {
@@ -65,6 +65,10 @@ export default function JoinTeamPage() {
       <Card>
         <CardHeader>
           <CardTitle>申请加入团队</CardTitle>
+          {/* 资格与流程要写在提交之前，不能等 403 回来了再告诉人办不了。 */}
+          <p className="mt-1 text-sm text-muted-foreground">
+            需要用已登录且绑定过手机号的账号提交；提交后由该团队的负责人或管理员审批。
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -82,9 +86,7 @@ export default function JoinTeamPage() {
           {team && (
             <div className="rounded-lg border border-border p-4">
               <p className="font-medium">{team.name}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {team._count.members} 名成员 · {team._count.projects} 个项目
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">通过或拒绝都会给你一条站内消息（窄栏「通知 → 平台消息」）。</p>
               <textarea
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}

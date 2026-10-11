@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { notifyTeamAdminsOfJoinRequest } from '@/lib/join-request-notifications'
 import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest, requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
@@ -61,6 +62,15 @@ export async function POST(
       userId: authResult.id,
       message,
     },
+  })
+
+  const notified = await prisma.team.findUnique({ where: { id }, select: { name: true } })
+  void notifyTeamAdminsOfJoinRequest({
+    teamId: id,
+    teamName: notified?.name ?? id,
+    // 上面已硬要求 applicant 有手机号，所以不必再往邮箱退——那列可能是
+    // wechat-…@wechat.local 这类内部占位符，落到负责人的通知里就成了假身份。
+    applicantName: authResult.name || authResult.phone || '有人',
   })
 
   return NextResponse.json({ request: joinRequest }, { status: 201 })

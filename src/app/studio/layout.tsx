@@ -3,7 +3,6 @@
 import { AuthProvider } from '@/components/AuthProvider'
 import StudioRail from '@/components/StudioRail'
 import SessionMonitor from '@/components/SessionMonitor'
-import KofiWidget from '@/components/KofiWidget'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 
@@ -54,7 +53,8 @@ export default function AdminLayout({
           {children}
         </main>
         <SessionMonitor />
-        <KofiWidget />
+        {/* Ko-fi 打赏挂件撤掉了：它是全站唯一还在「要钱」的入口，而没有 ICP 许可证的
+            时候付费／募捐类入口不许进生产。组件文件留着，要放回来就重新挂这一行。 */}
       </div>
     </AuthProvider>
   )

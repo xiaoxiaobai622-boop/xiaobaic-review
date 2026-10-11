@@ -395,7 +395,7 @@ function ProjectInfo({
                           if (!hasPreview) {
                             return t('originalQuality')
                           }
-                          return t('downscaledPreview', { quality: qualityLabel, watermark: watermarkEnabled ? t('withWatermark') : '' })
+                          return t('downscaledPreview', { quality: qualityLabel })
                         })()}
                       </span>
                     </div>

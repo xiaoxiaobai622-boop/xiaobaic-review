@@ -433,9 +433,9 @@ export default function UsersPage() {
       <>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-normal">团队成员</h1>
+            <h1 className="text-2xl font-semibold tracking-normal">平台账号</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              管理成员身份，以及他们可以查看的团队项目
+              管理能登录后台的账号，以及每个账号能看到哪些团队项目
             </p>
           </div>
           <Button
@@ -511,7 +511,7 @@ export default function UsersPage() {
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="truncate font-medium">{user.name || user.username || user.phone || getDisplayEmail(user.email)}</span>
                           <span className="rounded-full border border-info-visible bg-info-visible px-2 py-0.5 text-xs text-info">
-                            {user.role === 'ADMIN' ? '管理员' : '团队成员'}
+                            {user.role === 'ADMIN' ? '管理员' : '普通账号'}
                           </span>
                           {loggedInUser?.id === user.id && (
                             <span className="rounded-full border border-success-visible bg-success-visible px-2 py-0.5 text-xs text-success">
@@ -590,7 +590,7 @@ export default function UsersPage() {
           <DialogHeader className="pb-2">
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-primary" />
-              添加团队成员
+              添加平台账号
             </DialogTitle>
             <DialogDescription>
               创建登录账号并设置项目访问范围
@@ -662,7 +662,7 @@ export default function UsersPage() {
                     onClick={() => setNewUserData(prev => ({ ...prev, role, projectAccessScope: role === 'ADMIN' ? 'ALL_PROJECTS' : prev.projectAccessScope }))}
                     className={`h-8 rounded-sm text-xs font-medium transition-colors ${newUserData.role === role ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                   >
-                    {role === 'ADMIN' ? '管理员' : '团队成员'}
+                    {role === 'ADMIN' ? '管理员' : '普通账号'}
                   </button>
                 ))}
               </div>
@@ -863,7 +863,7 @@ export default function UsersPage() {
                     onClick={() => setEditFormData(prev => ({ ...prev, role, projectAccessScope: role === 'ADMIN' ? 'ALL_PROJECTS' : prev.projectAccessScope }))}
                     className={`h-9 rounded-sm text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${editFormData.role === role ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                   >
-                    {role === 'ADMIN' ? '管理员' : '团队成员'}
+                    {role === 'ADMIN' ? '管理员' : '普通账号'}
                   </button>
                 ))}
               </div>

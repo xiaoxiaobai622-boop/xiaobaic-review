@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { getTeamQuota } from '@/lib/platform-access'
 import { getCurrentUserFromRequest, requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
 import {
@@ -111,7 +112,10 @@ export async function GET(
   // 成员名单是批量展示：别人的号只给掩码，自己那行保持明文。
   const members = team.members.map((member: any) =>
     member.user?.id === authResult.id ? member : { ...member, user: withMaskedPhone(member.user) })
-  const response = NextResponse.json({ team: { ...team, members }, currentRole: membership.role })
+  // 团队页那句「几名成员、几 GB」读的是这里的 team.quota：额度可以被运营逐团改，
+  // 页面写死一组数字，改一次就变假话。缺行回落到内测口径（getTeamQuota 不落行）。
+  const quota = await getTeamQuota(team.id)
+  const response = NextResponse.json({ team: { ...team, members, quota }, currentRole: membership.role })
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
   response.headers.set('Pragma', 'no-cache')
   response.headers.set('Expires', '0')

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Loader2, MessageCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useTranslations } from 'next-intl'
 import { apiFetch } from '@/lib/api-client'
 import { setTokens } from '@/lib/token-store'
 
@@ -44,6 +45,7 @@ export function WechatMiniQrLogin({
   children,
   inline = false,
 }: WechatMiniQrLoginProps) {
+  const ta = useTranslations('auth')
   const [open, setOpen] = useState(Boolean(inline))
   const [phase, setPhase] = useState<QrPhase>('idle')
   const [qrImage, setQrImage] = useState('')
@@ -83,7 +85,7 @@ export function WechatMiniQrLogin({
       // 绑定模式成功
       if (data.status === 'bound') {
         setPhase('success')
-        setMessage('微信绑定成功')
+        setMessage(ta('wechatBindSuccess'))
         onBound?.()
         timerRef.current = setTimeout(close, 800)
         return
@@ -98,7 +100,7 @@ export function WechatMiniQrLogin({
         }
 
         setPhase('success')
-        setMessage('登录成功')
+        setMessage(ta('loginSuccess'))
         if (data.needsOnboarding) {
           window.location.href = `/onboarding?returnUrl=${encodeURIComponent(data.returnUrl || returnUrl || '/studio/projects')}`
           return
@@ -115,32 +117,32 @@ export function WechatMiniQrLogin({
 
       if (data.status === 'expired') {
         setPhase('error')
-        setMessage('小程序码已过期，请重新获取')
+        setMessage(ta('qrExpired'))
         return
       }
 
       if (data.status === 'error') {
         setPhase('error')
-        setMessage('登录状态查询失败，请重试')
+        setMessage(ta('qrStatusFailed'))
         return
       }
 
       if (data.status === 'confirming') {
-        setMessage('扫码成功，请在小程序确认')
+        setMessage(ta('scanOpenMini'))
       } else {
-        setMessage('请使用微信扫码')
+        setMessage(ta('pleaseScanWechat'))
       }
       timerRef.current = setTimeout(pollStatus, 2000)
     } catch {
       timerRef.current = setTimeout(pollStatus, 2500)
     }
-  }, [close, inline, onBound, onSuccess, returnUrl])
+  }, [close, inline, onBound, onSuccess, returnUrl, ta])
 
   const start = useCallback(async () => {
     cancelledRef.current = false
     setOpen(true)
     setPhase('loading')
-    setMessage('正在生成微信小程序码...')
+    setMessage(ta('generatingQr'))
 
     try {
       const response = await apiFetch('/api/auth/wechat/mini/qr', {
@@ -152,20 +154,20 @@ export function WechatMiniQrLogin({
       if (cancelledRef.current) return
 
       if (!response.ok) {
-        throw new Error(data.error || '生成小程序码失败')
+        throw new Error(data.error || ta('qrGenerateFailed'))
       }
 
       setQrImage(data.qrImage)
       qrIdRef.current = data.qrId || ''
       setPhase('ready')
-      setMessage('请使用微信扫码')
+      setMessage(ta('pleaseScanWechat'))
       void pollStatus()
     } catch (error) {
       if (cancelledRef.current) return
       setPhase('error')
-      setMessage(error instanceof Error ? error.message : '生成小程序码失败')
+      setMessage(error instanceof Error ? error.message : ta('qrGenerateFailed'))
     }
-  }, [mode, pollStatus, returnUrl])
+  }, [mode, pollStatus, returnUrl, ta])
 
   useEffect(() => {
     if (inline && !inlineStartedRef.current) {
@@ -185,7 +187,7 @@ export function WechatMiniQrLogin({
     <>
       {!inline && (
         <h2 id="wechat-qr-login-title" className="text-xl font-semibold text-foreground">
-          {mode === 'bind' ? '绑定微信' : '微信扫码登录'}
+          {mode === 'bind' ? ta('bindWechat') : ta('wechatQrLogin')}
         </h2>
       )}
       <p className="mt-2 min-h-10 text-sm leading-6 text-muted-foreground">{message}</p>
@@ -193,7 +195,7 @@ export function WechatMiniQrLogin({
       <div className="mx-auto mt-5 flex h-[280px] w-[280px] items-center justify-center rounded-lg border border-border bg-muted/30">
         {phase === 'loading' && <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />}
         {phase === 'ready' && qrImage && (
-          <img src={qrImage} alt="微信小程序登录码" className="h-[272px] w-[272px] object-contain" />
+          <img src={qrImage} alt={ta('qrImageAlt')} className="h-[272px] w-[272px] object-contain" />
         )}
         {phase === 'success' && <Check className="h-10 w-10 text-[#07c160]" />}
         {phase === 'error' && (
@@ -202,7 +204,7 @@ export function WechatMiniQrLogin({
             className="text-sm font-medium text-primary hover:underline"
             onClick={start}
           >
-            重新获取
+            {ta('retryQr')}
           </button>
         )}
       </div>
@@ -223,7 +225,7 @@ export function WechatMiniQrLogin({
         {children || (
           <>
             <MessageCircle className="mr-2 h-4 w-4" />
-            微信登录
+            {ta('wechatQrLogin')}
           </>
         )}
       </Button>
@@ -245,7 +247,7 @@ export function WechatMiniQrLogin({
               size="icon"
               className="absolute right-3 top-3 h-8 w-8 text-muted-foreground"
               onClick={close}
-              aria-label="关闭微信登录"
+              aria-label={ta('closeWechatLogin')}
             >
               <X className="h-4 w-4" />
             </Button>

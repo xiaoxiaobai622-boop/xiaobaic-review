@@ -15,12 +15,13 @@ export async function GET(
   const { slug } = await params
   const team = await prisma.team.findUnique({
     where: { slug },
+    // 这个接口对任何登录用户开放（申请加入页要靠 slug 把团队名字显示出来），所以不能顺手
+    // 交出成员数与项目数——那是可以被逐个 slug 枚举出来的经营信息。申请人只需要确认
+    // 「我输对了团队」，审批的细节由提交后的那句说明承担。
     select: {
       id: true,
       name: true,
       slug: true,
-      avatarUrl: true,
-      _count: { select: { members: true, projects: true } },
     },
   })
   if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })

@@ -253,13 +253,13 @@ function countVideoComments(comments: any[], videoId: string): number {
 type ProjectOverlayState = { kind: 'settings'; section: ProjectSettingsSection } | { kind: 'members' } | null
 
 /**
- * 团队有效期，1:1 对标 frame.io 顶栏那组（用户截图实测）：
- * 琥珀金实底胶囊（#EFB402）+ 深色字「✦ 团队 · 套餐状态」，悬停弹出白色气泡卡
- * （居中标题带到期日期 + 说明 + 右上角关闭），灰字「还剩 N 天」在胶囊右侧；
- * 异常态（已停用/等待激活/已到期/临期≤3天）天数标红。
+ * 团队状态胶囊，形照 frame.io 顶栏那组（用户截图实测）：琥珀金实底（#EFB402）+ 深色字
+ * 「✦ 团队 · 套餐状态」，右侧一枚灰字状态，悬停弹出白色气泡卡（居中标题 + 说明 + 右上角关闭）。
+ * 状态只有两档——已停用／长期有效：内测不限时，而且现在没有任何界面写得到到期日，
+ * 报倒计时就等于报一个谁也改不了的旧日期。停用那一档灰字标红。
  */
 function TeamExpiryText() {
-  const [state, setState] = useState<{ plan: string; days: string; danger: boolean; until: string | null; untilCn: string | null } | null>(null)
+  const [state, setState] = useState<{ plan: string; days: string; danger: boolean } | null>(null)
   const [tipOpen, setTipOpen] = useState(false)
   const [hovered, setHovered] = useState(false)
 
@@ -271,54 +271,25 @@ function TeamExpiryText() {
       const team = (data.teams || []).find((item: any) => item.team.id === data.activeTeamId) || data.teams?.[0]
       if (!team || cancelled) return
       const current = team.team
-      let plan = '内测'
-      let days = '长期有效'
-      let danger = false
-      let until: string | null = null
-      let untilCn: string | null = null
-      if (current.status === 'DISABLED') {
-        plan = '已停用'
-        days = '已停用'
-        danger = true
-      } else if (current.subscriptionPlan === 'UNACTIVATED') {
-        plan = '等待激活'
-        days = '等待激活'
-        danger = true
-      } else if (current.subscriptionExpiresAt) {
-        const expiry = new Date(current.subscriptionExpiresAt)
-        until = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, '0')}-${String(expiry.getDate()).padStart(2, '0')}`
-        untilCn = `${expiry.getFullYear()}年${expiry.getMonth() + 1}月${expiry.getDate()}日`
-        const remaining = expiry.getTime() - Date.now()
-        if (remaining <= 0) {
-          days = '已到期'
-          danger = true
-        } else {
-          const dayCount = Math.ceil(remaining / (24 * 60 * 60 * 1000))
-          days = `还剩 ${dayCount} 天`
-          danger = dayCount <= 3
-        }
-      }
-      if (!cancelled) setState({ plan, days, danger, until, untilCn })
+      // 内测期没有到期这回事。另外五处（团队页／概览／切换器／顶栏／运营后台）10-01 就收敛成
+      // 「已停用／长期有效」，而 `subscriptionExpiresAt` 现在没有任何界面写得到（写它的那套计费
+      // 在 src/disabled-billing/，不进构建）——这里再报倒计时，报的是一个谁也改不了的旧日期，
+      // 还顺带把人指向「团队设置里调整到期时间」那枚根本不存在的控件。
+      const disabled = current.status === 'DISABLED'
+      if (!cancelled) setState({
+        plan: disabled ? '已停用' : '免费内测',
+        days: disabled ? '已停用' : '长期有效',
+        danger: disabled,
+      })
     }).catch(() => {})
     return () => { cancelled = true }
   }, [])
 
   if (!state) return null
-  // 有效期是用户自设的：悬停正文按状态引导去团队设置自助调整，而不是固定话术。
-  const tipTitle = state.plan === '已停用'
-    ? '团队已停用'
-    : state.plan === '等待激活'
-      ? '团队等待激活'
-      : state.untilCn
-        ? (state.days === '已到期' ? `团队有效期已于 ${state.untilCn} 结束` : `团队有效期将于 ${state.untilCn} 结束`)
-        : '团队长期有效'
+  const tipTitle = state.plan === '已停用' ? '团队已停用' : '团队长期有效'
   const tipBody = state.plan === '已停用'
     ? '团队已被平台停用，请联系平台管理员。'
-    : state.plan === '等待激活'
-      ? '激活后团队即可正常使用。'
-      : state.untilCn
-        ? (state.days === '已到期' ? '可在团队设置中重新设置到期时间。' : '可在团队设置中调整到期时间。')
-        : '如需限时管理，可在团队设置中设置到期时间。'
+    : '内测期不限时，也不会因为到期被停用。'
   return (
     <span className="relative flex shrink-0 items-center gap-2">
       <span

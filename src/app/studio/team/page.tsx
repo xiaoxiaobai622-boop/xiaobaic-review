@@ -26,6 +26,7 @@ type TeamData = TeamCenterItem['team'] & {
   subscriptionExpiresAt: string | null
   status: string
   members: TeamMemberProfile[]
+  quota?: { maxMembers: number; maxProjects: number; maxVideos: number; maxStorageGB: number } | null
 }
 type TeamMemberProfile = {
   id: string
@@ -43,6 +44,18 @@ function formatTeamExpiry(team: Pick<TeamData, 'status'>) {
   // 免费内测期没有到期日这回事：库里的旧到期日还在，但不再对用户报倒计时。
   if (team.status !== 'ACTIVE') return '已停用'
   return '长期有效'
+}
+
+/** 内测额度的那句话：数字一律从团队真实 quota 读，「不限」按 0/负数口径判。 */
+function describeBetaQuota(team: TeamData) {
+  const quota = team.quota
+  if (!quota) return '免费内测：额度由团队设置给出，稍后重新加载可查看具体数值。'
+  const unlimited = (value: number) => !(value > 0)
+  const seats = `${quota.maxMembers} 名成员`
+  const storage = `${quota.maxStorageGB} GB 存储`
+  const projects = unlimited(quota.maxProjects) ? '项目数量不限' : `最多 ${quota.maxProjects} 个项目`
+  const videos = unlimited(quota.maxVideos) ? '视频数量不限' : `最多 ${quota.maxVideos} 条视频`
+  return `免费内测：${seats}、${storage}，${projects}、${videos}。`
 }
 
 function describeSubscriptionPlan(team: Pick<TeamData, 'status'>) {
@@ -85,10 +98,10 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
       <div><p className="text-xs text-muted-foreground">团队名称</p>{editing ? <div className="mt-2 flex gap-2"><input autoFocus value={name} onChange={(event) => setName(event.target.value)} className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" /><Button size="sm" onClick={save} disabled={saving}>保存</Button><Button size="sm" variant="outline" onClick={() => { setName(team.name); setEditing(false) }}>取消</Button></div> : <div className="mt-2 flex items-center gap-2"><p className="text-base font-medium">{team.name}</p>{role === 'OWNER' && <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-accent" aria-label="修改团队名称" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5" /></button>}</div>}</div>
       <div><p className="text-xs text-muted-foreground">团队 ID</p><div className="mt-2 flex items-center gap-2"><code className="min-w-0 truncate font-mono text-sm">{team.id}</code><Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={() => void copyTeamId()}>{copiedId ? '已复制' : '复制'}</Button></div><p className="mt-1 text-xs text-muted-foreground">用于接口、邀请和跨页面定位团队</p></div>
       <div><p className="text-xs text-muted-foreground">团队标识</p><p className="mt-2 font-mono text-sm">{team.slug}</p></div>
-      <div className="sm:col-span-2"><p className="text-xs text-muted-foreground">团队加入链接</p><div className="mt-2 flex max-w-xl items-center gap-2"><code className="min-w-0 flex-1 truncate rounded-md bg-muted px-3 py-2 text-xs">{window.location.origin}/studio/team/join?q={team.slug}</code><Button variant="outline" size="sm" onClick={copyLink}><Copy className="h-3.5 w-3.5" />{copied ? '已复制' : '复制链接'}</Button></div></div>
+      <div className="sm:col-span-2"><p className="text-xs text-muted-foreground">团队加入链接</p><div className="mt-2 flex max-w-xl items-center gap-2"><code className="min-w-0 flex-1 truncate rounded-md bg-muted px-3 py-2 text-xs">{window.location.origin}/studio/team/join?q={team.slug}</code><Button variant="outline" size="sm" onClick={copyLink}><Copy className="h-3.5 w-3.5" />{copied ? '已复制' : '复制链接'}</Button></div><p className="mt-1 text-xs text-muted-foreground">拿到链接的人要有自己的账号并绑定手机号，提交后仍需在「席位成员 → 成员审批」里通过；这条链接本身不给任何人权限。</p></div>
     </CardContent></Card>
     <Card><CardHeader><CardTitle className="text-base">团队规模</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4"><div><p className="text-xs text-muted-foreground">成员</p><p className="mt-1 text-xl font-semibold">{team._count?.members ?? 0}</p></div><div><p className="text-xs text-muted-foreground">项目</p><p className="mt-1 text-xl font-semibold">{team._count?.projects ?? 0}</p></div><div><p className="text-xs text-muted-foreground">创建时间</p><p className="mt-1 text-sm">{new Date(team.createdAt).toLocaleDateString('zh-CN')}</p></div><div><p className="text-xs text-muted-foreground">团队有效期</p><p className={`mt-1 text-sm font-medium ${team.status !== 'ACTIVE' ? 'text-destructive' : 'text-primary'}`}>{formatTeamExpiry(team)}</p></div></CardContent></Card>
-    <Card><CardHeader><CardTitle className="text-base">当前套餐</CardTitle></CardHeader><CardContent><div className="flex items-start gap-3 rounded-md border border-primary/20 bg-primary-visible p-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-sm font-medium">{describeSubscriptionPlan(team)}</p><p className="mt-1 text-xs text-muted-foreground">免费内测：5 名成员、10 GB 存储，项目和视频数量不限。</p></div></div></CardContent></Card>
+    <Card><CardHeader><CardTitle className="text-base">当前套餐</CardTitle></CardHeader><CardContent><div className="flex items-start gap-3 rounded-md border border-primary/20 bg-primary-visible p-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-sm font-medium">{describeSubscriptionPlan(team)}</p><p className="mt-1 text-xs text-muted-foreground">{describeBetaQuota(team)}</p></div></div></CardContent></Card>
   </div>
 }
 

@@ -188,6 +188,7 @@ const STATIC_CHECKS = [
   'check-team-writeable.mts',
   'check-home-media-budget.mts',
   'check-playback-drift.mts',
+  'check-review-login-surface.mts',
 ]
 const staticEntry: string = pkg?.scripts?.['check:static'] ?? ''
 check(STATIC_CHECKS.every(s => staticEntry.includes(s)),
