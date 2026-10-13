@@ -230,7 +230,9 @@ SEO_CHECK_BASE=https://vidx.cn node scripts/seo-check.mjs
 # ⑥ 图标这条链单独看（三处修复各自的判据）
 curl -s https://vidx.cn/robots.txt | grep -n 'api/branding/favicon'
 curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' https://vidx.cn/favicon.ico
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://vidx.cn/api/branding/favicon
+# 只取状态码：修好后应是 200。⚠️ 别在这条上加 %{redirect_url} 或 -i——旧版 302 的 Location 是
+# COS 预签名地址，整串里带着桶的 AKID 与签名，贴进任何日志或报告都算凭据外泄。
+curl -s -o /dev/null -w '%{http_code}\n' https://vidx.cn/api/branding/favicon
 ```
 
 GSC 侧看两处：**编制索引 → 网页**（索引量是否出数，页面提示约 1 天）与**站点地图**（`/sitemap.xml` 是否转为成功读取）。
