@@ -159,6 +159,9 @@ SEO_CHECK_BASE=https://vidx.cn …（线上仍是旧代码）→ 恰好 4 条红
 
 **尚未实测的两点**（只能等部署后在线上取）：① S3 模式下这条路由真能取到桶里的对象（本地测的是同一份代码的 local 分支，S3 分支与线上跑着的 logo-png 路由同构）；② 线上 Caddy 有没有单独拦 `/favicon.ico`。
 
+**这次改动撞红了一次 CI（已修）**：`push` 触发的那轮 `Verify application` 挂在第 6 步 `Run static regression judgments` —— `scripts/check-branding-read-paths.mts` 的 **B14** 把 favicon 路由原来的 `isS3Mode()` + `fs.readFile()` 这对分支当作"读端跟着写端走"的**参照物**在钉，我把两条分支合并成统一问抽象，字面探针就断了。判据要保的性质本来就不是那两行字面量，所以 B14 改成断「走 `fileExists`/`downloadFile`、不碰裸 `fs`／`getFilePath`」，并补 **B14b** 反向钉住"这条路由不许再回 302"。复跑（`git archive HEAD` 到 `/tmp` 副本，不含任何未提交改动）：**整条 `npm run check:static`（7 个脚本）退出码 0，其中打出合计的五段共 106 条全绿、`npx tsc --noEmit` 0 错**。
+⇒ 顺带记一条口径：本机工作树跑 `npm run check:static` 会看到 `check-review-login-surface.mts` 的 P2/P3 两条红（`/profile` 硬编码中文、`auth.eyesAverted` 等四语缺 key），那是**另一会话未提交的登录页 i18n 改动**，不在提交态里，别去替它改。
+
 **部署后仍然看不到的预期**：引擎的图标是它自己那侧缓存的（Google 走 `s2/favicons`、百度走它自己的图标库），修好后要等它重新抓一次才换图，通常几天到两周，不是"部署完立刻变"。
 
 ### ⚠️ 一个把结论整个带偏的探针错误
