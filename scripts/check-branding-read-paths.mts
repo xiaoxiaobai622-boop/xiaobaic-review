@@ -80,9 +80,15 @@ check(!logoUpload.includes('ACCENT_PRESET_KEYS') && !settingsRoute.includes('ACC
 check(!/fs\.unlink\(/.test(settingsRoute) && !/fs\.unlink\(/.test(logoUpload),
   'B13 两枚设置端点不再裸 fs.unlink 存储里的文件', 'fs.unlink 应 0 次')
 
-console.log('=== 顺手钉住两条不回归 ===')
-check(faviconGet.includes('isS3Mode(') && faviconGet.includes('fs.readFile('),
-  'B14 favicon GET 两条分支都还在（它是对的，当参照物）', 'isS3Mode + fs.readFile')
+console.log('=== 顺手钉住三条不回归 ===')
+check(faviconGet.includes('fileExists(') && faviconGet.includes('downloadFile(')
+  && !/\bfs\.[A-Za-z]+\(/.test(faviconGet) && !faviconGet.includes('getFilePath('),
+  'B14 favicon GET 两种模式统一问抽象，不碰裸 fs／getFilePath', 'fileExists + downloadFile')
+// 10-13：这条地址是 <head> 里声明的唯一图标地址，302 到预签名链接等于一小时后自己 403，
+// 引擎二次抓取就拿不到图（百度/Google 结果页只剩通用地球）。所以「代理过 Node」在这里是要的。
+check(!faviconGet.includes('redirect(') && !/status:\s*302|,\s*302\s*\)/.test(faviconGet)
+  && !faviconGet.includes('s3GetPresignedDownloadUrl('),
+  'B14b favicon GET 不再 302 到带时效的预签名地址，直接回字节', 'redirect/302/presigned 应 0 次')
 check(logoUpload.includes('await uploadFile(') && logoUpload.includes('await deleteFile('),
   'B15 上传/删除仍走 uploadFile / deleteFile（写端本来就对，读端必须跟上）', 'uploadFile + deleteFile')
 
