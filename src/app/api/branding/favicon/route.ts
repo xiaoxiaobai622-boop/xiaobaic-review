@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { isS3Mode, getFilePath } from '@/lib/storage'
-import { s3FileExists, s3GetPresignedDownloadUrl } from '@/lib/s3-storage'
-import fs from 'fs/promises'
+import { downloadFile, fileExists } from '@/lib/storage'
+import type { Readable } from 'node:stream'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,42 +14,37 @@ const FORMATS = [
   { path: 'branding/favicon.ico', contentType: 'image/x-icon' },
 ] as const
 
+async function readAll(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks)
+}
+
 /**
  * Public favicon endpoint. Browsers request this with no auth — the response
  * is cacheable for 5 minutes so we don't probe storage on every page load.
+ *
+ * 字节从这条路由自己回，不再 302 到预签名地址：那条链接带 `X-Amz-Expires=3600`，
+ * 一小时后就自己 403，而 `<head>` 里声明的 `/api/branding/favicon` 是唯一长期有效的
+ * 图标地址——搜索引擎抓的正是声明的那条，跟一次跳转拿不到过期后的图。
  */
 export async function GET() {
-  if (isS3Mode()) {
-    for (const format of FORMATS) {
-      try {
-        const exists = await s3FileExists(format.path)
-        if (exists) {
-          // 302 to a presigned URL so the browser pulls bytes directly from
-          // the object store rather than proxying through Node.
-          const url = await s3GetPresignedDownloadUrl(format.path, 3600, undefined, format.contentType)
-          return NextResponse.redirect(url, {
-            status: 302,
-            headers: { 'Cache-Control': 'public, max-age=300, must-revalidate' },
-          })
-        }
-      } catch {
-        // Try next format
-      }
-    }
-  } else {
-    for (const format of FORMATS) {
-      try {
-        const data = await fs.readFile(getFilePath(format.path))
-        return new NextResponse(data, {
-          status: 200,
-          headers: {
-            'Content-Type': format.contentType,
-            'Cache-Control': 'public, max-age=300, must-revalidate',
-          },
-        })
-      } catch {
-        // Try next format
-      }
+  for (const format of FORMATS) {
+    try {
+      // Both modes go through the storage abstraction, the same way the logo
+      // route does: probing the container's own disk makes an uploaded icon
+      // invisible while the bucket is the real store.
+      if (!(await fileExists(format.path))) continue
+      const data = await readAll(await downloadFile(format.path))
+      return new NextResponse(new Uint8Array(data), {
+        status: 200,
+        headers: {
+          'Content-Type': format.contentType,
+          'Cache-Control': 'public, max-age=300, must-revalidate',
+        },
+      })
+    } catch {
+      // Try next format
     }
   }
 

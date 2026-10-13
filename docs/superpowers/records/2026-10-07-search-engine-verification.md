@@ -112,6 +112,55 @@ FAIL 首页 og:image 是绝对址且与 canonical 同源（不是 localhost 兜�
 根因：根 layout 没有 `metadataBase`（那里取基址一抛就是全站 500），而首页 `openGraph.images` 给的是相对路径，于是 Next 用默认基座 `http://localhost:<内部端口>` 拼。**影响面**：首页在微信/飞书/Google/AI 引擎里的分享卡片没有图。
 **修复状态（10-09 晚复测）**：① 首页 `og:image` 的 `metadataBase` 修复已随 `5c221ec` 提交并部署，**线上实测已是 `https://vidx.cn/og/brand-1200x630.png`** ✅。② 但那次改动带来第二个问题：首页 canonical 与 og:url 被 Next 归一成**不带尾斜杠**的 `https://vidx.cn`，而 `sitemap.xml` 里首页那条是 `<loc>https://vidx.cn/</loc>` —— 同一个页面两个地址。已把 `src/app/sitemap.ts` 的首页那条改成不带斜杠（跟 canonical 对齐；归一是 Next 做的，反过来对不齐），断言同步改为按不带斜杠判，并新增 `sitemap 首页那条与 canonical 同形`。本机 `node scripts/seo-check.mjs` → **195 条全绿**。**10-09 晚已部署（`d31fe95` 的 workflow_dispatch 14:47 success），线上复跑 `SEO_CHECK_BASE=https://vidx.cn` → 195 条全绿、0 失败**：sitemap 首页那条现在是 `<loc>https://vidx.cn</loc>`，与首页 canonical `https://vidx.cn` 同形。
 
+### 10-13 搜索结果不显示站点图标：诊断与三处修复
+
+业主在百度结果页看到自己那条只有通用地球图标、竞品有 logo。当场实测（`curl` 打线上）：
+
+```
+<head> 三条声明全部指向同一个地址：
+  <link rel="shortcut icon" href="/api/branding/favicon"/>
+  <link rel="icon"          href="/api/branding/favicon"/>
+  <link rel="apple-touch-icon" href="/api/branding/favicon"/>     ← 管理端上传后被硬编码成这个值（api/settings/favicon/route.ts:149）
+
+/api/branding/favicon → HTTP 302，location 是 COS 预签名地址（带 X-Amz-Expires=3600）
+                        跟随后 → 200 image/svg+xml 2698 B
+robots.txt 第 11 行   → Disallow: /api/                            ← 上面那条地址整条被拦
+/favicon.ico          → HTTP 404，text/html，135788 B（Next 的错误页兜底，不是图标）
+Google s2/favicons?domain=vidx.cn → HTTP 404（Google 侧也没有缓存到图标）
+```
+
+三个独立原因叠在一起，任何一个单独存在都足以让引擎画不出 logo：① 声明的地址被 robots 拦住；② 就算放行，它 302 到一小时就过期的预签名链接，引擎二次抓取时拿到的是 403；③ 兜底的根路径 `/favicon.ico` 根本没有文件。
+
+**修复（三条都做）**：
+
+| # | 改动 | 文件 |
+|---|---|---|
+| 1 | `allow` 从 `'/'` 改成 `['/', '/api/branding/favicon']`。判定靠**最长前缀**（RFC 9309 §2.3.1.3，Google/Bing/百度实现一致），不是行序；Next 把整组 allow 印在 disallow 之前 | `src/app/robots.ts` |
+| 2 | 去掉 302，两种存储模式统一走 `fileExists()` + `downloadFile()`，直接回图片字节（`Content-Type` 按格式、`Cache-Control: public, max-age=300, must-revalidate`）。与线上已在跑的 `api/branding/logo-png/route.ts` 同一套取字节方式 | `src/app/api/branding/favicon/route.ts` |
+| 3 | 新增真 ICO：由仓库自带的 `public/icon.svg` 栅格化出 16/32/48 三档 PNG，装进 ICO 容器（4932 字节，3 条目） | `public/favicon.ico` |
+
+**验收（本机一次性副本实测，不动仓库的 `.next`、不占业主那个 3000 端口）**：把仓库 rsync 到 `/tmp` 副本、软链 `node_modules`、`next dev -p 3457`，`STORAGE_ROOT` 落在副本目录并放一份 `branding/favicon.svg` 作 fixture：
+
+```
+/robots.txt            → 第 3 行 Allow: /api/branding/favicon（Disallow: /api/ 原样保留）
+/favicon.ico           → 200 image/x-icon 4932 B，与仓库文件 cmp 逐字节一致
+/api/branding/favicon  → 200 image/svg+xml 2649 B，响应头里没有 Location
+node scripts/seo-check.mjs                  → 207 条全绿（原 195 + 新 12）
+SEO_CHECK_BASE=https://vidx.cn …（线上仍是旧代码）→ 恰好 4 条红，全是这次新增的图标断言：
+  FAIL robots.txt 放行图标接口地址
+  FAIL /favicon.ico 是真 ICO 容器，不是 HTML 兜底页（实测 404 text/html; charset=utf-8 0B）
+  FAIL 图标地址 /api/branding/favicon 没被 robots.txt 拦（最长前缀判定）
+  FAIL 图标地址 /api/branding/favicon 直接回图片字节（实测 302 —）
+```
+
+⇒ 这 4 条就是"部署前红、部署后绿"的门，不是空断言。
+
+**ICO 怎么重新生成**（改了 `public/icon.svg` 之后）：`sharp(public/icon.svg, {density:384})` 分别 resize 到 16/32/48 出 PNG，再按 `ICONDIR(6B) + ICONDIRENTRY(16B×n) + 各 PNG 原文` 拼装；条目里 `planes=1`、`bitCount=32`、宽高 ≥256 时写 0。
+
+**尚未实测的两点**（只能等部署后在线上取）：① S3 模式下这条路由真能取到桶里的对象（本地测的是同一份代码的 local 分支，S3 分支与线上跑着的 logo-png 路由同构）；② 线上 Caddy 有没有单独拦 `/favicon.ico`。
+
+**部署后仍然看不到的预期**：引擎的图标是它自己那侧缓存的（Google 走 `s2/favicons`、百度走它自己的图标库），修好后要等它重新抓一次才换图，通常几天到两周，不是"部署完立刻变"。
+
 ### ⚠️ 一个把结论整个带偏的探针错误
 
 10-06 那次测得"20,940 行里 11 种爬虫 **0 命中**"，据此写了"零抓取"。今天复查发现**根因是取 UA 的字段用错**：这台机器的 Caddy 访问日志里 `user_agent` 对象是 `null`，UA 只在 `.request.headers["User-Agent"][0]`。同一份日志、同一时间窗实测对照：
@@ -174,6 +223,11 @@ cd ~/code/xiaobaic-review && node scripts/seo-check.mjs
 
 # ⑤ 部署后线上验收（业主执行）
 SEO_CHECK_BASE=https://vidx.cn node scripts/seo-check.mjs
+
+# ⑥ 图标这条链单独看（三处修复各自的判据）
+curl -s https://vidx.cn/robots.txt | grep -n 'api/branding/favicon'
+curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' https://vidx.cn/favicon.ico
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://vidx.cn/api/branding/favicon
 ```
 
 GSC 侧看两处：**编制索引 → 网页**（索引量是否出数，页面提示约 1 天）与**站点地图**（`/sitemap.xml` 是否转为成功读取）。

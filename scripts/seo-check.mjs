@@ -133,5 +133,60 @@ report(
 // Google 站长验证靠这枚 meta；根 layout 一改就容易静默丢掉，掉了验证状态就废。
 report(home.body.includes('<meta name="google-site-verification"'), '首页有 google-site-verification')
 
+// —— 搜索结果里那枚小图标（10-13 诊断）——
+// 引擎画的是 <head> 声明的图标地址。此前三条声明全指向 `/api/branding/favicon`，而
+// ① robots.txt 整段 `Disallow: /api/` 把它拦在抓取之外，② 该路由 302 到一小时过期的
+// COS 预签名地址，③ 兜底的 `/favicon.ico` 是 404（返回 135 KB 的 HTML 错误页）。
+// 三处各自都能单独吃掉图标，所以三处各有一条断言钉住。
+async function asset(path) {
+  try {
+    const res = await fetch(BASE + path, { headers: { 'user-agent': BOT_UA }, cache: 'no-store', redirect: 'manual' })
+    return { status: res.status, type: res.headers.get('content-type') ?? '', buf: res.status === 200 ? Buffer.from(await res.arrayBuffer()) : null }
+  } catch {
+    report(false, `${path} 请求失败`)
+    return { status: 0, type: '', buf: null }
+  }
+}
+
+/**
+ * 按 RFC 9309 的**最长前缀**判定，而不是按行序：`Allow: /api/branding/favicon`（22 字符）
+ * 胜过 `Disallow: /api/`（7 字符），跟两行谁先印无关。这样断的是引擎实际执行的规则，
+ * 以后有人把 `Disallow: /api/` 挪到前面也不会让这条断言变成假绿/假红。
+ */
+function allowedByRobots(path) {
+  let best = null
+  for (const m of robots.body.matchAll(/^(Allow|Disallow): (\S+)\s*$/gim)) {
+    const prefix = m[2]
+    if (path.startsWith(prefix) && (best === null || prefix.length > best.prefix.length)) {
+      best = { prefix, allow: m[1].toLowerCase() === 'allow' }
+    }
+  }
+  return best ? best.allow : true
+}
+
+report(/^Allow: \/api\/branding\/favicon$/m.test(robots.body), 'robots.txt 放行图标接口地址')
+
+const ico = await asset('/favicon.ico')
+report(
+  ico.status === 200 && !!ico.buf && ico.buf.length > 6 && ico.buf.readUInt16LE(0) === 0 && ico.buf.readUInt16LE(2) === 1 && ico.buf.readUInt16LE(4) > 0,
+  `/favicon.ico 是真 ICO 容器，不是 HTML 兜底页（实测 ${ico.status} ${ico.type || '—'} ${ico.buf?.length ?? 0}B）`,
+)
+
+const declared = [...new Set([...home.body.matchAll(/<link rel="(icon|shortcut icon|apple-touch-icon)"[^>]*href="([^"]+)"/g)].map((m) => m[2]))]
+report(declared.length > 0, `<head> 声明了图标地址（实测 ${declared.length} 条）`)
+for (const href of declared) {
+  let url
+  try {
+    url = new URL(href, `${SITE}/`)
+  } catch {
+    report(false, `图标地址 ${href} 解析不了`)
+    continue
+  }
+  report(url.origin === SITE, `图标地址 ${href} 与站点同源`)
+  report(robots.status === 200 && allowedByRobots(url.pathname), `图标地址 ${url.pathname} 没被 robots.txt 拦（最长前缀判定）`)
+  const a = await asset(url.pathname)
+  report(a.status === 200 && a.type.startsWith('image/'), `图标地址 ${url.pathname} 直接回图片字节（实测 ${a.status} ${a.type || '—'}）`)
+}
+
 console.log(failed ? `\n${failed} 项失败` : '\n全部通过')
 process.exit(failed ? 1 : 0)

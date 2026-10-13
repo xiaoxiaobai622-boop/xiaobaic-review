@@ -16,6 +16,17 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   const site = await getSiteUrlFromRequest()
 
   /**
+   * `customFavicon` 在管理端上传后被硬编码成 `/api/branding/favicon`（`api/settings/favicon/route.ts:149`），
+   * 每页 `<head>` 的三条 icon 声明都指向它。`Disallow: /api/` 会把这条连带拦掉：爬虫取不到图标，
+   * 搜索结果只能画一枚通用地球。所以单独放行这一条精确前缀——放行的是图标接口本身，
+   * `/api/` 下其余路径的规则一字未动。
+   *
+   * 胜出靠的是「最长前缀匹配」（RFC 9309 §2.3.1.3，Google/Bing/百度实现一致），不是行序；
+   * Next 会把整组 `allow` 印在 `disallow` 之前，两行谁在前都不改变判定。
+   */
+  const allow = ['/', '/api/branding/favicon']
+
+  /**
    * `/login` 故意不在下面这张表里。`Disallow` 和 `<meta name="robots" content="noindex">` 会互相
    * 抵消：爬虫抓不到页面，就永远读不到那行 noindex，搜索引擎退化成"凭外链把 URL 收进索引、不带摘要"。
    * `/login` 是全站唯一被公开外站链接指向的应用路由（六篇文稿的 CTA 都指向它），而
@@ -43,7 +54,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   ]
 
   return {
-    rules: [{ userAgent: '*', allow: '/', disallow }],
+    rules: [{ userAgent: '*', allow, disallow }],
     sitemap: `${site}/sitemap.xml`,
   }
 }
