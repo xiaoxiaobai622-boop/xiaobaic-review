@@ -95,9 +95,10 @@ export default function TeamSettingsPage() {
   }, [])
 
   useEffect(() => {
-    if (!canEdit) return
+    if (!user) return
+    if (canEdit) return
     router.replace('/studio/team')
-  }, [router, canEdit])
+  }, [router, user, canEdit])
 
   useEffect(() => {
     if (!canEdit) {

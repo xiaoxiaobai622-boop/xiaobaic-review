@@ -236,8 +236,16 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
   }
   return acc
 }
+/**
+ * 968b78d 把 /profile 整页搬进 profile 命名空间（那页的译者是 t=profile、ta=auth、tc=common）之后，
+ * 只认 `t(` / `tc(`、命名空间写死 projects/common 的老口径会把「引用还在、文案也在」的一句话说成缺失
+ * （B2b 实测把 securityDescription 报成「全无」）。两头一起对齐仓里的译者命名习惯：
+ * 引用侧认 t/ta/tc 三种调用；存在侧按 key 名在四语言里找这句话。
+ * 只数叶子（字符串）——`settings.videoProcessing` 那种分组对象会顶掉同名 key，早先按整节查就把它当成过文案。
+ * 已知弱点照抄引用侧：同名 key 跨命名空间认成同一句，所以这两条只答「在不在」，不答语义对不对。
+ */
 function referenceCount(key: string, files: string[]) {
-  const re = new RegExp(`\\b(?:t|tc)\\(\\s*'${key}'\\s*[,)]`)
+  const re = new RegExp(`\\b(?:t|ta|tc)\\(\\s*'${key}'\\s*[,)]`)
   let n = 0
   for (const f of files) if (re.test(readFileSync(f, 'utf8'))) n++
   return n
@@ -249,6 +257,21 @@ function localeHas(ns: string, key: string) {
     if (v !== undefined) hits.push(l)
   }
   return hits
+}
+/** 这句话作为叶子文案存在于哪几节，以及各自命中了几门语言。 */
+function leafLocalesHolding(key: string) {
+  const perNamespace = new Map<string, number>()
+  for (const l of ['zh', 'en', 'de', 'nl']) {
+    const all = JSON.parse(readFileSync(`src/locales/${l}.json`, 'utf8')) as Record<string, Record<string, unknown>>
+    for (const [ns, v] of Object.entries(all)) {
+      if (v && typeof v === 'object' && typeof v[key] === 'string') perNamespace.set(ns, (perNamespace.get(ns) ?? 0) + 1)
+    }
+  }
+  return perNamespace
+}
+function leafLocaleCount(key: string) {
+  const counts = [...leafLocalesHolding(key).values()]
+  return counts.length ? Math.max(...counts) : 0
 }
 
 let project = undefined as any
@@ -414,10 +437,10 @@ try {
   check(shouldGone.length > 0 && notCleaned.length === 0,
     `B2 孤儿 key 清零（基准＝砍四刀前那版 ${BASELINE_REF} 用到的 ${headKeys.length} 个 key，机械数引用得 ${shouldGone.length} 个孤儿）`,
     notCleaned.length ? `→ 四语言里还在：${notCleaned.slice(0, 12).map(k => `${k.ns}.${k.key}`).join(' ')}` : '→ 全部不在')
-  const wronglyGone = shouldStay.filter(k => localeHas(k.ns, k.key).length < 4)
+  const wronglyGone = shouldStay.filter(k => leafLocaleCount(k.key) < 4)
   check(wronglyGone.length === 0,
-    `B2b 还有 ${shouldStay.length} 个 key 在别处被引用，一个都不许被当孤儿删掉`,
-    wronglyGone.length ? `→ 缺语言：${wronglyGone.slice(0, 12).map(k => `${k.ns}.${k.key}(${localeHas(k.ns, k.key).join('') || '全无'})`).join(' ')}` : '→ 四语言齐')
+    `B2b 还有 ${shouldStay.length} 个 key 在别处被引用，一个都不许被当孤儿删掉（换过命名空间也算在，按叶子文案查）`,
+    wronglyGone.length ? `→ 缺语言：${wronglyGone.slice(0, 12).map(k => `${k.ns}.${k.key}(命中 ${leafLocaleCount(k.key)} 门)`).join(' ')}` : '→ 四语言齐')
 
   const schema = readFileSync('prisma/schema.prisma', 'utf8')
   const missingCols = COLS.filter(c => !schema.includes(`  ${c} `))
@@ -436,11 +459,22 @@ try {
       const [added, deleted, file] = line.split('\t')
       return { file, added: Number(added), deleted: Number(deleted) }
     })
-  const offLimits = ['src/app/studio/team/settings/page.tsx', 'src/app/studio/projects/new/page.tsx',
+  const offLimits = ['src/app/studio/projects/new/page.tsx',
     'src/app/api/share/[token]/route.ts',
     'src/components/SharePasswordRequirements.tsx', 'src/lib/password-utils.ts']
   const hitchhikers = offLimits.filter(f => dirty.some(d => d.file === f))
-  check(hitchhikers.length === 0, 'B5 点名的改动就那一块：这五份文件零 diff', hitchhikers.length ? `→ 被顺手改了 ${hitchhikers.join(' ')}` : '')
+  check(hitchhikers.length === 0, 'B5 点名的改动就那一块：这四份文件零 diff', hitchhikers.length ? `→ 被顺手改了 ${hitchhikers.join(' ')}` : '')
+  // team/settings 从「零 diff」名单里放出来：那页 10-14 被点名修过（守卫反写导致「点视频设置没反应」），
+  // 按工作区 diff 判的护栏在那天起就不再是恒真式。它当初要护的是「这页的表单没被那次删减顺手搬空」，
+  // 所以换成直接数那十个字段还在不在——改守卫改不出这个形状，搬空表单一定会红。
+  const teamSettingsSrc = readFileSync('src/app/studio/team/settings/page.tsx', 'utf8')
+  const TEAM_FIELDS = ['defaultApplyPreviewLut', 'maxUploadSizeGB', 'defaultTimestampDisplay',
+    'defaultUsePreviewForApprovedPlayback', 'defaultAllowClientAssetUpload', 'defaultAllowReverseShare',
+    'defaultShowClientTutorial', 'defaultAllowAssetDownload', 'defaultClientCanApprove', 'autoApproveProject']
+  const teamFieldsGone = TEAM_FIELDS.filter(f => !teamSettingsSrc.includes(f))
+  check(teamFieldsGone.length === 0,
+    'B5d 团队级「视频设置」那十个字段一个没少（这页允许改，但不许被哪轮删减搬空）',
+    teamFieldsGone.length ? `→ 缺 ${JSON.stringify(teamFieldsGone)}` : `→ 十项全在，diff ${dirty.find(d => d.file === 'src/app/studio/team/settings/page.tsx') ? '有改动' : '为零'}`)
   // schema 也从「零 diff」名单里放出来：10-04 他自己点单做了「受限项目」，往上加了一列 restricted（实测 +2/-0）。
   // 这次删减的护栏没丢——砍列一定在 numstat 里留下 deleted>0，那十列一列都不许被顺手带走。
   const schemaDiff = dirty.find(d => d.file === 'prisma/schema.prisma')
