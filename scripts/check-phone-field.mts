@@ -136,6 +136,12 @@ async function main() {
   await prisma.user.delete({ where: { id: probeAccount.id } })
   expect('探针留下的审计行已清掉', await prisma.securityEvent.count({ where: { id: audit?.id ?? 'no-such-event' } }), 0)
 
+  // 加列的迁移不算 HMAC 值，回填这一步没人跑就会留下"有号码但查不到人"的行 ——
+  // 10-13 线上 21 行里 19 行就是这样，直接后果是已注册的人用验证码登录被建了重号。
+  console.log('D 摘要列回填覆盖率（对着哪个库跑就查哪个库）')
+  expect('账号里不许有「有手机号但摘要为空」的行', await prisma.user.count({ where: { phone: { not: null }, phoneHash: null } }), 0)
+  expect('邀请行里不许有「有手机号但摘要为空」的行', await prisma.teamInvite.count({ where: { phone: { not: null }, phoneHash: null } }), 0)
+
   await prisma.$disconnect()
   console.log(failures === 0 ? '\n全部通过' : `\n失败 ${failures} 条`)
   process.exit(failures === 0 ? 0 : 1)

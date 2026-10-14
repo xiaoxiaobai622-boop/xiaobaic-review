@@ -56,7 +56,12 @@ function chineseLiterals(source: string): string[] {
   for (const m of code.matchAll(/>([^<>{}]*)</g)) push(m[1])
   // 可见属性与字符串字面量
   for (const m of code.matchAll(/(?:aria-label|title|placeholder)="([^"]*)"/g)) push(m[1])
-  for (const m of code.matchAll(/'([^'\n]*)'|`([^`\n$]*)`/g)) push(m[1] ?? m[2] ?? '')
+  for (const m of code.matchAll(/'([^'\n]*)'|`([^`\n]*)`/g)) {
+    const raw = m[1] ?? m[2] ?? ''
+    // 模板串里的 ${表达式} 先抠掉再判定：否则 `验证码已发送到 ${phone}。` 这类
+    // 整句中文会从守门人眼皮底下走过去（上一版就是这样漏的）。
+    push(raw.replace(/\$\{[^{}]*\}/g, ''))
+  }
   return [...found].filter(s => /[\u4e00-\u9fff]/.test(s) && s !== BRAND)
 }
 
@@ -69,7 +74,11 @@ function translationKeys(source: string): Array<{ ns: string; key: string }> {
   }
   const out: Array<{ ns: string; key: string }> = []
   for (const [variable, ns] of translators) {
-    for (const m of code.matchAll(new RegExp(`${variable}\\(\\s*'([\\w.]+)'\\s*\\)`, 'g'))) {
+    // 前面那个否定断言不是装饰：少了它，`.get('returnUrl')` 会被当成 `t('returnUrl')`
+    // （`get(` 本身以变量名 `t` 加括号结尾），判据于是去查一个根本不存在的 locale key。
+    // `t.rich('x', {...})` 与 `t('x', {phone})` 都算这一页用到的 key：漏了带参数的调用，
+    // 富文本那两句与所有带占位符的句子就逃过「四语都要有、标签/占位符要一致」这一组断言。
+    for (const m of code.matchAll(new RegExp(`(?<![\\w.$])${variable}(?:\\.rich|\\.markup)?\\(\\s*'([\\w.]+)'\\s*[,)]`, 'g'))) {
       out.push({ ns, key: m[1] })
     }
   }
@@ -210,6 +219,134 @@ check(stillThere.length === 0,
   `→ 还在：${stillThere.join(' ') || '无'}`)
 const leafCount = locales.map(({ data }) => Object.values(data).reduce((n, v) => n + Object.keys(v as object).length, 0))
 check(new Set(leafCount).size === 1, 'S8b 删完之后四语的 key 总数仍然一致（删一边不删另一边＝切语言就缺字）', `→ ${leafCount.join('/')}`)
+
+// ── 10. 剩下的两处整页中文：/login（入口）与 /profile（个人中心）─────────────
+// 这两页此前完全不吃 locale，切到 English/Deutsch/Nederlands 之后仍是整页中文，
+// 而同一屏上的登录弹窗与审片界面已经是四语的 —— 半个界面会翻译、半个不会。
+const loginPage = read('app/login/page.tsx')
+const profilePage = read('app/profile/page.tsx')
+const loginChinese = chineseLiterals(loginPage)
+const profileChinese = chineseLiterals(profilePage)
+check(loginChinese.length === 0, 'P1 /login 整页不再留硬编码中文（品牌名除外）',
+  `→ 还剩 ${loginChinese.length} 条：${loginChinese.slice(0, 6).join('｜')}`)
+check(profileChinese.length === 0, 'P2 /profile 整页不再留硬编码中文（品牌名除外）',
+  `→ 还剩 ${profileChinese.length} 条：${profileChinese.slice(0, 6).join('｜')}`)
+const surfaceKeys = [...translationKeys(loginPage), ...translationKeys(profilePage)]
+const surfaceMissing = surfaceKeys.flatMap(({ ns, key }) => LOCALES.filter(lang => {
+  const table = readLocale(lang) as Record<string, Record<string, string>>
+  return !table[ns] || typeof table[ns][key] !== 'string' || table[ns][key].trim() === ''
+}).map(lang => `${lang}:${ns}.${key}`))
+check(surfaceKeys.length > 40 && surfaceMissing.length === 0,
+  'P3 这两页用到的每个 key 在四语里都存在且非空（加了一边忘了另一边＝切语言直接画裸 key）',
+  `→ 用到 ${surfaceKeys.length} 个 key，缺字 ${surfaceMissing.length}：${surfaceMissing.slice(0, 6).join(' ')}`)
+check(!/[\u4e00-\u9fff]/.test((readLocale('en').auth?.phoneLogin ?? '') + (readLocale('nl').auth?.phoneLogin ?? '')),
+  'P3b 英文与荷兰语那两格真是英/荷文（不能再拿中文填满四语文件充数）',
+  `→ en=${readLocale('en').auth?.phoneLogin}｜nl=${readLocale('nl').auth?.phoneLogin}`)
+
+// 上一轮真实踩到的假绿：JSX 文本被插成了 `>t('x')<`（少一层花括号）。中文确实消失了，
+// P1/P2 照绿，界面上却把 t('x') 当字面文字显示出来 —— 这条断言就是盯这个洞。
+// 前面排除 `=`：`x => t('x')` 是箭头函数，不是 JSX 文本，别把它误判成裸调用。
+const barePattern = /(^|[^=])>\s*(?:t|ta|tc)\.?[a-zA-Z]*\(/
+const bareCalls: string[] = []
+for (const source of [loginPage, profilePage]) {
+  for (const line of stripComments(source).split('\n')) {
+    if (barePattern.test(line)) bareCalls.push(line.trim().slice(0, 48))
+  }
+}
+check(bareCalls.length === 0,
+  'P4 JSX 文本里的翻译全部裹在 {} 里（少花括号＝页面直接显示 t(...) 这段代码，而 P1「没有中文」照样绿）',
+  `→ 裸调用 ${bareCalls.length} 处：${bareCalls.slice(0, 3).join(' ｜ ')}`)
+
+// 把 P3b 从「抽一格看」扩到「这两页用到的每一格」：三种外语里只要有一格还留着中文，
+// 切语言时那半句就还是中文——而这在源码里看不见，只能这样数。
+const cjkLeft: string[] = []
+const paramLeft: string[] = []
+for (const { ns, key } of surfaceKeys) {
+  const values = LOCALES.map(lang => (readLocale(lang)[ns] as Record<string, string> | undefined)?.[key] ?? '')
+  if (/[\u4e00-\u9fff]/.test(values[1] + values[2] + values[3])) cjkLeft.push(`${ns}.${key}`)
+  const shape = new Set(values.map(v => (v.match(/\{[a-zA-Z0-9_]+\}/g) ?? []).sort().join(',')))
+  if (shape.size > 1) paramLeft.push(`${ns}.${key}`)
+}
+check(cjkLeft.length === 0,
+  'P5 这两页用到的每一格，英/德/荷三语都不含汉字（有一格留着中文，切语言时就露半句）',
+  `→ 仍含中文 ${cjkLeft.length} 格：${cjkLeft.slice(0, 5).join(' ')}`)
+check(paramLeft.length === 0,
+  'P5b 带占位符的句子在四语里占位符一致（少写 {phone} 这类，切语言就打出空白或花括号）',
+  `→ 不一致 ${paramLeft.length} 格：${paramLeft.slice(0, 5).join(' ')}`)
+// 条款那两句走的是富文本：某一语少写 <terms>…</terms>，那一语下链接就没了、标签还会露在字面上。
+const richKeys = [...new Set(translationKeys(loginPage).filter(({ key }) => key.startsWith('terms')).map(({ ns, key }) => `${ns}.${key}`))]
+const tagLeft = richKeys.flatMap(full => {
+  const [ns, key] = full.split('.')
+  const shapes = new Set(LOCALES.map(lang => (((readLocale(lang)[ns] as Record<string, string>)[key] ?? '').match(/<\/?[a-z]+>/g) ?? []).join(' ')))
+  return shapes.size > 1 ? [full] : []
+})
+check(richKeys.length >= 2 && tagLeft.length === 0,
+  'P5c 条款那两句富文本在四语里标签一致（少标签＝那一语下链接消失或 <terms> 露成文字）',
+  `→ 查了 ${richKeys.length} 句，不一致：${tagLeft.join(' ') || '无'}`)
+
+// ── N 组：验证码登录按行业惯例「未注册即自动建号」，但缺口不能让用户看见 ──
+// 10-13 线上 21 行有手机号的账号里 19 行的摘要列是空的（加列的迁移不会算 HMAC），
+// 于是「按手机号找人」一律找不到 → 给人建了重号。修法不是拦用户，而是查不到时先兜底比对一次。
+const smsRoute = stripComments(read('app/api/auth/sms/verify-code/route.ts'))
+const loginPageSrc = stripComments(read('app/login/page.tsx'))
+const at = (source: string, re: RegExp) => source.search(re)
+const createAt = at(smsRoute, /prisma\.user\.create\(/)
+check(createAt > 0 && !/NEW_ACCOUNT_CONFIRM|confirmNewAccount/.test(smsRoute + loginPageSrc),
+  'N1 未注册的号一次提交就自动建号：服务端与界面都不许留确认闸门', '')
+check(!/PHONE_INDEX_INCOMPLETE/.test(smsRoute + loginPageSrc),
+  'N2 不许把「摘要索引没补齐」这种运维缺口变成用户看得见的 503', '')
+const repairFindAt = at(smsRoute, /findMany\([\s\S]{0,140}?phoneHash: null/)
+const repairLimitAt = at(smsRoute, /take:\s*UNINDEXED_PHONE_SCAN_LIMIT/)
+const limitDeclared = smsRoute.match(/const UNINDEXED_PHONE_SCAN_LIMIT = (\d+)/)
+const repairCompareAt = at(smsRoute, /normalizePhone\(readPhone\(/)
+check(repairFindAt >= 0 && repairFindAt < createAt && repairLimitAt >= 0 && repairCompareAt >= 0
+  && !!limitDeclared && Number(limitDeclared[1]) <= 5_000,
+  'N3 摘要查不到时：先只捞「有手机号但没摘要」那批行、解密比对，且必须有写死上限（不能变成全表扫）',
+  `→ 捞取@${repairFindAt}，比对@${repairCompareAt}，create@${createAt}，上限=${limitDeclared?.[1] ?? '未声明'}`)
+const repairWriteAt = at(smsRoute, /user\.update\([\s\S]{0,140}?data:\s*phoneHashField\(/)
+check(repairFindAt >= 0 && repairWriteAt >= 0 && repairWriteAt < createAt,
+  'N3b 兜底比对命中就顺手把那行的摘要补回去（read-repair：同一个号第二次不会再走兜底）',
+  `→ 补写@${repairWriteAt}`)
+const eqAt = at(smsRoute, /timingSafeEqual/)
+const delSpots = [...smsRoute.matchAll(/redis\.del\(key\)/g)].map(m => m.index)
+check(delSpots.length > 0 && delSpots.every(i => i < eqAt || i > createAt),
+  'N4 一次性码只在这件事真的要做了才烧（建号/绑定之后），错路路径都不许提前烧码',
+  `→ 删码位置 ${JSON.stringify(delSpots)}，比对@${eqAt}，建号@${createAt}`)
+const retiredKeys = ['newAccountConfirm', 'newAccountConfirmButton', 'smsIndexUnready']
+const retiredLeft = LOCALES.flatMap(lang => retiredKeys.filter(k => readLocale(lang).auth?.[k]).map(k => `${lang}:${k}`))
+check(retiredLeft.length === 0 && !retiredKeys.some(k => loginPageSrc.includes(k)),
+  'N5 确认那套的三句文案已经跟着删净（留着＝孤儿 key，界面永远不会画）', `→ 还在：${retiredLeft.join(' ') || '无'}`)
+check(loginPageSrc.includes("t('unregisteredPhoneHint')"),
+  'N6 自动建号的合规前提：那句「未注册的手机号验证通过后将自动创建账号」必须还在页面上明说', '')
+
+// ── T 组：条款同意必须每次手动勾（工信部 26 条点名「不得采用默认勾选…诱导用户同意」）──
+const anyTermsMemory = ['app/login/page.tsx', 'components/ReviewLoginActions.tsx', 'components/WechatMiniQrLogin.tsx']
+  .flatMap(f => (stripComments(read(f)).match(/terms_agreed[\w-]*/g) ?? []).map(m => `${f.split('/').pop()}:${m}`))
+check(anyTermsMemory.length === 0,
+  'T1 条款同意状态不再读写 localStorage（记住了＝下次进来默认勾上，正是被点名的做法）',
+  `→ 还在引用：${anyTermsMemory.join(' ') || '无'}`)
+const agreedInit = loginPageSrc.match(/const \[agreed, setAgreed\] = useState\((\w+)\)/)
+check(!!agreedInit && agreedInit[1] === 'false' && !/setAgreed\(\s*(true|localStorage|!agreed)/.test(loginPageSrc),
+  'T2 勾选框初始必须是未勾，且没有任何地方把它硬置成已同意或从缓存里读回来', `→ 初值=${agreedInit?.[1] ?? '没找到'}`)
+const guardAt = at(loginPageSrc, /if \(!agreed\)/)
+const smsFetchAt = at(loginPageSrc, /fetch\('\/api\/auth\/sms\/verify-code'/)
+const pwdFetchAt = at(loginPageSrc, /fetch\('\/api\/auth\/login'/)
+check(guardAt >= 0 && guardAt < smsFetchAt && guardAt < pwdFetchAt,
+  'T2b 没勾就不许走到任何登录/建号请求（校验必须排在两条 fetch 之前）',
+  `→ 校验@${guardAt}，验证码@${smsFetchAt}，密码@${pwdFetchAt}`)
+check(/setError\(t\('termsRequired'\)\)/.test(loginPageSrc),
+  'T3 未勾时给的是界面自己的提示（走 locale，不是服务器回的错误串）', '')
+
+// ── U 组：同一枚码并发时不许把用户打成 500（压测实测 5 路并发＝1×200 + 4×500）──
+const catchBlock = smsRoute.slice(at(smsRoute, /catch \(error\)/))
+check(createAt >= 0 && /Prisma\.PrismaClientKnownRequestError/.test(smsRoute) && /'P2002'/.test(smsRoute),
+  'U1 建号包住了唯一冲突（P2002）而不是让它冒成 500', '')
+const racedLookup = at(smsRoute, /const raced = await prisma\.user\.findFirst\(\{ where: phoneWhereOrNone\(phone\)/)
+check(racedLookup > createAt && /isNewUser = false/.test(catchBlock),
+  'U2 撞号之后是回查那个已存在的账号继续登录（不是回滚、不是重新建一个）',
+  `→ 回查@${racedLookup}，建号@${createAt}`)
+check(/if \(!raced\) throw error/.test(smsRoute),
+  'U2b 真的回查不到时仍然抛出（不把冲突悄悄吞成成功）', '')
 
 console.log(`\n合计 ${passed} PASS / ${failures.length} FAIL`)
 if (failures.length) {

@@ -33,6 +33,7 @@ function LoginCharacters({
   passwordVisible: boolean
   loading: boolean
 }) {
+  const t = useTranslations('auth')
   const lookX = Math.min(9, Math.max(-3, emailLength * 0.45 - 2))
 
   return (
@@ -89,7 +90,7 @@ function LoginCharacters({
 
       <div className="login-stage-caption">
         <span className="login-caption-dot" />
-        <span>{focusedField === 'password' ? (passwordVisible ? '他们自觉移开了视线' : '他们会替你保密') : '欢迎回来'}</span>
+        <span>{focusedField === 'password' ? (passwordVisible ? t('eyesAverted') : t('theyKeepSecret')) : t('welcomeBack')}</span>
       </div>
     </div>
   )
@@ -120,13 +121,9 @@ function LoginForm() {
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [agreed, setAgreed] = useState(false)
 
-  useEffect(() => {
-    try { setAgreed(localStorage.getItem('terms_agreed_v1') === '1') } catch { /* 隐私模式忽略 */ }
-  }, [])
-
-  function setAgreedPersist(value: boolean) {
+  // 同意条款不做任何记忆：记住上次的勾选＝下次进页面默认替用户同意，正是被点名的「默认勾选」。
+  function toggleAgreed(value: boolean) {
     setAgreed(value)
-    try { localStorage.setItem('terms_agreed_v1', value ? '1' : '0') } catch { /* ignore */ }
     if (value) setError('')
   }
 
@@ -190,7 +187,7 @@ function LoginForm() {
     e.preventDefault()
     setError('')
     if (!agreed) {
-      setError('请先阅读并同意《用户服务协议》和《隐私政策》')
+      setError(t('termsRequired'))
       return
     }
     setLoading(true)
@@ -220,7 +217,7 @@ function LoginForm() {
         if (!response.ok) {
           setError(
             data.code === 'PHONE_ACCOUNT_CONFLICT'
-              ? '该手机号已绑定其他账号，请改用密码登录'
+              ? t('phoneLinkedElsewhere')
               : data.error || t('loginFailed')
           )
           setLoading(false)
@@ -253,7 +250,7 @@ function LoginForm() {
 
       if (!response.ok) {
         // 本页只收手机号，不透传 API 的「用户名、邮箱或密码错误」通用文案
-        setError(response.status === 401 ? '手机号或密码错误' : (data.error || t('loginFailed')))
+        setError(response.status === 401 ? t('invalidPhoneOrPassword') : (data.error || t('loginFailed')))
         setLoading(false)
         return
       }
@@ -291,7 +288,7 @@ function LoginForm() {
         <section className="flex min-w-0 items-center justify-center px-5 py-8 sm:px-10 lg:px-14">
           <div className="w-full max-w-[420px]">
             <Button type="button" variant="ghost" className="mb-6 h-9 px-2 text-muted-foreground" onClick={() => router.push('/')}>
-              <ArrowLeft className="mr-2 h-4 w-4" />返回首页
+              <ArrowLeft className="mr-2 h-4 w-4" />{t('backToHome')}
             </Button>
             <div className="mb-9 lg:hidden">
               <div className="flex items-center gap-3">
@@ -316,7 +313,7 @@ function LoginForm() {
                       className="h-9 px-2 text-muted-foreground"
                       onClick={() => setView('wechat')}
                     >
-                      微信扫码
+                      {t('wechatQrShortcut')}
                     </Button>
                   </div>
                 </div>
@@ -336,7 +333,7 @@ function LoginForm() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 rounded-md bg-muted p-1" role="tablist" aria-label="登录方式">
+              <div className="grid grid-cols-2 rounded-md bg-muted p-1" role="tablist" aria-label={t('loginMethod')}>
                 <button
                   type="button"
                   onClick={() => switchMode('password')}
@@ -403,7 +400,7 @@ function LoginForm() {
                     disabled={loading}
                   />
                   <div className="flex justify-end">
-                    <Link href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">忘记密码？</Link>
+                    <Link href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">{t('forgotPassword')}</Link>
                   </div>
                 </div>
               ) : (
@@ -444,7 +441,7 @@ function LoginForm() {
                             : t('sendCode')}
                     </Button>
                   </div>
-                  <p className="text-xs leading-5 text-muted-foreground">未注册的手机号，验证通过后将自动创建账号并登录</p>
+                  <p className="text-xs leading-5 text-muted-foreground">{t('unregisteredPhoneHint')}</p>
                 </div>
               )}
 
@@ -452,14 +449,11 @@ function LoginForm() {
                 <input
                   type="checkbox"
                   checked={agreed}
-                  onChange={(e) => setAgreedPersist(e.target.checked)}
+                  onChange={(e) => toggleAgreed(e.target.checked)}
                   className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[hsl(var(--primary))]"
                 />
                 <span>
-                  已阅读并同意
-                  <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">《用户服务协议》</Link>
-                  和
-                  <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">《隐私政策》</Link>
+                  {t.rich('termsAgreement', {terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>, privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>})}
                 </span>
               </label>
 
@@ -478,8 +472,8 @@ function LoginForm() {
               </>
             ) : (
               <div className="text-center">
-                <h1 className="text-3xl font-semibold text-foreground">微信扫码登录</h1>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">请使用微信扫码，登录后进入团队后台</p>
+                <h1 className="text-3xl font-semibold text-foreground">{t('wechatQrLogin')}</h1>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('wechatScanHint')}</p>
 
                 <WechatMiniQrLogin
                   inline
@@ -488,10 +482,7 @@ function LoginForm() {
                 />
 
                 <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
-                  扫码登录即代表已阅读并同意
-                  <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">《用户服务协议》</Link>
-                  和
-                  <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">《隐私政策》</Link>
+                  {t.rich('termsByScanning', {terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>, privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>})}
                 </p>
 
                 <div className="mt-6">
@@ -502,7 +493,7 @@ function LoginForm() {
                     onClick={() => setView('phone')}
                   >
                     <Phone className="mr-2 h-4 w-4" />
-                    使用手机号登录
+                    {t('usePhoneLogin')}
                   </Button>
                 </div>
               </div>
