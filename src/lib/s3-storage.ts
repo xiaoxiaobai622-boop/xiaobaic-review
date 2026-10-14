@@ -396,6 +396,54 @@ export async function s3DeleteFile(key: string): Promise<void> {
   }
 }
 
+/**
+ * Copy within the bucket, leaving the source in place. A staged rename needs both
+ * copies to exist at once: the database flips to the new key set in one transaction
+ * while the old prefix is still being served.
+ */
+export async function s3CopyFile(sourceKey: string, destKey: string): Promise<void> {
+  const client = getS3Client()
+  const bucket = getS3Bucket()
+  const encodedSource = sourceKey.split('/').map(encodeURIComponent).join('/')
+
+  invalidateS3FileExistsCache(destKey)
+  try {
+    await client.send(
+      new CopyObjectCommand({
+        Bucket: bucket,
+        Key: destKey,
+        CopySource: `${bucket}/${encodedSource}`,
+      }),
+      { abortSignal: AbortSignal.timeout(S3_METADATA_TIMEOUT_MS) },
+    )
+    markS3FileExistsCache(destKey, true, S3_FILE_EXISTS_CACHE_TTL_MS)
+  } catch (err) {
+    throw formatS3Error('COPY', destKey, err)
+  }
+}
+
+/** Every key under a prefix. Used by the staged rename, which must know the whole set before deleting any of it. */
+export async function s3ListKeys(prefix: string): Promise<string[]> {
+  const client = getS3Client()
+  const bucket = getS3Bucket()
+  const normalizedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`
+  const keys: string[] = []
+  let continuationToken: string | undefined
+
+  do {
+    const res = await client.send(
+      new ListObjectsV2Command({ Bucket: bucket, Prefix: normalizedPrefix, ContinuationToken: continuationToken }),
+      { abortSignal: AbortSignal.timeout(S3_METADATA_TIMEOUT_MS) },
+    )
+    for (const object of res.Contents ?? []) {
+      if (typeof object.Key === 'string') keys.push(object.Key)
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (continuationToken)
+
+  return keys
+}
+
 /** Delete all objects under a key prefix (paginated). */
 export async function s3DeleteDirectory(prefix: string): Promise<void> {
   const client = getS3Client()

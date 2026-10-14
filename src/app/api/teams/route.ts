@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { randomBytes } from 'crypto'
 import { BETA_PLAN, BETA_QUOTA } from '@/lib/platform-access'
+import { allocateTeamId } from '@/lib/team-id'
 import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
@@ -102,9 +103,11 @@ export async function POST(request: NextRequest) {
 
   const team = await prisma.$transaction(async (tx) => {
     const now = new Date()
+    const teamId = await allocateTeamId(tx)
     const slug = await getNextTeamIdentifier(tx)
     const created = await tx.team.create({
       data: {
+        id: teamId,
         name,
         slug,
         shareKey: `tm_${randomBytes(5).toString('hex')}`,

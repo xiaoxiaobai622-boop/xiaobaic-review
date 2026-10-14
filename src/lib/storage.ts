@@ -3,7 +3,7 @@ import * as path from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { mkdir } from 'fs/promises'
-import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3PurgeObject, s3PurgeDirectory, s3MoveFile, s3GetPresignedOriginStreamUrl, s3FileExists, s3GetObjectSize } from './s3-storage'
+import { s3UploadFile, s3DownloadFile, s3DeleteFile, s3DeleteDirectory, s3PurgeObject, s3PurgeDirectory, s3MoveFile, s3CopyFile, s3ListKeys, s3GetPresignedOriginStreamUrl, s3FileExists, s3GetObjectSize } from './s3-storage'
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || '/app/uploads'
 
@@ -247,6 +247,42 @@ export async function deleteDirectory(dirPath: string): Promise<void> {
   if (fs.existsSync(fullPath)) {
     await fs.promises.rm(fullPath, { recursive: true, force: true })
   }
+}
+
+/**
+ * Copy without touching the source, in both storage modes. The staged team-id rename
+ * needs old and new keys alive at the same moment: the database switches in one
+ * transaction while the old prefix still serves reads.
+ */
+export async function copyStoredFile(sourcePath: string, destPath: string): Promise<void> {
+  if (isS3Mode()) {
+    await s3CopyFile(sourcePath, destPath)
+    return
+  }
+  const from = validatePath(sourcePath)
+  const to = validatePath(destPath)
+  await mkdir(path.dirname(to), { recursive: true })
+  await fs.promises.copyFile(from, to)
+}
+
+/** Every stored key under a prefix, in both storage modes. */
+export async function listStoredKeys(prefix: string): Promise<string[]> {
+  if (isS3Mode()) {
+    return s3ListKeys(prefix)
+  }
+  const root = validatePath(prefix)
+  if (!fs.existsSync(root)) return []
+  const keys: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.isFile()) keys.push(path.relative(STORAGE_ROOT, full).split(path.sep).join('/'))
+    }
+  }
+  if (fs.statSync(root).isFile()) return [prefix]
+  walk(root)
+  return keys
 }
 
 /**
