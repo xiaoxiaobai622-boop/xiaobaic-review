@@ -74,3 +74,8 @@ about.html
 
 # Screenshot tooling
 docs/screenshots/capture.mjs
+
+# 团队 ID 迁移留下的映射与切换时间戳：里面是「旧号→新号」两枚 tm_ 分享键，
+# 推到公开仓库等于把能打开客户分享页的地址段写进版本库。一次性数据，只留本地。
+scripts/team-id-mapping*.json
+scripts/team-id-switch*.json

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 首页那两张配图（public/home/review-ui.png、review-comments.png）是从本地演示数据截的，
@@ -71,6 +72,7 @@ async function main() {
     where: { slug: TEAM_SLUG },
     update: { name: '海平面影视', createdById: user.id },
     create: {
+      id: await allocateTeamId(prisma),
       name: '海平面影视', slug: TEAM_SLUG, shareKey: `tm_${randomBytes(5).toString('hex')}`,
       createdById: user.id, subscriptionPlan: 'BETA', subscriptionExpiresAt: null,
     },

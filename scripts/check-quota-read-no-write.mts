@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
 import { getTeamQuota, BETA_QUOTA } from '../src/lib/platform-access'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 额度读取不该落库（整改 D1）。判据钉三件事：
@@ -43,7 +44,7 @@ try {
     data: { email: adminEmail, name: 'quota-admin', password: await hashPassword(pw), isPlatformAdmin: true },
   })
   const team = await prisma.team.create({
-    data: { name: slug, slug, shareKey: slug, createdById: admin.id, subscriptionPlan: 'BETA' },
+    data: { id: await allocateTeamId(prisma), name: slug, slug, shareKey: slug, createdById: admin.id, subscriptionPlan: 'BETA' },
   })
 
   // 前提：直接建出来的团队没有 quota 行（`POST /api/teams` 才会连带建一行，这里刻意绕开它）。

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 他 10-14 报的「点击视频设置没有反应」。
@@ -235,6 +236,7 @@ async function main() {
   const member = await makeUser(emails[2], 'TVS Member')
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA',
       members: { create: [
         { userId: owner.id, role: 'OWNER', status: 'ACTIVE' },

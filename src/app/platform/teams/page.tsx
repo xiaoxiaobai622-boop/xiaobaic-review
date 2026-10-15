@@ -75,7 +75,7 @@ export default function PlatformTeamsPage() {
     const query = search.trim().toLowerCase()
     if (!query) return teams
     return teams.filter((team) =>
-      [team.name, team.slug, team.createdBy.name || '', team.createdBy.email]
+      [team.name, team.id, team.slug, team.createdBy.name || '', team.createdBy.email]
         .some((value) => value.toLowerCase().includes(query)),
     )
   }, [teams, search])

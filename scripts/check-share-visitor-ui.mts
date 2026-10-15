@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
 import { getRedis } from '../src/lib/redis'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 需求 §3「有效期／禁止-允许下载」的界面级判据：权限只在未登录访客真的看得见、
@@ -203,6 +204,7 @@ try {
   })
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA',
       members: { create: { userId: owner.id, role: 'OWNER', status: 'ACTIVE' } },
     },

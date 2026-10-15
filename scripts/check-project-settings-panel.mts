@@ -2,6 +2,7 @@ import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { rmSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 他 10-03 的话：「把项目设置里面的内容放到外面去」，随后点了 A 方案
@@ -477,7 +478,7 @@ let project = undefined as any
 try {
   const owner = await prisma.user.create({ data: { email: OWNER.email, name: OWNER.name, password: await hashPassword(pw), phone: `136${String(stamp).slice(-8)}` } })
   const team = await prisma.team.create({
-    data: { name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA', members: { create: [{ userId: owner.id, role: 'OWNER', status: 'ACTIVE' }] } },
+    data: { id: await allocateTeamId(prisma), name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA', members: { create: [{ userId: owner.id, role: 'OWNER', status: 'ACTIVE' }] } },
   })
   // allowReverseShare 显式设 false：工具栏那枚「开启收录」只在没开收录时出现，空态那枚也靠它。
   project = await prisma.project.create({

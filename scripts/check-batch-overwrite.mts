@@ -3,6 +3,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { prisma } from '../src/lib/db'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 需求②「收录文件那里也需要一个多文件覆盖，就把选择相同名字的视频一键覆盖上去。覆盖的视频需要确定一下。」
@@ -95,6 +96,7 @@ try {
   })
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id,
       subscriptionPlan: 'BETA',
       members: { create: { userId: owner.id, role: 'OWNER', status: 'ACTIVE' } },

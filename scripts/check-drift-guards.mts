@@ -240,5 +240,32 @@ check(Boolean(runnerStage) && runnerArg && runnerEnv,
   'C6 runner 段自己声明 ARG + ENV ASSET_PREFIX（否则 SSR 那半边永远不带前缀）',
   `runner 段 ${runnerStage.length} 字节，ARG ${runnerArg ? '✓' : '✗'} / ENV ${runnerEnv ? '✓' : '✗'}`)
 
+// ── ⑭ 声称「永久删除」的那条路必须真的连版本一起删 ──────────────────────────
+// 10-15 迁团队 ID 时实测出来的：媒体桶是后来才开版本的，那之前上传的对象版本号字面就是
+// "null"。把它们当「普通键删」（DeleteObject 不带 VersionId）只会立一枚删除标记，字节一个
+// 不回收，而 ListObjectsV2 看不见历史版本——界面看着删干净了，账单一直在跑。
+// 当天在桶上单点验证过：原样回传 VersionId='null'，COS 收下、ListObjectVersions 里那条当场消失。
+console.log('=== ⑭ 永久删除必须连版本与删除标记一起清 ===')
+const s3Src = read('src/lib/s3-storage.ts')
+const purgeFn = (s3Src.match(/async function purgeObjectVersions[\s\S]*?\n\}/) || [''])[0]
+check(purgeFn.length > 0, '⑭a purgeObjectVersions 这个函数还在（下面几条不是空判）', `${purgeFn.length} 字节`)
+check(!/VersionId\s*===\s*'null'\s*\?\s*undefined/.test(purgeFn),
+  '⑭b 不许把 VersionId "null" 映射成「普通键删」（那只会立标记，字节不回收）',
+  (purgeFn.match(/.*VersionId.*'null'.*/) || [''])[0].trim().slice(0, 96))
+check(/Versions \?\? \[\]/.test(purgeFn) && /DeleteMarkers \?\? \[\]/.test(purgeFn),
+  '⑭c 目标里同时含历史版本与删除标记（少一半就是删不干净）', '')
+// 两条出口各自的语义要钉住：软删留版本＝整项目删除唯一的反悔路径；purge 才是永久。
+const storageSrc = read('src/lib/storage.ts')
+const durableSrc = read('src/lib/durable-tasks.ts')
+check(/export async function purgeDirectory[\s\S]{0,160}s3PurgeDirectory/.test(storageSrc)
+  && /export async function deleteDirectory[\s\S]{0,160}s3DeleteDirectory/.test(storageSrc),
+  '⑭d 软删与永久删两条出口各走各的 S3 分支（合并成一条就同时丢掉反悔路径与空间回收）', '')
+const durableAt = durableSrc.indexOf("task.kind === 'DELETE_STORAGE'")
+const durableEnd = durableAt >= 0 ? durableSrc.indexOf('\n    }', durableAt) : -1
+const durableBranch = durableAt >= 0 && durableEnd > durableAt ? durableSrc.slice(durableAt, durableEnd) : ''
+check(durableBranch.includes('deleteDirectory') && !durableBranch.includes('purgeDirectory'),
+  '⑭e durable 的 DELETE_STORAGE 仍是软删（整项目删除的反悔路径靠它，别顺手改成永久删）',
+  `分支 ${durableBranch.length} 字节`)
+
 console.log(`\n合计 ${pass} PASS / ${fail} FAIL`)
 process.exit(fail === 0 ? 0 : 1)

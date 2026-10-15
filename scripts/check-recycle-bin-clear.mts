@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { prisma, INCLUDE_DELETED } from '../src/lib/db'
 import { hashPassword } from '../src/lib/encryption'
 import { createRecycleBinItem } from '../src/lib/recycle-bin'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 需求①「回收站需要一个清空回收站的功能」。判据分三组，行为组全走真库真 HTTP：
@@ -113,6 +114,7 @@ try {
   })
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id,
       subscriptionPlan: 'BETA',
       members: { create: { userId: owner.id, role: 'OWNER', status: 'ACTIVE' } },

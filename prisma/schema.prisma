@@ -108,7 +108,9 @@ model DurableTask {
 }
 
 model Team {
-  id          String   @id @default(cuid())
+  // 号由 src/lib/team-id.ts 显式发（6 位数字），刻意不给默认值：漏写 id 就该报错，
+  // 而不是悄悄长回一枚旧形状的号。库级 CHECK 见 prisma/migrations。
+  id          String   @id
   name        String
   slug        String   @unique
   shareKey    String   @unique

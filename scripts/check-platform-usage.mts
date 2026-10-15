@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 首页「每天使用量」判据。两类分开跑：
@@ -71,7 +72,7 @@ async function createFixtures() {
     data: { email: adminEmail, name: 'usage-admin', password: await hashPassword(pw), isPlatformAdmin: true },
   })
   const team = await prisma.team.create({
-    data: { name: slug, slug, shareKey: slug, createdById: admin.id, subscriptionPlan: 'BETA' },
+    data: { id: await allocateTeamId(prisma), name: slug, slug, shareKey: slug, createdById: admin.id, subscriptionPlan: 'BETA' },
   })
   const mkProject = (suffix: string, createdAt?: Date) => prisma.project.create({
     data: {

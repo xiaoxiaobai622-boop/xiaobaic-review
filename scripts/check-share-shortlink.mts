@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
 import { getRedis } from '../src/lib/redis'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 逐帧审阅｜分享链接需求（§1 根路径短链、§2 8~12 位安全随机＋撤销立即失效、
@@ -83,6 +84,7 @@ try {
   })
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id,
       subscriptionPlan: 'BETA',
       members: { create: { userId: owner.id, role: 'OWNER', status: 'ACTIVE' } },

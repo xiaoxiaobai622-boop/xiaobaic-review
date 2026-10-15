@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 他 10-03 点单的「项目信息身份块照 Frame.io 那排复刻」的判据（改动点 1-5 全上，4 保留现在的口径）：
@@ -311,6 +312,7 @@ try {
   const member = await prisma.user.create({ data: { email: MEMBER.email, name: MEMBER.name, password: await hashPassword(pw), phone: `137${String(stamp).slice(-8)}` } })
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA',
       members: { create: [
         { userId: owner.id, role: 'OWNER', status: 'ACTIVE' },

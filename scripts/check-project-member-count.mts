@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { prisma } from '../src/lib/db'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 需求「项目信息身份行：去掉「审片中」徽标和后面的描述，改成**这个项目**的人数」。判据分三组：
@@ -84,6 +85,7 @@ try {
     const owner = await makeUser(`${slug}-owner-${stamp}@example.invalid`, `${slug}-owner`)
     const team = await prisma.team.create({
       data: {
+        id: await allocateTeamId(prisma),
         name: slug, slug, shareKey: slug, createdById: owner.id,
         subscriptionPlan: 'BETA',
         members: { create: { userId: owner.id, role: 'OWNER', status: 'ACTIVE' } },

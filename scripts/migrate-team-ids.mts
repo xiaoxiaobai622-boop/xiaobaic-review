@@ -30,6 +30,13 @@ import { fileURLToPath } from 'node:url'
 import { pickTeamId } from '../src/lib/team-id'
 import { listStoredKeys, copyStoredFile, fileExists, deleteDirectory, isS3Mode } from '../src/lib/storage'
 import { prefetchRenditions, isCdnPrefetchEnabled } from '../src/lib/tencent-cdn'
+import {
+  type Mapping, type MappingPair, type FkDef, type PathCell,
+  SQL_READ_TEAMS, SQL_READ_FKS, SQL_COMPOSITE_FKS, SQL_TEXT_COLUMNS, SQL_TEAM_SHAPE, SQL_FK_DEFERRABLE, SQL_PATH_CELLS,
+  pathCellScanSql, activationCardCountSql, allStoredPathSql,
+  buildPhases as buildPhasesShared, renderSql as renderSqlShared, buildShareKeyPhases, oldPrefix, newPrefix,
+  sqlLiteral,
+} from './team-id-migration-sql'
 
 const prisma = new PrismaClient()
 const flags = process.argv.slice(2)
@@ -54,83 +61,34 @@ function die(msg: string): never {
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-/**
- * 只保留 SQL 里能安全内联的字符：映射值与 LIKE 模式都是本脚本自己生成的，不接外部输入。
- * 模式串多允许 / 与 %（前缀形状），引号、空格、分号一律拒。
- */
-function sqlLiteral(value: string): string {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(value)) throw new Error(`映射值形状不对，拒绝拼进 SQL：${JSON.stringify(value.slice(0, 24))}`)
-  return `'${value}'`
-}
-/** 约束名是 Prisma 建的驼峰标识符，不加双引号就会被 Postgres 折成小写而「不存在」。 */
-function sqlIdent(value: string): string {
-  if (!/^[A-Za-z0-9_]{1,63}$/.test(value)) throw new Error(`标识符形状不对，拒绝拼进 SQL：${JSON.stringify(value.slice(0, 40))}`)
-  return `"${value}"`
-}
-function sqlPattern(value: string): string {
-  if (!/^[A-Za-z0-9_/%-]{1,128}$/.test(value)) throw new Error(`LIKE 模式形状不对，拒绝拼进 SQL：${JSON.stringify(value.slice(0, 24))}`)
-  return `'${value}'`
-}
-
-type Mapping = { generatedAt: string; pairs: { oldId: string; newId: string; newShareKey?: string }[] }
-
 async function readTeams() {
-  return prisma.team.findMany({ select: { id: true, slug: true, name: true, shareKey: true }, orderBy: { createdAt: 'asc' } })
+  return prisma.$queryRawUnsafe<{ id: string; slug: string; name: string; shareKey: string }[]>(SQL_READ_TEAMS)
 }
 
-/**
- * 嵌着 `teams/<旧ID>/` 的文本列：按值现查，不写死列名——线上新加一列存路径也不会漏。
- * 一次 UNION 打完（线上库里上千个文本列 × 若干团队，逐列一问会慢到没法用）。
- */
+/** 引用 Team.id 的外键，连定义一起取回来；复合外键直接停，不默默漏。 */
+async function readTeamForeignKeys(): Promise<FkDef[]> {
+  const rows = await prisma.$queryRawUnsafe<FkDef[]>(SQL_READ_FKS)
+  const composite = await prisma.$queryRawUnsafe<{ n: bigint }[]>(SQL_COMPOSITE_FKS)
+  if (Number(composite[0].n) > 0) die(`有 ${composite[0].n} 条复合外键指向 Team.id，这条脚本只处理单列外键，先看清楚再改`)
+  return rows
+}
+
+async function readTextColumns() {
+  return prisma.$queryRawUnsafe<{ table: string; column: string }[]>(SQL_TEXT_COLUMNS)
+}
+
+/** 嵌着 `teams/<旧ID>/` 的单元格：一条 UNION 打完全部候选列。 */
 async function findPathCells(oldIds: string[]) {
-  const candidates = await prisma.$queryRawUnsafe<{ table: string; column: string }[]>(
-    `SELECT table_name AS table, column_name AS column FROM information_schema.columns
-     WHERE table_schema='public' AND data_type IN ('text','character varying')
-       AND table_name NOT LIKE 'pg\\_%' AND table_name <> '_prisma_migrations'
-     ORDER BY table_name, column_name`,
-  )
-  const parts: string[] = []
-  for (const { table, column } of candidates) {
-    for (const oldId of oldIds) {
-      parts.push(`SELECT '${table}' AS table, '${column}' AS column, ${sqlLiteral(oldId)} AS old_id,
-  count(*) FILTER (WHERE "${table}"."${column}" LIKE ${sqlPattern(`teams/${oldId}/%`)})::bigint AS n FROM "${table}"`)
-    }
-  }
-  const out = new Map<string, { table: string; column: string; hits: number }[]>()
-  if (!parts.length) return out
-  // 列太多时分批，省得单条语句过长
-  for (let i = 0; i < parts.length; i += 400) {
-    const batch = parts.slice(i, i + 400).join('\nUNION ALL\n')
-    const rows = await prisma.$queryRawUnsafe<{ table: string; column: string; old_id: string; n: bigint }[]>(
-      `SELECT * FROM (${batch}) x WHERE x.n > 0`,
-    )
-    for (const row of rows) {
+  const out = new Map<string, PathCell[]>()
+  if (!oldIds.length) return out
+  for (const sql of pathCellScanSql(await readTextColumns(), oldIds)) {
+    for (const row of await prisma.$queryRawUnsafe<{ table: string; column: string; old_id: string; n: bigint }[]>(sql)) {
       const list = out.get(row.old_id) ?? []
       list.push({ table: row.table, column: row.column, hits: Number(row.n) })
       out.set(row.old_id, list)
     }
   }
   return out
-}
-
-/** 引用 Team.id 的外键，连定义一起取回来，改完照原文装回去。 */
-async function readTeamForeignKeys() {
-  const rows = await prisma.$queryRawUnsafe<{ table: string; constraint: string; definition: string; column: string }[]>(
-    `SELECT c.conname AS constraint,
-            c.conrelid::regclass::text AS table,
-            pg_get_constraintdef(c.oid) AS definition,
-            a.attname AS column
-     FROM pg_constraint c
-     JOIN pg_class tc ON tc.oid = c.conrelid
-     JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-     WHERE c.contype='f' AND c.confrelid = '"Team"'::regclass AND tc.relkind='r'
-       AND cardinality(c.conkey) = 1`,
-  )
-  const composite = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
-    `SELECT count(*)::bigint AS n FROM pg_constraint WHERE contype='f' AND confrelid='"Team"'::regclass AND cardinality(conkey) > 1`,
-  )
-  if (Number(composite[0].n) > 0) die(`有 ${composite[0].n} 条复合外键指向 Team.id，这条脚本只处理单列外键，先看清楚再改`)
-  return rows
 }
 
 async function plan(): Promise<Mapping> {
@@ -170,9 +128,7 @@ async function plan(): Promise<Mapping> {
     log(`  ${m.oldId} → ${m.newId}｜库里嵌旧前缀的单元格 ${total}（${paths.map(p => `${p.table}.${p.column}=${p.hits}`).join(' ') || '无'}）｜存储里该前缀对象 ${keys.length}`)
   }
   // 非外键那列单独点名：它不在 pg_constraint 里，靠发现是找不到的。
-  const cards = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
-    `SELECT count(*)::bigint AS n FROM "TeamActivationCard" WHERE "redeemedByTeamId" IN (${mapping.map(m => sqlLiteral(m.oldId)).join(',')})`,
-  ).catch(() => [] as { n: bigint }[])
+  const cards = await prisma.$queryRawUnsafe<{ n: bigint }[]>(activationCardCountSql(mapping.map(m => m.oldId))).catch(() => [] as { n: bigint }[])
   log(`  TeamActivationCard.redeemedByTeamId（不是外键，手工带）命中 ${cards.length ? Number(cards[0].n) : 0}`)
   log(`  分享键恰好等于旧 ID、要一起换掉的团队：${mapping.filter(m => m.newShareKey).length} 枚 ${JSON.stringify(mapping.filter(m => m.newShareKey).map(m => `${m.oldId}→${m.newShareKey}`))}`)
   log(`  新号会不会撞已存在的团队：${mapping.filter(m => teams.some(t => t.id === m.newId)).length} 枚（必须 0）`)
@@ -183,79 +139,9 @@ async function plan(): Promise<Mapping> {
   return payload
 }
 
-/**
- * 一条语句一个元素，分两段返回：
- *   main    ＝ 临时表 + 外键改延迟 + 全部改写 + 自证（一个事务）
- *   restore ＝ 外键按原文装回（必须另一个事务：Postgres 不允许在「本事务还有待处理的触发事件」
- *              时 ALTER 同一张表，而 DEFERRED 外键恰恰要到 COMMIT 才校验——第一段提交完才装得回去）
- * 本地逐句执行、线上拼一块喂 psql，两边共用同一份列表，不会出现「本地过了、线上那条不一样」。
- */
-function buildPhases(mapping: Mapping, fks: { table: string; constraint: string; definition: string; column: string }[], pathCells: { table: string; column: string; hits: number }[]) {
-  const values = mapping.pairs.map(m => `(${sqlLiteral(m.oldId)}, ${sqlLiteral(m.newId)}${m.newShareKey ? `, ${sqlLiteral(m.newShareKey)}` : ', NULL'})`).join(', ')
-  const plain = (f: { definition: string }) => f.definition.replace(/\s+DEFERRABLE|\s+INITIALLY\s+(DEFERRED|IMMEDIATE)/gi, '')
-  const oldIds = mapping.pairs.map(m => sqlLiteral(m.oldId)).join(',')
-
-  const main: string[] = [
-    `CREATE TEMP TABLE team_id_map(old_id text PRIMARY KEY, new_id text NOT NULL, new_share_key text) ON COMMIT DROP`,
-    `INSERT INTO team_id_map(old_id, new_id, new_share_key) VALUES ${values}`,
-  ]
-  // 1) 外键临时改成可延迟：主键要被 UPDATE，子表必须能等到 COMMIT 再对齐
-  for (const f of fks) {
-    main.push(`ALTER TABLE ${f.table} DROP CONSTRAINT ${sqlIdent(f.constraint)}`)
-    main.push(`ALTER TABLE ${f.table} ADD CONSTRAINT ${sqlIdent(f.constraint)} ${plain(f)} DEFERRABLE INITIALLY DEFERRED`)
-  }
-  // 2) 先把嵌着旧前缀的存储键换头（这一步只动字符串，不碰对象）
-  for (const p of pathCells) {
-    main.push(`UPDATE "${p.table}" SET "${p.column}" = 'teams/' || m.new_id || '/' || substring("${p.column}" from length('teams/' || m.old_id || '/') + 1)
-  FROM team_id_map m WHERE "${p.column}" LIKE 'teams/' || m.old_id || '/%'`)
-  }
-  // 3) 引用列 → 非外键那列 → 主键本身
-  for (const f of fks) {
-    main.push(`UPDATE ${f.table} t SET "${f.column}" = m.new_id FROM team_id_map m WHERE t."${f.column}" = m.old_id`)
-  }
-  main.push(`UPDATE "TeamActivationCard" SET "redeemedByTeamId" = m.new_id FROM team_id_map m WHERE "TeamActivationCard"."redeemedByTeamId" = m.old_id`)
-  // 他 10-14 追加「需要全改」：线上有两枚团队的分享键恰好就是旧 ID，那串字面量会一直留在对外链接里。
-  // 改了这条，那两个老地址就从此打不开（实测近 30 天线上只有 1 次访问），这是点过的代价。
-  main.push(`UPDATE "Team" SET "shareKey" = m.new_share_key FROM team_id_map m WHERE "Team"."shareKey" = m.old_id AND m.new_share_key IS NOT NULL`)
-  main.push(`UPDATE "Team" t SET "id" = m.new_id FROM team_id_map m WHERE t."id" = m.old_id`)
-  // 4) 自证：号池形状、映射盖住全部团队、库里零残留——任何一条不对就整段回滚
-  main.push(`DO $$
-DECLARE n bigint;
-BEGIN
-  SELECT count(*) INTO n FROM "Team";
-  IF n <> ${mapping.pairs.length} THEN RAISE EXCEPTION '团队行数对不上：期望 %，实际 %', ${mapping.pairs.length}, n; END IF;
-  SELECT count(*) INTO n FROM "Team" WHERE "id" !~ '^[1-9][0-9]{5}$';
-  IF n > 0 THEN RAISE EXCEPTION '还有 % 枚团队 ID 不是 6 位数字', n; END IF;
-  SELECT count(*) INTO n FROM "Team" t WHERE NOT EXISTS (SELECT 1 FROM team_id_map m WHERE m.new_id = t."id");
-  IF n > 0 THEN RAISE EXCEPTION '有 % 枚团队 ID 不在映射里（映射没盖住全部团队）', n; END IF;
-  SELECT count(*) INTO n FROM "Team" t WHERE t."id" IN (${oldIds});
-  IF n > 0 THEN RAISE EXCEPTION 'Team.id 里还留着 % 枚旧号', n; END IF;
-  SELECT count(*) INTO n FROM "Team" t WHERE t."shareKey" IN (${oldIds});
-  IF n > 0 THEN RAISE EXCEPTION 'Team.shareKey 里还留着 % 枚旧号（对外链接里还会写着旧 ID）', n; END IF;
-  SELECT count(*) INTO n FROM "Team" WHERE "shareKey" = "id";
-  IF n > 0 THEN RAISE EXCEPTION '有 % 枚团队的分享键又等于自己的 ID 了', n; END IF;
-END $$`)
-
-  // 5) 装回原定义：留到下一个事务
-  const restore: string[] = []
-  for (const f of fks) {
-    restore.push(`ALTER TABLE ${f.table} DROP CONSTRAINT ${sqlIdent(f.constraint)}`)
-    restore.push(`ALTER TABLE ${f.table} ADD CONSTRAINT ${sqlIdent(f.constraint)} ${plain(f)}`)
-  }
-  return { main, restore }
-}
-
-/** 线上走 psql：两段各自一个事务，中间必须 COMMIT 才能装回外键。 */
-function renderSql(phases: { main: string[]; restore: string[] }) {
-  if (!COMMIT) {
-    return `BEGIN;\n-- 演练：整段执行完回滚，库里一个字节都不留（外键从没真被改过）\n${phases.main.join(';\n')};\nROLLBACK;\n`
-  }
-  return `BEGIN;\n${phases.main.join(';\n')};\nCOMMIT;\nBEGIN;\n${phases.restore.join(';\n')};\nCOMMIT;\n`
-}
-
 function collectCells(mapping: Mapping) {
   return findPathCells(mapping.pairs.map(m => m.oldId)).then(cells => {
-    const flat: { table: string; column: string; hits: number }[] = []
+    const flat: PathCell[] = []
     for (const list of cells.values()) flat.push(...list)
     return flat
   })
@@ -264,7 +150,7 @@ function collectCells(mapping: Mapping) {
 async function emitSql() {
   const mapping = existsSync(MAP_FILE) ? JSON.parse(readFileSync(MAP_FILE, 'utf8')) as Mapping : await plan()
   const fks = await readTeamForeignKeys()
-  log(renderSql(buildPhases(mapping, fks, await collectCells(mapping))))
+  log(renderSqlShared(buildPhasesShared(mapping, fks, await collectCells(mapping)), COMMIT))
 }
 
 async function runPhase(label: string, tx: { $executeRawUnsafe: (sql: string) => Promise<unknown> }, statements: string[]) {
@@ -282,7 +168,7 @@ async function apply() {
   const mapping = existsSync(MAP_FILE) ? JSON.parse(readFileSync(MAP_FILE, 'utf8')) as Mapping : await plan()
   const fks = await readTeamForeignKeys()
   const pathCells = await collectCells(mapping)
-  const phases = buildPhases(mapping, fks, pathCells)
+  const phases = buildPhasesShared(mapping, fks, pathCells)
   log(`准备执行：主段 ${phases.main.length} 条＋装回外键 ${phases.restore.length} 条（两个事务）｜团队 ${mapping.pairs.length} 枚，外键 ${fks.length} 条要临时延迟，路径单元格 ${pathCells.reduce((s, c) => s + c.hits, 0)} 格要换头｜模式=${COMMIT ? 'COMMIT' : '演练回滚'}`)
   class Rehearsal extends Error {}
   try {
@@ -419,18 +305,8 @@ async function shareKeysOnly() {
   }
   log(`要换分享键的团队 ${need.length} 枚 ${JSON.stringify(need.map(n => `${n.oldKey}→${n.fresh}`))}`)
   if (!need.length) { log('库里没有「分享键＝旧 ID」或「分享键＝自己 ID」的团队，不用动'); return }
-  const values = need.map(n => `(${sqlLiteral(n.oldKey)}, ${sqlLiteral(n.oldKey)}, ${sqlLiteral(n.fresh)})`).join(', ')
-  const statements = [
-    `CREATE TEMP TABLE team_id_map(old_id text PRIMARY KEY, new_id text NOT NULL, new_share_key text) ON COMMIT DROP`,
-    `INSERT INTO team_id_map(old_id, new_id, new_share_key) VALUES ${values}`,
-    `UPDATE "Team" SET "shareKey" = m.new_share_key FROM team_id_map m WHERE "Team"."shareKey" = m.old_id AND m.new_share_key IS NOT NULL`,
-    `DO $$
-DECLARE n bigint;
-BEGIN
-  SELECT count(*) INTO n FROM "Team" WHERE "shareKey" = "id";
-  IF n > 0 THEN RAISE EXCEPTION '还有 % 枚团队的分享键等于自己的 ID', n; END IF;
-END $$`,
-  ]
+  const statements = buildShareKeyPhases(need)
+
   class Rehearsal extends Error {}
   try {
     await prisma.$transaction(async (tx) => {

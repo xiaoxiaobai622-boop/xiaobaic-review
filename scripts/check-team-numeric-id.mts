@@ -1,19 +1,30 @@
 /**
  * 团队 ID 换成 6 位数字的判据（他 10-14 点单「换吧，全部都换」）。
  *
- * 钉四层：
+ * 钉六层：
  *  A 发号函数本身（纯函数，注入 random 后能判「撞号跳过」「随机位一直撞车改用线性扫」「号池满了大声报错」）；
  *  B 建团那一路真的用了它并显式传 id（不靠 schema 的 cuid 默认值——线上多一枚 cuid 号就等于这批活再干一遍）；
+ *  D 界面上那三串号各说各的话：团队 ID 不再声称能用来邀请／开分享页（实测 /share/<ID>/… 一律 404），
+ *    运营后台按新数字号搜得到团队；
+ *  E 复发闸门：schema 里 Team.id 不再带 cuid 默认、每一处夹具建团都显式发号、库里每枚号都合规、
+ *    外加一枚迁移把不合规的旧号改名并给列上 CHECK（旧迁移里写死的 team_default 由它收尾）；
  *  C 真打一次 POST /api/teams：新建团队必须是 6 位数字、连建不重号、成员与额度行接的是同一枚号。
  *
- * 跑法：npx tsx scripts/check-team-numeric-id.mts（C 组要他自己的 next dev 在 :3000 上活着）
- * 只在本地库建一次性 fixture，跑完删干净 ⇒ 不进 CI。
+ * 跑法：
+ *  npx tsx scripts/check-team-numeric-id.mts --static   只查不写库、不要求 dev ⇒ 这条进 CI（check:static）
+ *  npx tsx scripts/check-team-numeric-id.mts            再加 C 组与全库扫描；C 组装一次性夹具、要他自己的 next dev 在 :3000 上活着 ⇒ 不进 CI
  */
 import { PrismaClient } from '@prisma/client'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { hashPassword } from '../src/lib/encryption'
 
 const BASE = process.env.NUMERIC_ID_CHECK_BASE || 'http://localhost:3000'
+// --static：一条都不写库、一次都不碰 dev，纯函数＋源码形状，所以能进 CI（CI 里没有 Postgres）。
+const STATIC = process.argv.includes('--static')
+// 别的会话钉住的文件（他分过区），我不搭车改；但里面那处建团不补就是漏，所以判据把它单独点名、
+// 不许当成「查过了」。
+const HANDED_OFF = ['check-rail-avatar-and-collect-copy.mts']
 const prisma = new PrismaClient()
 const stamp = Date.now()
 const pw = `nid-${stamp}`
@@ -40,6 +51,25 @@ function stripComments(src: string) {
 function source(rel: string) {
   const file = new URL(`../src/${rel}`, import.meta.url)
   return existsSync(file) ? stripComments(readFileSync(file, 'utf8')) : ''
+}
+// 判据要跨三个地方看仓库原文：schema、scripts/ 夹具、prisma/migrations/。用普通路径字符串，
+// URL 拼装容易把目录段吃掉（少一个尾斜杠就从仓库根往下找）。
+const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
+const SCRIPTS_DIR = `${REPO_ROOT}/scripts`
+function readRepo(rel: string) {
+  const file = `${REPO_ROOT}/${rel}`
+  return existsSync(file) ? readFileSync(file, 'utf8') : ''
+}
+/** 列出 prisma/migrations 下含某串字面的迁移，返回 {name, sql}（CHECK 闸门靠目录名是找不着的）。 */
+function migrationsMatching(needle: string) {
+  const dir = `${REPO_ROOT}/prisma/migrations`
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .map((name) => {
+      const file = `${dir}/${name}/migration.sql`
+      return existsSync(file) ? { name, sql: readFileSync(file, 'utf8') } : null
+    })
+    .filter((m): m is { name: string; sql: string } => !!m && m.sql.includes(needle))
 }
 
 // 发号模块还没长出来时，A 组按「红」逐条报，而不是抛一个模块缺失的堆栈：判据得先红得看得懂。
@@ -101,6 +131,97 @@ async function main() {
   check(/allocateTeamId\(tx\)/.test(route),
     'B3 发号用的是同一个事务句柄（和团队标识共用那把 advisory lock，两路并发都不会重号）', '')
 
+  // ── D 组：界面上那几串号各说各的话 ─────────────────────────────────────
+  // 实测过：/share/<团队 ID>/<项目链接名> 三枚团队全 404，同一团队的 /share/<slug>/… 与
+  // /share/<分享键>/… 都 200（10-14 用 curl 打的）。所以「团队 ID」那行不能再写「用于邀请」，
+  // 邀请链接拼的是 slug（studio/team/page.tsx 的 copyLink）。
+  const teamPanel = source('app/studio/team/page.tsx')
+  const idLineAt = teamPanel.search(/团队 ID/)
+  // 只取「团队 ID」那行自己那句说明（到最近的 </p>），免得隔壁行的字混进来判成假绿。
+  const noteAt = idLineAt >= 0 ? teamPanel.indexOf('用于', idLineAt) : -1
+  const idLine = noteAt >= 0 ? teamPanel.slice(noteAt, teamPanel.indexOf('</p>', noteAt)) : ''
+  check(idLineAt >= 0 && !!idLine, 'D1 团队信息面板确实还在讲「团队 ID」那行（不然下面几条是空判）',
+    `→ 句子@${noteAt}`)
+  check(!!idLine && !idLine.includes('邀请'), 'D2 团队 ID 的说明不再声称能邀请人（邀请用的是团队标识，实测把 ID 发进 by-slug 是 404「团队不存在」）',
+    `→ ${JSON.stringify(idLine)}`)
+  check(!!idLine && !idLine.includes('跨页面定位'), 'D3 团队 ID 的说明不再声称能跨页面定位（对外链接一律是短码或项目 slug）', '')
+  check(!!idLine && /分享/.test(idLine), 'D4 团队 ID 的说明把「对外分享走别的地址」这句交代上了（不写清楚，人就会复制这串去发客户）', '')
+  // 反过来也钉住：别有人为了「让复制的号能打开」把 id 加进分享路由——那等于把刚清掉的旧号放回对外 URL。
+  const shareTwo = source('app/share/[teamSlug]/[projectSlug]/page.tsx')
+  check(/shareKey:\s*teamSlug/.test(shareTwo) && /slug:\s*teamSlug/.test(shareTwo) && !/\{\s*id:\s*teamSlug\s*\}/.test(shareTwo),
+    'D5 分享路由只认分享键与团队标识、不认团队 ID（「需要全改」之后对外地址里不许再出现团队号）',
+    `→ ${JSON.stringify((shareTwo.match(/OR: \[[\s\S]{0,90}/) || [''])[0].replace(/\s+/g, ' '))}`)
+  const consoleSearch = source('app/platform/teams/page.tsx')
+  const filterAt = consoleSearch.search(/\.filter\(\(team\)/)
+  check(filterAt >= 0 && /team\.id/.test(consoleSearch.slice(filterAt, filterAt + 240)),
+    'D6 运营后台的团队列表按新的 6 位数字号搜得到（之前只比名称／标识／创建人，而那串数字才是界面让人记的）',
+    `→ ${JSON.stringify(consoleSearch.slice(filterAt, filterAt + 120).replace(/\s+/g, ' '))}`)
+
+  // ── E 组（静态部分）：不合规的号进不来、也长不回来 ───────────────────────
+  const schema = readRepo('prisma/schema.prisma')
+  const teamModel = (schema.match(/model Team \{[\s\S]*?\n\}/) || [''])[0]
+  const idColumn = (teamModel.match(/^\s*id\s+String[^\n]*/m) || [''])[0]
+  check(!!teamModel && !/@default\(cuid\(\)\)/.test(idColumn),
+    'E1 schema 里 Team.id 不带 @default(cuid())（带上就等于给所有漏写 id 的 create 发旧形状号）',
+    `→ ${JSON.stringify(idColumn.trim())}`)
+
+  // 每一处建团都得自己发号；窗口取 500 字符，够覆盖 data:{...} 里那几列。
+  const offenders: string[] = []
+  const scriptFiles = readdirSync(SCRIPTS_DIR, { withFileTypes: true })
+    .filter(entry => entry.isFile() && /\.(mts|ts|mjs)$/.test(entry.name))
+    .map(entry => entry.name)
+    .sort()
+  for (const file of scriptFiles) {
+    // 别会话钉着的文件不搭车，但它那处建团仍是漏的：不查出来就是假绿，所以单独点名。
+    if (HANDED_OFF.includes(file)) continue
+    const text = stripComments(readFileSync(`${SCRIPTS_DIR}/${file}`, 'utf8'))
+    for (const match of text.matchAll(/team\.(create|upsert)\(/g)) {
+      const from = match[1] === 'upsert'
+        ? (text.indexOf('create:', match.index!) >= 0 ? text.indexOf('create:', match.index!) : match.index!)
+        : match.index!
+      const window = text.slice(from, from + 500)
+      if (!/\bid\s*:/.test(window)) {
+        // 报了注释删过的文本的行号会偏，所以只报原文片段——对着文件一眼能找到。
+        offenders.push(`${file} → ${JSON.stringify(text.slice(match.index!, match.index! + 46).replace(/\s+/g, ' '))}`)
+      }
+    }
+  }
+  check(offenders.length === 0, 'E2 scripts/ 下每一处建团都显式带 id（不带就得靠默认值，而默认值正是这次要拆的东西）',
+    `→ 缺 id：${offenders.join('、') || '无'}`)
+  for (const file of HANDED_OFF) {
+    const text = stripComments(readFileSync(`${SCRIPTS_DIR}/${file}`, 'utf8'))
+    const stillMissing = [...text.matchAll(/(\w+)\.team\.(create|upsert)\(/g)].some((m) => {
+      const anchor = text.indexOf(m[2] === 'upsert' ? 'create:' : 'data:', m.index!)
+      const brace = anchor >= 0 ? text.indexOf('{', anchor) : -1
+      return brace < 0 || !/\bid\s*:/.test(text.slice(brace, brace + 500))
+    })
+    if (stillMissing) console.log(`  注：${file} 仍有一处建团没带 id——那是别会话钉着的文件，我没改；拆了默认值之后它跑起来会直接报错（不是悄悄发 cuid）`)
+  }
+
+  const guards = migrationsMatching('Team').filter(m => /CHECK\s*\("id" ~ /m.test(m.sql))
+  check(guards.length === 1, 'E3 恰有一枚迁移给 Team.id 上形状 CHECK（没有＝旧号能悄悄长回来；多枚＝闸门被重复加固，先查清）',
+    `→ ${guards.map(g => g.name).join('、') || '无'}`)
+  if (guards.length) {
+    const g = guards[0]
+    const renameAt = g.sql.indexOf('team_legacy_id_map')
+    const checkAt = g.sql.search(/ADD CONSTRAINT[\s\S]{0,80}CHECK\s*\("id" ~ /)
+    check(renameAt >= 0 && checkAt > renameAt,
+      'E4 那枚迁移先把不合规的旧号改名、再上 CHECK（顺序反了迁移本身就跑不过去，历史迁移里写死的 team_default 也收不了尾）',
+      `→ 改名@${renameAt}，CHECK@${checkAt}`)
+    check(/UPDATE "Team" t SET id = m\.new_id/.test(g.sql) && /redeemedByTeamId/.test(g.sql),
+      'E4b 改名靠 Team.id 那一条（10 条外键全是 ON UPDATE CASCADE，子表自己跟着走）＋ 单独补没外键的 redeemedByTeamId', '')
+    check(/RAISE EXCEPTION[\s\S]{0,140}对象/.test(g.sql),
+      'E4c 库里既有旧号又有对象路径指着它时，迁移主动抛错而不是只改库把媒体打成坏文件', '')
+    check(/~ '\^\[1-9\]\\d\{5\}\$'/.test(g.sql), 'E5 CHECK 用的正则与 isTeamId 同口径（正好 6 位、首位非 0）', '')
+  }
+
+  if (STATIC) {
+    console.log(`\n[--static] 合计 ${passed} PASS / ${failures.length} FAIL（C 组与全库扫描要连库，只在完整跑里做）`)
+    if (failures.length) for (const f of failures) console.log(` - ${f}`)
+    if (failures.length) process.exitCode = 1
+    return
+  }
+
   // ── C 组：真打一次接口 ─────────────────────────────────────────────────
   await prisma.user.create({
     data: { email, name: 'NID Owner', password: await hashPassword(pw), phone: `137${String(stamp).slice(-8)}` },
@@ -147,6 +268,12 @@ async function main() {
       `→ ${JSON.stringify(detail?.team?.id ?? detail?.id ?? Object.keys(detail ?? {}).slice(0, 5))}`)
   }
 
+  // 全库扫一遍：闸门（E3 那枚 CHECK）还没上到这台库时，旧形状的号会不会已经长回来了。
+  const all = await prisma.team.findMany({ select: { id: true } })
+  const stale = all.filter((team) => !SIX_DIGIT.test(team.id)).map(team => team.id)
+  check(stale.length === 0, 'E6 当前库里每一枚 Team.id 都是 6 位数字（不是只测新建那一路）',
+    `→ 共 ${all.length} 枚，不合形状：${stale.join('、') || '无'}`)
+
   console.log(`\n合计 ${passed} PASS / ${failures.length} FAIL`)
   if (failures.length) for (const f of failures) console.log(` - ${f}`)
   if (failures.length) process.exitCode = 1
@@ -155,6 +282,9 @@ async function main() {
 try {
   await main()
 } finally {
+  if (STATIC) {
+    await prisma.$disconnect()
+  } else {
   for (const t of tokens) await fetch(`${BASE}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${t}` } }).catch(() => null)
   if (createdIds.length) await prisma.team.deleteMany({ where: { id: { in: createdIds } } }).catch(() => null)
   await prisma.user.deleteMany({ where: { email } }).catch(() => null)
@@ -164,4 +294,5 @@ try {
   ])
   await prisma.$disconnect()
   console.log(`夹具清理：剩余团队 ${leftTeams}，剩余账号 ${leftUser}`)
+  }
 }

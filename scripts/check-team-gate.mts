@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'   // 相对路径与 scripts/check-card-contract.mts:52 同口径；兄弟脚本 check-billing-flow.mts:4 用 '@/lib/encryption'，tsx 两种都吃
+import { allocateTeamId } from '../src/lib/team-id'
 
 const BASE = process.env.BILLING_CHECK_BASE || 'http://localhost:3000'
 const prisma = new PrismaClient()
@@ -72,6 +73,7 @@ async function createFixtures() {
   const second = await prisma.user.create({ data: { email: guestEmail, name: 'gate2', password: await hashPassword(pw), phone: `138${String(stamp).slice(-8)}` } })
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: `gate-${stamp}`, slug: teamSlug, shareKey: `gate-${stamp}`,
       createdById: user.id, subscriptionPlan: 'MONTHLY', subscriptionExpiresAt: null,
       members: { create: { userId: user.id, role: 'OWNER', status: 'ACTIVE' } },

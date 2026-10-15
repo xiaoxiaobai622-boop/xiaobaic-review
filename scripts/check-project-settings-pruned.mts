@@ -2,6 +2,7 @@ import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { rmSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 他 10-03 点单「红色方框的删掉」——设置页四刀：
@@ -280,7 +281,7 @@ try {
   // fixture：十列全预置成「非默认值」——默认值下「没被动过」和「被重置成默认」看不出差别。
   const owner = await prisma.user.create({ data: { email: OWNER.email, name: OWNER.name, password: await hashPassword(pw), phone: `139${String(stamp).slice(-8)}` } })
   const team = await prisma.team.create({
-    data: { name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA', members: { create: [{ userId: owner.id, role: 'OWNER', status: 'ACTIVE' }] } },
+    data: { id: await allocateTeamId(prisma), name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA', members: { create: [{ userId: owner.id, role: 'OWNER', status: 'ACTIVE' }] } },
   })
   project = await prisma.project.create({
     data: {
@@ -475,12 +476,29 @@ try {
   check(teamFieldsGone.length === 0,
     'B5d 团队级「视频设置」那十个字段一个没少（这页允许改，但不许被哪轮删减搬空）',
     teamFieldsGone.length ? `→ 缺 ${JSON.stringify(teamFieldsGone)}` : `→ 十项全在，diff ${dirty.find(d => d.file === 'src/app/studio/team/settings/page.tsx') ? '有改动' : '为零'}`)
-  // schema 也从「零 diff」名单里放出来：10-04 他自己点单做了「受限项目」，往上加了一列 restricted（实测 +2/-0）。
-  // 这次删减的护栏没丢——砍列一定在 numstat 里留下 deleted>0，那十列一列都不许被顺手带走。
-  const schemaDiff = dirty.find(d => d.file === 'prisma/schema.prisma')
-  check(!schemaDiff || schemaDiff.deleted === 0,
-    'B5c schema 只许多、不许删（这次删减一列都没砍；盘上那 2 行是他 10-04 加的 restricted）',
-    schemaDiff ? `→ +${schemaDiff.added} / -${schemaDiff.deleted}` : '→ 本次没碰')
+  // schema 也从「零 diff」名单里放出来：10-04 他自己点单做了「受限项目」，往上加了一列 restricted。
+  // 护栏本身跟着换了一次口径：10-14 拆 Team.id 的 @default(cuid()) 也在 numstat 里留下 deleted>0
+  // （改一行的 diff 必然是 +N/-1），但那不是「砍列」。所以改成比列名集合——少一列一定红，
+  // 改修饰符/加注释不红。
+  const schemaColumns = (text: string) => {
+    const out = new Set<string>()
+    for (const block of text.match(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm) || []) {
+      const name = block.match(/^model\s+(\w+)/)?.[1] ?? ''
+      const body = block.replace(/^model\s+\w+\s*\{\n?/, '').replace(/\}\s*$/, '')
+      for (const line of body.split('\n')) {
+        const field = line.match(/^\s*(\w+)\s+(String|Int|BigInt|Float|Boolean|DateTime|Decimal|Json|\w+)\b/)
+        if (field && !/^\s*(\/\/|@@)/.test(line)) out.add(`${name}.${field[1]}`)
+      }
+    }
+    return out
+  }
+  const headSchema = execFileSync('git', ['show', 'HEAD:prisma/schema.prisma'], { encoding: 'utf8' })
+  const headColumns = schemaColumns(headSchema)
+  const workColumns = schemaColumns(readFileSync('prisma/schema.prisma', 'utf8'))
+  const droppedColumns = [...headColumns].filter(c => !workColumns.has(c))
+  check(droppedColumns.length === 0,
+    'B5c schema 的列只许多、不许删（这次删减一列都没砍；改默认值/加注释不算删列）',
+    `→ HEAD ${headColumns.size} 列，现在 ${workColumns.size} 列${droppedColumns.length ? `，被砍：${JSON.stringify(droppedColumns)}` : ''}`)
   // project-access 的护栏从「删掉的行必须是 0」换成「对外那九枚判定一个没少」。
   // 行数基线在这天活不过一轮：他加 restricted 的 OR、我修那枚 OR 顶掉 assignmentAccess 的越权
   // （check-project-member-count A9 实测 403 才修的），两次都要留下删除行。

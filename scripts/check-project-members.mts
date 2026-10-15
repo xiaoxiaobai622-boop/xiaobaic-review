@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 他 10-04 点单的「在点项目头像那排加一枚成员管理，照对标的站做」（方案 B）的判据。
@@ -443,6 +444,7 @@ try {
   const owner = await makeUser(`pmm-owner-${stamp}@example.invalid`, 'PMM Owner')
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA',
       members: { create: { userId: owner.id, role: 'OWNER', status: 'ACTIVE' } },
     },
@@ -467,6 +469,7 @@ try {
   const outsider = await makeUser(`pmm-x-${stamp}@example.invalid`, 'PMM Outsider')
   await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: otherSlug, slug: otherSlug, shareKey: otherSlug, createdById: outsider.id, subscriptionPlan: 'BETA',
       members: { create: { userId: outsider.id, role: 'OWNER', status: 'ACTIVE' } },
     },

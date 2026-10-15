@@ -499,9 +499,14 @@ async function purgeObjectVersions(accept: (entry: { Key?: string }) => boolean,
     )
     const targets = [...(res.Versions ?? []), ...(res.DeleteMarkers ?? [])]
       .filter((entry) => typeof entry.Key === 'string' && typeof entry.VersionId === 'string' && accept(entry))
-      // An unversioned bucket reports VersionId "null"; sending that back is an
-      // InvalidArgument, so such entries go through as a plain key delete.
-      .map((entry) => ({ Key: entry.Key as string, VersionId: entry.VersionId === 'null' ? undefined : (entry.VersionId as string) }))
+      // VersionId goes back exactly as listed, including the literal string "null".
+      // Objects written before the bucket's versioning was enabled carry that literal
+      // id; omitting it turns the call into a plain DeleteObject, which under enabled
+      // versioning only adds a marker — the bytes stay, keep billing, and disappear
+      // from ListObjectsV2, so the delete looks like it worked. Measured on our media
+      // bucket 2026-10-15: sending VersionId='null' removes that version, and the
+      // earlier "plain key delete" left 6,683 objects (46.26GB) behind.
+      .map((entry) => ({ Key: entry.Key as string, VersionId: entry.VersionId as string }))
     for (let index = 0; index < targets.length; index += DELETE_DIRECTORY_CONCURRENCY) {
       const batch = targets.slice(index, index + DELETE_DIRECTORY_CONCURRENCY)
       await Promise.all(

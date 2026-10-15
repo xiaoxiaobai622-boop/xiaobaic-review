@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
 import { getRedis } from '../src/lib/redis'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 审片播放器「转圈」的浏览器实测。
@@ -348,6 +349,7 @@ try {
   })
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: owner.id, subscriptionPlan: 'BETA',
       members: { create: { userId: owner.id, role: 'OWNER', status: 'ACTIVE' } },
     },
