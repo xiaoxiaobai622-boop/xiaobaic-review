@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Card } from '@/components/ui/card'
+import PlatformCopyValue from '@/components/PlatformCopyValue'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -367,7 +368,7 @@ export default function SecurityEventsClient() {
                   <XCircle className="w-4 h-4 text-primary" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">{t('blocked')}</p>
+                  <p className="text-xs text-muted-foreground">{t('blocked')}（本页）</p>
                   <p className="text-base font-semibold tabular-nums">{events.filter(e => e.wasBlocked).length}</p>
                 </div>
               </div>
@@ -425,6 +426,8 @@ export default function SecurityEventsClient() {
                   const severityStyle = SEVERITY_STYLES[event.severity as keyof typeof SEVERITY_STYLES] ?? DEFAULT_SEVERITY_STYLE
                   const severityColor = severityStyle.className
                   const SeverityIcon = severityStyle.icon
+                  // 同一列的筛选器已经是「关键／警告／信息」，行里再画 CRITICAL 就是两套话。
+                  const severityLabel = SEVERITY_OPTIONS.find(option => option.value === event.severity)?.label ?? event.severity
 
                   return (
                     <div
@@ -438,7 +441,7 @@ export default function SecurityEventsClient() {
                         <div className="w-20 flex-shrink-0 flex items-center gap-1.5">
                           <SeverityIcon className={`w-4 h-4 flex-shrink-0 ${severityColor}`} />
                           <span className={`text-xs font-medium hidden sm:inline ${severityColor}`}>
-                            {event.severity}
+                            {severityLabel}
                           </span>
                         </div>
                         {/* Event Type */}
@@ -645,6 +648,8 @@ export default function SecurityEventsClient() {
                   <div key={entry.key} className="border rounded-lg p-3">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="flex-1 min-w-0">
+                        {/* 解锁是按 key 解的：不把这串说出来的话，按下去不知道动的是哪个 IP 或账号。 */}
+                        <PlatformCopyValue label={t('unblockTarget')} value={entry.key} className="mb-1" />
                         <div className="font-medium text-sm">{tc('type')}: {entry.type}</div>
                         <div className="text-xs text-muted-foreground">
                           {t('failedAttempts', { count: entry.count })}

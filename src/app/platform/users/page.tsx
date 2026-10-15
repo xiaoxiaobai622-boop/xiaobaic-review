@@ -16,6 +16,7 @@ import { passwordRuleHint, validateAccountPassword } from '@/lib/password-policy
 import { startRegistration } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
 import { getDisplayEmail } from '@/lib/user-contact'
+import PlatformCopyValue from '@/components/PlatformCopyValue'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { getAccessToken } from '@/lib/token-store'
 
@@ -182,6 +183,7 @@ export default function UsersPage() {
     const query = searchQuery.toLowerCase()
     return (
       getDisplayEmail(user.email).toLowerCase().includes(query) ||
+      user.id.toLowerCase().includes(query) ||
       user.phone?.includes(query) ||
       user.name?.toLowerCase().includes(query) ||
       user.username?.toLowerCase().includes(query)
@@ -435,7 +437,7 @@ export default function UsersPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-normal">平台账号</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              管理能登录后台的账号，以及每个账号能看到哪些团队项目
+              这里是全部注册账号；能不能进后台看每行那枚「能进后台」，改的就是这一项
             </p>
           </div>
           <Button
@@ -450,7 +452,7 @@ export default function UsersPage() {
             }}
           >
             <UserPlus className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">添加成员</span>
+            <span className="hidden sm:inline">添加账号</span>
           </Button>
         </div>
 
@@ -510,8 +512,9 @@ export default function UsersPage() {
                       <th scope="row" className="px-3 py-1.5 text-left font-normal">
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="truncate font-medium">{user.name || user.username || user.phone || getDisplayEmail(user.email)}</span>
-                          <span className="rounded-full border border-info-visible bg-info-visible px-2 py-0.5 text-xs text-info">
-                            {user.role === 'ADMIN' ? '管理员' : '普通账号'}
+                          {/* 进不进后台看的是 isPlatformAdmin；role=ADMIN 是团队侧的角色，两者不是一回事。 */}
+                          <span className={`rounded-full border px-2 py-0.5 text-xs ${user.isPlatformAdmin ? 'border-success-visible bg-success-visible text-success' : 'border-info-visible bg-info-visible text-info'}`}>
+                            {user.isPlatformAdmin ? '能进后台' : '不进后台'}
                           </span>
                           {loggedInUser?.id === user.id && (
                             <span className="rounded-full border border-success-visible bg-success-visible px-2 py-0.5 text-xs text-success">
@@ -519,6 +522,7 @@ export default function UsersPage() {
                             </span>
                           )}
                         </span>
+                        <PlatformCopyValue label="用户 ID" value={user.id} className="mt-1" />
                       </th>
                       <td className="max-w-[280px] truncate px-3 py-1.5 text-muted-foreground">
                         {getDisplayEmail(user.email) || user.phone}

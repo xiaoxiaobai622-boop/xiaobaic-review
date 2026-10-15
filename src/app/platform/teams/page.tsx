@@ -84,6 +84,9 @@ export default function PlatformTeamsPage() {
 
   const activeCount = teams.filter((team) => team.status === 'ACTIVE').length
   const disabledCount = teams.filter((team) => team.status === 'DISABLED').length
+  // 「这一次没读到」和「平台上真的没有团队」是两句话，混着说就是把未知伪装成结论。
+  const loadFailed = !!error && teams.length === 0
+  const dashOr = (value: number) => (loadFailed ? '—' : value)
 
   return (
     <div className="space-y-4">
@@ -105,17 +108,22 @@ export default function PlatformTeamsPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-sm text-muted-foreground">团队总数</p>
-          <p className="mt-2 text-2xl font-semibold">{teams.length}</p>
+          <p className="mt-2 text-2xl font-semibold">{dashOr(teams.length)}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-sm text-muted-foreground">正常团队</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-600">{activeCount}</p>
+          <p className="mt-2 text-2xl font-semibold text-success">{dashOr(activeCount)}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-sm text-muted-foreground">已停用</p>
-          <p className="mt-2 text-2xl font-semibold text-destructive">{disabledCount}</p>
+          <p className="mt-2 text-2xl font-semibold text-destructive">{dashOr(disabledCount)}</p>
         </div>
       </div>
+      {loadFailed && (
+        <p className="-mt-2 text-sm text-muted-foreground">
+          上面三个数是「—」而不是 0：这一次没读到团队列表，点上方重试。
+        </p>
+      )}
 
       <div className="relative max-w-md">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -131,6 +139,11 @@ export default function PlatformTeamsPage() {
 
       {loading ? (
         <div className="rounded-lg border border-border bg-card p-10 text-center text-sm text-muted-foreground">正在加载团队...</div>
+      ) : loadFailed ? (
+        <div role="alert" className="rounded-lg border border-border bg-card p-10 text-center text-sm text-muted-foreground">
+          <p className="font-medium text-destructive">团队列表读取失败</p>
+          <p className="mt-1">这一屏不代表平台上没有团队，只是这一次没读到。</p>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-10 text-center text-sm text-muted-foreground">
           没有找到匹配的团队。
@@ -142,12 +155,12 @@ export default function PlatformTeamsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className={`h-4 w-4 ${team.status === 'ACTIVE' ? 'text-emerald-600' : 'text-destructive'}`} />
+                    <ShieldCheck className={`h-4 w-4 ${team.status === 'ACTIVE' ? 'text-success' : 'text-destructive'}`} />
                     <h2 className="truncate text-base font-semibold">{team.name}</h2>
                   </div>
                   <PlatformTeamIdentity team={team} className="mt-1.5" />
                 </div>
-                <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${team.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-destructive/10 text-destructive'}`}>
+                <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${team.status === 'ACTIVE' ? 'bg-success-visible text-success' : 'bg-destructive/10 text-destructive'}`}>
                   {team.status === 'ACTIVE' ? '正常' : '已停用'}
                 </span>
               </div>
@@ -185,7 +198,7 @@ export default function PlatformTeamsPage() {
                   className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm ${
                     team.status === 'ACTIVE'
                       ? 'border-destructive/30 text-destructive hover:bg-destructive/10'
-                      : 'border-emerald-600/30 text-emerald-700 hover:bg-emerald-600/10'
+                      : 'border-success-visible text-success hover:bg-success-visible'
                   }`}
                 >
                   {team.status === 'ACTIVE' ? <Ban className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}

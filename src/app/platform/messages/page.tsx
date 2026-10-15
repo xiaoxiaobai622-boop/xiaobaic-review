@@ -65,9 +65,15 @@ export default function PlatformMessagesPage() {
         apiFetch('/api/platform/feedback', { cache: 'no-store' }),
         apiFetch('/api/users', { cache: 'no-store' }),
       ])
+      const missing: string[] = []
       if (annRes.ok) setSent(((await annRes.json())?.items || []) as SentItem[])
+      else missing.push('已发送的消息')
       if (fbRes.ok) setFeedback(((await fbRes.json())?.items || []) as FeedbackItem[])
+      else missing.push('用户反馈')
       if (usersRes.ok) setUsers(((await usersRes.json())?.users || []) as UserOption[])
+      else missing.push('收件人名单')
+      // 三发各记各的账：哪一发没成就说哪一发，不然空屏会被读成「真的没有」。
+      if (missing.length) setError(`${missing.join('、')}读取失败——这一块空着不代表没有，请刷新重试。`)
     } catch {
       setError('加载失败，请稍后重试')
     } finally {

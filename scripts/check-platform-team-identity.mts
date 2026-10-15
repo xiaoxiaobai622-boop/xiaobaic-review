@@ -48,12 +48,15 @@ const HOME = 'src/app/platform/page.tsx'
 const API = 'src/app/api/platform/teams/route.ts'
 // 三处共用一份身份行，别各写各的（各写一遍就是「乱」的源头）。
 const SHARED = 'src/components/PlatformTeamIdentity.tsx'
+// 复制那一下单独一枚控件：成员页、安全页也要用，所以它的判据不该绑在团队身份行上。
+const COPY = 'src/components/PlatformCopyValue.tsx'
 
 const listSrc = read(LIST)
 const detailSrc = read(DETAIL)
 const homeSrc = read(HOME)
 const apiSrc = read(API)
 const sharedSrc = read(SHARED)
+const copySrc = read(COPY)
 
 function usesShared(src: string) {
   return /PlatformTeamIdentity/.test(src)
@@ -70,9 +73,9 @@ async function main() {
   check(!!sharedSrc && /团队 ID/.test(sharedSrc) && /团队标识/.test(sharedSrc) && /分享键/.test(sharedSrc),
     'A3 那一枚共用件把三串各有各的名字写全（少一个名字，运营就只能猜那是啥）',
     sharedSrc ? `ID:${/团队 ID/.test(sharedSrc)} 标识:${/团队标识/.test(sharedSrc)} 分享键:${/分享键/.test(sharedSrc)}` : '共用件还没长出来')
-  check(!!sharedSrc && /copyTextToClipboard/.test(sharedSrc) && !/navigator\.clipboard/.test(sharedSrc),
+  check(!!copySrc && /copyTextToClipboard/.test(copySrc) && !/navigator\.clipboard/.test(copySrc),
     'A4 复制走仓库现成的 copyTextToClipboard（裸 navigator.clipboard 在 HTTP 局域网里会静默失灵）', '')
-  check(!!sharedSrc && /复制失败/.test(sharedSrc),
+  check(!!copySrc && /复制失败/.test(copySrc),
     'A5 复制没成要说「复制失败」，不许按了没反应还装作复制过了', '')
 
   console.log('\n── B 分享键真的到了界面上 ──')
@@ -99,7 +102,58 @@ async function main() {
   check(!!sharedSrc && !/邀请/.test(sharedSrc) && !/跨页面定位/.test(sharedSrc),
     'E1 后台这几句不把「团队 ID」说成邀请用的或跨页面定位用的（那两件事分别归团队标识与短码，10-14 实测过）', '')
 
-  console.log('\n── F 没把别的东西搭车改掉 ──')
+  console.log('\n── H 后台其余几处：叫法、身份串、假空态（10-15 他「接着改运营平台那几处乱的」）──')
+  const layout = read('src/app/platform/layout.tsx')
+  const users = read('src/app/platform/users/page.tsx')
+  const security = read('src/app/platform/security/SecurityEventsClient.tsx')
+  const messages = read('src/app/platform/messages/page.tsx')
+  const locale = (lang: string) => read(`src/locales/${lang}.json`)
+  const zh = locale('zh')
+
+  check(!!users && !!security && !!messages && !!zh, 'H0 四份文件都读得到（读不到下面全是空判）',
+    `成员:${!!users} 安全:${!!security} 消息:${!!messages} 文案:${!!zh}`)
+  // 一处东西四个名字＝运营在两个页面里以为自己在管两不同的对象。
+  const naming = `${layout}${users}`
+  check(!/平台成员/.test(naming) && !/添加成员/.test(naming) && /平台账号/.test(layout) && /添加账号|添加平台账号/.test(users),
+    'H1 成员这块从头到尾一个名字（导航、页面标题、按钮、弹窗），不再「平台成员／平台账号／添加成员」混着叫',
+    `→ 平台成员:${/平台成员/.test(naming)} 添加成员:${/添加成员/.test(naming)}`)
+  // role=ADMIN 是团队侧的角色，进不进后台看的是 isPlatformAdmin（src/lib/auth.ts 里那句）。
+  check(!/user\.role === 'ADMIN' \? '管理员'/.test(users) && /isPlatformAdmin/.test(users) && /后台/.test(users),
+    'H2 那枚徽标不再把 role=ADMIN 说成「管理员」——能不能进后台读 isPlatformAdmin，文案要带「后台」两字', '')
+  const userFilter = (users.match(/filteredUsers[\s\S]{0,600}/) || [])[0] || ''
+  check(/user\.id/.test(userFilter), 'H3 成员页的搜索真的吃用户 ID（工单里报的就是这串）', '')
+  const usersPlaceholder = (zh.match(/"searchPlaceholder": "[^"]*"/g) || []).find(s => /ID|账号|手机|邮箱/.test(s)) || ''
+  check(!!usersPlaceholder, 'H4 成员页搜索框的提示说实话（原来只写「搜索成员...」，而它能搜邮箱／手机／姓名／用户名／ID）',
+    `→ ${JSON.stringify(usersPlaceholder.slice(0, 60))}`)
+  check(['zh', 'en', 'nl', 'de'].every(l => /"searchPlaceholder"/.test(locale(l))),
+    'H5 四语言都还留着 searchPlaceholder（只改中文＝另外三语渲染成裸 key）', '')
+  check(/label="用户 ID"/.test(users) && /value=\{user\.id\}/.test(users),
+    'H6 成员那一行有可复制的用户 ID（删号、改密这类破坏性操作得能回读自己在动谁）', '')
+
+  // 读失败时画 0／「没有找到」＝把「我不知道」伪装成「确实没有」。
+  const loadFailBranch = /读取失败|加载失败|读不到/.test(listSrc)
+  check(loadFailBranch, 'H7 团队页读失败不再画三张 0 卡＋一句「没有找到匹配的团队」（那是两回事）', '')
+  check(!/text-emerald|bg-emerald/.test([listSrc, homeSrc, detailSrc, sharedSrc, users, security].join('')),
+    'H8 后台不再用 emerald 硬色（产品有 success token，深色与 mint／frame 主题下 emerald-700 对比不够）', '')
+  check(/>有效期</.test(homeSrc) && !/>状态</.test(homeSrc),
+    'H9 首页那一列的表头不再叫「状态」而画的是有效期（列名要说出格子里真是哪一列）', '')
+  check(!/\{event\.severity\}/.test(security),
+    'H10 安全事件的严重性走中文词表，不把 CRITICAL／HIGH 这类原值直接画给运营（同一列的筛选器已经是中文）', '')
+  const blockedCard = (security.match(/blocked[\s\S]{0,220}/) || [])[0] || ''
+  check(/pagination\.total|本页|全部/.test(blockedCard) || !/events\.filter/.test(blockedCard),
+    'H11「被阻止」那枚数不再冒充全站总数：要么用服务端的总数，要么明说只数本页这几条',
+    `→ ${JSON.stringify(blockedCard.replace(/\s+/g, ' ').slice(0, 90))}`)
+  check(/value=\{entry\.key\}/.test(security),
+    'H12 解封那一行把要解的是哪个 IP／账号说出来（原来 entry.key 只当 React key 与请求参数，屏幕上看不见）', '')
+  const msgGaps = (messages.match(/if \((?:annRes|fbRes|usersRes)\.ok\)[\s\S]{0,160}?else /g) || []).length
+  check(msgGaps === 3,
+    'H13 消息页三发请求每一发都要有「没成就说哪一发」这一支（原来 if (res.ok) 没有 else，读失败被画成「还没有反馈」）',
+    `→ 三发里带失败分支的 ${msgGaps} 发`)
+  // 这页读的是 /api/users 全量（所有注册账号），副标题却写成「管理能登录后台的账号」＝范围说谎。
+  check(/全部注册|所有注册|注册账号/u.test(users) && !/管理能登录后台的账号/.test(users),
+    'H14 成员页的副标题说实话：这一页列的是全部注册账号，不是只有能进后台的那些（接口就是 /api/users）', '')
+
+
   const statusBadgeKept = /status === 'ACTIVE'/.test(listSrc) && /已停用/.test(listSrc)
   check(statusBadgeKept, 'F1 列表卡片的「正常／已停用」状态与停用操作这条线还在（这次只加身份行，没顺手砍功能）', '')
   const quotaKept = /团队配额/.test(detailSrc) && /保存配额/.test(detailSrc) && /功能授权/.test(detailSrc)
@@ -284,7 +338,8 @@ async function browserGroup() {
 
     const EXPECT = JSON.stringify(team)
     await run(page, '/platform/teams')
-    await waitFor(page, `document.body.innerText.includes('团队总数')`, 60_000)
+    // 「团队总数」四个字在统计卡上先就出来了，拿它当加载完的信号会读到一张空列表（10-15 假红过一次）。
+    await waitFor(page, `document.body.innerText.includes(${JSON.stringify(team.id)})`, 90_000)
     const listFacts = await evalJs(page, `(() => {
       const t = ${EXPECT}
       // 取「最深的那一枚」装着这串号的 div：document 顺序里外层在前，用 find 会抓到整页容器，
@@ -342,7 +397,47 @@ async function browserGroup() {
     await sleep(600)
     await shot(page, '3-platform-home')
 
+    // 成员页与安全页这次也动了，同样得在真页面上看一眼，不能只信源码字面量。
+    await run(page, '/platform/users')
+    // 导航里也有「平台账号」四个字，拿它当加载完的信号会读到一张空表（10-15 就这么假红过一次）。
+    const usersReady = await waitFor(page, `document.querySelectorAll('tbody tr').length > 0`, 90_000)
+    const userFacts = await evalJs(page, `(async () => {
+      const chip = [...document.querySelectorAll('button')].find(b => b.title === '复制用户 ID')
+      let copiedId = null
+      if (chip) { chip.click(); await new Promise(r => setTimeout(r, 400)); copiedId = (window.__copied || []).slice(-1)[0] }
+      const txt = document.body.innerText
+      return { rows: document.querySelectorAll('tbody tr').length, chip: !!chip, copiedId,
+        admin: txt.includes('能进后台') || txt.includes('不进后台'), legacy: txt.includes('普通账号') }
+    })()`)
+    if (!usersReady) console.log('SKIP G12/G13 成员表一行都没出来（本地库空或接口没读到），两条没测到')
+    else {
+      check(userFacts.chip && !!userFacts.copiedId, 'G12 成员页那一行的「用户 ID」按下去真把某枚用户 id 交出去了', `→ ${JSON.stringify(userFacts.copiedId)}`)
+      check(userFacts.admin && !userFacts.legacy, 'G13 成员页徽标说的是后台权限（「能进后台／不进后台」），不再拿 role 冒充「管理员／普通账号」', `→ ${JSON.stringify(userFacts)}`)
+      await shot(page, '4-users')
+    }
+
+    await run(page, '/platform/security')
+    await waitFor(page, `document.body.innerText.includes('严重性') || document.body.innerText.includes('Severity')`, 90_000)
+    const secFacts = await evalJs(page, `(() => {
+      const txt = document.body.innerText
+      const spans = [...document.querySelectorAll('span')].map(s => s.textContent.trim())
+      // 只判「有没有把枚举原值画给运营」：中文还是英文取决于访问者存的界面语言，这里不押死一种。
+      return { rows: spans.filter(s => /^(关键|警告|信息|Critical|Warning|Info)$/.test(s)).length,
+        rawSeverity: spans.some(s => /^(CRITICAL|WARNING|INFO)$/.test(s)),
+        hasUnblock: [...document.querySelectorAll('button')].some(b => b.innerText.includes('解锁') || b.innerText.includes('Unblock')),
+        解封对象: txt.includes('解封对象') || txt.includes('Unblock target') }
+    })()`)
+    if (secFacts.rows === 0 && !secFacts.hasUnblock) console.log('SKIP G14/G15 本地这一屏没有安全事件行、也没有速率限制条目，两条没测到')
+    else {
+      check(secFacts.rows > 0 && !secFacts.rawSeverity, 'G14 安全页行里的严重性走的是词表（不再是 CRITICAL 这种枚举原值）', `→ ${JSON.stringify(secFacts)}`)
+      check(!secFacts.hasUnblock || secFacts.解封对象,
+        'G15 有「解锁」按钮可点时，同一行就写着解封对象是哪串 IP／账号（没条目时跳过，不算绿）', `→ ${JSON.stringify(secFacts)}`)
+    }
+
     // 标签是 11px 的次要字，压在卡片上够不够读要量出来，不能靠「看着还行」。
+    // 对比度要在画着身份行的那一屏量：上面几趟已经跳到成员页、安全页了，先回团队页。
+    await run(page, '/platform/teams')
+    await waitFor(page, `[...document.querySelectorAll('span')].some(s => s.textContent.trim() === '团队 ID')`, 90_000)
     const contrastFacts = await evalJs(page, `(() => {
       const probe = document.createElement('div')
       probe.className = 'bg-card'

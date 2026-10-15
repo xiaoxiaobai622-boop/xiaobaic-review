@@ -8,7 +8,7 @@ import { LayoutDashboard, MessageSquarePlus, Settings2, ShieldCheck, UserCog, Us
 const sections: Array<{ label: string; href: string; icon: LucideIcon }> = [
   { label: '团队总览', href: '/platform', icon: LayoutDashboard },
   { label: '团队管理', href: '/platform/teams', icon: Users },
-  { label: '平台成员', href: '/platform/users', icon: UserCog },
+  { label: '平台账号', href: '/platform/users', icon: UserCog },
   { label: '平台设置', href: '/platform/settings', icon: Settings2 },
   { label: '消息与反馈', href: '/platform/messages', icon: MessageSquarePlus },
   { label: '安全', href: '/platform/security', icon: ShieldCheck },

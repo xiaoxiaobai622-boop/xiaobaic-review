@@ -363,7 +363,7 @@ export default function PlatformDashboardPage() {
                     <th scope="col" className="py-1.5 pr-3 text-right font-normal" style={{ minWidth: 44 }}>成员</th>
                     <th scope="col" className="py-1.5 pr-3 text-right font-normal" style={{ minWidth: 44 }}>项目</th>
                     <th scope="col" className="py-1.5 pr-3 text-left font-normal whitespace-nowrap" style={{ minWidth: 84 }}>建团</th>
-                    <th scope="col" className="py-1.5 text-right font-normal whitespace-nowrap" style={{ minWidth: 60 }}>状态</th>
+                    <th scope="col" className="py-1.5 text-right font-normal whitespace-nowrap" style={{ minWidth: 60 }}>有效期</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
