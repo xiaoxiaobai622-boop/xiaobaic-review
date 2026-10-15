@@ -104,6 +104,40 @@ async function main() {
     check(isTeamId('123456') && !isTeamId('12345') && !isTeamId('1234567') && !isTeamId('023456')
       && !isTeamId('cmt7746cz0008n5ulzo6ms1wz') && !isTeamId('team_default') && !isTeamId(''),
       'A6 isTeamId 只认「正好 6 位、首位非 0」：cuid 与最早那枚 team_default 都不算换好了', '')
+
+    // A7–A8 钉的是 10-15 他点单的「号池互盲」：发号只看 Team.id，团队标识（slug）那一路是另一个
+    // 从 10000 往上递增的数字池，两边谁也不知道对方占了谁。线上实测 slug 已经有 `10000`、`1111`。
+    // 这两枚函数还没长出来时按「没挡住」判红，而不是让脚本撞一个 undefined 的堆栈。
+    const pools = teamIdModule as typeof teamIdModule & {
+      blockedTeamIds?: (rows: { id: string; slug: string; shareKey: string }[]) => Set<string>
+      nextTeamIdentifier?: (slugs: string[]) => string
+    }
+    const blockedTeamIds = pools.blockedTeamIds ?? (() => new Set<string>())
+    const nextTeamIdentifier = pools.nextTeamIdentifier ?? (() => '')
+    const blindRows = [
+      { id: '111111', slug: '222222', shareKey: 'tm_deadbeef1' },
+      { id: 'cmt7746cz0008n5ulzo6ms1wz', slug: '10000', shareKey: '333333' },
+      { id: '444444', slug: 'default-team', shareKey: 'tm_0123456789' },
+    ]
+    const gate = blockedTeamIds(blindRows)
+    check(['111111', '222222', '333333', '444444'].every((v) => gate.has(v))
+      && !gate.has('10000') && !gate.has('default-team') && !gate.has('cmt7746cz0008n5ulzo6ms1wz')
+      && !gate.has('tm_deadbeef1') && gate.size === 4,
+      'A7 闸门集合吃 id／slug／shareKey 三列，但只吃「6 位数字形状」的那些（4 位标识与 cuid 与 tm_ 键都不算占号）',
+      `→ ${JSON.stringify([...gate])}`)
+    const slugOwned = blockedTeamIds([{ id: '123456', slug: '550000', shareKey: 'tm_x' }])
+    const composed = pickTeamId(slugOwned, () => 0.5)
+    check(composed !== '550000' && SIX_DIGIT.test(composed),
+      'A8 某枚团队的 slug 正好是 6 位数字时，发号不许把这枚号再发出去（那等于界面上两行一样的数字、各指一队）', composed)
+
+    // A9–A10 是另一头：团队标识那一路也不许踏进 6 位带，否则迟早撞上已发的团队号。
+    check(nextTeamIdentifier(['99999']) === '1000000',
+      'A9 标识递增到 5 位尽头时整段跳过 6 位带（跳进 100000 就是去领别人池子里的号）', nextTeamIdentifier(['99999']))
+    check(nextTeamIdentifier(['550000']) === '1000000',
+      'A10 盘上已经躺着 6 位形状的旧标识时，也不许在带里接着往上发', nextTeamIdentifier(['550000']))
+    check(nextTeamIdentifier([]) === '10000' && nextTeamIdentifier(['12345']) === '12346'
+      && nextTeamIdentifier(['10001', '10002']) === '10003',
+      'A10b 正常递增没被动坏：空表起 10000、被占的跳过', [nextTeamIdentifier([]), nextTeamIdentifier(['12345'])].join('/'))
   } else {
     for (const label of [
       'A1 空表也能发号，且是 6 位数字、首位非 0',
@@ -113,6 +147,11 @@ async function main() {
       'A4 号池只剩一枚时不许提前放弃，要发那一枚',
       'A5 号池满了抛 TEAM_ID_LIMIT_REACHED，不许返回一枚重复号糊过去',
       'A6 isTeamId 只认「正好 6 位、首位非 0」：cuid 与最早那枚 team_default 都不算换好了',
+      'A7 闸门集合吃 id／slug／shareKey 三列，但只吃「6 位数字形状」的那些（4 位标识与 cuid 与 tm_ 键都不算占号）',
+      'A8 某枚团队的 slug 正好是 6 位数字时，发号不许把这枚号再发出去（那等于界面上两行一样的数字、各指一队）',
+      'A9 标识递增到 5 位尽头时整段跳过 6 位带（跳进 100000 就是去领别人池子里的号）',
+      'A10 盘上已经躺着 6 位形状的旧标识时，也不许在带里接着往上发',
+      'A10b 正常递增没被动坏：空表起 10000、被占的跳过',
     ]) check(false, label)
   }
 
@@ -127,6 +166,10 @@ async function main() {
     `→ ${JSON.stringify(route.slice(createAt, createAt + 110).replace(/\s+/g, ' '))}`)
   check(/allocateTeamId\(tx\)/.test(route),
     'B3 发号用的是同一个事务句柄（和团队标识共用那把 advisory lock，两路并发都不会重号）', '')
+  // 内联那段 max+1 循环里看不见「6 位带」这个概念，谁改它都不会想到自己在往团队号池子里伸手。
+  check(/nextTeamIdentifier\(/.test(route) && !/let maxIdentifier = 9999/.test(route),
+    'B4 团队标识的递增交给 src/lib/team-id 那份，路由里不再留内联的 max+1（两条池子的边界只在一处说）',
+    `→ nextTeamIdentifier@${route.search(/nextTeamIdentifier\(/)}，内联 max@${route.search(/let maxIdentifier = 9999/)}`)
 
   // ── D 组：界面上那几串号各说各的话 ─────────────────────────────────────
   // 实测过：/share/<团队 ID>/<项目链接名> 三枚团队全 404，同一团队的 /share/<slug>/… 与

@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Ban, CheckCircle2, Clock3, LogOut, Search, ShieldCheck, Users } from 'lucide-react'
 import { usePlatformAuth } from '@/components/PlatformAuthProvider'
+import PlatformTeamIdentity from '@/components/PlatformTeamIdentity'
 import { getPlatformAccessToken } from '@/lib/platform-token-store'
 
 type Team = {
   id: string
   name: string
   slug: string
+  shareKey: string
   status: string
   createdAt: string
   subscriptionPlan: string
@@ -120,7 +122,7 @@ export default function PlatformTeamsPage() {
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜索团队、创建人..."
+          placeholder="搜团队名／团队 ID／标识／创建人／邮箱"
           className="h-10 w-full rounded-md border border-border bg-card pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
@@ -143,9 +145,9 @@ export default function PlatformTeamsPage() {
                     <ShieldCheck className={`h-4 w-4 ${team.status === 'ACTIVE' ? 'text-emerald-600' : 'text-destructive'}`} />
                     <h2 className="truncate text-base font-semibold">{team.name}</h2>
                   </div>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">@{team.slug}</p>
+                  <PlatformTeamIdentity team={team} className="mt-1.5" />
                 </div>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${team.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-destructive/10 text-destructive'}`}>
+                <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${team.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-destructive/10 text-destructive'}`}>
                   {team.status === 'ACTIVE' ? '正常' : '已停用'}
                 </span>
               </div>

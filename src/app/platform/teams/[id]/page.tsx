@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getPlatformAccessToken } from '@/lib/platform-token-store'
+import PlatformTeamIdentity from '@/components/PlatformTeamIdentity'
 
 type Feature = {
   key: string
@@ -40,6 +41,7 @@ export default function PlatformTeamDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const [teamName, setTeamName] = useState('')
+  const [identity, setIdentity] = useState<{ id: string; slug: string; shareKey: string } | null>(null)
   const [grants, setGrants] = useState<Grant[]>([])
   const [quota, setQuota] = useState<Quota | null>(null)
   const [saving, setSaving] = useState(false)
@@ -63,7 +65,10 @@ export default function PlatformTeamDetailPage() {
       if (teamsRes.ok) {
         const teamsData = await teamsRes.json()
         const team = teamsData.teams.find((item: any) => item.id === params.id)
-        if (team) setTeamName(team.name)
+        if (team) {
+          setTeamName(team.name)
+          setIdentity({ id: team.id, slug: team.slug, shareKey: team.shareKey })
+        }
       }
       if (grantsRes.ok) setGrants((await grantsRes.json()).grants || [])
       if (quotaRes.ok) {
@@ -138,6 +143,16 @@ export default function PlatformTeamDetailPage() {
         返回团队管理
       </button>
       <h1 className="text-2xl font-semibold">{teamName || (readErrors.team ? '团队信息读取失败' : '团队授权')}</h1>
+      {identity ? (
+        <div className="space-y-1">
+          <PlatformTeamIdentity team={identity} />
+          <p className="text-xs text-muted-foreground">
+            团队 ID 用来在接口和日志里定位这一队；加入链接拼的是团队标识，客户手上那条地址开头是分享键。
+          </p>
+        </div>
+      ) : readErrors.team ? (
+        <p className="text-sm text-destructive">这枚团队的身份串读取失败，请刷新本页重试；在读到之前，下面两块内容对不上是哪一队。</p>
+      ) : null}
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
 
       {loading ? (

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { randomBytes } from 'crypto'
 import { BETA_PLAN, BETA_QUOTA } from '@/lib/platform-access'
-import { allocateTeamId } from '@/lib/team-id'
+import { allocateTeamId, nextTeamIdentifier } from '@/lib/team-id'
 import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
@@ -14,32 +14,15 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Team slugs are also used by the join link. Keep existing slugs working,
- * while assigning new teams a short, human-friendly numeric identifier.
- */
-const TEAM_IDENTIFIER_SCAN_LIMIT = 1_000
-
-/**
  * Runs inside the create transaction: the advisory lock serialises concurrent creates, so
  * the scan and the claim see one snapshot and two teams cannot take the same number.
+ * The pool boundary itself lives in src/lib/team-id.ts — identifiers never enter the
+ * 6-digit team-id band, or one string would mean two different teams.
  */
 async function getNextTeamIdentifier(tx: Prisma.TransactionClient) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(86230402)`
-
   const slugs = await tx.team.findMany({ select: { slug: true } })
-  const taken = new Set(slugs.map((team) => team.slug))
-  let maxIdentifier = 9999
-  for (const { slug } of slugs) {
-    if (!/^\d+$/.test(slug)) continue
-    const value = Number(slug)
-    if (Number.isSafeInteger(value) && value >= 10000) maxIdentifier = Math.max(maxIdentifier, value)
-  }
-
-  for (let offset = 1; offset <= TEAM_IDENTIFIER_SCAN_LIMIT; offset += 1) {
-    const candidate = String(maxIdentifier + offset)
-    if (!taken.has(candidate)) return candidate
-  }
-  throw new Error('TEAM_IDENTIFIER_LIMIT_REACHED')
+  return nextTeamIdentifier(slugs.map((team) => team.slug))
 }
 
 export async function GET(request: NextRequest) {

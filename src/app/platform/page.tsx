@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Building2, CheckCircle2, FolderKanban, HardDrive, Users } from 'lucide-react'
 import { usePlatformAuth } from '@/components/PlatformAuthProvider'
+import PlatformTeamIdentity from '@/components/PlatformTeamIdentity'
 import { getPlatformAccessToken } from '@/lib/platform-token-store'
 import { formatFileSize } from '@/lib/utils'
 import type { DailyUsage, PlatformUsage } from '@/lib/platform-usage'
@@ -370,9 +371,9 @@ export default function PlatformDashboardPage() {
                     const owner = team.members?.[0]?.user || team.createdBy
                     return (
                       <tr key={team.id} className="hover:bg-muted/40">
-                        <th scope="row" className="max-w-[160px] py-2 pr-3 text-left font-normal">
+                        <th scope="row" className="max-w-[210px] py-2 pr-3 text-left font-normal">
                           <span className="block truncate text-sm font-medium">{team.name}</span>
-                          <span className="block truncate text-[11px] text-muted-foreground">@{team.slug}</span>
+                          <PlatformTeamIdentity team={team} fields={['id', 'slug']} className="mt-0.5" />
                         </th>
                         <td className="max-w-[140px] py-2 pr-3">
                           <span className="block truncate text-muted-foreground">{owner.name || owner.email}</span>
