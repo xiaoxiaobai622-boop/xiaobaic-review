@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '../src/lib/encryption'
+import { allocateTeamId } from '../src/lib/team-id'
 
 /**
  * 他 10-02 点单的两处界面改动的判据：
@@ -249,6 +250,7 @@ try {
   }
   const team = await prisma.team.create({
     data: {
+      id: await allocateTeamId(prisma),
       name: teamSlug, slug: teamSlug, shareKey: teamSlug, createdById: rows.photo, subscriptionPlan: 'BETA',
       members: { create: USERS.map(u => ({ userId: rows[u.key], role: u.key === 'photo' ? 'OWNER' : 'MEMBER', status: 'ACTIVE' })) },
     },

@@ -22,9 +22,6 @@ import { hashPassword } from '../src/lib/encryption'
 const BASE = process.env.NUMERIC_ID_CHECK_BASE || 'http://localhost:3000'
 // --static：一条都不写库、一次都不碰 dev，纯函数＋源码形状，所以能进 CI（CI 里没有 Postgres）。
 const STATIC = process.argv.includes('--static')
-// 别的会话钉住的文件（他分过区），我不搭车改；但里面那处建团不补就是漏，所以判据把它单独点名、
-// 不许当成「查过了」。
-const HANDED_OFF = ['check-rail-avatar-and-collect-copy.mts']
 const prisma = new PrismaClient()
 const stamp = Date.now()
 const pw = `nid-${stamp}`
@@ -165,38 +162,62 @@ async function main() {
     'E1 schema 里 Team.id 不带 @default(cuid())（带上就等于给所有漏写 id 的 create 发旧形状号）',
     `→ ${JSON.stringify(idColumn.trim())}`)
 
-  // 每一处建团都得自己发号；窗口取 500 字符，够覆盖 data:{...} 里那几列。
+  // 每一处建团都得自己发号。只看**对象顶层**的键：之前那版是「后面 500 字符里出现过 id:」，
+  // 结果 `createdBy: { connect: { id: … } }`、`userId:` 之类的都算过了——CI 因此漏到 build 阶段
+  // 才炸（Team.id 没了默认值，漏 id 就是类型错）。所以改成扫一层大括号取顶层键名。
+  const topLevelKeys = (text: string, braceAt: number): string[] => {
+    const keys: string[] = []
+    let depth = 0
+    let expectKey = false
+    for (let i = braceAt; i < text.length; i++) {
+      const ch = text[i]
+      if (ch === '{' || ch === '[' || ch === '(') {
+        depth++
+        if (depth === 1) expectKey = true
+        continue
+      }
+      if (ch === '}' || ch === ']' || ch === ')') {
+        depth--
+        if (depth === 0) break
+        continue
+      }
+      if (depth !== 1) continue
+      if (ch === ',') { expectKey = true; continue }
+      if (/\s/.test(ch)) continue
+      if (!expectKey) continue
+      const at = text.slice(i).match(/^([A-Za-z_$][\w$]*)\s*:/)
+      if (at) { keys.push(at[1]); i += at[0].length - 1 }
+      expectKey = false
+    }
+    return keys
+  }
+  // 判据自己先要能被证伪：两种形状必须分出真假，否则「扫不到漏号」就是假绿。
+  const probe = (snippet: string) => topLevelKeys(snippet, snippet.indexOf('{'))
+  check(probe(`data: { id: '123456', name: 'x' }`).includes('id'),
+    'E0a 顶层键扫描认得出 data 里第一顺位的 id', '')
+  check(probe(`data: {\n  name: 'x',\n  createdBy: { connect: { id: u.id } },\n}`).includes('id') === false,
+    'E0b connect 里那枚 id 不算数（旧口径就是在这儿假绿，让 CI 到 build 才炸）', '')
+  check(probe(`data: {\n  name: 'x',\n  id: await allocateTeamId(prisma),\n}`).includes('id'),
+    'E0c id 不在第一顺位也认得出（不许把判据写成只认我的插入位置）', '')
+
   const offenders: string[] = []
   const scriptFiles = readdirSync(SCRIPTS_DIR, { withFileTypes: true })
     .filter(entry => entry.isFile() && /\.(mts|ts|mjs)$/.test(entry.name))
     .map(entry => entry.name)
     .sort()
   for (const file of scriptFiles) {
-    // 别会话钉着的文件不搭车，但它那处建团仍是漏的：不查出来就是假绿，所以单独点名。
-    if (HANDED_OFF.includes(file)) continue
     const text = stripComments(readFileSync(`${SCRIPTS_DIR}/${file}`, 'utf8'))
-    for (const match of text.matchAll(/team\.(create|upsert)\(/g)) {
-      const from = match[1] === 'upsert'
-        ? (text.indexOf('create:', match.index!) >= 0 ? text.indexOf('create:', match.index!) : match.index!)
-        : match.index!
-      const window = text.slice(from, from + 500)
-      if (!/\bid\s*:/.test(window)) {
-        // 报了注释删过的文本的行号会偏，所以只报原文片段——对着文件一眼能找到。
+    for (const match of text.matchAll(/(\w+)\.team\.(create|upsert)\(/g)) {
+      const anchorKind = match[2] === 'upsert' ? 'create:' : 'data:'
+      const anchor = text.indexOf(anchorKind, match.index!)
+      const brace = anchor >= 0 ? text.indexOf('{', anchor) : -1
+      if (brace < 0 || !topLevelKeys(text, brace).includes('id')) {
         offenders.push(`${file} → ${JSON.stringify(text.slice(match.index!, match.index! + 46).replace(/\s+/g, ' '))}`)
       }
     }
   }
-  check(offenders.length === 0, 'E2 scripts/ 下每一处建团都显式带 id（不带就得靠默认值，而默认值正是这次要拆的东西）',
+  check(offenders.length === 0, 'E2 scripts/ 下每一处建团都在顶层带 id（不带就得靠默认值，而默认值正是这次拆掉的东西）',
     `→ 缺 id：${offenders.join('、') || '无'}`)
-  for (const file of HANDED_OFF) {
-    const text = stripComments(readFileSync(`${SCRIPTS_DIR}/${file}`, 'utf8'))
-    const stillMissing = [...text.matchAll(/(\w+)\.team\.(create|upsert)\(/g)].some((m) => {
-      const anchor = text.indexOf(m[2] === 'upsert' ? 'create:' : 'data:', m.index!)
-      const brace = anchor >= 0 ? text.indexOf('{', anchor) : -1
-      return brace < 0 || !/\bid\s*:/.test(text.slice(brace, brace + 500))
-    })
-    if (stillMissing) console.log(`  注：${file} 仍有一处建团没带 id——那是别会话钉着的文件，我没改；拆了默认值之后它跑起来会直接报错（不是悄悄发 cuid）`)
-  }
 
   const guards = migrationsMatching('Team').filter(m => /CHECK\s*\("id" ~ /m.test(m.sql))
   check(guards.length === 1, 'E3 恰有一枚迁移给 Team.id 上形状 CHECK（没有＝旧号能悄悄长回来；多枚＝闸门被重复加固，先查清）',
