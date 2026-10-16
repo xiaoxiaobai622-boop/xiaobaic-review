@@ -31,8 +31,8 @@ const HERO_POSTER = 'public/home/hero-poster.jpg'
 const HERO_MAX_BYTES = 3 * 1024 * 1024
 /** 首页固定深色：画布色与 globals.css 里 dark 那套的 --background 一致（#05050a）。 */
 const CANVAS = 'rgb(5, 5, 10)'
-const SECTIONS = ['platform', 'review', 'versions', 'share', 'collect', 'workflow', 'cta']
-const EYEBROWS = ['平台能力', '逐帧批注', '版本与定稿', '分享与交付', '素材收录']
+const SECTIONS = ['platform', 'review', 'versions', 'share', 'collect', 'team', 'workflow', 'cta']
+const EYEBROWS = ['平台能力', '逐帧批注', '版本与定稿', '分享与交付', '素材收录', '团队协作']
 
 const stamp = Date.now()
 const cdpPort = 9600 + (stamp % 300)
@@ -174,7 +174,7 @@ const FACTS = `(() => {
     stuckOn: !!stuck,
     stuckBg: stuck ? getComputedStyle(stuck).backgroundColor : null,
     stuckBlur: stuck ? (getComputedStyle(stuck).backdropFilter || getComputedStyle(stuck).webkitBackdropFilter || '') : null,
-    sections: ['platform','review','versions','share','collect','workflow','cta'].map(id => id + ':' + (document.getElementById(id) ? Math.round(document.getElementById(id).getBoundingClientRect().height) : 'missing')),
+    sections: ['platform','review','versions','share','collect','team','workflow','cta'].map(id => id + ':' + (document.getElementById(id) ? Math.round(document.getElementById(id).getBoundingClientRect().height) : 'missing')),
     eyebrows: [...document.querySelectorAll('[class*=eyebrow]')].map(e => e.textContent.trim()),
     footerCols: document.querySelectorAll('[class*=footerCol]').length,
     icp: (document.querySelector('[class*=footerIcp]') || {}).textContent || null,
@@ -390,7 +390,7 @@ try {
   check(f.headerPosition === 'sticky' && Number(f.headerZ) >= 40, `H12 顶栏吸顶（position ${f.headerPosition} / z ${f.headerZ}）`)
   check(f.hiddenContact !== 'none', 'H13 1440 那一屏「联系我们」在顶栏里', f.hiddenContact)
   const missing = SECTIONS.filter((id) => !f.sections.some((s: string) => s.startsWith(`${id}:`) && !s.endsWith('missing') && Number(s.split(':')[1]) > 80))
-  check(missing.length === 0, 'H14 七个区块都画出来了且不是空壳', f.sections.join(' '))
+  check(missing.length === 0, `H14 ${SECTIONS.length} 个区块都画出来了且不是空壳（漏一节这一节就永远数不到，判据会替页面撒谎）`, f.sections.join(' '))
   check(JSON.stringify(f.eyebrows) === JSON.stringify(EYEBROWS), 'H15 五枚小节名是中文、顺序对得上锚点', JSON.stringify(f.eyebrows))
   check(f.footerCols === 4 && /桂ICP备/.test(String(f.icp)), `H16 页脚四列链接 + 备案号`, `${f.footerCols} 列`)
   check(f.brokenAnchors.length === 0, 'H17 页内锚点全部落在真实 id 上', JSON.stringify(f.brokenAnchors))
