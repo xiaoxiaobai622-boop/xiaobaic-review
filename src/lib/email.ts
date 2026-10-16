@@ -672,7 +672,7 @@ export async function sendEmail({
     const settings = await getEmailSettings()
     const transporter = await createTransporter()
 
-    const fromAddress = settings.smtpFromAddress || settings.smtpUsername || 'noreply@mle6.cn'
+    const fromAddress = settings.smtpFromAddress || settings.smtpUsername || 'noreply@vidx.cn'
     const companyName = sanitizeEmailHeader(settings.companyName || 'FrameReview')
 
     const info = await transporter.sendMail({
