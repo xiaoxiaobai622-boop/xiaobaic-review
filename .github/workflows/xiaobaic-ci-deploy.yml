@@ -209,7 +209,10 @@ jobs:
             echo "Deploy phase: proxy node selection"
             proxy_config=/etc/sing-box/ghcr-hk.json
             proxy_backup=$(mktemp)
-            trap 'sudo systemctl stop sing-box-ghcr >/dev/null 2>&1 || true; sudo rm -f "$proxy_backup" "$image_tar" "$puller"; sudo rm -rf "$auth_dir" "$pull_work"; sudo rm -f "$env_backup"' EXIT
+            # 他 10-17 定的是「代理常开」：部署结束不再关掉它，只清临时文件。中途 `docker load`
+            # 之前那一次 stop 保留——那是不让加载镜像和下载抢带宽——单元是 enabled＋Restart=on-failure，
+            # 所以重启机器和进程异常都能自己回来。
+            trap 'sudo systemctl start sing-box-ghcr >/dev/null 2>&1 || true; sudo rm -f "$proxy_backup" "$image_tar" "$puller"; sudo rm -rf "$auth_dir" "$pull_work"; sudo rm -f "$env_backup"' EXIT
             sudo cp "$proxy_config" "$proxy_backup"
             # The subscription hands out a fresh random set of Cloudflare fronting IPs on every
             # fetch, and on 2026-09-30 the spread measured inside one minute ran from 13 KB/s to
