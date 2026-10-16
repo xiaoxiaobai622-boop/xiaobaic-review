@@ -135,7 +135,7 @@ export default function TeamSwitcher({ compact = false }: { compact?: boolean } 
         aria-label="团队中心"
         title={compact ? (activeTeam?.team.name || '团队中心') : undefined}
       >
-        <Building2 className={compact ? 'h-[20px] w-[20px] shrink-0 text-primary' : 'h-4 w-4 shrink-0 text-primary'} />
+        <Building2 className={compact ? 'h-[20px] w-[20px] shrink-0 text-foreground' : 'h-4 w-4 shrink-0 text-primary'} />
         {!compact && (
           <span className="min-w-0 flex-1 truncate text-left">
             {activeTeam?.team.name || (teams.length === 0 ? '创建 / 加入团队' : '团队中心')}
