@@ -5,17 +5,29 @@ import Image from 'next/image'
 import {
   MessageSquareText, Layers3, UploadCloud, ShieldCheck, ChevronDown, PenLine, CheckCircle2,
   History, Link2, MousePointerClick, ArrowRight, Eye, Download, KeyRound, CalendarClock, Hash,
+  FolderTree, CalendarDays, Users, Clock3, ListChecks,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import ColorBends from '@/components/ColorBends'
 import styles from './home.module.css'
 
+/** 内测期间首页只说「免费内测」，不写金额，也不写档位。 */
+const BETA_CTA = '免费加入内测'
+
+/**
+ * 数据背书占位：对标 frame.io 每个功能板块配「提速 2.9 倍 / 修改减少 31%」这类第三方数据。
+ * 我们没有可核实的数据，所以不编造——数组为空时整条不渲染。拿到真实内测数据后，
+ * 在这里补 { value: '…', label: '…', source: '…' }，样式（proofStrip）已就位。
+ */
+type ProofStat = { value: string; label: string; source?: string }
+const proofStats: ProofStat[] = []
+
 const platformProps = [
-  { icon: UploadCloud, title: '素材收录', detail: '客户点开链接就能把原片传回来，同名素材自动排成 v1、v2、v3。' },
-  { icon: MessageSquareText, title: '审阅与批注', detail: '意见锚定在帧号与时间码上，画笔、箭头指到哪一块，改哪里一清二楚。' },
-  { icon: Layers3, title: '版本管理', detail: '意见跟着版本走，两版并排或叠加同步对比，通过与定稿全程留痕。' },
-  { icon: ShieldCheck, title: '分享与交付', detail: '链接单独设密码、有效期与次数上限，到期自动失效，权限按条勾选。' },
+  { icon: UploadCloud, title: '素材收录', href: '#collect', detail: '摄影师、后期或客户顺着收录链接传回原片，先进收件箱，你确认后接成新版本。' },
+  { icon: MessageSquareText, title: '审阅与批注', href: '#review', detail: '意见锚定在帧号与时间码上，画笔、箭头指到哪一块，改哪里一清二楚。' },
+  { icon: Layers3, title: '版本管理', href: '#versions', detail: '意见跟着版本走，两版并排或叠加同步对比，通过与定稿全程留痕。' },
+  { icon: ShieldCheck, title: '分享与交付', href: '#share', detail: '链接单独设密码、有效期与次数上限，到期自动失效，权限按条勾选。' },
 ]
 
 const reviewPoints = [
@@ -46,10 +58,25 @@ const sharePerms = [
   { icon: Hash, label: '打开次数上限', note: '用完即停' },
 ]
 
+// 收录链接传文件要求上传人在站点上有登录账号（见 api/share/[token]/project-uploads 的 401 分支）；
+// 看片与留言才是免注册。文案以代码为准，别写成「不用开账号」。
 const collectPoints = [
-  { icon: UploadCloud, title: '一条链接收片', detail: '把收录链接发给摄影师、后期或客户，对方点开就能传，不用开账号。' },
-  { icon: Layers3, title: '同名自动接版', detail: '同名文件传回来就排成下一版；不同名直接重名冲突时跳过，不会覆盖。' },
-  { icon: History, title: '谁传的都有据', detail: '每条版本带着上传者、时间和来源，回收站里的占用也一并算进额度。' },
+  { icon: UploadCloud, title: '一条链接收片', detail: '把收录链接发给摄影师、后期或客户，对方登录后直接上传，网络断了接着传。' },
+  { icon: Layers3, title: '先进收件箱', detail: '传回来的文件先停在收件箱，你确认后选「覆盖为新版本」，不会顶掉现有片子。' },
+  { icon: History, title: '谁传的都有据', detail: '每个版本带着上传者和时间；删除的内容进回收站，保留 7 天内可恢复。' },
+]
+
+const teamPoints = [
+  { icon: Users, title: '成员分角色', detail: '负责人、管理员、成员三档；用邀请链接拉人进团队，链接带有效期。' },
+  { icon: FolderTree, title: '项目进文件夹', detail: '文件夹最多嵌套 5 层，拖进去归类；删文件夹，里面的项目不会被删。' },
+  { icon: CalendarDays, title: '截止日期上日历', detail: '日历和甘特图两种看法，还能订阅到 Google、Outlook 或 Apple 日历。' },
+]
+
+const reviewStages = [
+  { icon: Clock3, label: '待审阅', note: '项目已创建' },
+  { icon: Eye, label: '审阅中', note: '成员看片、提批注' },
+  { icon: ListChecks, label: '意见汇总完毕', note: '准备确认终版' },
+  { icon: CheckCircle2, label: '通过', note: '可进入交付' },
 ]
 
 const steps = [
@@ -67,6 +94,7 @@ const footerGroups = [
       { href: '#versions', label: '版本与定稿' },
       { href: '#share', label: '分享与交付' },
       { href: '#collect', label: '素材收录' },
+      { href: '#team', label: '团队协作' },
     ],
   },
   {
@@ -100,17 +128,121 @@ const footerGroups = [
 
 const HELP_URL = 'https://scnqe74t5owc.feishu.cn/wiki/UOxownMcRiBLeekZwcEc3BBAnc2'
 
-function PointColumns({ items }: { items: { icon: typeof History; title: string; detail: string }[] }) {
+function PointColumns({ items }: { items: { icon: typeof History; title: string; detail: string; href?: string }[] }) {
   return (
     <div className={styles.pointCols}>
-      {items.map(({ icon: Icon, title, detail }) => (
-        <div className={styles.pointCol} key={title}>
-          <Icon size={22} strokeWidth={1.6} className={styles.pointIcon} />
-          <h3>{title}</h3>
-          <p>{detail}</p>
-        </div>
-      ))}
+      {items.map(({ icon: Icon, title, detail, href }) => {
+        const body = (
+          <>
+            <Icon size={22} strokeWidth={1.6} className={styles.pointIcon} />
+            <h3>{title}</h3>
+            <p>{detail}</p>
+          </>
+        )
+        // 卡片整张可点，跳到对应章节（对标 frame.io 平台总览卡片）
+        return href
+          ? <a className={styles.pointCol} href={href} key={title}>{body}</a>
+          : <div className={styles.pointCol} key={title}>{body}</div>
+      })}
     </div>
+  )
+}
+
+/** 数据背书条：有真实数据就渲染；没有时只在开发环境显示虚线占位，生产构建一个字节都不出。 */
+const SHOW_PROOF_SLOT = process.env.NODE_ENV !== 'production'
+
+function ProofStrip() {
+  if (proofStats.length === 0 && !SHOW_PROOF_SLOT) return null
+  const cells: ProofStat[] = proofStats.length > 0
+    ? proofStats
+    : [0, 1, 2].map(() => ({ value: '— —', label: '数据位：内测数据补齐前，这一格只在开发环境显示' }))
+  return (
+    <ul className={styles.proofStrip} aria-label="内测数据">
+      {cells.map((stat, i) => (
+        <li className={`${styles.proofCell} ${proofStats.length === 0 ? styles.proofSlot : ''}`} key={`${stat.value}-${i}`}>
+          <span className={styles.proofValue}>{stat.value}</span>
+          <span className={styles.proofLabel}>{stat.label}</span>
+          {stat.source && <span className={styles.proofSource}>{stat.source}</span>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * 玻璃弧线装饰（对标 frame.io 各板块背后那组青紫描边的同心弧）。纯 SVG，没有位图也没有 WebGL：
+ * dome = 底部升起的三层半圆（板块收尾、CTA），bowl = 竖向叠放的三枚椭圆碗口（引文板块）。
+ * 每条线都是「虚化的粗描边 + 一根细亮线」，弧内一层紫色柔光；颜色只用青→蓝→紫一条渐变。
+ */
+function GlassArcs({ variant }: { variant: 'dome' | 'bowl' }) {
+  const uid = useId().replace(/:/g, '')
+  const stroke = `url(#${uid}-s)`
+  const glow = `url(#${uid}-b)`
+  const defs = (
+    <defs>
+      <linearGradient id={`${uid}-s`} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stopColor="#5fd0d8" />
+        <stop offset="0.5" stopColor="#7b8cff" />
+        <stop offset="1" stopColor="#a36bff" />
+      </linearGradient>
+      <radialGradient id={`${uid}-f`} cx="50%" cy="100%" r="75%">
+        <stop offset="0" stopColor="#7a50d2" stopOpacity="0.5" />
+        <stop offset="1" stopColor="#7a50d2" stopOpacity="0" />
+      </radialGradient>
+      <filter id={`${uid}-b`} x="-10%" y="-10%" width="120%" height="120%">
+        <feGaussianBlur stdDeviation="8" />
+      </filter>
+    </defs>
+  )
+
+  /* 动效全在 CSS 里（home.module.css 的 arc* 类）：每层弧各自「呼吸」（缩放+上下漂），
+     柔光填充明暗起伏，再有一段亮线沿弧描边扫过。三层用不同时长/延迟，永远不同相。
+     滚出视口就暂停（arcPaused），省 GPU；prefers-reduced-motion 下整体静止。 */
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [onScreen, setOnScreen] = useState(false)
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') { setOnScreen(true); return }
+    const io = new IntersectionObserver(([entry]) => setOnScreen(entry.isIntersecting), { rootMargin: '120px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  const svgClass = `${styles.arcSvg} ${onScreen ? '' : styles.arcPaused}`
+
+  if (variant === 'dome') {
+    const arcs = [
+      'M20 600 A580 580 0 0 1 1180 600',
+      'M160 600 A440 440 0 0 1 1040 600',
+      'M300 600 A300 300 0 0 1 900 600',
+    ]
+    return (
+      <svg ref={svgRef} className={svgClass} viewBox="0 0 1200 600" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false">
+        {defs}
+        <path className={styles.arcFill} d={`${arcs[0]} Z`} fill={`url(#${uid}-f)`} />
+        {arcs.map((d, i) => (
+          <g key={d} className={`${styles.arcDome} ${styles[`arcD${i}` as 'arcD0']}`} opacity={1 - i * 0.12}>
+            <path className={styles.arcGlow} d={d} fill="none" stroke={stroke} strokeWidth="10" filter={glow} />
+            <path d={d} fill="none" stroke={stroke} strokeWidth="1.6" />
+            <path className={styles.arcSweep} d={d} pathLength={1} fill="none" stroke="#e9eeff" strokeWidth="2.6" strokeLinecap="round" />
+          </g>
+        ))}
+      </svg>
+    )
+  }
+
+  const bowls = [180, 300, 420]
+  return (
+    <svg ref={svgRef} className={svgClass} viewBox="0 0 800 700" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+      {defs}
+      <ellipse className={styles.arcFill} cx="400" cy="420" rx="340" ry="140" fill={`url(#${uid}-f)`} />
+      {bowls.map((cy, i) => (
+        <g key={cy} className={`${styles.arcBowl} ${styles[`arcB${i}` as 'arcB0']}`} opacity={1 - i * 0.15}>
+          <ellipse className={styles.arcGlow} cx="400" cy={cy} rx="340" ry="140" fill="none" stroke={stroke} strokeWidth="10" filter={glow} />
+          <ellipse cx="400" cy={cy} rx="340" ry="140" fill="none" stroke={stroke} strokeWidth="1.5" />
+          <ellipse className={styles.arcSweep} cx="400" cy={cy} rx="340" ry="140" pathLength={1} fill="none" stroke="#e9eeff" strokeWidth="2.4" strokeLinecap="round" />
+        </g>
+      ))}
+    </svg>
   )
 }
 
@@ -208,7 +340,7 @@ export default function HomeClient() {
   }, [])
 
   const dashboardHref = user ? '/studio/projects' : '/login'
-  const primaryCtaLabel = user ? '进入工作台' : '开始审片'
+  const primaryCtaLabel = user ? '进入工作台' : BETA_CTA
 
   return (
     <div className={styles.page}>
@@ -221,7 +353,7 @@ export default function HomeClient() {
             colors={['#8f7bff', '#4a2a9e']}
             speed={0.2}
             frequency={0.8}
-            noise={0.15}
+            noise={0.06}
             rotation={90}
             intensity={1.6}
             bandWidth={1.4}
@@ -233,8 +365,8 @@ export default function HomeClient() {
         </div>
 
         <div className={styles.promoBar}>
-          <span>在线审片平台正式上线 — 支持逐帧批注、版本对比与安全交付</span>
-          <a href={dashboardHref}>立即体验 <ArrowRight size={12} strokeWidth={2} /></a>
+          <span>内测期间免费开放 — 逐帧批注、版本对比与安全交付，现在就能用</span>
+          <a href={dashboardHref}>{user ? '进入工作台' : '加入内测'} <ArrowRight size={12} strokeWidth={2} /></a>
         </div>
 
         <header className={`${styles.header} ${stuck ? styles.headerStuck : ''}`}>
@@ -251,6 +383,7 @@ export default function HomeClient() {
                   <a href="#versions">版本与定稿</a>
                   <a href="#share">分享与交付</a>
                   <a href="#collect">素材收录</a>
+                  <a href="#team">团队协作</a>
                   <Link href="/features">功能总览</Link>
                 </div>
               </div>
@@ -285,10 +418,11 @@ export default function HomeClient() {
 
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
+            <span className={styles.betaBadge}><i aria-hidden="true" />内测中 · 免费开放</span>
             <h1>让每一条意见，<br />都落在画面上。</h1>
             <p>
               逐帧审阅是面向影视团队的在线审片平台：上传素材、逐帧批注、管理版本、安全交付，
-              全部在同一条时间轴上完成。
+              全部在同一条时间轴上完成。内测期间所有功能免费使用。
             </p>
             <div className={styles.heroActions}>
               <Link className={styles.pillPrimary} href={dashboardHref}>{primaryCtaLabel}</Link>
@@ -328,7 +462,12 @@ export default function HomeClient() {
             从素材回传到定稿交付，团队和客户始终看的是同一条时间轴。
           </p>
           <PointColumns items={platformProps} />
+          <ProofStrip />
         </section>
+
+        <div className={styles.arcStage} aria-hidden="true">
+          <GlassArcs variant="dome" />
+        </div>
       </div>
 
       <section id="review" className={styles.chapter} aria-label="逐帧批注">
@@ -412,7 +551,10 @@ export default function HomeClient() {
       </section>
 
       <section className={styles.chapter} aria-label="产品说明">
-        <div className={styles.panel}>
+        <div className={`${styles.panel} ${styles.panelFx}`}>
+          <div className={styles.panelArcs} aria-hidden="true">
+            <GlassArcs variant="bowl" />
+          </div>
           <div className={`${styles.panelInner} ${styles.reveal}`}>
             <blockquote className={styles.quote}>
               <p>
@@ -500,10 +642,49 @@ export default function HomeClient() {
         </div>
       </section>
 
+      <section id="team" className={styles.chapter} aria-label="团队协作">
+        <div className={`${styles.panel} ${styles.panelAlt}`}>
+          <div className={`${styles.panelInner} ${styles.reveal}`}>
+            <div className={styles.intro}>
+              <p className={styles.eyebrow}>团队协作</p>
+              <h2 className={styles.duoHead}>
+                <span className={styles.muted}>项目有阶段，</span><br />
+                人有分工。
+              </h2>
+              <p className={styles.sectionLead}>
+                每个项目从待审阅走到通过，团队按角色协作，截止日期一眼看全。
+              </p>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.rowCopy}>
+                <h3>谁在审、审到哪一步，都看得见</h3>
+                <p>新建项目默认走四个阶段，状态在项目列表和审片页同步显示。</p>
+                <TickList items={teamPoints} />
+              </div>
+              <div className={styles.rowShot}>
+                <ol className={styles.permCard} aria-label="默认审阅流程的四个阶段">
+                  {reviewStages.map(({ icon: Icon, label, note }, index) => (
+                    <li className={styles.permRow} key={label}>
+                      <Icon size={16} strokeWidth={1.7} className={styles.permOn} aria-hidden="true" />
+                      <span>{label}</span>
+                      <span className={styles.permNote}>{note}</span>
+                      <span className={styles.stageNum} aria-hidden="true">{index + 1}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="cta" className={styles.ctaBand} aria-label="开始使用">
         <div className={`${styles.ctaInner} ${styles.reveal}`}>
+          <div className={styles.ctaArcs} aria-hidden="true">
+            <GlassArcs variant="dome" />
+          </div>
           <h2>开始使用逐帧审阅</h2>
-          <p>建一个团队，传一条片子，几分钟就能走完全流程。</p>
+          <p>内测期间免费开放。登录后按引导建一个团队，传一条片子，就能走完全流程。</p>
           <div className={styles.heroActions}>
             <Link className={styles.pillPrimary} href={dashboardHref}>{primaryCtaLabel}</Link>
             <Link className={styles.pillGhost} href="/features">查看功能详解 <ArrowRight size={15} strokeWidth={2} /></Link>
