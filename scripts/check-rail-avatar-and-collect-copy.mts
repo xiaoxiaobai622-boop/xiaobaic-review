@@ -326,8 +326,8 @@ try {
     }
     console.log(`  ${u.key} → ${JSON.stringify(facts[u.key])}`)
     if (u.key === 'photo') {
-      // 深色主题下这条渐变必须退回 none：浅粉面压浅色图标是读不出的对比度。
-      // 只在页面上临时加一次 .dark，量完立刻还原。
+      // 深色下这条洗不许吃浅色那支原样（纯黑画布上会糊成一块发白的粉斑），也不是关掉：
+      // 对标的底部洗两套主题只换强度不换方向。只在页面上临时加一次 .dark，量完立刻还原。
       facts[u.key].railBgDark = String(await evalJs(page, `(() => {
         const el = document.querySelector('aside')
         const root = document.documentElement
@@ -437,8 +437,15 @@ try {
   const twoSlots = Number(facts.photo?.avatarTopGap) + Number(facts.photo?.avatarBottomGap) + Number(facts.photo?.hit.h)
   check(washPx === PINNED_WASH_PX,
     `A14 这条洗按他点单收在 ${PINNED_WASH_PX}px（栏高 ${railH}px ＝ ${(washPx / railH * 100).toFixed(0)}%；最底两枚图标上缘＝${twoSlots}px，再往上多吃 ${washPx - twoSlots}px）`, `→ ${railCss.slice(0, 190)}`)
-  check(facts.photo?.railBgDark === 'none',
-    'A13 深色主题下这条渐变退回 none（浅粉面压浅色图标读不出对比度）', `→ ${JSON.stringify(facts.photo?.railBgDark)}`)
+  // 深色这条不关掉、也不吃浅色那支原样：同一支粉按 alpha 压，强度要和浅色那条对齐
+  // （浅色底端距栏面 ΔE 31.1，深色 .35 合成 #554456＝ΔE 34.0，同一档）。
+  // 所以钉「同一支粉、alpha ≤ .35、仍收在 130px」。抬档要连这条一起改，别让它漂回浅色那支。
+  const darkRail = String(facts.photo?.railBgDark)
+  const darkNear = [...darkRail.matchAll(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)/g)]
+    .map(m => ({ rgb: [m[1], m[2], m[3]].join(','), a: m[4] === undefined ? 1 : Number(m[4]) }))[0]
+  check(darkNear?.rgb === '243,193,245' && darkNear.a <= 0.35 && /130px/.test(darkRail),
+    'A13 深色下这条洗换强度不换方向：同一支粉压到 ≤35%、仍收在 130px（吃浅色那支原样会在纯黑上糊成一块粉斑）',
+    `→ ${darkRail.slice(0, 140)}`)
 
   // ── B 组：复制收录链接 ─────────────────────────────────────────────────
   const findBtn = (label: string) => `[...document.querySelectorAll('button')].filter(b => b.offsetParent !== null && b.textContent.includes(${JSON.stringify(label)}))`
