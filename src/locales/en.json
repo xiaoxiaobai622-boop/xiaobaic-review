@@ -1991,6 +1991,7 @@
     "events": "Events",
     "types": "Types",
     "blocked": "Blocked",
+    "timeZoneNote": "Times shown in Beijing time (UTC+8)",
     "showing": "Showing {count} of {total}",
     "perPage": "/ page",
     "severity": "Severity",

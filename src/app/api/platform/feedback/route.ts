@@ -12,16 +12,21 @@ export async function GET(request: NextRequest) {
   const platformAuth = await requirePlatformAuth(request)
   if (platformAuth instanceof Response) return platformAuth
 
-  const items = await prisma.platformFeedback.findMany({
-    orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
-    take: 100,
-    include: {
-      user: { select: { id: true, name: true, phone: true, email: true } },
-    },
-  })
+  // 一次只取最近 100 条，但界面那句「N 条」说的是整张表：所以总数单独数一次，别拿窗口里的行数冒充。
+  const [rows, total] = await Promise.all([
+    prisma.platformFeedback.findMany({
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: 100,
+      include: {
+        user: { select: { id: true, name: true, phone: true, email: true } },
+      },
+    }),
+    prisma.platformFeedback.count(),
+  ])
 
   return NextResponse.json({
-    items: items.map((f) => ({
+    total,
+    items: rows.map((f) => ({
       id: f.id,
       content: f.content,
       status: f.status,

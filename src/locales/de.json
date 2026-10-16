@@ -1933,6 +1933,7 @@
     "events": "Ereignisse",
     "types": "Typen",
     "blocked": "Gesperrt",
+    "timeZoneNote": "Zeiten in Pekinger Zeit (UTC+8)",
     "showing": "{count} von {total} angezeigt",
     "perPage": "/ Seite",
     "severity": "Schweregrad",

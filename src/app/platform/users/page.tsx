@@ -591,7 +591,7 @@ export default function UsersPage() {
       {/* Add User Modal */}
       <Dialog open={showAddUserModal} onOpenChange={setShowAddUserModal}>
         <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col">
-          <DialogHeader className="pb-2">
+          <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-primary" />
               添加平台账号
@@ -602,20 +602,19 @@ export default function UsersPage() {
           </DialogHeader>
           <div className="flex-1 overflow-y-auto space-y-2 py-1">
             {error && (
-              <div className="p-2 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
                 <span className="text-sm text-destructive">{error}</span>
               </div>
             )}
             <div className="space-y-1">
-              <Label htmlFor="newEmail" className="text-xs">邮箱（与手机号二选一）</Label>
+              <Label htmlFor="newEmail">邮箱（与手机号二选一）</Label>
               <Input
                 id="newEmail"
                 type="email"
                 placeholder={t('emailPlaceholder')}
                 value={newUserData.email}
                 onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
-                className="h-8"
                 autoComplete="off"
                 data-form-type="other"
                 data-lpignore="true"
@@ -623,18 +622,17 @@ export default function UsersPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="newPhone" className="text-xs">手机号（与邮箱二选一）</Label>
-              <Input id="newPhone" type="tel" inputMode="numeric" maxLength={11} placeholder="用于手机号登录" value={newUserData.phone} onChange={(e) => setNewUserData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))} className="h-8" autoComplete="off" />
+              <Label htmlFor="newPhone">手机号（与邮箱二选一）</Label>
+              <Input id="newPhone" type="tel" inputMode="numeric" maxLength={11} placeholder="用于手机号登录" value={newUserData.phone} onChange={(e) => setNewUserData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))} autoComplete="off" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label htmlFor="newUsername" className="text-xs">{t('username')}</Label>
+                <Label htmlFor="newUsername">{t('username')}</Label>
                 <Input
                   id="newUsername"
                   placeholder={t('usernamePlaceholder')}
                   value={newUserData.username}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, username: e.target.value }))}
-                  className="h-8"
                   autoComplete="off"
                   data-form-type="other"
                   data-lpignore="true"
@@ -642,13 +640,12 @@ export default function UsersPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="newName" className="text-xs">{t('displayName')}</Label>
+                <Label htmlFor="newName">{t('displayName')}</Label>
                 <Input
                   id="newName"
                   placeholder={t('displayNamePlaceholder')}
                   value={newUserData.name}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, name: e.target.value }))}
-                  className="h-8"
                   autoComplete="off"
                   data-form-type="other"
                   data-lpignore="true"
@@ -657,14 +654,14 @@ export default function UsersPage() {
               </div>
             </div>
             <div className="space-y-2 border-t border-border pt-3">
-              <Label className="text-xs">团队权限</Label>
+              <Label>团队权限</Label>
               <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
                 {(['ADMIN', 'MEMBER'] as const).map((role) => (
                   <button
                     key={role}
                     type="button"
                     onClick={() => setNewUserData(prev => ({ ...prev, role, projectAccessScope: role === 'ADMIN' ? 'ALL_PROJECTS' : prev.projectAccessScope }))}
-                    className={`h-8 rounded-sm text-xs font-medium transition-colors ${newUserData.role === role ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`h-9 rounded-sm text-sm font-medium transition-colors ${newUserData.role === role ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                   >
                     {role === 'ADMIN' ? '管理员' : '普通账号'}
                   </button>
@@ -673,13 +670,13 @@ export default function UsersPage() {
               {newUserData.role === 'MEMBER' && (
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => setNewUserData(prev => ({ ...prev, projectAccessScope: 'ALL_PROJECTS' }))} className={`rounded-md border p-2 text-left text-xs ${newUserData.projectAccessScope === 'ALL_PROJECTS' ? 'border-primary bg-primary/5' : 'border-border'}`}>团队全部项目</button>
-                    <button type="button" onClick={() => setNewUserData(prev => ({ ...prev, projectAccessScope: 'ASSIGNED_ONLY' }))} className={`rounded-md border p-2 text-left text-xs ${newUserData.projectAccessScope === 'ASSIGNED_ONLY' ? 'border-primary bg-primary/5' : 'border-border'}`}>仅指定项目</button>
+                    <button type="button" onClick={() => setNewUserData(prev => ({ ...prev, projectAccessScope: 'ALL_PROJECTS' }))} className={`rounded-md border p-3 text-left text-sm ${newUserData.projectAccessScope === 'ALL_PROJECTS' ? 'border-primary bg-primary/5' : 'border-border'}`}>团队全部项目</button>
+                    <button type="button" onClick={() => setNewUserData(prev => ({ ...prev, projectAccessScope: 'ASSIGNED_ONLY' }))} className={`rounded-md border p-3 text-left text-sm ${newUserData.projectAccessScope === 'ASSIGNED_ONLY' ? 'border-primary bg-primary/5' : 'border-border'}`}>仅指定项目</button>
                   </div>
                   {newUserData.projectAccessScope === 'ASSIGNED_ONLY' && (
                     <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-border p-2" aria-label="选择允许访问的项目">
                       {projects.length === 0 ? <p className="text-xs text-muted-foreground">暂无可分配项目</p> : projects.map((project) => (
-                        <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-muted">
+                        <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-muted">
                           <input type="checkbox" checked={newUserData.projectIds.includes(project.id)} onChange={(event) => setNewUserData(prev => ({ ...prev, projectIds: event.target.checked ? [...prev.projectIds, project.id] : prev.projectIds.filter((id) => id !== project.id) }))} />
                           <span className="font-mono text-muted-foreground">{project.projectCode}</span><span className="truncate">{project.title}</span>
                         </label>
@@ -688,7 +685,7 @@ export default function UsersPage() {
                   )}
                 </div>
               )}
-              <label className="flex items-start gap-2 rounded-md border border-border p-3 text-xs">
+              <label className="flex items-start gap-2 rounded-md border border-border p-3 text-sm">
                 <input
                   type="checkbox"
                   checked={newUserData.isPlatformAdmin}
@@ -700,14 +697,14 @@ export default function UsersPage() {
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <Label htmlFor="newPassword" className="text-xs">{t('passwordRequired')}</Label>
+                <Label htmlFor="newPassword">{t('passwordRequired')}</Label>
                 <div className="flex gap-1">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => generateRandomPassword(true)}
-                    className="h-6 px-2 text-xs"
+                    className="h-7 px-2 text-xs"
                   >
                     <RefreshCw className="w-3 h-3 mr-1" />
                     {tc('generate')}
@@ -718,7 +715,7 @@ export default function UsersPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => copyPassword(newUserData.password)}
-                      className="h-6 px-2 text-xs"
+                      className="h-7 px-2 text-xs"
                     >
                       {copiedPassword ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                     </Button>
@@ -732,7 +729,7 @@ export default function UsersPage() {
                   value={newUserData.password}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
                   maxLength={128}
-                  className="pr-8 h-8"
+                  className="pr-10"
                   autoComplete="new-password"
                   data-form-type="other"
                   data-lpignore="true"
@@ -741,14 +738,14 @@ export default function UsersPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="newConfirmPassword" className="text-xs">{t('confirmPasswordRequired')}</Label>
+              <Label htmlFor="newConfirmPassword">{t('confirmPasswordRequired')}</Label>
               <div className="relative">
                 <Input
                   id="newConfirmPassword"
@@ -756,7 +753,7 @@ export default function UsersPage() {
                   value={newUserData.confirmPassword}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, confirmPassword: e.target.value }))}
                   maxLength={128}
-                  className="pr-8 h-8"
+                  className="pr-10"
                   autoComplete="new-password"
                   data-form-type="other"
                   data-lpignore="true"
@@ -765,19 +762,19 @@ export default function UsersPage() {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showConfirmPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
             <PasswordRequirements password={newUserData.password} />
           </div>
-          <DialogFooter className="pt-2">
+          <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" size="sm">{tc('cancel')}</Button>
+              <Button variant="outline">{tc('cancel')}</Button>
             </DialogClose>
-            <Button size="sm" onClick={handleAddUser} disabled={saving}>
+            <Button onClick={handleAddUser} disabled={saving}>
               {saving ? tc('creating') : t('addUser')}
             </Button>
           </DialogFooter>
@@ -796,14 +793,14 @@ export default function UsersPage() {
               {t('editUserDescription')}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-4 py-4">
+          <div className="flex-1 overflow-y-auto space-y-2 py-1">
             {error && (
               <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
                 <span className="text-sm text-destructive">{error}</span>
               </div>
             )}
-            <div className="space-y-2">
+            <div className="space-y-1">
               <Label htmlFor="editEmail">邮箱（与手机号二选一）</Label>
               <Input
                 id="editEmail"
@@ -816,7 +813,7 @@ export default function UsersPage() {
                 data-1p-ignore
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1">
               <Label htmlFor="editPhone">手机号</Label>
               <div className="relative">
                 <Input id="editPhone" type="tel" inputMode="numeric" maxLength={11} placeholder="用于手机号登录" className="pr-10" value={editFormData.phone} onChange={(e) => setEditFormData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))} autoComplete="off" />
@@ -832,31 +829,33 @@ export default function UsersPage() {
                 </button>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="editUsername">{t('username')}</Label>
-              <Input
-                id="editUsername"
-                value={editFormData.username}
-                onChange={(e) => setEditFormData(prev => ({ ...prev, username: e.target.value }))}
-                autoComplete="off"
-                data-form-type="other"
-                data-lpignore="true"
-                data-1p-ignore
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="editUsername">{t('username')}</Label>
+                <Input
+                  id="editUsername"
+                  value={editFormData.username}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, username: e.target.value }))}
+                  autoComplete="off"
+                  data-form-type="other"
+                  data-lpignore="true"
+                  data-1p-ignore
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="editName">{t('displayName')}</Label>
+                <Input
+                  id="editName"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                  autoComplete="off"
+                  data-form-type="other"
+                  data-lpignore="true"
+                  data-1p-ignore
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="editName">{t('displayName')}</Label>
-              <Input
-                id="editName"
-                value={editFormData.name}
-                onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
-                autoComplete="off"
-                data-form-type="other"
-                data-lpignore="true"
-                data-1p-ignore
-              />
-            </div>
-            <div className="space-y-3 border-t border-border pt-4">
+            <div className="space-y-2 border-t border-border pt-3">
               <Label>团队权限</Label>
               <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
                 {(['ADMIN', 'MEMBER'] as const).map((role) => (

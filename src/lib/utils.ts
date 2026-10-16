@@ -109,6 +109,28 @@ export function formatDateTime(date: Date | string): string {
 }
 
 /**
+ * 运营后台的时刻一律按北京（UTC+8）画。
+ * 首页那套「每日使用量」是北京日切分的（`platform-usage.ts`：库里存的是 UTC 无时区时间戳，
+ * `+8h` 再截 date），同一时刻在安全页与消息页要是跟着浏览器时区走，运营就会拿两条不同口径的
+ * 时间去对同一件事——他这台机器在 +08 看不出来，换台机器或换个人看就错了。
+ */
+export function formatBeijingDateTime(date: Date | string | number): string {
+  const d = date instanceof Date ? date : new Date(date)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    // hourCycle 而不是 hour12: false —— 后者在部分 ICU 版本里把午夜渲染成「24:00」。
+    hourCycle: 'h23',
+  }).formatToParts(d)
+  const at = (type: string) => parts.find(part => part.type === type)?.value || ''
+  return `${at('year')}-${at('month')}-${at('day')} ${at('hour')}:${at('minute')}`
+}
+
+/**
  * Keep only enough of an address to recognise the account. Audit rows are kept for months
  * and are readable by anyone with console access, so they must not carry the full address.
  */

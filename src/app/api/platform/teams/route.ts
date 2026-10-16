@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
       subscriptionStartedAt: true,
       subscriptionExpiresAt: true,
       createdBy: { select: { id: true, name: true, email: true } },
-      _count: { select: { members: true, projects: true } },
+      // 成员数只算在队的（TeamMemberStatus 还有 DISABLED 这一档）：额度检查与团队详情的用量走
+      // getTeamUsage，数的就是 status=ACTIVE，这两处要是对不上，运营会拿一个偏大的数去比一个 5 人的额度。
+      _count: { select: { members: { where: { status: 'ACTIVE' } }, projects: true } },
       members: {
         where: { role: 'OWNER', status: 'ACTIVE' },
         take: 1,

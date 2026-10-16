@@ -42,7 +42,10 @@ export async function getTeamQuota(teamId: string) {
   // 读一次额度不许落一行：quota 只由「新建团队」和后台手动改额度两处写。之前的 `upsert` 让任何一次
   // 容量/席位检查都给缺行团队补写一行，于是「线上 6 个团队只有 4 行 quota」这种真实差异会被查看动作抹掉。
   // 缺行时返回内测口径，不能回落到 schema 默认（10 人 / 20 GB / 5 项目 / 50 视频）。
-  return row ?? { teamId, ...BETA_QUOTA, source: 'PLAN' }
+  // `recorded` 把这两件事分开带出去：运营后台要说「这个团队没有单独的额度记录」，
+  // 不能把回落到的那几项画成它自己的一行（缺行时报「随套餐续费」就是编故事）。
+  if (row) return { ...row, recorded: true }
+  return { teamId, ...BETA_QUOTA, source: 'PLAN', recorded: false }
 }
 
 export async function getTeamUsage(teamId: string) {

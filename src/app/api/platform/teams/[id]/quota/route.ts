@@ -54,5 +54,6 @@ export async function PATCH(
     update: { ...data, source: 'MANUAL', sourceOrderId: null },
   })
 
-  return NextResponse.json({ quota })
+  // GET 那侧的 `recorded` 是说「这一行真的存在」：保存之后当然存在，界面采纳响应时才有真话可说。
+  return NextResponse.json({ quota: { ...quota, recorded: true } })
 }

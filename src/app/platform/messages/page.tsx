@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { MessageSquarePlus, Send, Users } from 'lucide-react'
 import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
+import { formatBeijingDateTime } from '@/lib/utils'
 
 interface SentItem {
   id: string
@@ -36,13 +37,11 @@ interface UserOption {
   email: string | null
 }
 
-function timeLabel(value: string): string {
-  return new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
 export default function PlatformMessagesPage() {
   const [sent, setSent] = useState<SentItem[]>([])
   const [feedback, setFeedback] = useState<FeedbackItem[]>([])
+  // 收件箱只回最近 100 条（服务端 take），条数要说的是整张表的总数。
+  const [feedbackTotal, setFeedbackTotal] = useState(0)
   const [users, setUsers] = useState<UserOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -68,8 +67,11 @@ export default function PlatformMessagesPage() {
       const missing: string[] = []
       if (annRes.ok) setSent(((await annRes.json())?.items || []) as SentItem[])
       else missing.push('已发送的消息')
-      if (fbRes.ok) setFeedback(((await fbRes.json())?.items || []) as FeedbackItem[])
-      else missing.push('用户反馈')
+      if (fbRes.ok) {
+        const d = await fbRes.json()
+        setFeedback((d.items || []) as FeedbackItem[])
+        setFeedbackTotal(d.total ?? 0)
+      } else missing.push('用户反馈')
       if (usersRes.ok) setUsers(((await usersRes.json())?.users || []) as UserOption[])
       else missing.push('收件人名单')
       // 三发各记各的账：哪一发没成就说哪一发，不然空屏会被读成「真的没有」。
@@ -135,7 +137,7 @@ export default function PlatformMessagesPage() {
     <div className="flex flex-col gap-4 p-4">
       <div>
         <h1 className="text-lg font-semibold text-foreground">消息与反馈</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">给用户发平台通知，处理用户提交的反馈。</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">给用户发平台通知，处理用户提交的反馈。两边的时间都按北京（UTC+8）显示。</p>
       </div>
 
       {error && (
@@ -222,7 +224,7 @@ export default function PlatformMessagesPage() {
                     <div key={item.id} className="rounded-md bg-muted/50 px-2.5 py-2">
                       <span className="flex items-baseline justify-between gap-2">
                         <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.title}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{timeLabel(item.createdAt)}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{formatBeijingDateTime(item.createdAt)}</span>
                       </span>
                       <span className="mt-0.5 line-clamp-1 block text-xs text-muted-foreground">{item.content}</span>
                       <span className="mt-0.5 block text-[11px] text-muted-foreground">
@@ -241,7 +243,11 @@ export default function PlatformMessagesPage() {
           <div className="flex items-center gap-2 border-b border-border px-4 py-3">
             <Users className="h-4 w-4 text-primary" />
             <h2 className="text-sm font-semibold text-foreground">用户反馈</h2>
-            <span className="text-xs text-muted-foreground">{feedback.length > 0 ? `${feedback.length} 条` : ''}</span>
+            <span className="text-xs text-muted-foreground">
+              {feedbackTotal > feedback.length
+                ? `共 ${feedbackTotal} 条，这一屏只列最近 ${feedback.length} 条`
+                : feedbackTotal > 0 ? `${feedbackTotal} 条` : ''}
+            </span>
           </div>
           <div className="max-h-[560px] overflow-y-auto p-3">
             {feedback.length === 0 && (
@@ -254,7 +260,7 @@ export default function PlatformMessagesPage() {
                     <span className="min-w-0 truncate text-sm font-medium text-foreground">
                       {item.user.name || item.user.contact || '用户'}
                     </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{timeLabel(item.createdAt)}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{formatBeijingDateTime(item.createdAt)}</span>
                   </span>
                   <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{item.content}</p>
                   {item.reply ? (
@@ -263,7 +269,7 @@ export default function PlatformMessagesPage() {
                         <span className="font-medium">已回复：</span>
                         {item.reply}
                       </p>
-                      {item.repliedAt && <p className="mt-0.5 text-[11px] text-muted-foreground">{timeLabel(item.repliedAt)}</p>}
+                      {item.repliedAt && <p className="mt-0.5 text-[11px] text-muted-foreground">{formatBeijingDateTime(item.repliedAt)}</p>}
                     </div>
                   ) : (
                     <div className="mt-2 flex items-center gap-2">

@@ -1933,6 +1933,7 @@
     "events": "Gebeurtenissen",
     "types": "Types",
     "blocked": "Geblokkeerd",
+    "timeZoneNote": "Tijden in Peking-tijd (UTC+8)",
     "showing": "{count} van {total} weergegeven",
     "perPage": "/ pagina",
     "severity": "Ernst",

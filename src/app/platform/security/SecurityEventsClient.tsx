@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Shield, AlertTriangle, Info, XCircle, Trash2, RefreshCw, ChevronRight, ChevronDown, Unlock, Tag, ShieldX } from 'lucide-react'
 import FilterDropdown from '@/components/FilterDropdown'
-import { formatDateTime } from '@/lib/utils'
+import { formatBeijingDateTime } from '@/lib/utils'
 import { apiDelete, apiFetch } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
 import {
@@ -383,7 +383,7 @@ export default function SecurityEventsClient() {
               <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                 <span className="text-sm font-medium">{t('title')}</span>
                 <span className="text-xs text-muted-foreground">
-                  {t('showing', { count: events.length, total: pagination.total })}
+                  {t('showing', { count: events.length, total: pagination.total })} · {t('timeZoneNote')}
                 </span>
               </div>
               {/* Table Header */}
@@ -454,7 +454,7 @@ export default function SecurityEventsClient() {
                         </span>
                         {/* Date */}
                         <span className="w-32 text-xs text-muted-foreground whitespace-nowrap hidden lg:block">
-                          {formatDateTime(event.createdAt)}
+                          {formatBeijingDateTime(event.createdAt)}
                         </span>
                         {/* Blocked */}
                         <span className="w-8 flex justify-center">
@@ -505,7 +505,7 @@ export default function SecurityEventsClient() {
                               )}
                               <div className="flex gap-2 sm:hidden">
                                 <span className="text-muted-foreground">{t('time')}:</span>
-                                <span>{formatDateTime(event.createdAt)}</span>
+                                <span>{formatBeijingDateTime(event.createdAt)}</span>
                               </div>
                               {event.referer && (
                                 <div className="flex gap-2 sm:col-span-2">
@@ -634,7 +634,7 @@ export default function SecurityEventsClient() {
               {t('activeRateLimits')}
             </DialogTitle>
             <DialogDescription>
-              {t('rateLimitsDescription')}
+              {t('rateLimitsDescription')} · {t('timeZoneNote')}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -655,7 +655,7 @@ export default function SecurityEventsClient() {
                           {t('failedAttempts', { count: entry.count })}
                         </div>
                         <div className="text-xs text-muted-foreground break-words">
-                          {t('lockedUntil', { date: new Date(entry.lockoutUntil).toLocaleString() })}
+                          {t('lockedUntil', { date: formatBeijingDateTime(entry.lockoutUntil) })}
                         </div>
                       </div>
                       {entry.lockoutUntil > nowMs ? (

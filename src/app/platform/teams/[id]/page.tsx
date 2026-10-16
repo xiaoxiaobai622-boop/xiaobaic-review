@@ -10,11 +10,15 @@ type Feature = {
   name: string
   category: string
   description: string | null
+  // 保存时按它筛「和默认不一样」的项，界面上那句说明也读它。
+  defaultEnabled: boolean
 }
 
 type Grant = {
   featureKey: string
   enabled: boolean
+  // 服务端按 grant 行有没有写过来分「这一队单独设过」和「平台默认值在生效」。
+  explicit: boolean
   feature: Feature
 }
 
@@ -27,6 +31,8 @@ type Quota = {
   // 只读展示用：下面 saveQuota 的请求体只发四枚数值键，绝不把 source 发回服务端。
   source: string
   sourceOrderId: string | null
+  // 库里没这一行时，服务端回的是内测统一默认值；不读这一枚就会把默认值说成这个团队自己的一行额度。
+  recorded: boolean
 }
 
 function authHeaders(json = false) {
@@ -98,13 +104,27 @@ export default function PlatformTeamDetailPage() {
 
   const saveGrants = async () => {
     if (!params?.id) return
+    // 只提交「和平台默认值不一样」的那些：把没动过的默认项也补写一行，等于替这个团队把平台的默认值
+    // 钉死在今天这一份上，以后运营改 PlatformFeature.defaultEnabled 就再也管不到它了。
+    const changed = grants
+      .filter((grant) => grant.explicit || grant.enabled !== grant.feature.defaultEnabled)
+      .map((grant) => ({ featureKey: grant.featureKey, enabled: grant.enabled }))
+    if (changed.length === 0) {
+      setMessage('这几项都还跟着平台默认值，没有要保存的改动')
+      return
+    }
     setSaving(true)
     setMessage('')
     const response = await fetch(`/api/platform/teams/${params.id}/grants`, {
       method: 'PATCH',
       headers: authHeaders(true),
-      body: JSON.stringify({ grants: grants.map((grant) => ({ featureKey: grant.featureKey, enabled: grant.enabled })) }),
+      body: JSON.stringify({ grants: changed }),
     })
+    if (response.ok) {
+      // 服务端给这几项落了行，下面那排「平台默认开着／关着」的说明要跟着改口，否则界面停在保存前那句话。
+      const keys = new Set(changed.map((grant) => grant.featureKey))
+      setGrants((current) => current.map((grant) => (keys.has(grant.featureKey) ? { ...grant, explicit: true } : grant)))
+    }
     setMessage(response.ok ? '功能授权已保存' : '保存失败')
     setSaving(false)
   }
@@ -165,7 +185,7 @@ export default function PlatformTeamDetailPage() {
       ) : grouped.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">功能授权</h2>
-          <p className="mt-1 text-sm text-muted-foreground">该团队还没有任何功能授权记录，因此下面没有可勾选的开关。</p>
+          <p className="mt-1 text-sm text-muted-foreground">平台上还没有定义任何可授权的功能，所以这里没有开关可给。</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -183,6 +203,9 @@ export default function PlatformTeamDetailPage() {
                     />
                     <span>
                       <span className="block text-sm font-medium">{grant.feature.name}</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {grant.explicit ? '这一队单独设过' : `平台默认${grant.enabled ? '开着' : '关着'}`}
+                      </span>
                       {grant.feature.description && <span className="mt-1 block text-xs text-muted-foreground">{grant.feature.description}</span>}
                     </span>
                   </label>
@@ -226,10 +249,15 @@ export default function PlatformTeamDetailPage() {
               </label>
             ))}
           </div>
-          {/* 额度来源：PLAN 是续费写回来的，MANUAL 是运营在这里手改过的 —— 后者会在下一次确认到账时
-              被套餐重置（OrderConfirmDialog 那句「当前额度是手动调整的，将被本套餐重置」用的就是同一枚字段）。 */}
+          {/* 三种情况三句话，不许合成一句假话：库里没这一行时上面那四个数是内测统一默认值（读额度不落行，
+              见 platform-access 的 getTeamQuota），有行时才轮到 source 说这行是谁写的：MANUAL 是运营在这里手改的，
+              PLAN 是到账确认写回来的——前者会在下一次确认到账时被套餐重置（OrderConfirmDialog 用的是同一枚字段）。 */}
           <p className="mt-3 text-xs text-muted-foreground">
-            额度来源：{quota.source === 'MANUAL' ? '手动调整，续费时会被套餐重置' : '随套餐续费'}
+            {!quota.recorded
+              ? '这个团队名下还没有单独的额度记录，上面四格是内测期统一默认值；在这里保存一次才会为它写下属于自己的一行。'
+              : quota.source === 'MANUAL'
+                ? '额度来源：这里手动改过，续费时会被套餐重置'
+                : '额度来源：随套餐续费写回来'}
           </p>
           <button type="button" onClick={saveQuota} disabled={saving} className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60">
             保存配额

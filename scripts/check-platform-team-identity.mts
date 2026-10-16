@@ -8,6 +8,10 @@
  *  D 搜索框的提示说实话（它其实还能拿 ID／标识／邮箱搜）；
  *  E 说明句不许再骗人：团队 ID 不是对外地址（同 check-team-numeric-id 的 D 组口径）；
  *  F 服务端确实把 shareKey 交出来了，界面那侧的类型也认这列——少一边就是画个空。
+ *  H 后台其余几处（成员页／安全页／消息页）的叫法、身份串与假空态（10-15「接着改运营平台那几处乱的」）。
+ *  I 额度来源、功能授权、术语、时间口径、控件阶梯、反馈条数、成员数口径都要说实话（10-15「继续改剩下的问题」）。
+ *  G/J 浏览器实测：G 验身份行那几串，J 拿一次性夹具验 I 组里只能在页面上证的那几条
+ *    （没额度记录的团队／没授权行的团队／把浏览器时区改成纽约之后时刻仍按北京）。
  *
  * 全程只读源码，不连库、不打接口 ⇒ 可以进 CI 的 check:static。
  * 跑法：
@@ -40,6 +44,11 @@ function strip(src: string) {
 function read(rel: string) {
   const file = `${REPO}/${rel}`
   return existsSync(file) ? strip(readFileSync(file, 'utf8')) : ''
+}
+// 文案按 key 取，不能拿正则截段：顶层 `security` 之前还有一节 `settings.security`，截段会截到错的那一节。
+function json(rel: string): any {
+  const file = `${REPO}/${rel}`
+  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
 }
 
 const LIST = 'src/app/platform/teams/page.tsx'
@@ -154,6 +163,130 @@ async function main() {
     'H14 成员页的副标题说实话：这一页列的是全部注册账号，不是只有能进后台的那些（接口就是 /api/users）', '')
 
 
+  console.log('\n── I 额度、授权、术语、时间、控件、条数、口径都要说实话（10-15 他「继续改剩下的问题」）──')
+  const accessLib = read('src/lib/platform-access.ts')
+  const quotaApi = read('src/app/api/platform/teams/[id]/quota/route.ts')
+  const grantsApi = read('src/app/api/platform/teams/[id]/grants/route.ts')
+  const feedbackApi = read('src/app/api/platform/feedback/route.ts')
+  check(!!accessLib && !!quotaApi && !!grantsApi && !!feedbackApi, 'I0 四份服务端文件都读得到（读不到下面全是空判）',
+    `口径:${!!accessLib} 额度:${!!quotaApi} 授权:${!!grantsApi} 反馈:${!!feedbackApi}`)
+
+  // ① 读不到 TeamQuota 行时回落到内测默认值（10-01 点单 1-3），但界面那句「随套餐续费」是把回落说成有记录。
+  const fallbackTagged = /recorded:\s*false/.test(accessLib) && /recorded:\s*true/.test(accessLib)
+  check(fallbackTagged,
+    'I1 getTeamQuota 缺行时把「这是默认值、不是这个团队自己的一行」带在返回值里（不带就没人分得清）',
+    `→ recorded:false ${/recorded:\s*false/.test(accessLib)} recorded:true ${/recorded:\s*true/.test(accessLib)}`)
+  check(/recorded:\s*boolean/.test(detailSrc) && /NextResponse\.json\(\{\s*quota/.test(quotaApi),
+    'I2 这枚标记一路从接口走到界面的类型里（服务端给了、界面类型没写＝取到是 undefined，界面静默少一句真话）',
+    `→ 界面类型 ${/recorded:\s*boolean/.test(detailSrc)} 接口原样交出 ${/NextResponse\.json\(\{\s*quota/.test(quotaApi)}`)
+  check(!/随套餐续费/.test(detailSrc) || /recorded/.test(detailSrc),
+    'I3 详情页没有额度记录时不许画「随套餐续费」——内测期根本没有套餐续费这回事，那笔额度也不是这个团队的',
+    `→ 还在写「随套餐续费」:${/随套餐续费/.test(detailSrc)}`)
+
+  // ② defaultEnabled=true 的功能没写 grant 行，GET 只回已有行 ⇒ 界面上根本没开关，关不掉。
+  check(/platformFeature\.findMany/.test(grantsApi),
+    'I4 授权接口列的是平台定义的全部功能，不是这个团队已写过的 grant 行（只列已有行＝默认开启的项在界面上关不掉）', '')
+  check(/defaultEnabled/.test(grantsApi),
+    'I5 授权接口按 PlatformFeature.defaultEnabled 算出这一项现在到底是开着还是关着', '')
+  check(!/因此下面没有可勾选的开关/.test(detailSrc),
+    'I6 详情页那句「该团队还没有任何功能授权记录，因此下面没有可勾选的开关」得撤——平台有 8 项默认开启的功能等着被关', '')
+
+  // ③ 机翻残留：IP 翻成「知识产权」、Session 翻成「会议」、Block 翻成「块」、Refreshing 翻成「清爽...」。
+  const localeJson = Object.fromEntries(['zh', 'en', 'nl', 'de'].map(l => [l, json(`src/locales/${l}.json`)]))
+  const zhSecurity = localeJson.zh?.security || {}
+  check(!!localeJson.zh && !!localeJson.en && !!localeJson.nl && !!localeJson.de && Object.keys(zhSecurity).length > 0,
+    'I7 四份文案都解析得到、顶层 security 段读得出来（读不到下面三条是空判）',
+    `zh.security ${Object.keys(zhSecurity).length} 个 key`)
+  const badTerms = [['block', '块'], ['ip', '知识产权'], ['session', '会议']] as const
+  const stillBad = badTerms.filter(([key, wrong]) => zhSecurity[key] === wrong).map(([key, wrong]) => `${key}=${wrong}`)
+  check(stillBad.length === 0,
+    'I8 安全页三处表头/字段名不再是机翻直译（表头「块」其实是「有没有被拦」，详情里的「知识产权」是 IP 地址，「会议」是登录会话）',
+    `→ 还挂着：${stillBad.join('、') || `block=${JSON.stringify(zhSecurity.block)} ip=${JSON.stringify(zhSecurity.ip)} session=${JSON.stringify(zhSecurity.session)}`}`)
+  check(localeJson.zh?.settings?.security?.refreshing !== '清爽...' && !/^清爽/.test(String(localeJson.zh?.settings?.security?.refreshing || '')),
+    'I9 封禁名单那行转圈时不再写「清爽...」（Refreshing 被翻成「清爽」，实际在说的是名单正在读取）',
+    `→ ${JSON.stringify(localeJson.zh?.settings?.security?.refreshing)}`)
+  check(['zh', 'en', 'nl', 'de'].every(l => typeof localeJson[l]?.security?.block === 'string'),
+    'I10 四语言都还留着 security.block 这枚 key（只改中文＝另外三语渲染成裸 key）',
+    ['zh', 'en', 'nl', 'de'].map(l => `${l}:${JSON.stringify(localeJson[l]?.security?.block)}`).join(' '))
+
+  // ④ 后台三套时间口径：首页按北京日、安全页跟浏览器、消息页硬编码 zh-CN。
+  check(!/toLocaleString\('zh-CN'/.test(messages),
+    'I11 消息页不再自己硬写 zh-CN 的 toLocaleString（同一屏安全页用的是另一套格式化，两处对不上时没人知道差在哪）', '')
+  check(!/new Date\([^)]*\)\.toLocaleString\(\)/.test(security),
+    'I12 安全页的解封倒计时不再用裸 toLocaleString()（它带秒数还跟着浏览器时区跑，和旁边的列表列不同格式）', '')
+  const beijingHelpers = [messages, security].filter(src => /formatBeijingDateTime/.test(src))
+  check(beijingHelpers.length === 2,
+    'I13 安全页与消息页都改用同一枚「按北京」的时间格式化（和首页那套「北京日」对上，运营在一页看到的时刻和另一页的日柱是同一个时区）',
+    `→ 用上了的页面 ${beijingHelpers.length} 个`)
+  check(/t\('timeZoneNote'\)/.test(security) && /北京/.test(messages)
+    && ['zh', 'en', 'nl', 'de'].every(l => String(localeJson[l]?.security?.timeZoneNote || '').includes('UTC+8')),
+    'I14 这两页把「时间按北京（UTC+8）」说出来（首页那页早就写了「日期按北京日切分」，另两页什么都不声明）',
+    `→ 安全页走文案键 ${/t\('timeZoneNote'\)/.test(security)}，消息页硬编码 ${/北京/.test(messages)}，四语的值：${['zh', 'en', 'nl', 'de'].map(l => JSON.stringify(localeJson[l]?.security?.timeZoneNote)).join(' ')}`)
+
+  // ⑤ 同一页两扇窗两套控件阶梯：添加窗把输入框压到 h-8、小按钮 h-6，编辑窗用默认 h-10 / h-7。
+  check(!/className="h-8"/.test(users) && !/pr-8 h-8/.test(users),
+    'I15 账号页两扇窗的输入框不再一扇压到 h-8、一扇用默认 h-10（同一件事的同一张表单，同一个字段两种高度）',
+    `→ h-8 输入框 ${(/className="h-8"/.test(users)) ? '还在' : '已收'} / pr-8 h-8 ${(/pr-8 h-8/.test(users)) ? '还在' : '已收'}`)
+  check(!/h-8 rounded-sm/.test(users),
+    'I16「管理员／普通账号」那枚分段选择两扇窗同高（原来一扇 h-8 text-xs 一扇 h-9 text-sm）', '')
+  check(!/h-6 px-2/.test(users) && /h-7 px-2/.test(users),
+    'I17 生成／复制密码那两枚小按钮两扇窗收成同一档 h-7（原来一扇 h-6 一扇 h-7）', '')
+
+  // ⑥ 反馈条数：接口 take:100，界面把这一屏的条数报成总数。
+  check(/platformFeedback\.count\(/.test(feedbackApi) && /total/.test(feedbackApi),
+    'I18 反馈接口除了这一屏的行，还回整张表的总数（只回窗口内的条数，界面那句「N 条」就是截断窗口冒充总数）', '')
+  check(/共 \$\{feedbackTotal\} 条/.test(messages) && /这一屏只列最近 \$\{feedback\.length\} 条/.test(messages),
+    'I19 消息页那个条数用的是服务端总数，窗口装不下时补一句「这一屏只列最近 N 条」',
+    `→ 总数那句 ${/共 \$\{feedbackTotal\} 条/.test(messages)} / 窗口那句 ${/这一屏只列最近 \$\{feedback\.length\} 条/.test(messages)}`)
+
+  // ⑦ 首页「成员」列数的是全部 TeamMember 行，而额度检查与团队详情的用量只算 status=ACTIVE。
+  const countBlock = (apiSrc.match(/_count:\s*\{[\s\S]{0,200}/) || [])[0] || ''
+  check(/members:\s*\{\s*where:[^}]*ACTIVE/.test(countBlock),
+    'I20 后台的成员数只算在队的成员，和额度检查、团队详情的用量口径是同一句话',
+    `→ ${JSON.stringify(countBlock.replace(/\s+/g, ' ').slice(0, 90))}`)
+
+  // ⑧ 账号页自己说「平台账号」，可这页渲染出来的文案里还混着「成员」「用户」——一个东西三个名字。
+  // 判法机械：把这页真的调用到的 key 抽出来，逐条看中文值。en/nl/de 本来就统一用 User/Gebruiker/Benutzer，不在这一刀里。
+  const usedKeys = [...new Set([...users.matchAll(/[^a-zA-Z]t\(['"]([a-zA-Z]+)['"]\)/g)].map(m => m[1]))]
+  const zhUsers = localeJson.zh?.users || {}
+  const misNamed = usedKeys.filter(k => {
+    const v = String(zhUsers[k] ?? '')
+    return /成员/.test(v) || /用户(?!名)/.test(v)
+  }).map(k => `${k}=${JSON.stringify(zhUsers[k])}`)
+  check(usedKeys.length > 20 && misNamed.length === 0,
+    'I21 账号页渲染出来的中文文案里，这个对象只有一个名字：账号（原来「添加成员／编辑用户／删除账号」三种并存，同一页跳三个词）',
+    `→ 这页用到 ${usedKeys.length} 个 key，还混着叫法的 ${misNamed.length} 条：${misNamed.slice(0, 6).join('、')}`)
+
+  // ⑨ 同一张表单两扇窗：添加窗把「用户名／显示名称」并排、间距紧一档，编辑窗竖排、间距松一档。
+  // 切区块用 `open={showXxxModal}` 当锚点：JSX 注释 `{/* Edit User Modal */}` 会被 read() 当块注释剥掉，锚不中。
+  const editRegion = users.slice(users.indexOf('open={showEditUserModal}'), users.indexOf('open={showPasswordModal}'))
+  const addRegion = users.slice(users.indexOf('open={showAddUserModal}'), users.indexOf('open={showEditUserModal}'))
+  const twoColRows = (users.match(/className="grid grid-cols-2 gap-2"/g) || []).length
+  const editLabelGaps = [...editRegion.matchAll(/className="space-y-(\d)">\s*<Label htmlFor="edit/g)].map(m => m[1])
+  check(editLabelGaps.length === 4 && editLabelGaps.every(gap => gap === '1')
+    && /className="space-y-1">\s*<Label htmlFor="newEmail/.test(addRegion)
+    && twoColRows >= 4 && !/border-t border-border pt-4/.test(editRegion) && !/space-y-4 py-4/.test(editRegion),
+    'I22 两扇窗是同一张表单：字段包装、分隔线、正文节奏与「用户名／显示名称」那行的两列排法都对得上',
+    `→ 编辑窗四个字段间距 ${JSON.stringify(editLabelGaps)}／两列行 ${twoColRows} 处／编辑窗还留着 pt-4:${/border-t border-border pt-4/.test(editRegion)}／正文还是 space-y-4 py-4:${/space-y-4 py-4/.test(editRegion)}`)
+
+  // ⑩（他 10-16 一句「修改」点单）账号页剩下的几处机翻：Passkeys 翻成「万能钥匙」、
+  // 「注册密码失败」把 passkey 说成 password、`changing` 直译「改变...」、用户名框的提示写着「管理员」。
+  // 这一条用明写黑名单（文案对不对没法从结构推），只判 zh：en/nl/de 这三语实测本来就顺。
+  const bannedZh = {
+    passkeysTitle: '万能钥匙',
+    failedToRegisterPasskey: '注册密码失败',
+    noPasskeysHint: '添加密码以进行无密码登录',
+    changing: '改变...',
+    usernamePlaceholder: '管理员',
+  }
+  const stillBanned = Object.entries(bannedZh).filter(([key, wrong]) => zhUsers[key] === wrong).map(([key, wrong]) => `${key}=${JSON.stringify(wrong)}`)
+  check(stillBanned.length === 0,
+    'I23 账号页那五处机翻不再出现（万能钥匙／注册密码失败／添加密码以进行无密码登录／改变...／用户名提示「管理员」）',
+    `→ 还挂着：${stillBanned.join('、') || `已改成 ${Object.keys(bannedZh).map(k => JSON.stringify(zhUsers[k])).join(' ')}`}`)
+  check(['en', 'nl', 'de'].every(l => String(localeJson[l]?.users?.passkeysTitle || '').toLowerCase().includes('passkey')),
+    'I24 另外三语的通行密钥标题仍说 passkey（这条只改中文，别把好的那三语一起改坏）',
+    ['en', 'nl', 'de'].map(l => JSON.stringify(localeJson[l]?.users?.passkeysTitle)).join(' '))
+
   const statusBadgeKept = /status === 'ACTIVE'/.test(listSrc) && /已停用/.test(listSrc)
   check(statusBadgeKept, 'F1 列表卡片的「正常／已停用」状态与停用操作这条线还在（这次只加身份行，没顺手砍功能）', '')
   const quotaKept = /团队配额/.test(detailSrc) && /保存配额/.test(detailSrc) && /功能授权/.test(detailSrc)
@@ -258,6 +391,305 @@ function rgbOf(css: string): number[] | null {
   return [Number(m[1]), Number(m[2]), Number(m[3])]
 }
 
+/**
+ * J 组：这一批「说实话」改动的行为证据（额度来源／功能授权默认项／术语／时间／控件阶梯／条数／成员口径）。
+ * 静态那几组只读源码，而这几条要证的是「页面上真的画出了那句话、数真的按这个口径数」，
+ * 所以建一次性夹具：一枚没有额度记录也没有授权行的团队 + 一名已停用成员 + 一条定在 UTC 16:30 的反馈，
+ * 再把这台浏览器的时区临时改成纽约（他本机是 +08，不换成别的时区就量不出「跟着浏览器走」和「钉在北京」的差别）。
+ * 跑完连夹具带临时改动一并复原。只在 --browser 里跑，永不进 CI。
+ */
+async function jGroup(page: Page, prisma: PrismaClient, adminId: string, pw: string, stamp: number) {
+  console.log('\n── J 额度／授权／时间／条数／口径的浏览器实测（建一次性夹具＋临时改时区，跑完复原）──')
+  const totalFeatures = await prisma.platformFeature.count()
+  let teamId = ''
+  let ghostId = ''
+  let feedbackId = ''
+  let probeEventId = ''
+  let securityWasOn: boolean | null = null
+  try {
+    // 团队号必须过库级 CHECK `^[1-9]\d{5}$`；撞号就往后挪一枚再试。
+    for (let i = 0; i < 12 && !teamId; i++) {
+      const candidate = String(900_000 + ((stamp + i * 7919) % 99_999))
+      try {
+        const created = await prisma.team.create({
+          data: {
+            id: candidate, name: `PID 夹具 ${stamp}`, slug: `zz${stamp}${i}`, shareKey: `tm_zz${stamp}${i}`,
+            createdById: adminId,
+          },
+          select: { id: true, slug: true, shareKey: true },
+        })
+        teamId = created.id
+      } catch { /* 换下一枚号 */ }
+    }
+    if (!teamId) { check(false, 'J0 建不出一次性团队（号池或 CHECK 挡了），J 组跑不了', ''); return }
+
+    const ghost = await prisma.user.create({
+      data: { email: `pid-ghost-${stamp}@example.invalid`, name: 'PID Ghost', password: await hashPassword(pw) },
+      select: { id: true },
+    })
+    ghostId = ghost.id
+    await prisma.teamMember.createMany({
+      data: [
+        { teamId, userId: adminId, role: 'OWNER', status: 'ACTIVE' },
+        { teamId, userId: ghostId, role: 'MEMBER', status: 'DISABLED' },
+      ],
+    })
+    // 时刻挑 UTC 16:30：北京是次日 00:30，而纽约是当天 12:30——页面要是还跟着浏览器时区走，
+    // 这一格就会画成 12:30，钉在北京的话必须是 00:30（他本机 +08，不换时区这两种结果看不出差别）。
+    const probeDay = new Date('2026-10-14T16:30:00.000Z')
+    const feedback = await prisma.platformFeedback.create({
+      data: { userId: ghostId, content: `pid-probe-${stamp}`, createdAt: probeDay },
+      select: { id: true },
+    })
+    feedbackId = feedback.id
+
+    // 安全事件列表被 SecuritySettings.viewSecurityEvents 挡着（本地实测 false）。这一组要看行，
+    // 就临时把它打开、跑完按原值复原——不改这一枚就只能 SKIP，时间口径那条主断言就测不到。
+    const sec = await prisma.securitySettings.findUnique({ where: { id: 'default' }, select: { viewSecurityEvents: true } })
+    if (sec) {
+      securityWasOn = sec.viewSecurityEvents
+      if (!sec.viewSecurityEvents) await prisma.securitySettings.update({ where: { id: 'default' }, data: { viewSecurityEvents: true } })
+    }
+    // 让这台浏览器自认为是纽约：水合之前就把时区换掉，页面读到的 resolvedOptions 才是纽约。
+    await page.s('Emulation.setTimezoneOverride', { timezoneId: 'America/New_York' })
+
+    await run(page, `/platform/teams/${teamId}`)
+    const ready = await waitFor(page, `document.querySelectorAll('input[type=checkbox]').length > 0`, 90_000)
+    const detail = await evalJs(page, `(() => {
+      const boxes = [...document.querySelectorAll('input[type=checkbox]')]
+      const txt = document.body.innerText
+      return { boxes: boxes.length, defaulted: (txt.match(/平台默认开着|平台默认关着/g) || []).length,
+        empty: txt.includes('没有可勾选的开关'),
+        noRecord: txt.includes('还没有单独的额度记录'), renewed: txt.includes('随套餐续费'),
+        inputs: [...document.querySelectorAll('input[type=number]')].length }
+    })()`)
+    check(ready && detail.boxes === totalFeatures && detail.empty === false,
+      'J1 没写过任何授权行的团队，详情页也把平台定义的全部功能都摆成可勾的开关（原来那版一行都没写＝界面一个开关都没有）',
+      `→ 开关 ${detail.boxes} 枚 / 平台定义 ${totalFeatures} 项 / 还在说「没有可勾选的开关」：${detail.empty}`)
+    check(detail.defaulted === detail.boxes,
+      'J2 每一格都注明了这现在是「平台默认」在生效，不是这个团队单独设过的（不然运营分不清自己在动谁）',
+      `→ 标了默认的 ${detail.defaulted} 枚 / 开关 ${detail.boxes} 枚`)
+    check(detail.noRecord && !detail.renewed && detail.inputs === 4,
+      'J3 这队没有额度记录时，那句说的是「上面四格是内测统一默认值」，不是「随套餐续费」（四格输入框仍在，能直接改）',
+      `→ 说实话那句 ${detail.noRecord} / 还在写续费 ${detail.renewed} / 输入框 ${detail.inputs}`)
+
+    const saved = await evalJs(page, `(async () => {
+      const box = [...document.querySelectorAll('input[type=checkbox]')].find(b => b.checked)
+      if (!box) return { toggled: false }
+      const key = box.closest('label')?.innerText.split('\\n')[0] || ''
+      box.click()
+      const btn = [...document.querySelectorAll('button')].find(b => b.innerText.includes('保存功能授权'))
+      btn && btn.click()
+      await new Promise(r => setTimeout(r, 1500))
+      return { toggled: true, key, said: document.body.innerText.replace(/\\s+/g, ' ').match(/功能授权已保存|保存失败|没有要保存的改动/g) }
+    })()`)
+    const grantRow = saved.toggled ? await prisma.teamFeatureGrant.findFirst({ where: { teamId }, select: { featureKey: true, enabled: true } }) : null
+    check(!!saved.toggled && String(saved.said || '').includes('功能授权已保存') && !!grantRow && grantRow.enabled === false,
+      'J4 把一个「默认开着」的项关掉、按保存，库里真的落了一行 enabled=false（这条链路原来根本没有入口）',
+      `→ 关的是 ${JSON.stringify(saved.key)}，界面回话 ${JSON.stringify(saved.said)}，库里的行 ${JSON.stringify(grantRow)}`)
+
+    await run(page, `/platform/teams/${teamId}`)
+    await waitFor(page, `document.body.innerText.includes('这一队单独设过')`, 90_000)
+    const afterReload = await evalJs(page, `(() => {
+      const txt = document.body.innerText
+      return { explicit: txt.includes('这一队单独设过'), stillDefault: (txt.match(/平台默认开着|平台默认关着/g) || []).length }
+    })()`)
+    check(afterReload.explicit && afterReload.stillDefault === totalFeatures - 1,
+      'J5 回来之后只有刚存过的那一格改口成「这一队单独设过」，其余还是「平台默认」——保存没把没动过的默认值一起钉死',
+      `→ 单独设过 ${afterReload.explicit} / 仍是默认 ${afterReload.stillDefault} / 平台共 ${totalFeatures}`)
+
+    await run(page, '/platform/teams')
+    await waitFor(page, `document.body.innerText.includes(${JSON.stringify(teamId)})`, 90_000)
+    // 「成员 / 项目」那一格是 <p>N / M</p>，和身份行不在同一个 div 里，所以从标签往上找它所属的那张卡。
+    // 判「是不是卡片」用两个特征：这一片子树里只有它一枚这样的标签、且带按钮（身份行与操作行都有）。
+    // 这里刻意不写正则字面量：模板字面量会把反斜杠 cook 掉一层，浏览器收到的源码里反斜杠少一个。
+    const listCard = await evalJs(page, `(() => {
+      const t = ${JSON.stringify({ teamId })}
+      const labels = [...document.querySelectorAll('p')].filter(x => x.textContent.trim() === '成员 / 项目')
+      const cardOf = (p) => { let n = p.parentElement
+        while (n && !([...n.querySelectorAll('p')].filter(x => x.textContent.trim() === '成员 / 项目').length === 1 && n.querySelector('button'))) n = n.parentElement
+        return n }
+      const mine = labels.filter(p => { const c = cardOf(p); return !!c && c.textContent.indexOf(t.teamId) > -1 })
+      const value = mine.length === 1 && mine[0].nextElementSibling ? mine[0].nextElementSibling.textContent : null
+      return { cards: labels.length, matched: mine.length, raw: value, members: value === null ? null : Number(String(value).split(' / ')[0]) }
+    })()`)
+    check(listCard.members === 1,
+      'J6 团队列表那一行的成员数只算在队的（这队建了 2 行成员、其中 1 行 DISABLED，界面得写 1 不能写 2）',
+      `→ ${JSON.stringify(listCard)}`)
+
+    await run(page, '/platform')
+    await waitFor(page, `document.body.innerText.includes(${JSON.stringify(teamId)})`, 90_000)
+    const homeRow = await evalJs(page, `(() => {
+      const t = ${JSON.stringify({ teamId })}
+      const row = [...document.querySelectorAll('tr')].find(r => r.innerText.includes(t.teamId))
+      const cells = row ? [...row.querySelectorAll('th,td')].map(c => c.innerText.trim()) : []
+      return { found: !!row, members: cells[2], projects: cells[3] }
+    })()`)
+    check(homeRow.found && homeRow.members === '1',
+      'J7 首页那张表的「成员」列同一个口径（两页数字对不上时，运营会以为其中一页在骗他）',
+      `→ 成员列 ${JSON.stringify(homeRow.members)}，项目列 ${JSON.stringify(homeRow.projects)}`)
+
+    // 反馈窗口那条话只有库里超过 100 条才会出现，所以补一批一次性行把它推过窗口边界。
+    await prisma.platformFeedback.createMany({
+      data: Array.from({ length: 100 }, (_, i) => ({
+        userId: ghostId, content: `pid-fill-${stamp}-${i}`, status: 'OPEN',
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)),
+      })),
+    })
+
+    await run(page, '/platform/messages')
+    const fbTotal = await prisma.platformFeedback.count()
+    const fbWindow = Math.min(fbTotal, 100)
+    const readyMsg = await waitFor(page,
+      `document.body.innerText.replace(/\\s+/g,' ').includes(${JSON.stringify(`共 ${fbTotal} 条，这一屏只列最近 ${fbWindow} 条`)})`, 90_000)
+    const msgFacts = await evalJs(page, `(() => {
+      const txt = document.body.innerText.replace(/\\s+/g, ' ')
+      return { total: txt.includes(${JSON.stringify(`共 ${fbTotal} 条`)}), window: txt.includes(${JSON.stringify(`这一屏只列最近 ${fbWindow} 条`)}),
+        beijing: txt.includes('北京'), probe: txt.includes('2026-10-15 00:30'), newyork: txt.includes('2026-10-14 12:30'),
+        sloppy: (txt.match(/\\d{1,2}\\/\\d{1,2}\\s?\\d{1,2}:\\d{2}/g) || []).slice(0, 3) }
+    })()`)
+    if (!readyMsg) console.log(`（消息页没等到「共 ${fbTotal} 条，这一屏只列最近 ${fbWindow} 条」这句，下面两条按实测判）`)
+    check(msgFacts.total && msgFacts.window,
+      `J8 反馈收件箱的条数用的是整张表的总数，接口只回最近 100 行时界面补一句「这一屏只列最近 100 条」（库里现在 ${fbTotal} 条）`,
+      `→ 总数那句 ${msgFacts.total} / 窗口那句 ${msgFacts.window}`)
+    check(msgFacts.beijing && msgFacts.probe && !msgFacts.newyork && msgFacts.sloppy.length === 0,
+      'J9 这台浏览器已经被改成纽约时区：消息页那条定在 UTC 16:30 的反馈仍画成北京次日 00:30，没有跟着浏览器走成 12:30，也没有原来那种「10/15 14:37」写法',
+      `→ 声明了北京 ${msgFacts.beijing} / 北京写法 ${msgFacts.probe} / 纽约写法 ${msgFacts.newyork} / 旧写法残留 ${JSON.stringify(msgFacts.sloppy)}`)
+
+    await run(page, '/platform/users')
+    await waitFor(page, `document.querySelectorAll('tbody tr').length > 0`, 90_000)
+    const PROBE_HELPERS = `
+      const close = () => { const b = [...document.querySelectorAll('[role=dialog] button')].find(x => x.innerText.trim() === '取消'); b && b.click() }
+      const box = (id) => { const el = document.getElementById(id); return el ? Math.round(el.getBoundingClientRect().height * 100) / 100 : null }
+      const wid = (id) => { const el = document.getElementById(id); return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null }
+      const seg = () => { const b = [...document.querySelectorAll('[role=dialog] button')].find(x => x.textContent.trim() === '普通账号'); return b ? Math.round(b.getBoundingClientRect().height * 100) / 100 : null }
+      const wait = (ms) => new Promise(r => setTimeout(r, ms))
+      // 两扇窗正文宽度差 15px 到底是谁吃的：滚动条占的宽度量出来才算说过。
+      const sb = () => { const el = [...document.querySelectorAll('[role=dialog] div')].find(d => String(d.className).includes('overflow-y-auto'))
+        return el ? el.offsetWidth - el.clientWidth : null }`
+    const addLadder = await evalJs(page, `(async () => {${PROBE_HELPERS}
+      const add = [...document.querySelectorAll('button')].find(b => b.innerText.includes('添加账号'))
+      if (!add) return { missing: '添加账号' }
+      add.click(); await wait(800)
+      return { input: box('newEmail'), second: box('newPassword'), segment: seg(), nameRow: [wid('newUsername'), wid('newName')], full: wid('newEmail'), sb: sb(), open: document.querySelectorAll('[role=dialog]').length }
+    })()`)
+    await shot(page, '5a-users-add-open')
+    const editLadder = await evalJs(page, `(async () => {${PROBE_HELPERS}
+      close(); await wait(600)
+      // 别拿 tooltip 的中文当锚点：那串文案本身就是这页的叫法之一，改一次叫法探针就找不到了。
+      // 操作列里第一枚按钮固定是「编辑」（后面才是改密／密钥／删除）。
+      const edit = document.querySelector('tbody tr td:last-child button')
+      if (!edit) return { missing: '编辑按钮' }
+      edit.click(); await wait(800)
+      return { title: edit.title, input: box('editEmail'), second: box('editPhone'), segment: seg(), nameRow: [wid('editUsername'), wid('editName')], full: wid('editEmail'), sb: sb(), open: document.querySelectorAll('[role=dialog]').length }
+    })()`)
+    await shot(page, '5b-users-edit-open')
+    await evalJs(page, `(async () => {${PROBE_HELPERS}
+      close(); await wait(400); return true })()`)
+    check(addLadder.input != null && addLadder.input === editLadder.input
+      && addLadder.second != null && addLadder.second === editLadder.second
+      && addLadder.segment === editLadder.segment,
+      'J10 账号页「添加」和「编辑」两扇窗里同一个文本框、同一个分段选择量出来是同一个高度（原来一扇 30px 一扇 33.75px，同张表单两种尺寸）',
+      `→ 添加 文本框 ${addLadder.input}／第二个框 ${addLadder.second}／分段 ${addLadder.segment}；编辑 ${editLadder.input}／${editLadder.second}／${editLadder.segment}（点的是 title=${JSON.stringify(editLadder.title)} 那枚，根字号实测 ${await evalJs(page, `getComputedStyle(document.documentElement).fontSize`)}）`)
+
+    // 「用户名／显示名称」这一对在添加窗是并排两列、编辑窗原来是一列两个：量宽度就知道排法对不对
+    // （并排时两枚各约整行的一半、中间隔 gap-2=7.5px，竖排时各自占满整行）。
+    // 两扇窗的绝对宽度差 15px 是添加窗内容更高、正文里出来一条滚动条占掉的，不是排法不同 ⇒ 比的是「各占整行的比例」。
+    const ratio = (probe: { nameRow?: number[]; full?: number }) =>
+      Array.isArray(probe.nameRow) && probe.nameRow.length === 2 && probe.full ? probe.nameRow[0] / probe.full : null
+    const addRatio = ratio(addLadder)
+    const editRatio = ratio(editLadder)
+    const halved = (probe: { nameRow?: number[]; full?: number }) => Array.isArray(probe.nameRow)
+      && probe.nameRow.length === 2
+      && probe.nameRow.every((w) => Math.abs(w * 2 + 7.5 - (probe.full ?? 0)) < 3)
+    check(halved(addLadder) && halved(editLadder)
+      && addRatio !== null && editRatio !== null && Math.abs(addRatio - editRatio) < 0.01
+      && addLadder.full - editLadder.full === editLadder.sb - addLadder.sb,
+      'J14 两扇窗里「用户名／显示名称」排法一样：各自都是约整行一半宽的两列；两扇窗那 15px 宽度差恰好等于滚动条占掉的宽度（不是排法不同）',
+      `→ 添加 ${JSON.stringify(addLadder.nameRow)}／整行 ${addLadder.full}／滚动条占 ${addLadder.sb}px；编辑 ${JSON.stringify(editLadder.nameRow)}／整行 ${editLadder.full}／滚动条占 ${editLadder.sb}px`)
+
+    // 「IP 地址／会话 ID」这两枚标签只在展开的详情里出现，而且带个尾冒号；只有真带那两个字段的那一行才画得出来。
+    // 本地这一屏（最新 50 条）实测没有一条带 sessionId，所以补一条同时带会话与 IP 的一次性事件当第 0 行，
+    // 不然「点开若干行也没找到那两枚标签」会被读成标签没改对。
+    const probeEvent = await prisma.securityEvent.create({
+      data: { type: 'SUSPICIOUS_ACTIVITY', severity: 'WARNING', sessionId: `pid-probe-${stamp}`, ipAddress: '203.0.113.77' },
+      select: { id: true },
+    })
+    probeEventId = probeEvent.id
+    // 「时间按北京」那句在还没出行时就先画出来了（列表在「正在加载事件…」），拿它当加载完的信号会读到 0 行。
+    // 日期格定宽 16 字（YYYY-MM-DD HH:MM），用它当「行真的出来了」的信号。
+    const DATE_CELL = `[...document.querySelectorAll('span.w-32')].filter(s => s.textContent.trim().length === 16).length`
+    await run(page, '/platform/security')
+    const secReady = await waitFor(page, `${DATE_CELL} > 4`, 120_000)
+    const topEvents = await prisma.securityEvent.findMany({
+      orderBy: { createdAt: 'desc' }, take: 50, select: { createdAt: true, sessionId: true },
+    })
+    const secFacts = await evalJs(page, `(() => {
+      const txt = document.body.innerText
+      return { note: txt.includes('时间按北京（UTC+8）') || txt.includes('Beijing time (UTC+8)'),
+        dates: [...document.querySelectorAll('span.w-32')].map(s => s.textContent.trim()).filter(s => s.length === 16),
+        headers: [...document.querySelectorAll('span')].map(s => s.textContent.trim()).filter(s => s === '拦截'),
+        machine: (txt.match(/\\bCRITICAL\\b|\\b知识产权/g) || []).length,
+        head: txt.slice(0, 140) }
+    })()`)
+    // 按接口返回顺序点开「库里带 sessionId」的那几行（探针那条必然在里头）。
+    const withSession = topEvents.map((e, i) => (e.sessionId ? i : -1)).filter(i => i > -1).slice(0, 4)
+    const expanded = await evalJs(page, `(async () => {
+      const rows = [...document.querySelectorAll('div.cursor-pointer')].filter(d => [...d.querySelectorAll('span')].some(s => s.textContent.trim().length === 16))
+      for (const i of ${JSON.stringify(withSession)}) { if (rows[i]) { rows[i].click(); await new Promise(r => setTimeout(r, 250)) } }
+      await new Promise(r => setTimeout(r, 500))
+      const labels = [...document.querySelectorAll('span')].map(s => s.textContent.trim().replace(/:$/, ''))
+      return { rows: rows.length, opened: ${JSON.stringify(withSession)}.filter(i => !!rows[i]).length,
+        found: [...new Set(labels.filter(s => s === 'IP 地址' || s === '会话 ID'))],
+        machine: (document.body.innerText.match(/知识产权|会议:/g) || []).length }
+    })()`)
+    if (!secReady || secFacts.dates.length === 0) {
+      console.log(`SKIP J11/J12 安全页这一屏没出行（看板开关本地原值 ${JSON.stringify(securityWasOn)}；页面上部：${JSON.stringify(secFacts.head)}）`)
+    } else {
+      const expected = topEvents.map(e => beijingString(e.createdAt))
+      const compared = secFacts.dates.slice(0, Math.min(secFacts.dates.length, expected.length))
+      const mismatch = compared.findIndex((d: string, i: number) => d !== expected[i])
+      check(mismatch === -1 && compared.length >= 5,
+        'J11 这台浏览器在纽约时区，安全事件列表每一行的时刻都等于「那条记录的 UTC 时刻 +8 小时」——逐行按接口返回顺序比过（原来跟浏览器走，会整体差 12 小时）',
+        `→ 比了 ${compared.length} 行${mismatch === -1 ? '' : `，第 ${mismatch + 1} 行界面 ${compared[mismatch]} / 应是 ${expected[mismatch]}`}`)
+      check(secFacts.note, 'J12a 安全页把「时间按北京（UTC+8）」写在脸上（原来这页什么都不声明）', '')
+      check(secFacts.headers.length >= 1 && secFacts.machine === 0 && expanded.found.length >= 1
+        && expanded.machine === 0,
+        'J13 安全页那三处名字在真页面上是「拦截／IP 地址／会话 ID」（后两枚要点开一行才看得见），也不再漏出「知识产权／会议」这类机翻残留',
+        `→ 表头 ${JSON.stringify(secFacts.headers)}，点开 ${expanded.opened} 行后里的标签 ${JSON.stringify(expanded.found)}，机翻/原值命中 ${secFacts.machine + expanded.machine}`)
+    }
+    // 复原时区：CDP 没有 clearTimezoneOverride 这个方法，官方做法是把 timezoneId 置空。
+    await page.s('Emulation.setTimezoneOverride', { timezoneId: '' }).catch(() => null)
+  } finally {
+    // 顺序不能反：Team.createdById 是 Restrict，先删团队才删得掉那两名用户；一次性反馈行挂在 ghost 名下，
+    // 删 ghost 会级联掉它们，但按内容再兜一次底，免得留下几百行噪声数据。
+    if (teamId) await prisma.team.deleteMany({ where: { id: teamId } }).catch(() => null)
+    await prisma.platformFeedback.deleteMany({ where: { content: { startsWith: `pid-fill-${stamp}` } } }).catch(() => null)
+    if (feedbackId) await prisma.platformFeedback.deleteMany({ where: { id: feedbackId } }).catch(() => null)
+    if (ghostId) await prisma.user.deleteMany({ where: { id: ghostId } }).catch(() => null)
+    if (securityWasOn === false) {
+      await prisma.securitySettings.update({ where: { id: 'default' }, data: { viewSecurityEvents: false } }).catch(() => null)
+    }
+    // 探针事件刻意留在盘上当尾巴证据：它带着 pid-probe-<stamp> 的会话号，谁在页面上看到过它都能回读。
+    const left = await prisma.team.count({ where: { slug: { startsWith: `zz${stamp}` } } })
+    const leftGhost = await prisma.user.count({ where: { email: `pid-ghost-${stamp}@example.invalid` } })
+    const leftFeedback = await prisma.platformFeedback.count({ where: { content: { startsWith: `pid-` } } })
+    const restored = await prisma.securitySettings.findUnique({ where: { id: 'default' }, select: { viewSecurityEvents: true } })
+    console.log(`夹具清理：一次性团队剩余 ${left}／停用成员账号剩余 ${leftGhost}／一次性反馈剩余 ${leftFeedback}／看板开关已复原为 ${JSON.stringify(restored?.viewSecurityEvents)}（原来是 ${JSON.stringify(securityWasOn)}）`)
+    console.log(`留痕：一次性安全事件 ${probeEventId || '（没建成）'} 留在库里当尾巴证据，会话号 pid-probe-${stamp}`)
+  }
+}
+
+/**
+ * 判据自己算一遍「北京的时刻」，不走产品那份 formatBeijingDateTime——两边都错在同一处就测不出来了。
+ * 2026-10-14T16:30:00Z → 2026-10-15 00:30（+8，跨了日历天）。
+ */
+function beijingString(value: Date): string {
+  const shifted = new Date(value.getTime() + 8 * 60 * 60 * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`
+}
+
 async function browserGroup() {
   console.log('\n── G 浏览器实测（页内登录运营后台）──')
   const devAlive = await fetch(`${BASE}/api/health`).then(r => r.ok).catch(() => false)
@@ -281,7 +713,7 @@ async function browserGroup() {
 
     // next dev 是按需编译的：第一次打到某页会编 20–40 秒，那段时间 CDP 的 navigate/等待会假死。
     // 先把三页各预热一次，界面实测才不是在量编译器。
-    for (const warm of ['/platform/login', '/platform', '/platform/teams']) {
+    for (const warm of ['/platform/login', '/platform', '/platform/teams', '/platform/users', '/platform/security', '/platform/messages']) {
       await fetch(`${BASE}${warm}`).catch(() => null)
     }
 
@@ -436,8 +868,16 @@ async function browserGroup() {
 
     // 标签是 11px 的次要字，压在卡片上够不够读要量出来，不能靠「看着还行」。
     // 对比度要在画着身份行的那一屏量：上面几趟已经跳到成员页、安全页了，先回团队页。
+    const SPAN_WAIT = `[...document.querySelectorAll('span')].some(s => s.textContent.trim() === '团队 ID')`
     await run(page, '/platform/teams')
-    await waitFor(page, `[...document.querySelectorAll('span')].some(s => s.textContent.trim() === '团队 ID')`, 90_000)
+    let labelFound = await waitFor(page, SPAN_WAIT, 90_000)
+    if (!labelFound) {
+      // 改过这页的接口后第一次进去会撞上重编译那一趟，回来的可能是个没样式的壳（10-15 实测：
+      // 探针量到 bg rgba(0,0,0,0) 且找不到标签）。等一秒再进一次，别把编译器当产品。
+      await sleep(3000)
+      await run(page, '/platform/teams')
+      labelFound = await waitFor(page, SPAN_WAIT, 90_000)
+    }
     const contrastFacts = await evalJs(page, `(() => {
       const probe = document.createElement('div')
       probe.className = 'bg-card'
@@ -448,12 +888,17 @@ async function browserGroup() {
       const fg = label ? getComputedStyle(label).color : ''
       const size = label ? getComputedStyle(label).fontSize : ''
       probe.remove()
-      return { bg, fg, size }
+      return { bg, fg, size, hasLabel: !!label, sheets: document.styleSheets.length, path: location.pathname }
     })()`)
     const fgRgb = rgbOf(contrastFacts.fg), bgRgb = rgbOf(contrastFacts.bg)
     const ratio = fgRgb && bgRgb ? contrast(fgRgb, bgRgb) : 0
-    check(ratio >= 4.5, 'G11 身份行的标签压在主卡片面上对比度够 4.5:1（11px 的次要字更要读数清楚）',
-      `→ ${ratio.toFixed(2)}:1，字号 ${contrastFacts.size}，fg ${contrastFacts.fg} bg ${contrastFacts.bg}`)
+    check(labelFound && ratio >= 4.5, 'G11 身份行的标签压在主卡片面上对比度够 4.5:1（11px 的次要字更要读数清楚）',
+      ratio >= 4.5
+        ? `→ ${ratio.toFixed(2)}:1，字号 ${contrastFacts.size}，fg ${contrastFacts.fg} bg ${contrastFacts.bg}`
+        : `→ ${ratio.toFixed(2)}:1，字号 ${contrastFacts.size}，fg "${contrastFacts.fg}" bg "${contrastFacts.bg}"，`
+          + `标签在页面上：${contrastFacts.hasLabel}，样式表 ${contrastFacts.sheets} 张，${contrastFacts.path}`)
+
+    await jGroup(page, prisma, adminId, pw, stamp)
 
     await send('Target.closeTarget', { targetId: page.targetId }).catch(() => null)
   } finally {
