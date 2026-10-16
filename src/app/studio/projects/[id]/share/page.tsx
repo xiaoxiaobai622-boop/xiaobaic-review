@@ -906,7 +906,7 @@ export default function AdminSharePage() {
   // Show loading state
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
+      <div data-review-surface className="fixed inset-0 bg-background flex items-center justify-center">
         <p className="text-muted-foreground">{tc('loading')}</p>
       </div>
     )
@@ -915,7 +915,7 @@ export default function AdminSharePage() {
   // Show project not found
   if (!project) {
     return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center p-4">
+      <div data-review-surface className="fixed inset-0 bg-background flex items-center justify-center p-4">
         <Card className="bg-card">
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground mb-4">{t('projectNotFound')}</p>
@@ -960,7 +960,7 @@ export default function AdminSharePage() {
   // Show thumbnail grid when in grid view (same as public share layout)
   if (viewState === 'grid') {
     return (
-      <div className="fixed inset-0 bg-background flex flex-col overflow-hidden">
+      <div data-review-surface className="fixed inset-0 bg-background flex flex-col overflow-hidden">
         {/* Grid view toolbar */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
           {/* Left: back to project */}
@@ -1012,7 +1012,7 @@ export default function AdminSharePage() {
   }
 
   return (
-    <div className="min-h-screen lg:fixed lg:inset-0 bg-background flex flex-col lg:overflow-hidden">
+    <div data-review-surface className="min-h-screen lg:fixed lg:inset-0 bg-background flex flex-col lg:overflow-hidden">
       {/* Thumbnail Reel - always visible, collapsible */}
       <ThumbnailReel
         videosByName={project.videosByName}
