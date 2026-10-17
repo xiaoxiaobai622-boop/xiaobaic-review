@@ -142,10 +142,20 @@ export async function GET(request: NextRequest) {
     })
 
     // Sanitize the response data
-    // 内部可见范围（visibility=INTERNAL）的批注对共享链接查看者隐藏；工作室成员（管理员或登录者）全可见。
-    const visibleComments = isAdmin || isAuthenticated
+    // 内部可见（visibility=INTERNAL）的批注只给团队成员看。这里不能用 isAuthenticated 当判据：
+    // `verifyProjectAccess` 对 authMode NONE 的路人和带分享 token 的观众也回 true
+    // （`project-access.ts:310`、`:370`），拿它过滤等于这条从不生效。成员的那一枚信号是
+    // `isAdmin`（同文件 `:280` 只在"登录且属于该项目团队"时为真），写侧用的也是同一个口径
+    // （本文件 POST 里 `!authContext.shareContext`）。回复与父批注同表同字段，一起过滤。
+    const isTeamMember = isAdmin || Boolean(viewerUserId)
+    const visibleComments = isTeamMember
       ? allComments
-      : allComments.filter((comment: any) => comment.visibility !== 'INTERNAL')
+      : allComments
+          .filter((comment: any) => comment.visibility !== 'INTERNAL')
+          .map((comment: any) => ({
+            ...comment,
+            replies: (comment.replies ?? []).filter((reply: any) => reply.visibility !== 'INTERNAL'),
+          }))
 
     const sanitizedComments = visibleComments.map((comment: any) =>
       sanitizeComment(

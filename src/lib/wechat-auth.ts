@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken'
+import { safeReturnUrl } from '@/lib/return-url'
 
 export const WECHAT_SESSION_COOKIE = 'vitransfer_wechat_session'
 export const WECHAT_STATE_COOKIE = 'vitransfer_wechat_state'
@@ -18,8 +19,7 @@ export function isWechatWebConfigured(): boolean {
 }
 
 export function safeWechatReturnUrl(value: string | null | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/portal'
-  return value
+  return safeReturnUrl(value, '/portal')
 }
 
 export function signWechatSession(identity: { id: string; nickname?: string | null; avatarUrl?: string | null }): string {

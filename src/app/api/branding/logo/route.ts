@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isS3Mode, getFilePath } from '@/lib/storage'
 import { s3FileExists, s3GetPresignedDownloadUrl } from '@/lib/s3-storage'
-import { LOGO_SOURCE_KEY } from '@/lib/brand'
+import { LOGO_SOURCE_KEY, SVG_RESPONSE_HEADERS } from '@/lib/brand'
 import fs from 'fs/promises'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 
@@ -37,6 +37,7 @@ export async function GET() {
       headers: {
         'Content-Type': 'image/svg+xml',
         'Cache-Control': 'public, max-age=300, must-revalidate',
+        ...SVG_RESPONSE_HEADERS,
       },
     })
   } catch {

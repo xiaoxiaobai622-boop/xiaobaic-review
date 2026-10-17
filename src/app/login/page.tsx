@@ -13,6 +13,7 @@ import { setTokens, clearTokens } from '@/lib/token-store'
 import BrandLogo from '@/components/BrandLogo'
 import { AnimatedCharacters } from '@/components/ui/animated-characters'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
+import { safeReturnUrl } from '@/lib/return-url'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
 
 type FocusedField = 'phone' | 'password' | null
@@ -102,9 +103,8 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const requestedReturnUrl = searchParams?.get('returnUrl')
-  const rawReturnUrl = requestedReturnUrl || '/studio/projects'
-  // SECURITY: Only allow relative paths — prevents javascript: and open redirect attacks
-  const returnUrl = rawReturnUrl.startsWith('/') && !rawReturnUrl.startsWith('//') ? rawReturnUrl : '/studio/projects'
+  // SECURITY: 只许指回本站内路径（`/\evil.com` 会被解析成站外，见 return-url.ts）
+  const returnUrl = safeReturnUrl(requestedReturnUrl, '/studio/projects')
   const sessionExpired = searchParams?.get('sessionExpired') === 'true'
 
   const [mode, setMode] = useState<LoginMode>('password')
@@ -394,7 +394,7 @@ function LoginForm() {
                     onVisibilityChange={setPasswordVisible}
                     required
                     name="site-login-password"
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                     data-lpignore="true"
                     data-1p-ignore="true"
                     disabled={loading}

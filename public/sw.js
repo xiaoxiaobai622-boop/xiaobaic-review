@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vitransfer-v1'
+const CACHE_NAME = 'framereview-v1'
 
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -54,7 +54,9 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close()
 
   const data = event.notification.data || {}
-  let url = '/admin'
+  // 落点表曾经是迁移前的 /admin*，那批路由在本仓库根本不存在（线上实测 404），
+  // 于是"点通知→404"。这里对齐现在的真路由：项目详情 /studio/projects/<id>，安全告警 /platform/security。
+  let url = '/studio'
 
   if (data.url) {
     url = data.url
@@ -65,15 +67,15 @@ self.addEventListener('notificationclick', (event) => {
       case 'CLIENT_UPLOAD':
       case 'SHARE_ACCESS':
         if (data.projectId) {
-          url = `/admin/projects/${data.projectId}`
+          url = `/studio/projects/${data.projectId}`
         }
         break
       case 'ADMIN_ACCESS':
       case 'SECURITY_ALERT':
-        url = '/admin/security'
+        url = '/platform/security'
         break
       default:
-        url = '/admin'
+        url = '/studio'
     }
   }
 
@@ -82,7 +84,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url.includes('/admin') && 'focus' in client) {
+        if (client.url.includes('/studio') && 'focus' in client) {
           client.navigate(url)
           return client.focus()
         }

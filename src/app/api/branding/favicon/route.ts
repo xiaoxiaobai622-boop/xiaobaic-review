@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { downloadFile, fileExists } from '@/lib/storage'
+import { SVG_RESPONSE_HEADERS } from '@/lib/brand'
 import type { Readable } from 'node:stream'
 
 export const runtime = 'nodejs'
@@ -41,6 +42,7 @@ export async function GET() {
         headers: {
           'Content-Type': format.contentType,
           'Cache-Control': 'public, max-age=300, must-revalidate',
+          ...(format.contentType === 'image/svg+xml' ? SVG_RESPONSE_HEADERS : {}),
         },
       })
     } catch {

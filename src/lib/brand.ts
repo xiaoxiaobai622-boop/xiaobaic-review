@@ -34,3 +34,14 @@ export function buildLogoSvg(size: number): string {
 export const LOGO_SOURCE_KEY = 'branding/logo.svg'
 /** Rasterised copy of the operator's uploaded SVG, kept in the same store. */
 export const LOGO_PNG_KEY = 'branding/logo.png'
+
+/**
+ * 图标与标志接口回的是运营上传的 SVG，而 `src/proxy.ts:131` 的 matcher 把 `/api` 整段排除在
+ * 中间件之外 ⇒ 全站那套安全头一个都落不到它们身上。`nosniff` 挡住"被当成 HTML 解释"，
+ * 文档级 CSP 挡住这份 SVG 被人直接打开时拉任何外部子资源或执行脚本（上传时已过 DOMPurify，
+ * 这里是第二道）。当作 `<img src>` 用时这两个头不影响渲染。
+ */
+export const SVG_RESPONSE_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "default-src 'none'; sandbox",
+} as const

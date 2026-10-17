@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { safeReturnUrl } from '@/lib/return-url'
 
 const DANGEROUS_PROTOCOL = /^(javascript|data|vbscript):/i
 const PUBLIC_MEDIA_ORIGIN = 'https://vidx.cn'
-const NEURALYN_ORIGIN = 'https://d8j0ntlcm91z4.cloudfront.net'
 
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
@@ -11,7 +11,7 @@ export async function proxy(request: NextRequest) {
   // Sanitize returnUrl on the login page
   if (url.pathname === '/login') {
     const returnUrl = url.searchParams.get('returnUrl')
-    if (returnUrl && (!returnUrl.startsWith('/') || returnUrl.startsWith('//'))) {
+    if (returnUrl && safeReturnUrl(returnUrl, '/studio/projects') !== returnUrl) {
       url.searchParams.set('returnUrl', '/studio/projects')
       return NextResponse.redirect(url)
     }
@@ -71,9 +71,6 @@ export async function proxy(request: NextRequest) {
     mediaCdnOrigin,
     s3Origin,
     s3BucketOrigin,
-    'https://ko-fi.com',
-    'https://storage.ko-fi.com',
-    'https://cloudflareinsights.com',
   ].filter(Boolean).join(' ')
 
   // Next/Turbopack's React development diagnostics use eval() for source
@@ -88,20 +85,23 @@ export async function proxy(request: NextRequest) {
     .map((origin) => ` ${origin}`)
     .join('')
 
+  // 打赏挂件（ko-fi）与分析脚本（cloudflareinsights）早已从界面里撤下，那两枚第三方源
+  // 只剩在指令里占位；另一枚写死的 CloudFront 域名全站零引用。放行列表里留着没人用的源，
+  // 等于把"谁能往这个页面里塞可执行内容"这件事交给一个已经没人负责的域名。
   const cspDirectives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}'${developmentScriptSource}${assetOrigin} https://static.cloudflareinsights.com`,
+    `script-src 'self' 'nonce-${nonce}'${developmentScriptSource}${assetOrigin}`,
     "script-src-attr 'none'",
     `style-src 'self' 'unsafe-inline'${assetOrigin}`,
-    `img-src 'self' data: blob: https://storage.ko-fi.com https://*.ko-fi.com ${NEURALYN_ORIGIN}${extraMediaOrigins}${assetOrigin}`,
+    `img-src 'self' data: blob:${extraMediaOrigins}${assetOrigin}`,
     `font-src 'self' data:${assetOrigin}`,
     `connect-src ${connectSrc}`,
-    `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN} ${NEURALYN_ORIGIN}${extraMediaOrigins}`,
+    `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN}${extraMediaOrigins}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    "frame-src 'self' https://ko-fi.com",
+    "frame-src 'self'",
   ]
 
   if (isHttpsEnabled) {
