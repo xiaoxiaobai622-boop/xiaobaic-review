@@ -1,7 +1,13 @@
 import { LegalDoc } from '@/components/LegalDoc'
+import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 
-export const metadata = {
-  title: '用户服务协议',
+// 与 /privacy 同一条修复：在 sitemap 里却没有 canonical。
+export async function generateMetadata() {
+  const site = await getSiteUrlFromRequest()
+  return {
+    title: '用户服务协议',
+    alternates: { canonical: `${site}/terms` },
+  }
 }
 
 export default function TermsPage() {

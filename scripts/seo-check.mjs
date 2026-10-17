@@ -107,10 +107,26 @@ report(llms.status === 200, '/llms.txt 返回 200')
 report((llms.res?.headers.get('content-type') ?? '').startsWith('text/plain'), '/llms.txt 是 text/plain')
 report(llms.body.startsWith('# 逐帧审阅（FrameReview）'), '/llms.txt 首行是品牌名')
 report(!/<\/?[a-z][a-z0-9]*>/i.test(llms.body), '/llms.txt 里没有 HTML 标记')
-for (const p of [...PAGES.map(x => x.path), ...HUBS, '/']) {
-  report(llms.body.includes(`${SITE}${p}`), `/llms.txt 收录 ${p}`)
+for (const p of [...PAGES.map(x => x.path), ...HUBS, '/', '/terms', '/privacy']) {
+  // 首页那条现在不带尾斜杠（与 canonical 同形），用 `${SITE}${p}` 会退化成 `${SITE}/`
+  // 这种被任何一条子页链接都满足的弱判据，所以单独按 markdown 链接的形判。
+  report(p === '/' ? llms.body.includes(`](${SITE})`) : llms.body.includes(`${SITE}${p}`), `/llms.txt 收录 ${p}`)
 }
 report(llms.body.includes('老版本会被新传的那版顶掉、看不到了吗？'), '/llms.txt 带文稿里的 FAQ 问句')
+// 目录里那句 schema 承诺必须是真的：条款页不带 schema，就不能再写「每个页面都有」。
+report(!/每个页面内联 schema/.test(llms.body), '/llms.txt 不再声称「每个页面都有 schema」')
+
+// `/ai.txt` 是 llms.txt 之外另一条已被抓取工具实现的目录约定（10-17 日志里有 bot 打它拿 404）。
+const ai = await html('/ai.txt')
+report(ai.status === 200 && (ai.res?.headers.get('content-type') ?? '').startsWith('text/plain'), '/ai.txt 返回 200 且是 text/plain')
+report(ai.body.length > 0 && ai.body === llms.body, '/ai.txt 与 /llms.txt 同源同内容（不会改一处漏一处）')
+
+// 条款两页此前在 sitemap 里却没有 canonical（sitemap 11 条独缺 2 条）。
+for (const p of ['/terms', '/privacy']) {
+  const page = await html(p)
+  report(page.status === 200 && new RegExp(`<link rel="canonical" href="${esc(SITE)}${esc(p)}"\\/?>`).test(page.body),
+    `${p} 有自指 canonical`)
+}
 
 const home = await html('/')
 report(home.status === 200 && /"@type":"Organization"/.test(home.body), '首页有 Organization 节点')

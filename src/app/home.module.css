@@ -190,7 +190,9 @@
 }
 
 .navItem:hover .navDrop,
-.navItem:focus-within .navDrop {
+.navItem:focus-within .navDrop,
+/* 触屏没有 hover：这一档由 home-client 的点击状态驱动（aria-expanded 与它同源） */
+.navItem[data-open='true'] .navDrop {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -1171,6 +1173,10 @@ a.pointCol:focus-visible {
 }
 
 @media (max-width: 960px) {
+  /* 10-17 实测：≤960px 时整条导航被藏掉，手机上进不到 /features、/compare（只有页脚那份）。
+     试过把三块面板摊平成链接带，量下来粘顶头部从 68px 撑到 248px（667 视口的三分之一），
+     比原问题更糟，所以这里维持隐藏，把"移动导航用什么形态"留给业主定（台账 §五）。
+     触屏点不开下拉那一条已经在 home-client 里用点击态修掉了，覆盖 ≥960px 的触屏设备。 */
   .headerNav,
   .promoBar {
     display: none;

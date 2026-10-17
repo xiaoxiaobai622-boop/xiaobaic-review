@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { FileQuestion } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { FileQuestion, Home } from 'lucide-react'
 import BrandLogo from '@/components/BrandLogo'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
@@ -10,6 +12,7 @@ import { useTranslations } from 'next-intl'
 export default function ShareNotFound() {
   const t = useTranslations('share')
   const tc = useTranslations('common')
+  const tn = useTranslations('notFound')
 
   return (
     <div className="flex-1 min-h-0 bg-background flex items-center justify-center p-4">
@@ -36,6 +39,14 @@ export default function ShareNotFound() {
             <p className="text-sm text-muted-foreground mt-2">
               {t('contactSharer')}
             </p>
+            {/* 10-17 真人点击实测：这页原来一个链接都没有（`a[href]` 数量 0），
+                客户点开一条过期短链后只能按浏览器后退。给一条回站内的出口。 */}
+            <Button asChild className="mt-5 w-full">
+              <Link href="/">
+                <Home className="mr-2 h-4 w-4" />
+                {tn('goHome')}
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </div>

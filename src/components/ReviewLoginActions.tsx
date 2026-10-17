@@ -415,9 +415,9 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
               {mode === 'password' ? (
                 <div className="space-y-2">
                   <Label htmlFor="review-password">{ta('passwordLogin')}</Label>
-                  <PasswordInput id="review-password" name="review-password" autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder={ta('passwordPlaceholder')} value={password} onChange={(event) => setPassword(event.target.value)} onFocus={() => setFocusedField('password')} onBlur={() => setFocusedField(null)} onVisibilityChange={setPasswordVisible} required />
+                  <PasswordInput id="review-password" name="review-password" autoComplete="current-password" data-lpignore="true" data-1p-ignore="true" placeholder={ta('passwordPlaceholder')} value={password} onChange={(event) => setPassword(event.target.value)} onFocus={() => setFocusedField('password')} onBlur={() => setFocusedField(null)} onVisibilityChange={setPasswordVisible} required />
                   <div className="flex justify-end pt-0.5">
-                    <a href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">{ta('forgotPassword')}</a>
+                    <Link href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">{ta('forgotPassword')}</Link>
                   </div>
                 </div>
               ) : (

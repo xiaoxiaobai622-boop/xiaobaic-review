@@ -342,6 +342,27 @@ export default function HomeClient() {
   const dashboardHref = user ? '/studio/projects' : '/login'
   const primaryCtaLabel = user ? '进入工作台' : BETA_CTA
 
+  // 三个下拉此前只靠 CSS 的 :hover / :focus-within 展开——鼠标和键盘都行，触屏点不动
+  // （10-17 实测：对触发器发真实 click，面板仍是 visibility:hidden）。这里补一条点击支路，
+  // 并把展开状态用 aria-expanded 说出来；hover 仍归 CSS 管，两条互不影响。
+  const [openNav, setOpenNav] = useState<'features' | 'compare' | 'resources' | null>(null)
+  useEffect(() => {
+    if (!openNav) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest(`.${styles.navItem}`)) setOpenNav(null)
+    }
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpenNav(null) }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [openNav])
+
+  const navToggle = (key: 'features' | 'compare' | 'resources') => () =>
+    setOpenNav((current) => (current === key ? null : key))
+
   return (
     <div className={styles.page}>
       <div className={styles.heroZone}>
@@ -366,7 +387,7 @@ export default function HomeClient() {
 
         <div className={styles.promoBar}>
           <span>内测期间免费开放 — 逐帧批注、版本对比与安全交付，现在就能用</span>
-          <a href={dashboardHref}>{user ? '进入工作台' : '加入内测'} <ArrowRight size={12} strokeWidth={2} /></a>
+          <Link href={dashboardHref}>{user ? '进入工作台' : '加入内测'} <ArrowRight size={12} strokeWidth={2} /></Link>
         </div>
 
         <header className={`${styles.header} ${stuck ? styles.headerStuck : ''}`}>
@@ -376,9 +397,9 @@ export default function HomeClient() {
               <span>逐帧审阅</span>
             </Link>
             <nav className={styles.headerNav} aria-label="页面导航">
-              <div className={styles.navItem}>
-                <button className={styles.navBtn} type="button">功能 <ChevronDown size={13} strokeWidth={2} /></button>
-                <div className={styles.navDrop}>
+              <div className={styles.navItem} data-open={openNav === 'features'}>
+                <button className={styles.navBtn} type="button" aria-haspopup="true" aria-expanded={openNav === 'features'} aria-controls="home-drop-features" onClick={navToggle('features')}>功能 <ChevronDown size={13} strokeWidth={2} /></button>
+                <div className={styles.navDrop} id="home-drop-features">
                   <a href="#review">逐帧批注</a>
                   <a href="#versions">版本与定稿</a>
                   <a href="#share">分享与交付</a>
@@ -387,18 +408,18 @@ export default function HomeClient() {
                   <Link href="/features">功能总览</Link>
                 </div>
               </div>
-              <div className={styles.navItem}>
-                <button className={styles.navBtn} type="button">怎么选 <ChevronDown size={13} strokeWidth={2} /></button>
-                <div className={styles.navDrop}>
+              <div className={styles.navItem} data-open={openNav === 'compare'}>
+                <button className={styles.navBtn} type="button" aria-haspopup="true" aria-expanded={openNav === 'compare'} aria-controls="home-drop-compare" onClick={navToggle('compare')}>怎么选 <ChevronDown size={13} strokeWidth={2} /></button>
+                <div className={styles.navDrop} id="home-drop-compare">
                   <Link href="/compare">对比总览</Link>
                   <Link href="/compare/frame-io">对比 Frame.io</Link>
                   <Link href="/compare/fenzhen">对比分秒帧</Link>
                   <Link href="/compare/netdisk-wechat">对比网盘加微信</Link>
                 </div>
               </div>
-              <div className={styles.navItem}>
-                <button className={styles.navBtn} type="button">资源 <ChevronDown size={13} strokeWidth={2} /></button>
-                <div className={styles.navDrop}>
+              <div className={styles.navItem} data-open={openNav === 'resources'}>
+                <button className={styles.navBtn} type="button" aria-haspopup="true" aria-expanded={openNav === 'resources'} aria-controls="home-drop-resources" onClick={navToggle('resources')}>资源 <ChevronDown size={13} strokeWidth={2} /></button>
+                <div className={styles.navDrop} id="home-drop-resources">
                   <a href={HELP_URL} target="_blank" rel="noopener noreferrer">帮助文档</a>
                   <a href="#workflow">使用流程</a>
                   <Link href="/terms">服务条款</Link>

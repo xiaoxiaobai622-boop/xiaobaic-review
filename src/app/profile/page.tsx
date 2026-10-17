@@ -16,6 +16,7 @@ import { apiFetch, apiPatch } from '@/lib/api-client'
 import { clearTokens } from '@/lib/token-store'
 import { useTranslations } from 'next-intl'
 import { validateAccountPassword } from '@/lib/password-policy'
+import Link from 'next/link'
 
 function safeReviewReturnUrl(): string | null {
   const requested = new URLSearchParams(window.location.search).get('returnUrl')
@@ -497,7 +498,7 @@ function ProfileContent() {
       <header className="relative flex items-center justify-between gap-4 border-b border-border pb-3 lg:mb-[2px] lg:shrink-0 lg:rounded-[8px] lg:border-b-0 lg:bg-popover lg:px-4 lg:py-3">
         <div>
           <Button asChild variant="ghost" size="sm" className="gap-2">
-            <a href={visibleReturnUrl || (user?.role === 'ADMIN' ? '/studio/projects' : '/')}><ArrowLeft className="h-4 w-4" />{tc('back')}</a>
+            <Link href={visibleReturnUrl || (user?.role === 'ADMIN' ? '/studio/projects' : '/')}><ArrowLeft className="h-4 w-4" />{tc('back')}</Link>
           </Button>
         </div>
         {/* 顶栏居中标题：滚动到哪一段就显示哪一段，对标 frame.io 设置页的顶栏。 */}

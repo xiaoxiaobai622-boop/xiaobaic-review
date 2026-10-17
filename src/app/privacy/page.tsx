@@ -1,7 +1,14 @@
 import { LegalDoc } from '@/components/LegalDoc'
+import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 
-export const metadata = {
-  title: '隐私政策',
+// 这两页在 sitemap.xml 里，却没有 canonical（10-17 实测：sitemap 11 条里独缺这两条）。
+// 绝对前缀与全站其它页同源，都走 getSiteUrlFromRequest()，不写字面域名。
+export async function generateMetadata() {
+  const site = await getSiteUrlFromRequest()
+  return {
+    title: '隐私政策',
+    alternates: { canonical: `${site}/privacy` },
+  }
 }
 
 export default function PrivacyPage() {
