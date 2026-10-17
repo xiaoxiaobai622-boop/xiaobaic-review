@@ -53,7 +53,12 @@ jobs:
 
       # schema 与迁移此前全仓零闸口（`prisma validate`/`migrate status` 一条都没有），
       # 于是"模型改了、迁移没跟上"这类漂移只能等运行时炸。validate 不连库、零凭据。
+      # 必须显式给一枚占位 DATABASE_URL：schema 里写了 `env("DATABASE_URL")`，CI 没有 .env，
+      # 缺它就在解析阶段直接 Validation Error（10-17 用 `git archive` 副本复现过：无 env 红、
+      # 有占位串绿）。validate 从不连接，所以这枚假串不指向任何真实库。
       - name: Validate Prisma schema
+        env:
+          DATABASE_URL: postgresql://prisma-validate-only:5432/unused
         run: npx prisma validate
 
       # 10-08 漂移台账 12：这类 bug（写走存储抽象、读走裸 fs；同一资源的多条出口没对齐）
