@@ -45,6 +45,17 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      # Next 16 的 `npm run build` 已经不再跑 ESLint，所以规范门禁必须自己占一步——
+      # 10-17 那条 `ReviewLoginActions.tsx:420` 用裸 <a> 打站内路由的红，就是靠这里才拦得住。
+      # 只拦 error 不拦 warning：现存 10 条 no-img-element 是既有取舍，不是本轮要顺手改的东西。
+      - name: Lint
+        run: npm run lint
+
+      # schema 与迁移此前全仓零闸口（`prisma validate`/`migrate status` 一条都没有），
+      # 于是"模型改了、迁移没跟上"这类漂移只能等运行时炸。validate 不连库、零凭据。
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
       # 10-08 漂移台账 12：这类 bug（写走存储抽象、读走裸 fs；同一资源的多条出口没对齐）
       # 编译器与 build 全看不见——tsconfig 排除了 src/worker，build 也不读 manifest。
       # 只跑零凭据、零网络、零数据库的静态判据；会读写数据库的那批判据刻意不进 CI。

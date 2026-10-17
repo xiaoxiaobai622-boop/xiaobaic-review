@@ -156,8 +156,12 @@ check(frozenLeaks.length === 0,
   'R10 冻结区三文件不受这次改动影响（文案都在组件里，本来就不该动它们）',
   `→ ${frozenLeaks.join('｜') || '干净'}`)
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('package.json', root)), 'utf8')) as { scripts: Record<string, string> }
-check(String(pkg.scripts['check:static'] ?? '').includes('check-review-login-surface.mts'),
-  'R11 这枚判据接进 npm run check:static（纯静态、不写库，够格进 CI 闸门）')
+// 10-17：`check:static` 从 `a && b && c` 改成指向聚合器（短路会掩盖后面几支早就存在的红），
+// 所以"这枚判据接进闸门了吗"现在要看两处：入口指向聚合器，且聚合器名单里有我。
+const runner = readFileSync(fileURLToPath(new URL('scripts/run-static-checks.mts', root)), 'utf8')
+check(String(pkg.scripts['check:static'] ?? '').includes('run-static-checks.mts')
+  && runner.includes('check-review-login-surface.mts'),
+  'R11 这枚判据在 check:static 的聚合器名单里（纯静态、不写库，够格进 CI 闸门）')
 
 
 // ── B/C 组：准入链路与文案残留 ────────────────────────────────────────────

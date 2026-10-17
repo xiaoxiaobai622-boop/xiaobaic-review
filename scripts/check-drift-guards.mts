@@ -189,15 +189,27 @@ const STATIC_CHECKS = [
   'check-home-media-budget.mts',
   'check-playback-drift.mts',
   'check-review-login-surface.mts',
+  'check-team-numeric-id.mts',
+  'check-platform-team-identity.mts',
 ]
 const staticEntry: string = pkg?.scripts?.['check:static'] ?? ''
-check(STATIC_CHECKS.every(s => staticEntry.includes(s)),
-  `D21 package.json 的 check:static 收齐 ${STATIC_CHECKS.length} 枚静态判据`,
-  staticEntry ? `缺 ${STATIC_CHECKS.filter(s => !staticEntry.includes(s)).join(' ') || '无'}` : '没有 check:static 这一条')
+// 10-17：check:static 从 `a && b && c` 改成聚合器，因为短路会掩盖——第一支红时后面全不跑。
+// 名单因此住在聚合器里，这里就按聚合器点：入口必须指向它，且九支一枚不能少。
+const runner = read('scripts/run-static-checks.mts')
+check(/run-static-checks\.mts/.test(staticEntry),
+  'D21a check:static 指向聚合器（不再用 && 短路）', staticEntry || '没有 check:static 这一条')
+const missingFromRunner = STATIC_CHECKS.filter(s => !runner.includes(s))
+check(missingFromRunner.length === 0,
+  `D21 聚合器收齐 ${STATIC_CHECKS.length} 枚静态判据`,
+  missingFromRunner.join(' ') || '九枚全在')
 const verifyJob = workflow.split('\njobs:\n')[1]?.split('\n  image:')?.[0] ?? ''
 check(verifyJob.includes('npm run check:static'),
   'D22 verify 作业调用了 check:static（10-08 之前这里只有 npm ci / audit / build）',
   `verify 段 ${verifyJob.length} 字节`)
+// 10-17：Next 16 的 build 不再跑 ESLint，schema 也没有任何 validate 闸口，两条都靠这里钉住。
+// 少了这两步，"lint 红着也能上线"和"模型改了迁移没跟上"都会静默发生。
+check(verifyJob.includes('npm run lint'), 'D24a verify 作业跑了 ESLint（build 已不代跑）', 'npm run lint')
+check(verifyJob.includes('prisma validate'), 'D24b verify 作业校验了 Prisma schema（不连库）', 'prisma validate')
 // 只看真正会执行的 `run:` 那一行——注释里提到文件名是说明，不是引用。
 const runLines = (workflow.match(/^\s*run:\s*(.*)$/gm) ?? []).join('\n')
 check(!/check-phone-field/.test(runLines),

@@ -136,6 +136,12 @@ const REF_PATTERNS: Array<[RegExp, string]> = [
   [/from '@\/components\/platform\/Order/, "from '@/components/platform/Order"],
   [/['"`]\/api\/billing/, "'/api/billing"],
   [/['"`]\/api\/platform\/orders/, "'/api/platform/orders"],
+  // 搬走≠断开：`src/disabled-billing/**` 仍在 `@/*`→`src/*` 的别名覆盖范围内，也在
+  // tsconfig 的 `**/*.ts` 里。活代码只要写一行 `from '@/disabled-billing/lib/billing-pricing'`
+  // 就能把计费重新拉进 bundle，而上面五条模式一条都不会红——它们盯的是旧路径。
+  // 静态 import 与动态 import() 都要挡（后者同样进产物）。
+  [/from ['"]@\/disabled-billing\//, "from '@/disabled-billing/"],
+  [/import\(\s*['"]@\/disabled-billing\//, "import('@/disabled-billing/"],
 ]
 const refHits: string[] = []
 for (const f of liveFiles) {
