@@ -448,6 +448,16 @@ export default function ProjectPage() {
     }
   }, [projectFolders, searchParams])
 
+  // 搜索整页那一行跳进来时带 ?asset=：选中它、拉开审阅面板，
+  // 动作和窄栏就地选中（railOpenAsset）同一套，只是那枚在同一页里、这枚要换页。
+  useEffect(() => {
+    const requestedAsset = searchParams?.get('asset')
+    if (!requestedAsset) return
+    setSelectedVideoGroupName(requestedAsset)
+    setReviewPaneVisible(true)
+    try { localStorage.setItem(REVIEW_PANE_KEY, '1') } catch {}
+  }, [searchParams])
+
   const changeVideoViewMode = (mode: 'list' | 'grid') => {
     setVideoViewMode(mode)
     try { localStorage.setItem(VIDEO_VIEW_MODE_KEY, mode) } catch {}

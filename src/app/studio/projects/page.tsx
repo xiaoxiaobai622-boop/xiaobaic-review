@@ -171,8 +171,8 @@ export default function AdminPage() {
     localStorage.setItem(FOLDER_RAIL_STORAGE_KEY, folderRailCollapsed ? '1' : '0')
   }, [folderRailCollapsed])
 
-  // 窄栏搜索面板的关键字沿仓库已有的 window 事件总线送进来，只改 filters.q，
-  // 网格自己的筛选逻辑一行不动（同 commentPosted 的用法）。
+  // 窄栏搜索现在进整页了，这条总线留着给别的入口往这页送关键字
+  // （只改 filters.q，网格自己的筛选逻辑一行不动，同 commentPosted 的用法）。
   useEffect(() => {
     const handleRailSearch = (event: Event) => {
       const detail = (event as CustomEvent<{ q?: string }>).detail

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell } from 'lucide-react'
+import { Bell, Settings, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-client'
 import { getDesktopBridge } from '@/lib/desktop-bridge'
@@ -21,6 +21,25 @@ interface ReplyItem {
 }
 
 const SEEN_STORAGE_KEY = 'admin_notifications_seen_at'
+/** 标题行那颗齿轮管的两枚开关：哪几类算进红点、未读数和桌面通知。 */
+const KINDS_STORAGE_KEY = 'admin_notification_kinds'
+
+type Kinds = { reply: boolean; announcement: boolean }
+
+function readKinds(): Kinds {
+  try {
+    const raw = localStorage.getItem(KINDS_STORAGE_KEY)
+    if (!raw) return { reply: true, announcement: true }
+    const parsed = JSON.parse(raw) as Partial<Kinds>
+    return { reply: parsed.reply !== false, announcement: parsed.announcement !== false }
+  } catch {
+    return { reply: true, announcement: true }
+  }
+}
+
+function writeKinds(value: Kinds) {
+  try { localStorage.setItem(KINDS_STORAGE_KEY, JSON.stringify(value)) } catch { /* 存不下就本次会话内有效 */ }
+}
 const REFRESH_INTERVAL_MS = 30_000
 
 function readSeenAt(): string | null {
@@ -31,8 +50,8 @@ function writeSeenAt(value: string) {
   try { localStorage.setItem(SEEN_STORAGE_KEY, value) } catch { /* 隐私模式下存不下，不影响本次会话 */ }
 }
 
-// 桌面通知的水位要单独存：站内红点那套「上次查看时间」得点开面板才推进，
-// 拿它当通知水位会让没点开过面板的人永远收不到，混着写又会互相抹掉水位。
+// 桌面通知的水位要单独存：站内红点那套「上次查看时间」得按下「全部标记为已读」才推进，
+// 拿它当通知水位会让没点过的人永远收不到，混着写又会互相抹掉水位。
 const DESKTOP_SEEN_STORAGE_KEY = 'desktop_notifications_seen_at'
 
 function readDesktopSeenAt(): string | null {
@@ -74,15 +93,21 @@ interface PlatformItem {
   readAt: string | null
 }
 
+/** 一拨数据一条流：类别退成每行的标记，不再两枚标签各占一屏。 */
+type Entry =
+  | { key: string; type: 'reply'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: ReplyItem }
+  | { key: string; type: 'announcement'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: PlatformItem }
+
 export default function RailNotifications({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
-  const [tab, setTab] = useState<'replies' | 'platform'>('replies')
+  const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [kinds, setKinds] = useState<Kinds>({ reply: true, announcement: true })
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [items, setItems] = useState<ReplyItem[]>([])
-  const [unread, setUnread] = useState(0)
   const [failed, setFailed] = useState(false)
   const [platformItems, setPlatformItems] = useState<PlatformItem[]>([])
-  const [platformUnread, setPlatformUnread] = useState(0)
-  // 面板里「哪几条是这次新看到的」按取这批数据之前的水位算，写回水位不能把它一起抹掉。
+  // 「哪几条算这次新看到的」按水位算；水位没写过＝这台浏览器第一次看，全算未读。
   const [watermark, setWatermark] = useState<string | null>(null)
   const desktop = getDesktopBridge()
   const desktopSeenRef = useRef<string | null>(null)
@@ -100,7 +125,6 @@ export default function RailNotifications({ className }: { className?: string })
       const data = await response.json()
       const loaded = (data.items || []) as ReplyItem[]
       setItems(loaded)
-      setUnread(Number(data.unread) || 0)
       setFailed(false)
       return loaded
     } catch {
@@ -117,14 +141,13 @@ export default function RailNotifications({ className }: { className?: string })
       const data = await response.json()
       const loaded = (data.items || []) as PlatformItem[]
       setPlatformItems(loaded)
-      setPlatformUnread(Number(data.unread) || 0)
       return loaded
     } catch {
       return []
     }
   }, [])
 
-  useEffect(() => { load(); loadPlatform() }, [load, loadPlatform])
+  useEffect(() => { setKinds(readKinds()); load(); loadPlatform() }, [load, loadPlatform])
 
   // 30 秒一次，且只在标签页可见时打（和审阅页那套刷新节奏一致）。
   // 客户端把窗口最小化或收进托盘时页面算「不可见」，而那正是最需要通知的时候，所以桌面端照样打。
@@ -152,8 +175,8 @@ export default function RailNotifications({ className }: { className?: string })
       writeDesktopSeenAt(newestStamp)
       return
     }
-    const newReplies = items.filter((item) => item.createdAt > seen)
-    const newMessages = platformItems.filter((item) => item.createdAt > seen)
+    const newReplies = kinds.reply ? items.filter((item) => item.createdAt > seen) : []
+    const newMessages = kinds.announcement ? platformItems.filter((item) => item.createdAt > seen) : []
     if (newReplies.length > 0) {
       const newest = newReplies[0]
       desktop.notify(
@@ -183,38 +206,85 @@ export default function RailNotifications({ className }: { className?: string })
       desktopSeenRef.current = newestStamp
       writeDesktopSeenAt(newestStamp)
     }
-  }, [desktop, items, platformItems])
+  }, [desktop, items, platformItems, kinds])
 
   useEffect(() => {
     if (!open) return
     const handleMouseDown = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) close()
     }
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
     document.addEventListener('mousedown', handleMouseDown)
-    return () => document.removeEventListener('mousedown', handleMouseDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open])
 
   const close = () => {
     setOpen(false)
+    setSettingsOpen(false)
     triggerRef.current?.focus()
   }
 
-  const markAllSeen = (loaded: ReplyItem[]) => {
-    const newest = loaded[0]?.createdAt
-    if (newest) writeSeenAt(newest)
-    setUnread(0)
-  }
-
-  const toggle = async () => {
+  const toggle = () => {
     if (open) { close(); return }
+    // 打开只读、不写水位：清未读是标签行那颗按钮的事，别替用户按它。
     setOpen(true)
-    markAllSeen(await load())
+    void load()
+    void loadPlatform()
   }
 
-  const openThread = (item: ReplyItem) => {
-    markAllSeen(items)
-    close()
-    router.push(replyHref(item))
+  const entries: Entry[] = [
+    ...items.map((item) => ({
+      key: `r-${item.id}`,
+      type: 'reply' as const,
+      createdAt: item.createdAt,
+      unread: !watermark || new Date(item.createdAt) > new Date(watermark),
+      headline: `${item.authorName} 回复了你`,
+      body: item.content,
+      where: `${item.projectTitle} › ${item.videoName}${item.timecode ? ` · ${item.timecode}` : ''}`,
+      item,
+    })),
+    ...platformItems.map((item) => ({
+      key: `a-${item.id}`,
+      type: 'announcement' as const,
+      createdAt: item.createdAt,
+      unread: !item.readAt,
+      headline: item.title,
+      body: item.content,
+      where: '平台消息',
+      item,
+    })),
+  ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+
+  const visible = entries.filter((entry) => kinds[entry.type])
+  const unreadCount = visible.filter((entry) => entry.unread).length
+  const shown = filter === 'unread' ? visible.filter((entry) => entry.unread) : visible
+
+  const markAllRead = async () => {
+    const newestReply = items[0]?.createdAt
+    if (newestReply) writeSeenAt(newestReply)
+    setWatermark(newestReply || new Date().toISOString())
+    if (platformItems.some((item) => !item.readAt)) {
+      await apiFetch('/api/announcements/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: platformItems.map((item) => item.id) }),
+      }).catch(() => null)
+      setPlatformItems((current) => current.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })))
+    }
+  }
+
+  const openEntry = (entry: Entry) => {
+    if (entry.type === 'reply') {
+      close()
+      router.push(replyHref(entry.item))
+      return
+    }
+    // 平台消息没有独立路由，就地展开/收起正文。
+    setExpanded((current) => (current === entry.key ? null : entry.key))
   }
 
   return (
@@ -224,67 +294,138 @@ export default function RailNotifications({ className }: { className?: string })
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        aria-label={unread + platformUnread > 0 ? `${unread + platformUnread} 条未读通知` : '通知'}
-        title={unread + platformUnread > 0 ? `${unread + platformUnread} 条未读通知` : '通知'}
+        aria-label={unreadCount > 0 ? `${unreadCount} 条未读通知` : '通知'}
+        title={unreadCount > 0 ? `${unreadCount} 条未读通知` : '通知'}
         className={cn(
           className,
           open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
         )}
       >
         <Bell className="h-[20px] w-[20px]" aria-hidden="true" />
-        {unread + platformUnread > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
+        {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
       </button>
 
       {open && (
-        <div className="absolute left-full top-0 z-50 ml-2 w-96 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg">
-          <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <div
+          data-rail-panel="notifications"
+          role="dialog"
+          aria-label="通知"
+          className="fixed bottom-0 left-14 top-0 z-50 flex w-[288px] flex-col border-r border-border bg-popover lg:left-[56px]"
+        >
+          <div className="flex h-9 shrink-0 items-center justify-between px-3">
+            <p className="text-sm font-medium text-foreground">通知</p>
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen((current) => !current)}
+                aria-label="通知设置"
+                aria-expanded={settingsOpen}
+                className={cn('rounded p-1 transition-colors', settingsOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              >
+                <Settings className="h-4 w-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={close}
+                aria-label="关闭通知"
+                className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </span>
+          </div>
+
+          {settingsOpen && (
+            <div data-notification-settings className="shrink-0 border-b border-border px-3 py-2">
+              <p className="text-xs text-muted-foreground">哪几类算进红点与桌面提醒</p>
+              {([
+                { key: 'reply' as const, label: '批注回复提醒' },
+                { key: 'announcement' as const, label: '平台消息提醒' },
+              ]).map((row) => (
+                <button
+                  key={row.key}
+                  type="button"
+                  role="switch"
+                  aria-checked={kinds[row.key]}
+                  onClick={() => {
+                    const next = { ...kinds, [row.key]: !kinds[row.key] }
+                    setKinds(next)
+                    writeKinds(next)
+                  }}
+                  className="mt-1 flex w-full items-center justify-between gap-2 rounded px-1 py-1 text-left text-sm text-foreground transition-colors hover:bg-accent"
+                >
+                  {row.label}
+                  <span className={cn('h-4 w-7 shrink-0 rounded-full p-0.5 transition-colors', kinds[row.key] ? 'bg-primary' : 'bg-muted')}>
+                    <span className={cn('block h-3 w-3 rounded-full bg-white transition-transform', kinds[row.key] && 'translate-x-3')} />
+                  </span>
+                </button>
+              ))}
+              <p className="mt-1 text-xs text-muted-foreground">浏览器里只影响窄栏红点；桌面弹窗在客户端里才有效。</p>
+            </div>
+          )}
+
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setFilter('all')}
+                aria-pressed={filter === 'all'}
+                className={cn('rounded px-2 py-0.5 transition-colors', filter === 'all' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              >
+                全部
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter('unread')}
+                aria-pressed={filter === 'unread'}
+                className={cn('rounded px-2 py-0.5 transition-colors', filter === 'unread' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              >
+                未读{unreadCount > 0 ? ` ${unreadCount}` : ''}
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setTab('replies')}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${tab === 'replies' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={markAllRead}
+              disabled={unreadCount === 0}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:hover:text-muted-foreground"
             >
-              批注回复{unread > 0 ? ` · ${unread}` : ''}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setTab('platform'); if (platformUnread > 0) { setPlatformUnread(0); void fetch('/api/announcements/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: platformItems.map((i) => i.id) }) }) } }}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${tab === 'platform' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              平台消息{platformUnread > 0 ? ` · ${platformUnread}` : ''}
+              全部标记为已读
             </button>
           </div>
 
-          {tab === 'replies' && (<>
-          <div className="flex items-baseline justify-between gap-2 px-3 pt-2">
-            <p className="text-sm font-medium text-foreground">批注回复</p>
-            <p className="text-xs text-muted-foreground">{items.length > 0 ? `${items.length} 条` : ''}</p>
-          </div>
-
-          <div className="max-h-[420px] overflow-y-auto p-1">
-            {items.length === 0 && !failed && (
-              <p className="px-2 py-4 text-sm text-muted-foreground">还没有人回复你的批注。</p>
+          <div className="min-h-0 flex-1 overflow-y-auto p-1">
+            {shown.length === 0 && !failed && (
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                <Bell data-empty-bell className="h-12 w-12 text-muted-foreground/30" aria-hidden />
+                <p className="text-sm font-medium text-foreground">暂无更新</p>
+                <p className="text-xs text-muted-foreground">您的账户活动将在此显示。</p>
+              </div>
             )}
-            {items.length === 0 && failed && (
+            {shown.length === 0 && failed && (
               <p className="px-2 py-4 text-sm text-muted-foreground">通知载入失败，30 秒后自动重试。</p>
             )}
-            {items.map((item) => (
+            {shown.map((entry) => (
               <button
-                key={item.id}
+                key={entry.key}
                 type="button"
-                onClick={() => openThread(item)}
+                data-notification-row
+                onClick={() => openEntry(entry)}
                 className="w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:bg-accent"
               >
                 <span className="flex items-baseline justify-between gap-2">
-                  <span className="min-w-0 truncate text-sm font-medium text-foreground">
-                    {item.authorName} 回复了你
+                  <span className="min-w-0 truncate text-sm font-medium text-foreground">{entry.headline}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(entry.createdAt)}</span>
+                </span>
+                <span className={`mt-0.5 text-sm text-foreground ${expanded === entry.key ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                  {entry.body}
+                </span>
+                <span className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                  <span className="shrink-0 rounded bg-muted px-1 py-px text-[11px]">
+                    {entry.type === 'reply' ? '批注回复' : '平台消息'}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.createdAt)}</span>
+                  <span className="truncate">{entry.type === 'reply' ? entry.where : ''}</span>
                 </span>
-                <span className="mt-0.5 line-clamp-2 text-sm text-foreground">{item.content}</span>
-                <span className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {item.projectTitle} · {item.videoName}{item.timecode ? ` · ${item.timecode}` : ''}
-                </span>
-                {watermark && new Date(item.createdAt) > new Date(watermark) && (
+                {entry.unread && (
                   <span className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
                     <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
                     未读
@@ -293,35 +434,6 @@ export default function RailNotifications({ className }: { className?: string })
               </button>
             ))}
           </div>
-          </>)}
-
-          {tab === 'platform' && (<>
-          <div className="max-h-[420px] overflow-y-auto p-1">
-            {platformItems.length === 0 && (
-              <p className="px-2 py-4 text-sm text-muted-foreground">还没有平台消息。</p>
-            )}
-            {platformItems.map((item) => (
-              <div
-                key={item.id}
-                className="w-full rounded-md px-2 py-2 text-left"
-              >
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className={`min-w-0 truncate text-sm ${item.readAt ? 'text-foreground' : 'font-semibold text-primary'}`}>
-                    {item.title}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.createdAt)}</span>
-                </span>
-                <span className="mt-0.5 whitespace-pre-wrap text-sm text-foreground">{item.content}</span>
-                {!item.readAt && (
-                  <span className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
-                    未读
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-          </>)}
         </div>
       )}
     </div>
