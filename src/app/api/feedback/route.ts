@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { isFeedbackCategory } from '@/lib/feedback-categories'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: '请求过于频繁，请稍后再试',
-  })
+  }, 'platform-feedback-list')
   if (limited) return limited
 
   const items = await prisma.platformFeedback.findMany({
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     windowMs: 10 * 60 * 1000,
     maxRequests: 5,
     message: '反馈提交过于频繁，请稍后再试',
-  })
+  }, 'platform-feedback-create')
   if (limited) return limited
 
   const body = await request.json().catch(() => null)
@@ -47,9 +48,12 @@ export async function POST(request: NextRequest) {
   if (content.length > MAX_CONTENT) {
     return NextResponse.json({ error: `反馈内容不能超过 ${MAX_CONTENT} 字` }, { status: 400 })
   }
+  // 类型只认那六枚（不选就是 null）。正文可以随便写，类型不能——运营后台按这一列分拣。
+  const rawCategory: unknown = body?.category
+  const category = isFeedbackCategory(rawCategory) ? rawCategory : null
 
   const item = await prisma.platformFeedback.create({
-    data: { userId: authResult.id, content },
+    data: { userId: authResult.id, content, category },
   })
 
   return NextResponse.json({ item })

@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: '请求过于频繁，请稍后再试',
-  })
+  }, 'platform-announcements-read')
   if (limited) return limited
 
   const body = await request.json().catch(() => null)

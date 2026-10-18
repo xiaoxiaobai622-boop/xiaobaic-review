@@ -23,6 +23,7 @@ interface SentItem {
 interface FeedbackItem {
   id: string
   content: string
+  category: string | null
   status: string
   reply: string | null
   repliedAt: string | null
@@ -262,6 +263,9 @@ export default function PlatformMessagesPage() {
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">{formatBeijingDateTime(item.createdAt)}</span>
                   </span>
+                  {item.category && (
+                    <span className="mt-1 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{item.category}</span>
+                  )}
                   <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{item.content}</p>
                   {item.reply ? (
                     <div className="mt-2 rounded-md bg-muted px-2.5 py-1.5">

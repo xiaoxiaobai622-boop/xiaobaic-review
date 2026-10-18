@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     items: rows.map((f) => ({
       id: f.id,
       content: f.content,
+      category: f.category,
       status: f.status,
       reply: f.reply,
       repliedAt: f.repliedAt,

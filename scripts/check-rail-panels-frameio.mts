@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
@@ -42,6 +42,7 @@ const RAIL = 'src/components/StudioRail.tsx'
 const SEARCH_PAGE = 'src/app/studio/search/page.tsx'
 const SEARCH_CLIENT = 'src/components/RailSearchPage.tsx'
 const SEARCH_API = 'src/app/api/studio/search/route.ts'
+const FEEDBACK = 'src/components/RailFeedback.tsx'
 
 const read = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : `<<缺文件 ${path}>>`)
 // 搜索页允许拆成「薄壳 page ＋ 客户端组件」，两份都读进来再判，别把形态钉死。
@@ -66,6 +67,8 @@ async function call(method: string, path: string, token: string, body?: unknown)
 // ── CDP ──────────────────────────────────────────────────────────────────
 let ws: WebSocket | undefined
 let msgId = 0
+/** 红的时候得说清是哪一步坏的：这枚数组专门记 /api/comments/for-me 的回包码。 */
+const networkLog: string[] = []
 const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
 
 function send(method: string, params: Record<string, unknown> = {}, sessionId?: string) {
@@ -99,6 +102,9 @@ function attachSocket(url: string) {
     ws = new WebSocket(url)
     ws.onmessage = (event) => {
       const msg = JSON.parse(String(event.data))
+      if (msg.method === 'Network.responseReceived' && /\/api\/(comments\/for-me|announcements|feedback)/.test(msg.params?.response?.url || '')) {
+        networkLog.push(`${msg.params.response.url.split('?')[0].replace('http://localhost:3000', '')} ${msg.params.response.status}`)
+      }
       if (msg.id && pending.has(msg.id)) {
         const p = pending.get(msg.id)!
         pending.delete(msg.id)
@@ -264,8 +270,75 @@ try {
     'S19·c 接口只带「有没有封面」这一枚布尔；thumbnailPath 是存储侧路径，不许跟着搜索结果出到前端')
   check(/video-token/.test(page) && /onError/.test(page),
     'S19·d 搜索页的封面走现成的逐枚签发（和工作区网格同一套），并且签不到时有退回，不留裂图')
+  const fb = read(FEEDBACK)
+  check(!/absolute left-full/.test(fb) && !/\bw-96\b/.test(fb),
+    'S20·a 反馈不再是贴在窄栏底部旁边的那张小卡（left-full＋w-96 整个退场）',
+    `→ 还留着 left-full:${/absolute left-full/.test(fb)} w-96:${/\bw-96\b/.test(fb)}`)
+  check(/from '@\/components\/ui\/dialog'/.test(fb) && /<DialogContent/.test(fb),
+    'S20·b 反馈改用仓库现成的居中弹窗壳（Radix Dialog，和成员／设置那两扇窗同一套），不是自己再搓一层')
+  check(/请提出您的意见/.test(fb) && /添加细节（必填）/.test(fb) && /aria-label="提交反馈"/.test(fb),
+    'S20·c 弹窗三块都在：标题「提交反馈」＋那句引导＋「添加细节（必填）」（对标那三块一块不缺，✕ 由壳子自带）')
+  const cats = read('src/lib/feedback-categories.ts')
+  const catsCount = (cats.match(/key: '/g) || []).length
+  check(/data-feedback-categories/.test(fb) && /aria-pressed/.test(fb) && catsCount === 6 && /FEEDBACK_CATEGORIES/.test(fb),
+    'S20·d 那一排是六枚可点的类型胶囊（对标是一排 chips，不是下拉），选中态用 aria-pressed 说得清；'
+    + '标签表只有一份（src/lib/feedback-categories.ts），界面画它、接口认它，不各写一遍',
+    `→ 标签 ${catsCount} 枚，弹窗引用同一份：${/FEEDBACK_CATEGORIES/.test(fb)}`)
+  check(/disabled=\{submitting \|\| !content\.trim\(\)\}/.test(fb) && /取消/.test(fb),
+    'S20·e 没写字时「提交」是灰的、旁边有「取消」（对标那颗 disabled 的提交按钮）')
+  check(/我的反馈/.test(fb) && /运营回复/.test(fb),
+    'S20·f 历史与运营回复这块留着（对标弹窗里没有，但这是我们已有的功能，改形态不等于删功能）')
+  const fbApi = read('src/app/api/feedback/route.ts')
+  const schema = read('prisma/schema.prisma')
+  const catMigration = existsSync('prisma/migrations/20261018162000_add_platform_feedback_category/migration.sql')
+  check(/category\s+String\?/.test(schema) && catMigration
+    && /isFeedbackCategory\(rawCategory\)/.test(fbApi) && /content, category \}/.test(fbApi)
+    && /content: trimmed, category \}/.test(fb) && !/类型：/.test(fb),
+    'S20·g 类型落在 PlatformFeedback.category 这一列：schema 有这列、迁移在档、接口按那六枚白名单收进列、'
+    + '弹窗把类型当字段发——10-18 点单第 1 条，替掉之前「拼在正文第一行」那版',
+    `→ schema:${/category\s+String\?/.test(schema)} 迁移:${catMigration} 接口收列:${/isFeedbackCategory\(rawCategory\)/.test(fbApi)} `
+    + `前端字段:${/content: trimmed, category \}/.test(fb)} 前缀残留:${/类型：/.test(fb)}`)
+  check(/category: f\.category/.test(read('src/app/api/platform/feedback/route.ts'))
+    && /\{item\.category &&/.test(read('src/app/platform/messages/page.tsx')),
+    'S20·i 运营后台读得到类型：收件箱接口把 category 带出来、名单里画成一枚标签——加一列不画出来等于没加')
+
+  // 整棵 api 树都扫，不是只盯窄栏这四条：identifier 缺省 'general' 时，全仓所有漏名的调用共用同一枚键。
+  const rlFiles: string[] = []
+  const walkRoutes = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, entry.name)
+      if (entry.isDirectory()) walkRoutes(p)
+      else if (entry.name === 'route.ts') rlFiles.push(p)
+    }
+  }
+  walkRoutes('src/app/api')
+  let rlTotal = 0
+  const rlUnnamed: string[] = []
+  for (const file of rlFiles) {
+    const s = read(file)
+    // 按括号深度数每一枚调用的实参：第三个实参就是 identifier，只有两个实参＝用了缺省名。
+    for (const m of s.matchAll(/(?<![\w.])rateLimit\(/g)) {
+      let i = (m.index || 0) + m[0].length, depth = 1, args = 1, quote: string | null = null
+      while (i < s.length && depth > 0) {
+        const c = s[i]
+        if (quote) { if (c === '\\') i++; else if (c === quote) quote = null }
+        else if (c === '"' || c === "'" || c === '`') quote = c
+        else if (c === '(' || c === '[' || c === '{') depth++
+        else if (c === ')' || c === ']' || c === '}') depth--
+        else if (c === ',' && depth === 1) args++
+        i++
+      }
+      rlTotal++
+      if (args < 3) rlUnnamed.push(`${file}:${s.slice(0, m.index).split('\n').length}`)
+    }
+  }
+  check(rlTotal >= 100 && rlUnnamed.length === 0,
+    'S20·h 全仓每一处限流都自带名字：rateLimit 的 identifier 缺省是 "general"，也就是共用同一枚 Redis 键——'
+    + '反馈那条 5/10 分钟会把通知那两条 60/1 分钟挤爆（谁后调用谁定窗口和上限），实测一次提交后通知就 429',
+    `→ ${rlTotal} 处调用${rlUnnamed.length ? `，漏名：${rlUnnamed.join('、')}` : '，全带名字'}`)
+
   check(/lg:w-\[56px\]/.test(rail) && /h-\[44px\] w-\[44px\]/.test(rail),
-    'S20 护栏：窄栏宽度与 44px 命中区一字没动（A16/A17 钉的就是这两个数）')
+    'S21 护栏：窄栏宽度与 44px 命中区一字没动（A16/A17 钉的就是这两个数）')
 
   // ══ fixtures ══════════════════════════════════════════════════════════
   for (const [index, key] of ['owner', 'clean', 'peer'].entries()) {
@@ -365,10 +438,29 @@ try {
     'N8 type=projects 时素材这一路不查（筛选真的落到查询上，不是拿回来再藏）',
     `→ assets ${(scoped.json?.assets || []).length} / projects ${(scoped.json?.projects || []).length}`)
 
+  // 运营端读得到这一列才算「加了字段」：单独造一枚平台管理员，别动 owner 的标记——
+  // 窄栏会因他多出一个图标，B 组量的几何就不是原来那块了。
+  const opsEmail = `ops-${short}@rail-panel.test`
+  const opsUser = await prisma.user.create({ data: { email: opsEmail, name: '运营探针', password: await hashPassword(pw), isPlatformAdmin: true } })
+  // 挂进 ids：中途任何一句抛了，收尾那段 finally 也认得这枚账号（PlatformFeedback 挂在 user 上是 Cascade）。
+  ids.ops = opsUser.id
+  const opsRow = await prisma.platformFeedback.create({ data: { userId: opsUser.id, content: `运营侧读类型-${short}`, category: '卡顿缓慢' } })
+  // 平台后台那一路吃的是另一枚令牌（type: 'platform_access'，只有 /api/platform/auth/login 发），
+  // 普通登录给的 accessToken 在 requirePlatformAuth 那里就是 401。
+  const opsLogin = await call('POST', '/api/platform/auth/login', '', { identifier: opsEmail, password: pw })
+  const opsToken = opsLogin.json?.tokens?.accessToken as string
+  const inbox = await call('GET', '/api/platform/feedback', opsToken)
+  const seen = (inbox.json?.items || []).find((row: any) => row.id === opsRow.id)
+  const inboxProbe = JSON.stringify(seen ?? (inbox.json?.items || []).slice(0, 1))
+  check(opsLogin.status === 200 && inbox.status === 200 && seen?.category === '卡顿缓慢' && seen?.content === `运营侧读类型-${short}`,
+    'N9 运营端收件箱把类型作为独立字段交出来（不是让人从正文第一行拆），正文里不含那一行前缀',
+    `→ 平台登录 ${opsLogin.status}／收件箱 ${inbox.status} ${inboxProbe.slice(0, 180)}`)
+  await prisma.platformFeedback.delete({ where: { id: opsRow.id } }).catch(() => null)
+
   void reply; void announcement; void leaked; void stale
 
   if (!WITH_BROWSER) {
-    console.log('\n（B 组浏览器实测没跑：加 --browser 才跑，它要你自己的 next dev 在 :3000 上活着）')
+    console.log('\n（B 组浏览器实测没跑：加 --browser 才跑；它要一站跑着的 next dev，站点由 SHARE_CHECK_BASE 定，默认 :3000）')
   } else {
     console.log('\n── B 组：浏览器实测 ──')
     chrome = await connectChrome()
@@ -376,6 +468,7 @@ try {
     await attachSocket(webSocketDebuggerUrl)
 
     const page1 = await openPage()
+    await page1.s('Network.enable')
     console.log(`  登录（主账号）→ ${await loginInBrowser(page1, ownerEmail)}`)
     await page1.s('Page.navigate', { url: `${BASE}/studio/projects` })
     check(await waitFor(page1, `document.querySelector('aside')`, 120_000), 'B1 窄栏画得出来（页面活着）')
@@ -385,7 +478,7 @@ try {
     check(await waitFor(page1, `document.querySelector('[data-rail-panel="notifications"]')`, 20_000), 'B3 点铃铛能开面板')
     // 面板先画空壳、数据随后到（打开时各打一次端点），所以先等自己那条夹具进来再量。
     check(await waitFor(page1, `document.querySelector('[data-rail-panel="notifications"]').innerText.includes('回复你的-')`, 20_000),
-      'B2·b 面板里的数据真的到了（不是只画了空壳）')
+      'B2·b 面板里的数据真的到了（不是只画了空壳）', `→ /api/comments/for-me 回包 ${JSON.stringify(networkLog) || '（一条没记到）'}`)
     await shot(page1, 'a-通知面板')
     const f: any = JSON.parse(String(await evalJs(page1, PANEL_FACTS)))
     check(!f.missing, 'B3·b 面板取证取到了内容', `→ ${JSON.stringify(f).slice(0, 140)}`)
@@ -420,12 +513,15 @@ try {
     await evalJs(page1, `${NB}.find(b => b.textContent.trim() === '全部').click()`)
     await sleep(500)
     await evalJs(page1, `${NB}.find(b => b.textContent.includes('全部标记为已读')).click()`)
-    await sleep(1500)
     await evalJs(page1, `${NB}.find(b => b.textContent.trim().startsWith('未读')).click()`)
-    await sleep(600)
+    // 「全部标记为已读」往服务端发一笔（平台消息的水位；批注回复的水位写在本地），面板几秒后会重拉一次：
+    // dev 冷编译能把那一笔拖到十几秒，重拉就赶在它前面 ⇒ 定长 sleep 掷硬币（10-18 在一份新起的实例上
+    // 红过一次：3 行只清了 1 行）。等真状态，不等时间。
+    const cleared = await waitFor(page1,
+      `document.querySelectorAll('${ROWS}').length === 0 && !/条未读通知/.test([...document.querySelectorAll('aside button')].map(b => b.getAttribute('aria-label') || '').join('|'))`, 90_000)
     const afterMark = String(await evalJs(page1, `JSON.stringify({ rows: document.querySelectorAll('${ROWS}').length, label: [...document.querySelectorAll('aside button')].find(b => (b.getAttribute('aria-label') || '').includes('通知'))?.getAttribute('aria-label') })`))
-    check(JSON.parse(afterMark).rows === 0 && !/条未读通知/.test(String(JSON.parse(afterMark).label)),
-      'B13 按下「全部标记为已读」才清：未读筛出来 0 行、红点没了', `→ ${afterMark}`)
+    check(cleared && JSON.parse(afterMark).rows === 0 && !/条未读通知/.test(String(JSON.parse(afterMark).label)),
+      'B13 按下「全部标记为已读」才清：未读筛出来 0 行、红点没了', `→ 两笔都落地 ${cleared}；${afterMark}`)
     // 上面停在「未读」那一屏（刚清完是 0 行），这里先切回全部，静音前后才有可比的两行/三行。
     await evalJs(page1, `${NB}.find(b => b.textContent.trim() === '全部').click()`)
     await sleep(600)
@@ -527,13 +623,21 @@ try {
     })()`)))
     check(rows.count === 3 && rows.text.includes(assetName) && !rows.text.includes('别队的同名'),
       `B27 三行：自己队的项目＋两枚素材，别队那枚同名素材没漏进来（实得 ${rows.count} 行）`, `→ ${rows.text.slice(0, 160)}`)
+    // 签发是和渲染同时起跑的：先等那条 resource 计时落地，别拿采样早晚当产品坏没坏。
+    await waitFor(page3, `performance.getEntriesByType('resource').some(e => e.name.includes('/api/studio/video-token'))`, 20_000)
     const tokenCalls = Number(await evalJs(page3, `performance.getEntriesByType('resource').filter(e => e.name.includes('/api/studio/video-token')).length`))
+    // 签发到手 ≠ 图真出得来（夹具那枚指向一个不存在的文件）：等这一行落定——要么图真在，要么退回首字。
+    const thumbSettled = await waitFor(page3, `(() => {
+      const row = [...document.querySelectorAll('[data-search-row]')].find(r => r.innerText.includes('有封面'))
+      const img = row && row.querySelector('img')
+      return !img || (img.complete && img.naturalWidth > 0)
+    })()`, 15_000)
     const thumbRow = String(await evalJs(page3, `(() => {
       const row = [...document.querySelectorAll('[data-search-row]')].find(r => r.innerText.includes('有封面'))
       const img = row && row.querySelector('img')
-      return JSON.stringify({ found: !!row, imgOk: img ? img.complete && img.naturalWidth > 0 : null, initials: row ? /[一-龥]/.test(row.querySelector('span').innerText) : false })
+      return JSON.stringify({ found: !!row, brokenImg: !!img && img.complete && img.naturalWidth === 0, initials: row ? /[一-龥]/.test(row.querySelector('span').innerText) : false })
     })()`))
-    check(tokenCalls >= 1 && JSON.parse(thumbRow).found && JSON.parse(thumbRow).initials,
+    check(thumbSettled && tokenCalls >= 1 && JSON.parse(thumbRow).found && JSON.parse(thumbRow).initials && !JSON.parse(thumbRow).brokenImg,
       `B27·b 有封面的行真的去签了 token（实发 ${tokenCalls} 次），签不到就退回名称首字那块灰片、不留裂图`, `→ ${thumbRow}`)
     check(/›/.test(rows.text) && /1:01/.test(rows.text),
       'B28 结果行带出处与时长（项目 › …，右侧时长角标）', `→ ${rows.text.slice(0, 180)}`)
@@ -550,6 +654,74 @@ try {
     check(await waitFor(page3, `document.body.innerText.includes(${JSON.stringify(assetName)})`, 120_000),
       'B31 落地那一屏真的把这枚素材摆出来了（工作区认了 ?asset=，不是只换了个 URL）')
     await closePage(page3)
+
+    // 反馈：对标的形态是居中弹窗（遮罩盖整屏），不是贴在窄栏边上的小卡
+    const page4 = await openPage()
+    console.log(`  登录（主账号）→ ${await loginInBrowser(page4, ownerEmail)}`)
+    await page4.s('Page.navigate', { url: `${BASE}/studio/projects` })
+    await waitFor(page4, `document.querySelector('aside')`, 120_000)
+    await evalJs(page4, `[...document.querySelectorAll('aside button')].find(b => b.getAttribute('aria-label') === '提交反馈').click()`)
+    check(await waitFor(page4, `document.querySelector('[data-feedback-categories]')`, 120_000), 'C1 点灯泡开的是弹窗（不是贴在栏边的小卡）')
+    await sleep(600)
+    check(await evalJs(page4, `document.activeElement?.id === 'rail-feedback-content'`),
+      'C1·b 一打开光标就在正文里（对标也是这样：打开就能打字，不是先落在第一枚类型胶囊上）',
+      `→ 焦点在 ${await evalJs(page4, `document.activeElement?.id || document.activeElement?.tagName`)}`)
+    await shot(page4, 'e-反馈弹窗')
+    const dlg: any = JSON.parse(String(await evalJs(page4, `(() => {
+      const p = document.querySelector('[role="dialog"][aria-label="提交反馈"]')
+      const b = p.getBoundingClientRect()
+      const overlay = document.querySelector('div[data-radix-overlay], .fixed.inset-0')
+      const rail = document.querySelector('aside').getBoundingClientRect()
+      const hit = document.elementFromPoint(rail.left + rail.width / 2, rail.top + 40)
+      return JSON.stringify({
+        left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width), height: Math.round(b.height),
+        innerW: window.innerWidth, innerH: window.innerHeight,
+        cx: Math.round(b.left + b.width / 2), cy: Math.round(b.top + b.height / 2),
+        overlay: overlay ? getComputedStyle(overlay).position : 'none',
+        railCovered: !!hit && hit.closest('[role="dialog"]') === null && hit.className.toString().includes('inset-0'),
+        chips: [...document.querySelectorAll('[data-feedback-categories] button')].map(x => x.textContent.trim()),
+        submitDisabled: [...p.querySelectorAll('button')].some(x => x.textContent.trim() === '提交' && x.disabled),
+        text: p.innerText,
+      })
+    })()`)))
+    check(Math.abs(dlg.cx - dlg.innerW / 2) <= 2 && Math.abs(dlg.cy - dlg.innerH / 2) <= 4,
+      `C2 弹窗在屏幕正中（中心 ${dlg.cx},${dlg.cy}／视口中线 ${(dlg.innerW / 2).toFixed(0)},${(dlg.innerH / 2).toFixed(0)}）`, `→ ${dlg.width}×${dlg.height}`)
+    check(dlg.overlay === 'fixed', 'C3 遮罩是 fixed inset-0，盖整屏', `→ ${dlg.overlay}`)
+    check(dlg.railCovered === true, 'C3·b 弹窗开着时窄栏那一点落在遮罩上（遮罩真的在事件路径里，不是只画了一层色）')
+    check(dlg.chips.length === 6 && /请提出您的意见/.test(dlg.text) && /添加细节（必填）/.test(dlg.text),
+      'C4 标题、那句引导、六枚类型胶囊都画出来了', `→ ${JSON.stringify(dlg.chips)}`)
+    check(dlg.submitDisabled === true, 'C5 一个字没写时「提交」是 disabled（对标那颗也是灰的）')
+    await evalJs(page4, `document.querySelector('[data-feedback-categories] button').click()`)
+    await sleep(400)
+    check(await evalJs(page4, `document.querySelector('[data-feedback-categories] button').getAttribute('aria-pressed') === 'true'`),
+      'C6 类型胶囊点得动、选中态标得出来')
+    await evalJs(page4, `(() => {
+      const box = document.querySelector('#rail-feedback-content')
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+      setter.call(box, '判据自检：这行提交完就删掉')
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+      return true
+    })()`)
+    await sleep(400)
+    check(await evalJs(page4, `[...document.querySelectorAll('[role="dialog"] button')].some(x => x.textContent.trim() === '提交' && !x.disabled)`),
+      'C7 写了字，「提交」就亮')
+    await evalJs(page4, `[...document.querySelectorAll('[role="dialog"] button')].find(x => x.textContent.trim() === '提交').click()`)
+    // dev 冷编译能把一次 POST 拖到十几秒（刚改过 API 文件尤其明显），所以等到界面给出结果为止。
+    const landed = await waitFor(page4, `/已提交，感谢你的反馈/.test(document.body.innerText) || /提交失败|过于频繁/.test(document.body.innerText)`, 60_000)
+    const sent = landed ? await prisma.platformFeedback.findFirst({ where: { userId: ids.owner, content: { contains: '判据自检' } }, select: { id: true, content: true, category: true } }) : null
+    check(Boolean(sent) && sent?.category === '功能建议' && !/^类型：/.test(String(sent?.content)),
+      'C8 真落库：类型进了 category 这一列，正文里没有「类型：」那一行（这条自己把这行删干净）',
+      `→ 等到结果 ${landed}；库里 category=${JSON.stringify(sent?.category)}，正文开头 ${JSON.stringify(String(sent?.content).slice(0, 24))}`)
+    // 提交成功后组件会重拉一次「我的反馈」，所以这枚标签要等，不能一次 evalJs 掷硬币。
+    const pillLanded = await waitFor(page4, `[...document.querySelectorAll('[data-feedback-row]')].some(r => r.innerText.includes('功能建议'))`, 30_000)
+    check(pillLanded,
+      'C8·b 「我的反馈」那一列把类型画出来了：前缀删掉之后不画出来，用户就看不见自己选过什么',
+      `→ 弹窗说：${JSON.stringify(String(await evalJs(page4, `document.querySelector('[role="dialog"]')?.innerText.slice(0, 120) || '（弹窗已经没了）'`)))}`)
+    if (sent) await prisma.platformFeedback.delete({ where: { id: sent.id } }).catch(() => null)
+    await evalJs(page4, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await sleep(700)
+    check(!(await evalJs(page4, `document.querySelector('[data-feedback-categories]')`)), 'C9 Esc 关得掉弹窗')
+    await closePage(page4)
   }
 
   console.log(`\n合计 ${failures.length === 0 ? '全 PASS' : failures.length + ' FAIL'}`)

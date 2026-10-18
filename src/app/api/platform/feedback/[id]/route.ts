@@ -20,7 +20,7 @@ export async function PATCH(
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: '操作过于频繁，请稍后再试',
-  })
+  }, 'platform-feedback-reply')
   if (limited) return limited
 
   const { id } = await params

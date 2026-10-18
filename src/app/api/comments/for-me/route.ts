@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: '请求过于频繁，请稍后再试',
-  })
+  }, 'comments-for-me')
   if (limited) return limited
 
   const sinceParam = request.nextUrl.searchParams.get('since')

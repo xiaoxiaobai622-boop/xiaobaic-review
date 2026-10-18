@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: '请求过于频繁，请稍后再试',
-  })
+  }, 'platform-announcements')
   if (limited) return limited
 
   const items = await prisma.platformAnnouncement.findMany({

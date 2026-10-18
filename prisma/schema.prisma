@@ -1407,6 +1407,7 @@ model PlatformFeedback {
   userId    String
   user      User      @relation("PlatformFeedback", fields: [userId], references: [id], onDelete: Cascade)
   content   String
+  category  String? // 六枚类型标签之一，见 src/lib/feedback-categories.ts；不选类型就是 null
   status    String    @default("OPEN") // OPEN / RESOLVED
   reply     String?
   repliedAt DateTime?

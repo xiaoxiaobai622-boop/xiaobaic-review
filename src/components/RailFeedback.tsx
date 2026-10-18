@@ -5,6 +5,8 @@ import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/api-client'
+import { FEEDBACK_CATEGORIES } from '@/lib/feedback-categories'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 // 1:1 抄自 frame.io 侧栏「提交反馈」的灯泡图标（fill=currentColor，24 viewBox）。
 function BulbIcon({ className }: { className?: string }) {
@@ -24,6 +26,7 @@ function BulbIcon({ className }: { className?: string }) {
 interface FeedbackItem {
   id: string
   content: string
+  category: string | null
   status: string
   reply: string | null
   repliedAt: string | null
@@ -43,15 +46,15 @@ function relativeTime(value: string): string {
   return new Date(value).toLocaleDateString('zh-CN')
 }
 
-/** 侧栏底部：向平台提交反馈 + 查看历史与回复。 */
+/** 侧栏底部：向平台提交反馈 + 查看历史与回复。对标那枚是居中弹窗，不是贴在栏边的小卡。 */
 export default function RailFeedback({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
+  const [category, setCategory] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [items, setItems] = useState<FeedbackItem[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   const load = useCallback(async () => {
@@ -65,21 +68,13 @@ export default function RailFeedback({ className }: { className?: string }) {
     }
   }, [])
 
-  useEffect(() => {
-    if (!open) return
-    load()
-    const handleMouseDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) close()
-    }
-    document.addEventListener('mousedown', handleMouseDown)
-    return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [open, load])
-
   const close = () => {
     setOpen(false)
     setError('')
     triggerRef.current?.focus()
   }
+
+  useEffect(() => { if (open) load() }, [open, load])
 
   const submit = async () => {
     const trimmed = content.trim()
@@ -90,7 +85,7 @@ export default function RailFeedback({ className }: { className?: string }) {
       const response = await apiFetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: trimmed }),
+        body: JSON.stringify({ content: trimmed, category }),
       })
       const data = await response.json().catch(() => null)
       if (!response.ok) {
@@ -98,6 +93,7 @@ export default function RailFeedback({ className }: { className?: string }) {
         return
       }
       setContent('')
+      setCategory(null)
       setDone(true)
       window.setTimeout(() => setDone(false), 2500)
       await load()
@@ -108,77 +104,114 @@ export default function RailFeedback({ className }: { className?: string }) {
     }
   }
 
+  const hint = FEEDBACK_CATEGORIES.find((row) => row.key === category)?.hint || '写下你想对平台说的话…'
+
   return (
-    <div ref={rootRef} className="relative">
+    <>
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
         aria-label="提交反馈"
         title="提交反馈"
-        className={cn(
-          className,
-          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
-        )}
+        className={cn(className, 'text-muted-foreground hover:text-accent-foreground')}
       >
         <BulbIcon className="h-[20px] w-[20px]" />
       </button>
 
-      {open && (
-        <div className="absolute left-full bottom-0 z-50 ml-2 w-96 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg">
-          <div className="border-b border-border px-3 py-2">
-            <p className="text-sm font-medium text-foreground">提交反馈</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">产品和平台服务的意见建议，直接发给运营团队。</p>
+      <Dialog open={open} onOpenChange={(next) => { if (!next) close() }}>
+        <DialogContent aria-label="提交反馈" className="w-[calc(100%-2rem)] max-w-[560px] !rounded-lg"
+          onOpenAutoFocus={(event) => {
+            // Radix 默认会把焦点停在第一枚可聚焦元素上，也就是「功能建议」那颗胶囊；对标是把光标放进正文，
+            // 打开就能打字。焦点归还给触发按钮由 onCloseAutoFocus 管（壳子里已接好）。
+            event.preventDefault()
+            window.setTimeout(() => document.getElementById('rail-feedback-content')?.focus(), 0)
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>提交反馈</DialogTitle>
+            <DialogDescription>请提出您的意见。</DialogDescription>
+          </DialogHeader>
+
+          <div data-feedback-categories className="flex flex-wrap gap-1.5">
+            {FEEDBACK_CATEGORIES.map((row) => (
+              <button
+                key={row.key}
+                type="button"
+                onClick={() => setCategory((current) => (current === row.key ? null : row.key))}
+                aria-pressed={category === row.key}
+                className={cn(
+                  'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                  category === row.key
+                    ? 'border-primary bg-primary-visible text-foreground'
+                    : 'border-border text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {row.key}
+              </button>
+            ))}
           </div>
 
-          <div className="p-3">
+          <div>
+            <label htmlFor="rail-feedback-content" className="text-xs font-medium text-foreground">
+              添加细节（必填）
+            </label>
             <textarea
+              id="rail-feedback-content"
               value={content}
               onChange={(event) => { setContent(event.target.value); setError('') }}
-              placeholder="写下你想对平台说的话…"
-              rows={3}
-              maxLength={2000}
-              className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder={hint}
+              rows={6}
+              maxLength={MAX_CONTENT}
+              className="mt-1 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">
-                {error ? <span className="text-destructive">{error}</span> : done ? <span className="text-primary">已提交，感谢你的反馈</span> : (
-                  <>提交即代表同意
+            <p className="mt-1 text-xs text-muted-foreground">
+              {error
+                ? <span className="text-destructive">{error}</span>
+                : done
+                  ? <span className="text-primary">已提交，感谢你的反馈</span>
+                  : <>提交即代表同意
                     <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 underline hover:no-underline">《隐私政策》</Link>
-                  </>
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={submit}
-                disabled={submitting || !content.trim()}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Send className="h-3.5 w-3.5" aria-hidden />
-                {submitting ? '提交中…' : '提交反馈'}
-              </button>
-            </div>
+                    {category ? `；类型记为「${category}」。` : '；选一枚类型标签能让运营更快定位。'}
+                  </>}
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={close}
+              className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={submitting || !content.trim()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" aria-hidden />
+              {submitting ? '提交中…' : '提交'}
+            </button>
           </div>
 
           {items.length > 0 && (
-            <div className="border-t border-border">
-              <p className="px-3 pt-2 text-xs font-medium text-muted-foreground">我的反馈</p>
-              <div className="max-h-56 overflow-y-auto p-2">
+            <div className="border-t border-border pt-3">
+              <p className="text-xs font-medium text-muted-foreground">我的反馈</p>
+              <div className="mt-1 max-h-56 overflow-y-auto">
                 {items.map((item) => (
-                  <div key={item.id} className="rounded-md px-2 py-2 text-left">
+                  <div key={item.id} data-feedback-row className="border-b border-border/60 px-1 py-2 last:border-b-0">
                     <span className="flex items-baseline justify-between gap-2">
                       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-foreground">{item.content}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.createdAt)}</span>
                     </span>
-                    <span className="mt-1 flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                          item.status === 'RESOLVED' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        {item.status === 'RESOLVED' ? '已回复' : '处理中'}
-                      </span>
+                    {item.category && (
+                      <span className="mt-1 mr-1.5 inline-flex items-center rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{item.category}</span>
+                    )}
+                    <span className="mt-1 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {item.status === 'RESOLVED' ? '已回复' : '处理中'}
                     </span>
                     {item.reply && (
                       <span className="mt-1.5 block rounded-md bg-muted px-2 py-1.5 text-xs text-foreground">
@@ -191,8 +224,8 @@ export default function RailFeedback({ className }: { className?: string }) {
               </div>
             </div>
           )}
-        </div>
-      )}
-    </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
