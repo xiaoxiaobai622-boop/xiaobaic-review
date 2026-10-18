@@ -102,6 +102,12 @@ const config: Config = {
         'elevation-lg': 'var(--shadow-lg)',
         'elevation-xl': 'var(--shadow-xl)',
       },
+      zIndex: {
+        'player-video': '10',
+        'player-overlay': '15',
+        'player-controls': '20',
+        'player-navigation': '30',
+      },
       backdropBlur: {
         'glass': '20px',
       },

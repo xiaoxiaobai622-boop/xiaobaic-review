@@ -1097,7 +1097,7 @@ export default function AdminSharePage() {
                 playerSurfaceClassName="bg-card"
                 playerSurfaceColor="hsl(var(--card))"
                 playerFrameClassName="ring-1 ring-inset ring-border/70"
-                controlsSurfaceClassName="bg-card"
+                controlsSurfaceClassName="bg-background border-t border-border/40"
               />
               <div id="review-comment-composer" className="lg:mt-auto" />
             </div>

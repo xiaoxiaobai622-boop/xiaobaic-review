@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Comment, Video } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 import { CheckCircle2, MessageSquare, ChevronDown, ChevronUp, Filter, Info } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
@@ -410,17 +411,26 @@ export default function CommentSection({
             ))}
           </div>
           {showCategoryPicker && (
-            <select
-              aria-label="按标签筛选"
-              value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value as 'ALL' | CommentCategory)}
-              className="h-7 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="ALL">全部标签</option>
-              {COMMENT_CATEGORIES.map((category) => (
-                <option key={category.value} value={category.value}>{category.label}</option>
-              ))}
-            </select>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <select
+                    aria-label="按标签筛选"
+                    value={categoryFilter}
+                    onChange={(event) => setCategoryFilter(event.target.value as 'ALL' | CommentCategory)}
+                    className="h-7 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="ALL">全部标签</option>
+                    {COMMENT_CATEGORIES.map((category) => (
+                      <option key={category.value} value={category.value}>{category.label}</option>
+                    ))}
+                  </select>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  <p>↑↓ 选择 · Enter 确认</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           {(statusFilter !== 'ALL' || categoryFilter !== 'ALL') && (
             <button
@@ -474,11 +484,14 @@ export default function CommentSection({
               setIsMobileCollapsed(newCollapsed)
               onMobileExpandedChange?.(!newCollapsed)
             }}
-            className="order-2 lg:hidden w-full p-3 flex items-center justify-between bg-muted/30"
+            className="order-2 lg:hidden w-full p-3 flex items-center justify-between bg-card border-b border-border/70"
           >
             <span className="text-sm font-medium flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
-              {t('feedbackAndDiscussion')} ({sortedComments.length})
+              {isMobileCollapsed
+                ? `${t('feedbackAndDiscussion')} (${sortedComments.length}) — ${t('tapToExpand')}`
+                : `${t('feedbackAndDiscussion')} (${sortedComments.length})`
+              }
             </span>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">

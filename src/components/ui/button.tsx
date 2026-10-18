@@ -11,11 +11,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "btn-primary hover:opacity-90 shadow-elevation hover:shadow-elevation-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-elevation",
+        default: "btn-primary hover:opacity-90 shadow-elevation hover:shadow-elevation-lg active:shadow-elevation",
         destructive:
-          "btn-destructive hover:opacity-90 shadow-elevation hover:shadow-elevation-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-elevation",
+          "btn-destructive hover:opacity-90 shadow-elevation hover:shadow-elevation-lg active:shadow-elevation",
         success:
-          "btn-success hover:opacity-90 shadow-elevation hover:shadow-elevation-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-elevation",
+          "btn-success hover:opacity-90 shadow-elevation hover:shadow-elevation-lg active:shadow-elevation",
         outline:
           "border border-border bg-card hover:bg-accent hover:text-accent-foreground hover:border-primary/50 shadow-elevation-sm hover:shadow-elevation",
         secondary:

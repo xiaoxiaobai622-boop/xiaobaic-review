@@ -330,13 +330,13 @@
     --secondary-foreground: 0 0% 96%;
 
     --muted: 0 0% 17%;
-    --muted-foreground: 0 0% 68%; /* #adadad */
+    --muted-foreground: 0 0% 78%; /* #c7c7c7，对比度 7.5:1 达 AAA 标准 */
 
     --accent: 0 0% 21%; /* #363636 */
     --accent-foreground: 0 0% 100%;
 
-    --border: 0 0% 25%; /* #404040，原来的 223 12% 28% 偏蓝且在新底上太淡 */
-    --input: 0 0% 25%;
+    --border: 0 0% 32%; /* #525252，对比度 2.5:1，边框清晰可见 */
+    --input: 0 0% 32%;
 
     /* 选中／高亮底：保留一点品牌紫，但把饱和度收到不抢眼 */
     --primary-visible: 243 22% 24%;

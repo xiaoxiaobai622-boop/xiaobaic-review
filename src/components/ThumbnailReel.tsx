@@ -122,12 +122,15 @@ export default function ThumbnailReel({
   }, [isExpanded])
 
   // Get current video info
-  const currentVideos = activeVideoName ? videosByName[activeVideoName] : []
+  const currentVideos = useMemo(
+    () => (activeVideoName ? videosByName[activeVideoName] : []),
+    [activeVideoName, videosByName]
+  )
 
   useEffect(() => {
     const available = currentVideos.some((video: any) => video.id === selectedVersionId)
     if (!available) setSelectedVersionId(currentVideos[0]?.id || '')
-  }, [activeVideoName, currentVideos, selectedVersionId])
+  }, [currentVideos, selectedVersionId])
 
   useEffect(() => {
     const handleVersionChanged = (event: Event) => {
@@ -213,14 +216,14 @@ export default function ThumbnailReel({
       {/* Floating Thumbnail Overlay - Appears below the bar, overlays content */}
       {isExpanded && (
         <div
-          className="absolute left-2 right-2 top-full z-30 mt-1 sm:left-4 sm:right-4"
+          className="absolute inset-x-0 top-full z-30 mt-1"
         >
           <div className="rounded-md border border-border/70 bg-background/95 shadow-lg backdrop-blur-md">
             <div className="px-2 py-3 sm:px-4">
               {/* Thumbnails container */}
               <div
                 ref={scrollContainerRef}
-                className="flex gap-2 sm:gap-3 overflow-x-auto overscroll-x-contain snap-x snap-mandatory justify-center"
+                className="flex gap-2 sm:gap-3 overflow-x-auto overscroll-x-contain snap-x justify-center"
                 style={{
                   scrollbarWidth: 'none',
                   msOverflowStyle: 'none',

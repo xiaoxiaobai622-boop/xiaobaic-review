@@ -1068,7 +1068,8 @@
     "tooManyThumbnailUpdateRequests": "缩略图更新请求过多。请减速慢行。"
   },
   "comments": {
-    "feedbackAndDiscussion": "批注",
+    "feedbackAndDiscussion": "批注与讨论",
+    "tapToExpand": "点击展开",
     "hideFeedback": "隐藏反馈区",
     "showFeedback": "显示反馈",
     "watchingApprovedVersion": "正在观看已通过版本",

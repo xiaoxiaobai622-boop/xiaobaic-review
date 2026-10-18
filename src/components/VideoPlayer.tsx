@@ -1589,7 +1589,7 @@ export default function VideoPlayer({
               )}
 
               {!isDrawingMode && (onPreviousVideo || onNextVideo) && (
-                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 items-center justify-between px-3 opacity-100 transition-opacity duration-150 sm:px-4 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-player-navigation flex -translate-y-1/2 items-center justify-between px-3 opacity-100 transition-opacity duration-150 sm:px-4 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                   <button
                     type="button"
                     onClick={(event) => {
@@ -1663,7 +1663,7 @@ export default function VideoPlayer({
                 {/* Mobile-only center playback overlay (frame back / play / frame forward) */}
                 {!isDrawingMode && (
                   <div
-                    className={`sm:hidden absolute inset-0 z-10 flex items-center justify-center gap-6 pointer-events-none transition-opacity duration-300 ${
+                    className={`sm:hidden absolute inset-0 z-player-video flex items-center justify-center gap-6 pointer-events-none transition-opacity duration-300 ${
                       showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
                     }`}
                   >
@@ -1700,7 +1700,7 @@ export default function VideoPlayer({
 
                 {/* Custom Video Controls with Integrated Timeline */}
                 <div
-                  className="relative z-20"
+                  className="relative z-player-controls"
                 >
                   <CustomVideoControls
                     videoRef={videoRef as React.RefObject<HTMLVideoElement>}
@@ -1736,7 +1736,7 @@ export default function VideoPlayer({
 
                 {/* Playback Speed Indicator - positioned inside video wrapper */}
                 {playbackSpeed !== 1.0 && (
-                  <div className="absolute top-4 right-4 bg-black/80 text-white px-3 py-1.5 rounded-md text-sm font-medium pointer-events-none z-20">
+                  <div className="absolute top-4 right-4 bg-black/80 text-white px-3 py-1.5 rounded-md text-sm font-medium pointer-events-none z-player-controls">
                     {playbackSpeed.toFixed(2)}x
                   </div>
                 )}
