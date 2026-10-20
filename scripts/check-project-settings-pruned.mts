@@ -469,13 +469,15 @@ try {
   // 按工作区 diff 判的护栏在那天起就不再是恒真式。它当初要护的是「这页的表单没被那次删减顺手搬空」，
   // 所以换成直接数那十个字段还在不在——改守卫改不出这个形状，搬空表单一定会红。
   const teamSettingsSrc = readFileSync('src/app/studio/team/settings/page.tsx', 'utf8')
-  const TEAM_FIELDS = ['defaultApplyPreviewLut', 'maxUploadSizeGB', 'defaultTimestampDisplay',
+  // 十项 → 九项：10-19 他点单把「默认时间码格式」那枚下拉拆了（屏幕读数从此只看本机那档，
+  // 见 scripts/check-time-format.mts 的 S 组）。其余九项一个不许少，护栏原意不变。
+  const TEAM_FIELDS = ['defaultApplyPreviewLut', 'maxUploadSizeGB',
     'defaultUsePreviewForApprovedPlayback', 'defaultAllowClientAssetUpload', 'defaultAllowReverseShare',
     'defaultShowClientTutorial', 'defaultAllowAssetDownload', 'defaultClientCanApprove', 'autoApproveProject']
   const teamFieldsGone = TEAM_FIELDS.filter(f => !teamSettingsSrc.includes(f))
   check(teamFieldsGone.length === 0,
-    'B5d 团队级「视频设置」那十个字段一个没少（这页允许改，但不许被哪轮删减搬空）',
-    teamFieldsGone.length ? `→ 缺 ${JSON.stringify(teamFieldsGone)}` : `→ 十项全在，diff ${dirty.find(d => d.file === 'src/app/studio/team/settings/page.tsx') ? '有改动' : '为零'}`)
+    'B5d 团队级「视频设置」那九个字段一个没少（这页允许改，但不许被哪轮删减搬空）',
+    teamFieldsGone.length ? `→ 缺 ${JSON.stringify(teamFieldsGone)}` : `→ 九项全在，diff ${dirty.find(d => d.file === 'src/app/studio/team/settings/page.tsx') ? '有改动' : '为零'}`)
   // schema 也从「零 diff」名单里放出来：10-04 他自己点单做了「受限项目」，往上加了一列 restricted。
   // 护栏本身跟着换了一次口径：10-14 拆 Team.id 的 @default(cuid()) 也在 numstat 里留下 deleted>0
   // （改一行的 diff 必然是 +N/-1），但那不是「砍列」。所以改成比列名集合——少一列一定红，

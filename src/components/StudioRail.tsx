@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Check, CircleHelp, LogOut, UserRound } from 'lucide-react'
+import { Check, LogOut, MonitorDown, UserRound } from 'lucide-react'
 import { AllApplication, Config } from '@icon-park/react'
 import { useAuth } from '@/components/AuthProvider'
 import { initialsFromName } from '@/components/InitialsAvatar'
 import RailSearch from '@/components/RailSearch'
 import RailFeedback from '@/components/RailFeedback'
+import RailHelp from '@/components/RailHelp'
 import RailNotifications from '@/components/RailNotifications'
 import { apiPost } from '@/lib/api-client'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
@@ -143,6 +144,9 @@ export default function StudioRail() {
       <ProjectsRailItem active={pathname === '/studio/projects'} />
       <RailSearch className={RAIL_ICON_BUTTON} />
       <RailNotifications className={RAIL_ICON_BUTTON} />
+      <RailItem href="/studio/desktop" label="桌面客户端" active={pathname === '/studio/desktop'}>
+        <MonitorDown className="h-[20px] w-[20px]" />
+      </RailItem>
       <RailItem
         href="/studio/team"
         label="团队管理"
@@ -153,13 +157,7 @@ export default function StudioRail() {
 
       <div className="flex-1" aria-hidden />
 
-      <RailItem
-        href="https://scnqe74t5owc.feishu.cn/wiki/UOxownMcRiBLeekZwcEc3BBAnc2?from=from_copylink"
-        label="帮助文档"
-        external
-      >
-        <CircleHelp className="h-[20px] w-[20px]" />
-      </RailItem>
+      <RailHelp className={RAIL_ICON_BUTTON} />
 
       <RailFeedback className={RAIL_ICON_BUTTON} />
 
@@ -290,27 +288,19 @@ function ProjectsRailItem({ active }: { active: boolean }) {
 }
 
 function RailItem({
-  href, label, title, children, active, external,
+  href, label, title, children, active,
 }: {
   href: string
   label: string
   title?: string
   children: React.ReactNode
   active?: boolean
-  external?: boolean
 }) {
   const className = `${RAIL_ICON_BUTTON} ${
     active
       ? 'text-foreground'
       : 'text-muted-foreground hover:text-accent-foreground'
   }`
-  if (external) {
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={className} title={title || label}>
-        {children}
-      </a>
-    )
-  }
   return (
     <Link href={href} className={className} title={title || label}>
       {children}

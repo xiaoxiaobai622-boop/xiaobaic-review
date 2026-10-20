@@ -160,7 +160,11 @@ interface VideoPlayerProps {
   onStreamAuthExpired?: (videoId: string) => Promise<boolean> // Re-mint a lapsed stream URL, true = caller replaced it
   hideDownloadButton?: boolean // Hide download button completely (for admin share view)
   comments?: CommentWithReplies[] // Comments for timeline markers
-  timestampDisplayMode?: 'TIMECODE' | 'AUTO' // Timestamp display format (default: TIMECODE)
+  /**
+   * @deprecated 10-19 起屏幕上的时间读数由本机那枚「时间格式」选择决定（`hooks/useTimeFormat`），
+   *   项目/团队那两列不再决定画什么。审片页那两份文件在冻结区还在传这一枚，所以接口留着。
+   */
+  timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onCommentFocus?: (commentId: string) => void // Callback when a timeline marker is clicked
   onVideoStateChange?: (state: {
     selectedVideo: any
@@ -206,7 +210,6 @@ export default function VideoPlayer({
   onStreamAuthExpired,
   hideDownloadButton = false, // Default to false (show download button)
   comments = [], // Default to empty array
-  timestampDisplayMode = 'TIMECODE', // Default to TIMECODE format
   onCommentFocus, // Callback when timeline marker is clicked
   onVideoStateChange, // Callback to expose video state for mobile layout
   usePreviewForApprovedPlayback = false, // Default to false (use original)
@@ -1723,7 +1726,6 @@ export default function VideoPlayer({
                     videoFps={selectedVideo?.fps || 24}
                     videoId={selectedVideo?.id}
                     isAdmin={isAdmin}
-                    timestampDisplayMode={timestampDisplayMode}
                     onMarkerClick={onCommentFocus}
                     pendingRangeStart={pendingRangeStart}
                     pendingRangeEnd={pendingRangeEnd}
@@ -1755,7 +1757,6 @@ export default function VideoPlayer({
           videoVersions={displayVideos}
           comments={comments}
           defaultQuality={defaultQuality}
-          timestampDisplayMode={timestampDisplayMode}
           onClose={() => setShowComparison(false)}
         />
       )}

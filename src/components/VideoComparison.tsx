@@ -10,7 +10,8 @@ import VideoComparisonSlider from './VideoComparisonSlider'
 import AnnotationOverlay, { type AnnotationAuthorMeta } from './AnnotationOverlay'
 import { useHlsSource } from '@/hooks/useHlsSource'
 import { ComparisonSide, useDualVideoSync } from '@/hooks/useDualVideoSync'
-import { formatCommentTimestamp } from '@/lib/timecode'
+import { formatTimecodeAs } from '@/lib/time-format'
+import { useTimeFormat } from '@/hooks/useTimeFormat'
 import type { AnnotationData } from '@/types/annotations'
 
 export interface VideoComparisonComment {
@@ -38,7 +39,6 @@ interface VideoComparisonProps {
   defaultQuality?: '720p' | '1080p' | '2160p'
   defaultVersionA?: number
   defaultVersionB?: number
-  timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   comments?: VideoComparisonComment[]
   onClose: () => void
 }
@@ -58,11 +58,11 @@ export default function VideoComparison({
   defaultQuality = '720p',
   defaultVersionA,
   defaultVersionB,
-  timestampDisplayMode = 'TIMECODE',
   comments = [],
   onClose,
 }: VideoComparisonProps) {
   const t = useTranslations('videos')
+  const format = useTimeFormat()
   const sorted = [...videoVersions].sort((a, b) => a.version - b.version)
 
   // Default: A = second-to-last (previous), B = last (latest)
@@ -163,12 +163,7 @@ export default function VideoComparison({
             name: comment.authorName || t('anonymousReviewer'),
             avatarUrl: comment.avatarUrl ?? null,
             isInternal: comment.isInternal,
-            timecode: formatCommentTimestamp({
-              timecode: comment.timecode,
-              fps: videoFps,
-              videoDurationSeconds: videoDuration,
-              mode: timestampDisplayMode,
-            }),
+            timecode: formatTimecodeAs(comment.timecode, videoFps, videoDuration, format),
             content: comment.content,
           },
         ])),
@@ -176,7 +171,7 @@ export default function VideoComparison({
     }
 
     return { A: forSide('A'), B: forSide('B') }
-  }, [timelineComments, timestampDisplayMode, t, videoDuration, videoFps])
+  }, [timelineComments, format, t, videoDuration, videoFps])
 
   // The hook layers catch-up adjustments on top of the user's speed, so both
   // elements only ever get the base rate from here.
@@ -433,7 +428,6 @@ export default function VideoComparison({
             playbackSpeed={playbackSpeed}
             onSpeedChange={setPlaybackSpeed}
             videoFps={videoFps}
-            timestampDisplayMode={timestampDisplayMode}
             waitingSide={waitingSide}
             audioSide={audioSide}
             onAudioChange={setAudioSide}

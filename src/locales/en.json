@@ -525,7 +525,6 @@
     "approveProject": "Approve Project",
     "confirmApproveProject": "Are you sure you want to approve this project?",
     "approveFirst": "Approve one version of each video first",
-    "approveFirstLong": "Approve one version of each video to enable project approval",
     "approvedSuccessfully": "Project approved successfully",
     "failedToApprove": "Failed to approve project",
 
@@ -1746,10 +1745,6 @@
       "resolution1080": "1080p (1920x1080 or 1080x1920 for vertical)",
       "resolution2160": "2160p (3840x2160 or 2160x3840 for vertical)",
       "resolutionHint": "New projects will use this resolution by default. Can be overridden per project.",
-      "timestampDisplay": "Default Comment Timestamp Display",
-      "timecode": "Timecode (HH:MM:SS:FF)",
-      "simpleTime": "Simple Time (MM:SS / HH:MM:SS)",
-      "timestampHint": "Used for new projects by default. You can change this per project in Project Settings.",
       "applyPreviewLut": "Apply Preview LUT",
       "applyPreviewLutHint": "Apply the color LUT during transcoding for color-calibrated previews. Disable to skip the LUT by default for new projects.",
       "usePreviewApproved": "Use Preview for Approved Playback",
@@ -2400,6 +2395,11 @@
   },
 
   "controls": {
+    "timeFormat": "Time format",
+    "timeFormat_FRAMES": "Frames",
+    "timeFormat_STANDARD": "Standard",
+    "timeFormat_TIMECODE": "Timecode",
+    "timeFormatAria": "Time format: {format}",
     "previousFrame": "Previous Frame",
     "nextFrame": "Next Frame",
     "pauseVideo": "Pause",

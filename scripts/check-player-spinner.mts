@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PrismaClient } from '@prisma/client'
@@ -500,6 +500,117 @@ try {
     return JSON.stringify([b.x, b.y, b.width, b.height])
   })()`))) as number[] | null
   if (slowBox) await shot(slow, 'player-after-stall', { x: slowBox[0], y: slowBox[1], width: slowBox[2], height: Math.min(slowBox[3], 780) })
+
+  // ── T 组：播控条那枚「时间格式」（帧 / 标准 / 时间码）────────────────────
+  // 读数自己就是入口（对标那枚）。这一组量的是接进界面之后真的发生了什么：默认档、
+  // 点档要真的换掉读数、整页同档、刷新后还在。夹具 fps=24、时长 CLIP_SECONDS。
+  const TRIGGER = `document.querySelector('[data-testid="time-format-trigger"]')`
+  const MENU = `document.querySelector('[data-testid="time-format-menu"]')`
+  const BUBBLE = `document.querySelector('[data-testid="timeline-hover-time"]')`
+  const readout = async () => String(await evalJs(page, `(${TRIGGER}?.textContent || '').replace(/\u00a0/g, ' ').trim()`))
+  const hoverTimeline = async (ratio: number) => {
+    await evalJs(page, `(() => {
+      const el = document.querySelector('[data-testid="video-timeline"]')
+      if (!el) return 'no-timeline'
+      const b = el.getBoundingClientRect()
+      window.__tl = [b.x + b.width * ${ratio}, b.y + b.height / 2]
+      return 'ok'
+    })()`)
+    const [hx, hy] = JSON.parse(String(await evalJs(page, 'JSON.stringify(window.__tl)'))) as number[]
+    await page.s('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hx, y: hy })
+    await sleep(250)
+    return String(await evalJs(page, `(${BUBBLE}?.textContent || '').trim()`))
+  }
+  const openMenu = () => clickCenter(page, TRIGGER)
+
+  check(await waitFor(page, TRIGGER, 30_000), 'T1 播控条那串时间是一枚点得开的按钮（aria 齐着）',
+    `→ ${JSON.stringify(await evalJs(page, `(() => { const t = ${TRIGGER}; return t && JSON.stringify({ tag: t.tagName, haspopup: t.getAttribute('aria-haspopup'), expanded: t.getAttribute('aria-expanded'), label: t.getAttribute('aria-label') }) })()`))}`)
+  const firstReadout = await readout()
+  check(/^(0\d|\d{2,}):\d{2} \/ (0\d|\d{2,}):\d{2}$/.test(firstReadout) && !/\d:\d\d:\d\d/.test(firstReadout),
+    'T2 默认档＝标准：读数两截都是分:秒（他 10-19 点的名，不再一进来就是四段时间码）', `→ 读数 ${JSON.stringify(firstReadout)}`)
+  check(String(await evalJs(page, `localStorage.getItem('time_format') === null`)) === 'true',
+    'T2·b 这条默认是"谁也没选过"落出来的，不是本机存过值假绿',
+    `→ localStorage ${JSON.stringify(await evalJs(page, `String(localStorage.getItem('time_format'))`))}`)
+  const bubbleStandard = await hoverTimeline(0.5)
+  check(/^\d{1,2}:\d{2}$/.test(bubbleStandard), 'T2·c 时间轴悬停气泡在标准档画分:秒（和读数同一档）', `→ 气泡 ${JSON.stringify(bubbleStandard)}`)
+
+  await openMenu()
+  const menuFacts = JSON.parse(String(await evalJs(page, `(() => {
+    const m = ${MENU}
+    if (!m) return '{"items":[]}'
+    const items = [...m.querySelectorAll('[role="menuitemradio"]')].map((el) => ({
+      key: el.getAttribute('data-time-format'),
+      text: (el.textContent || '').trim(),
+      checked: el.getAttribute('aria-checked'),
+    }))
+    return JSON.stringify({ items, title: (m.querySelector('p')?.textContent || '').trim(), trigger: ${TRIGGER}?.getAttribute('aria-expanded') })
+  })()`))) as { items: Array<{ key: string; text: string; checked: string | null }>; title?: string; trigger?: string | null }
+  check(menuFacts.items.length === 3 && menuFacts.items.map((i) => i.key).join(',') === 'FRAMES,STANDARD,TIMECODE',
+    'T3 菜单里三档按 帧 / 标准 / 时间码 排（顺序也是判据，别哪天悄悄换）', `→ ${JSON.stringify(menuFacts.items.map((i) => `${i.key}:${i.text}`))}`)
+  check(menuFacts.title === '时间格式' && menuFacts.trigger === 'true',
+    'T3·b 菜单有「时间格式」这个标题、触发器 aria-expanded 跟着开', `→ ${JSON.stringify([menuFacts.title, menuFacts.trigger])}`)
+  check(menuFacts.items.filter((i) => i.checked === 'true').map((i) => i.key).join() === 'STANDARD',
+    'T3·c 打勾的那档就是当前档（且只有一枚）', `→ ${JSON.stringify(menuFacts.items.map((i) => [i.key, i.checked]))}`)
+
+  // 菜单朝上开在视频上：拍一张自己看（描边、留白、有没有出画）。
+  const barBox = JSON.parse(String(await evalJs(page, `(() => {
+    const t = ${TRIGGER}
+    if (!t) return 'null'
+    const b = t.getBoundingClientRect()
+    return JSON.stringify([b.x, b.y])
+  })()`))) as number[] | null
+  if (barBox) await shot(page, 'time-format-menu', { x: Math.max(0, barBox[0] - 60), y: Math.max(0, barBox[1] - 210), width: 460, height: 250 })
+
+  await clickCenter(page, `${MENU} && [...${MENU}.querySelectorAll('[data-time-format]')].find(el => el.getAttribute('data-time-format') === 'TIMECODE')`)
+  const tcReadout = await readout()
+  check(/^\d{2}:\d{2}:\d{2}[:;]\d{2} \/ \d{2}:\d{2}:\d{2}[:;]\d{2}$/.test(tcReadout),
+    'T4 点「时间码」读数立刻换成四段（时:分:秒:帧）', `→ 读数 ${JSON.stringify(tcReadout)}`)
+
+  await openMenu()
+  await clickCenter(page, `${MENU} && [...${MENU}.querySelectorAll('[data-time-format]')].find(el => el.getAttribute('data-time-format') === 'FRAMES')`)
+  const frameReadout = await readout()
+  const frameParts = frameReadout.split('/').map((x) => Number(x.trim()))
+  const wantTotalFrames = Math.floor(CLIP_SECONDS * 24)
+  check(frameParts.length === 2 && frameParts.every(Number.isInteger),
+    'T5 点「帧」读数换成两个整数帧号，冒号没了', `→ 读数 ${JSON.stringify(frameReadout)}`)
+  check(Math.abs((frameParts[1] ?? -1) - wantTotalFrames) <= 2,
+    `T5·b 右边那枚总帧数对得上夹具（${CLIP_SECONDS}s × 24fps = ${wantTotalFrames}，浏览器报的时长可差 1 帧）`,
+    `→ 实得 ${frameParts[1]}`)
+  check(String(await evalJs(page, `localStorage.getItem('time_format') === 'FRAMES'`)) === 'true',
+    'T5·c 选择落到本机（localStorage），不是只活在组件状态里',
+    `→ ${JSON.stringify(await evalJs(page, `String(localStorage.getItem('time_format'))`))}`)
+  const bubbleFrames = await hoverTimeline(0.5)
+  check(/^\d+$/.test(bubbleFrames), 'T6 整页同档：悬停气泡跟着换成帧号，不留一截时间码在那儿', `→ 气泡 ${JSON.stringify(bubbleFrames)}`)
+
+  await openMenu()
+  await page.s('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await page.s('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await sleep(250)
+  check(String(await evalJs(page, `!${MENU} && document.activeElement === ${TRIGGER}`)) === 'true',
+    'T7 Esc 关得掉，且焦点交回那串读数（键盘不落空）')
+
+  await page.s('Page.navigate', { url: `${BASE}/${code}` })
+  check(await waitFor(page, cardFind('film'), 90_000), 'T8·前置 刷新后素材网格还在（夹具没被这次刷新弄坏）')
+  await clickCenter(page, cardFind('film'))
+  await waitFor(page, TRIGGER, 90_000)
+  const afterReload = await readout()
+  check(afterReload.split('/').every((x) => Number.isInteger(Number(x.trim()))),
+    'T8 刷新之后仍停在帧档（本机记住了）', `→ 读数 ${JSON.stringify(afterReload)}`)
+
+  const formatUsers = ['CustomVideoControls', 'TimelineHoverPreview', 'CommentSection', 'CommentInput', 'VideoComparisonControls']
+  const notWired = formatUsers.filter((name) => !readFileSync(`src/components/${name}.tsx`, 'utf8').includes('useTimeFormat'))
+  check(notWired.length === 0,
+    'T9 五处渲染时间的界面都从同一枚 hook 取档（选一次整页跟着变；漏一处就会出现两种档）',
+    `→ 没接上的：${JSON.stringify(notWired)}`)
+  const stillReads = formatUsers.filter((name) => {
+    const src = readFileSync(`src/components/${name}.tsx`, 'utf8')
+    return /mode:\s*timestampDisplayMode|formatTimeWithMode/.test(src)
+  })
+  check(stillReads.length === 0, 'T9·b 没有一处还在拿项目那列当显示口径（三处重复的 formatter 已收成一份）',
+    `→ 还在读的：${JSON.stringify(stillReads)}`)
+
+  // 后面几组要在标准档之外继续量播放，先把选择清掉，别把帧档带进 A/B 采样。
+  await evalJs(page, `localStorage.removeItem('time_format'); true`)
 
   // ── 流畅度基线：只报数，不当判据 ────────────────────────────────────────
   const fastEvents = await events(page)

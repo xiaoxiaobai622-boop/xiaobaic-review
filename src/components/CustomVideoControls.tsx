@@ -5,7 +5,10 @@ import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Repeat } from 'lucide-react'
 import { getUserColor } from '@/lib/utils'
-import { timecodeToSeconds, timecodeToSeekSeconds, secondsToTimecode, formatCommentTimestamp } from '@/lib/timecode'
+import { timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
+import { formatTimeDisplay } from '@/lib/time-format'
+import { useTimeFormat } from '@/hooks/useTimeFormat'
+import TimeFormatSwitch from './TimeFormatSwitch'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import TimelineHoverPreview from './TimelineHoverPreview'
 import { useMediaPosition } from '@/hooks/useMediaPosition'
@@ -35,7 +38,6 @@ interface CustomVideoControlsProps {
   videoFps?: number
   videoId?: string
   isAdmin?: boolean
-  timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onMarkerClick?: (commentId: string) => void // Callback when a timeline marker is clicked
   pendingRangeStart?: number | null
   pendingRangeEnd?: number | null
@@ -257,31 +259,6 @@ const COLOR_MAP: Record<string, { bg: string; ring: string; text: string }> = {
   },
 }
 
-function formatTime(seconds: number): string {
-  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '00:00'
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-}
-
-function formatTimeWithMode(
-  seconds: number,
-  fps: number,
-  videoDurationSeconds: number,
-  mode: 'TIMECODE' | 'AUTO'
-): string {
-  if (mode === 'AUTO') return formatTime(seconds)
-  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '00:00:00:00'
-  
-  const timecode = secondsToTimecode(seconds, fps)
-  return formatCommentTimestamp({
-    timecode,
-    fps,
-    videoDurationSeconds,
-    mode,
-  })
-}
-
 interface MarkerData {
   id: string
   timestamp: number
@@ -303,6 +280,8 @@ interface TimelineMarkersProps {
   groups: MarkerData[][]
   hoveredMarkerId: string | null
   isDragging: boolean
+  fps: number
+  duration: number
   onMarkerClick: (marker: MarkerData, event: React.MouseEvent<HTMLButtonElement>) => void
   onMarkerTouchEnd: (marker: MarkerData, event: React.TouchEvent<HTMLButtonElement>) => void
   onMarkerMouseEnter: (markerId: string) => void
@@ -352,6 +331,8 @@ const TimelineMarkers = memo(function TimelineMarkers({
   groups,
   hoveredMarkerId,
   isDragging,
+  fps,
+  duration,
   onMarkerClick,
   onMarkerTouchEnd,
   onMarkerMouseEnter,
@@ -360,6 +341,7 @@ const TimelineMarkers = memo(function TimelineMarkers({
 }: TimelineMarkersProps) {
   const t = useTranslations('controls')
   const tComments = useTranslations('comments')
+  const format = useTimeFormat()
 
   if (groups.length === 0) return null
 
@@ -397,7 +379,7 @@ const TimelineMarkers = memo(function TimelineMarkers({
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-white
                 ${isHovered ? 'ring-2 ring-primary/70 shadow-md z-30' : 'z-10'}
               `}
-              aria-label={`Comment by ${primaryMarker.authorName || tComments('anonymous')} at ${formatTime(primaryMarker.timestamp)}`}
+              aria-label={`Comment by ${primaryMarker.authorName || tComments('anonymous')} at ${formatTimeDisplay(primaryMarker.timestamp, fps, duration, format)}`}
             >
               <InitialsAvatar
                 name={primaryMarker.authorName}
@@ -441,7 +423,7 @@ const TimelineMarkers = memo(function TimelineMarkers({
                         </span>
                       </div>
                       <span className="text-[9px] text-white/70 font-sans tabular-nums">
-                        {formatTime(marker.timestamp)}
+                        {formatTimeDisplay(marker.timestamp, fps, duration, format)}
                       </span>
                     </div>
                     <p className="text-[10px] text-white/80 leading-relaxed line-clamp-2 pl-6">
@@ -628,7 +610,6 @@ function CustomVideoControls({
   videoFps = 24,
   videoId = '',
   isAdmin: _isAdmin = false,
-  timestampDisplayMode = 'TIMECODE',
   onMarkerClick,
   pendingRangeStart = null,
   pendingRangeEnd = null,
@@ -1126,6 +1107,8 @@ function CustomVideoControls({
             groups={groupedMarkers}
             hoveredMarkerId={hoveredMarkerId}
             isDragging={isDragging}
+            fps={videoFps}
+            duration={safeDuration}
             onMarkerClick={handleMarkerClick}
             onMarkerTouchEnd={handleMarkerTouchEnd}
             onMarkerMouseEnter={handleMarkerMouseEnter}
@@ -1140,7 +1123,6 @@ function CustomVideoControls({
               hoveredTime={hoveredTime}
               duration={videoDuration}
               fps={videoFps}
-              timestampDisplayMode={timestampDisplayMode}
             />
           )}
         </div>
@@ -1157,11 +1139,8 @@ function CustomVideoControls({
             onFrameStep={onFrameStep}
           />
 
-          {/* Time Display */}
-          <div className="mx-1 flex items-center rounded px-1.5 py-0.5 text-[13px] tabular-nums transition-colors hover:bg-muted">
-            <span className="text-foreground">{formatTimeWithMode(safeCurrentTime, videoFps, safeDuration, timestampDisplayMode)}</span>
-            <span className="text-muted-foreground">&nbsp;/&nbsp;{formatTimeWithMode(safeDuration, videoFps, safeDuration, timestampDisplayMode)}</span>
-          </div>
+          {/* Time Display：这串读数自己就是「时间格式」的入口 */}
+          <TimeFormatSwitch currentTime={safeCurrentTime} duration={safeDuration} fps={videoFps} />
         </div>
 
         {/* Keep the range-cancel hint centered without intercepting timeline drags. */}

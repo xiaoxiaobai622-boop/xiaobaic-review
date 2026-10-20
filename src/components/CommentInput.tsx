@@ -6,7 +6,8 @@ import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
 import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square, Smile, Globe, Users, ChevronDown, Check } from 'lucide-react'
-import { formatCommentTimestamp, secondsToTimecode } from '@/lib/timecode'
+import { formatTimecodeAs, formatTimeDisplay } from '@/lib/time-format'
+import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachmentButton from './CommentAttachmentButton'
 import EmojiPicker from './EmojiPicker'
@@ -35,7 +36,6 @@ interface CommentInputProps {
   selectedTimestamp: number | null
   selectedVideoFps: number // FPS of the currently selected video
   selectedVideoDurationSeconds?: number | null
-  timestampDisplayMode?: 'TIMECODE' | 'AUTO'
 
   // Timecode range (in/out)
   selectedTimecodeEnd?: string | null
@@ -87,7 +87,6 @@ export default function CommentInput({
   selectedTimestamp,
   selectedVideoFps,
   selectedVideoDurationSeconds = null,
-  timestampDisplayMode = 'TIMECODE',
   selectedTimecodeEnd = null,
   onSetTimecodeEnd,
   replyingToComment,
@@ -112,6 +111,7 @@ export default function CommentInput({
 }: CommentInputProps) {
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
+  const format = useTimeFormat()
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null)
   // 表情面板与可见范围下拉的开关；点击输入框外自动收起。
   const [emojiOpen, setEmojiOpen] = useState(false)
@@ -210,21 +210,11 @@ export default function CommentInput({
   const canSubmit = !loading && Boolean(newComment.trim() || hasAttachments || pendingAnnotation)
   const timestampLabel =
     selectedTimestamp !== null && selectedTimestamp !== undefined
-      ? formatCommentTimestamp({
-          timecode: secondsToTimecode(selectedTimestamp, selectedVideoFps),
-          fps: selectedVideoFps,
-          videoDurationSeconds: selectedVideoDurationSeconds,
-          mode: timestampDisplayMode,
-        })
+      ? formatTimeDisplay(selectedTimestamp, selectedVideoFps, selectedVideoDurationSeconds, format)
       : null
 
   const timecodeEndLabel = selectedTimecodeEnd
-    ? formatCommentTimestamp({
-        timecode: selectedTimecodeEnd,
-        fps: selectedVideoFps,
-        videoDurationSeconds: selectedVideoDurationSeconds,
-        mode: timestampDisplayMode,
-      })
+    ? formatTimecodeAs(selectedTimecodeEnd, selectedVideoFps, selectedVideoDurationSeconds, format)
     : null
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

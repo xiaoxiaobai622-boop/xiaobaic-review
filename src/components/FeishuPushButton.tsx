@@ -145,6 +145,8 @@ interface FeishuPushButtonProps {
   videoId?: string
   className?: string
   size?: 'default' | 'sm' | 'lg' | 'icon'
+  /** ghost＝侧栏那组操作行用的无描边形态；默认仍是 outline 按钮。 */
+  variant?: 'outline' | 'ghost'
 }
 
 interface VideoWithStatus {
@@ -189,7 +191,7 @@ interface PushPreview {
   } | null
 }
 
-export function FeishuPushButton({ projectId, videoId, className = '', size = 'default' }: FeishuPushButtonProps) {
+export function FeishuPushButton({ projectId, videoId, className = '', size = 'default', variant = 'outline' }: FeishuPushButtonProps) {
   const idPrefix = useId()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -431,12 +433,12 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
   return (
     <>
       <Button
-        variant="outline"
+        variant={variant}
         size={size}
         className={className}
         onClick={handleOpen}
       >
-        <Send className="h-4 w-4" />
+        <Send className="h-4 w-4" strokeWidth={2.5} />
         {videoId ? '推送本集' : '推送项目批注'}
       </Button>
 

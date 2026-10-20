@@ -339,6 +339,15 @@ try {
 
   check(/lg:w-\[56px\]/.test(rail) && /h-\[44px\] w-\[44px\]/.test(rail),
     'S21 护栏：窄栏宽度与 44px 命中区一字没动（A16/A17 钉的就是这两个数）')
+  const railOrder = [rail.indexOf('<RailNotifications'), rail.indexOf('/studio/desktop'), rail.indexOf('label="团队管理"')]
+  check(railOrder.every((n) => n >= 0) && railOrder[0] < railOrder[1] && railOrder[1] < railOrder[2] && !/href="\/dl"/.test(rail),
+    'S22 窄栏在通知与团队管理中间那枚指 /studio/desktop（10-19 他先要直下、看完改成先要一页）；栏里不再直接出现 /dl——'
+    + '直链留在页面里，版本号只在服务端现读，界面不写死',
+    `→ 三者在源码里的位置 ${JSON.stringify(railOrder)}；栏里还有 /dl：${/href="\/dl"/.test(rail)}`)
+  check(existsSync('src/app/dl/route.ts') && existsSync('src/lib/desktop-feed.ts')
+    && /readDesktopRelease/.test(read('src/app/dl/route.ts')) && /readDesktopRelease/.test(read('src/app/studio/desktop/page.tsx')),
+    'S22·b /dl 这条老链接还在（已发进聊天记录和文档，断不得），且它和下载页读同一份 src/lib/desktop-feed.ts，'
+    + '不各写一遍解析清单的正则')
 
   // ══ fixtures ══════════════════════════════════════════════════════════
   for (const [index, key] of ['owner', 'clean', 'peer'].entries()) {
@@ -479,6 +488,9 @@ try {
     // 面板先画空壳、数据随后到（打开时各打一次端点），所以先等自己那条夹具进来再量。
     check(await waitFor(page1, `document.querySelector('[data-rail-panel="notifications"]').innerText.includes('回复你的-')`, 20_000),
       'B2·b 面板里的数据真的到了（不是只画了空壳）', `→ /api/comments/for-me 回包 ${JSON.stringify(networkLog) || '（一条没记到）'}`)
+    // 两拨数据是两条独立请求：只等其中一条就量，会量到「另一条还没到」那一帧（B9 10-19 就这么红过一次）。
+    check(await waitFor(page1, `document.querySelectorAll('[data-rail-panel="notifications"] [data-notification-row]').length >= 2`, 20_000),
+      'B2·c 两拨数据都进了 DOM（批注回复＋平台消息），后面的几何、文案与截图才是拿整张表量的')
     await shot(page1, 'a-通知面板')
     const f: any = JSON.parse(String(await evalJs(page1, PANEL_FACTS)))
     check(!f.missing, 'B3·b 面板取证取到了内容', `→ ${JSON.stringify(f).slice(0, 140)}`)
@@ -499,6 +511,17 @@ try {
     const bellLabel = String(await evalJs(page1, `[...document.querySelectorAll('aside button')].map(b => b.getAttribute('aria-label')).filter(a => a && a.includes('通知')).join(' | ')`))
     check(/条未读通知/.test(bellLabel),
       'B10 面板开着的时候红点还在（点开不等于读完）', `→ ${bellLabel}`)
+    const dlGeo = String(await evalJs(page1, `(() => {
+      const mid = (el) => el ? Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) : -1
+      const bell = [...document.querySelectorAll('aside button')].find(b => (b.getAttribute('aria-label') || '').includes('通知'))
+      const dl = document.querySelector('aside a[href="/studio/desktop"]')
+      const team = [...document.querySelectorAll('aside a')].find(a => a.title === '团队管理')
+      const box = dl?.getBoundingClientRect()
+      return JSON.stringify({ bell: mid(bell), dl: mid(dl), team: mid(team), href: dl?.getAttribute('href') || null, target: dl?.getAttribute('target') || null, size: box ? [Math.round(box.width), Math.round(box.height)] : null })
+    })()`))
+    const g = JSON.parse(dlGeo)
+    check(g.href === '/studio/desktop' && g.target === null && g.dl > g.bell && g.dl < g.team && g.size?.[0] === 44 && g.size?.[1] === 44,
+      'B10·b 桌面客户端这枚真的落在通知与团队管理中间、命中区和其他图标同为 44px、是站内链接（不是新标签、也不是直链）', `→ ${dlGeo}`)
     const NB = `[...document.querySelectorAll('[data-rail-panel="notifications"] button')]`
     const ROWS = `[data-rail-panel="notifications"] [data-notification-row]`
     const allRows = Number(await evalJs(page1, `document.querySelectorAll('${ROWS}').length`))
@@ -722,6 +745,241 @@ try {
     await sleep(700)
     check(!(await evalJs(page4, `document.querySelector('[data-feedback-categories]')`)), 'C9 Esc 关得掉弹窗')
     await closePage(page4)
+
+    // 桌面客户端那一页：页面上几个数（版本／大小）必须和更新源逐字对得上，所以判据自己另读一遍
+    // latest.yml，不复用应用里那份解析——两边同一份代码错了会一起绿。
+    const page5 = await openPage()
+    console.log(`  登录（主账号）→ ${await loginInBrowser(page5, ownerEmail)}`)
+    await page5.s('Page.navigate', { url: `${BASE}/studio/projects` })
+    await waitFor(page5, `document.querySelector('aside a[href="/studio/desktop"]')`, 120_000)
+    await evalJs(page5, `document.querySelector('aside a[href="/studio/desktop"]').click()`)
+    check(await waitFor(page5, `location.pathname === '/studio/desktop'`, 120_000),
+      'D1 点窄栏那枚真的进 /studio/desktop', `→ ${await evalJs(page5, 'location.pathname')}`)
+    check(await waitFor(page5, `document.querySelector('aside') && document.body.innerText.includes('桌面客户端')`, 60_000),
+      'D2 这页吃的是站内壳子（窄栏还在、标题画出来了），不是掉进一个独立落地页')
+    const feed = await fetch('https://dl.vidx.cn/desktop/latest.yml', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.text() : '')).catch(() => '')
+    const wantVersion = feed.match(/^version:\s*([\d.]+)\s*$/m)?.[1] ?? null
+    const wantBytes = feed.match(/^\s+size:\s*(\d+)\s*$/m)?.[1] ?? null
+    const pageText = String(await evalJs(page5, `document.body.innerText`))
+    const wantMb = wantBytes ? (Number(wantBytes) / 1024 / 1024).toFixed(1) : null
+    if (wantVersion) {
+      check(pageText.includes(`版本 ${wantVersion}`) && (!wantMb || pageText.includes(wantMb)),
+        'D3 页面上的版本号与安装包大小和更新源逐字对得上（源是好的，页面就不许装死，也不许留一个旧号）',
+        `→ 源里 ${wantVersion}${wantMb ? ` / ${wantMb} MB` : ''}；页面开头 ${JSON.stringify(pageText.slice(0, 150))}`)
+    } else {
+      check(/版本 \d/.test(pageText) || /暂时读不到客户端版本信息/.test(pageText),
+        'D3 判据自己也没读到源（网络/CDN 问题），这一条只验页面二选一：要么有版本号、要么那句实话，不许空白',
+        `→ 源读回来 ${feed.length} 字节；页面 ${JSON.stringify(pageText.slice(0, 150))}`)
+    }
+    // 「只发 Windows」这句在 10-19 那版没了：这条事实改由「选择平台」那三行承担（macOS 行灰掉＋
+    // 「暂无发布计划」），归 D4·b 管。这里不再钉那句字面量，否则就是重复覆盖还挡重构。
+    check(/下载 Windows 客户端/.test(pageText) && /没有代码签名/.test(pageText) && /SmartScreen/.test(pageText),
+      'D4 主按钮那句、以及「安装包没有代码签名 → SmartScreen 会拦」这句实话都在——藏着的那句会让用户以为中了毒',
+      `→ 页面 ${JSON.stringify(pageText.slice(0, 120))}`)
+    check(['Windows', 'macOS', '网页版'].every((name) => pageText.includes(name)) && /暂无发布计划/.test(pageText),
+      'D4·b 「选择平台」那三行都画出来了，且 macOS 行是灰的、写着「暂无发布计划」（不是留一行空白让人以为坏了）')
+    check(await evalJs(page5, `document.querySelector('a[href="/dl"]')?.textContent?.includes('下载 Windows 客户端') === true`),
+      'D5 直下入口是页面里那颗按钮指 /dl（页面本身不自动跳转，也不写死带版本号的直链）')
+    const railColors = String(await evalJs(page5, `(() => {
+      const on = document.querySelector('aside a[href="/studio/desktop"]')
+      const off = document.querySelector('aside a[href="/studio/team"]')
+      if (!on || !off) return '{"on":null,"off":null}'
+      return JSON.stringify({ on: getComputedStyle(on).color, off: getComputedStyle(off).color })
+    })()`))
+    const cc = JSON.parse(railColors)
+    check(Boolean(cc.on) && Boolean(cc.off) && cc.on !== cc.off,
+      'D6 进了这页，窄栏那枚的选中态换的是字色（和这一列其他图标同一套语言，不铺底色块）', `→ ${railColors}`)
+    await shot(page5, 'f-客户端页')
+    // 他是深色用户，而「一个页面两颜色」这种问题只有两个主题都拍一张才看得见（10-19 那条深色展示带
+    // 就是这么露馅的）。判据不能只量根容器：第一版探到的是外壳那层 bg-background，量错了对象。
+    // 现在按内容块逐块往上找「垫在它底下的那一层颜色」，六块必须全是站内栏面 bg-popover。
+    const surfaces = String(await evalJs(page5, `(() => {
+      const probe = document.createElement('div')
+      probe.className = 'bg-popover'
+      document.body.appendChild(probe)
+      const popover = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      const main = document.querySelector('main')
+      const behind = (el) => {
+        for (let n = el; n && n !== main.parentElement; n = n.parentElement) {
+          const c = getComputedStyle(n).backgroundColor
+          if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c
+        }
+        return 'none'
+      }
+      const findByText = (sel, want) => [...document.querySelectorAll(sel)]
+        .find((el) => (el.textContent || '').includes(want))
+      const anchors = {
+        标题: document.querySelector('main h1'),
+        说明句: findByText('main p', '和浏览器里打开的是同一个站点'),
+        平台行: findByText('main h2', '选择平台'),
+        截图: document.querySelector('main figure img'),
+        装完之后: findByText('main h2', '装完之后'),
+        校验和: findByText('main p', 'SHA-512'),
+      }
+      // 主按钮不在这份名单里：它是栏面上的一枚控件（bg-primary 蓝），不是页面垫着的那一层——
+      // 上一版把它算进来，量出来 rgb(0,123,255) 判成「第二条色带」，那是判据把控件当版面。
+      const got = {}
+      for (const [k, el] of Object.entries(anchors)) got[k] = el ? behind(el) : null
+      return JSON.stringify({ popover, got, rootDiv: main && main.firstElementChild
+        ? main.firstElementChild.tagName + '.' + [...main.firstElementChild.classList].join('.') : null })
+    })()`))
+    const sf = JSON.parse(surfaces)
+    const offSurface = Object.entries(sf.got).filter(([, v]) => v !== sf.popover)
+    check(Boolean(sf.popover) && Object.values(sf.got).every(Boolean) && offSurface.length === 0,
+      'D7 整页只有一层栏面：六块内容（标题／说明句／平台行／截图／装完之后／校验和）垫着的底色全是 bg-popover，不再横插一条别的底色带',
+      `→ ${offSurface.length ? `不在栏面上的：${JSON.stringify(Object.fromEntries(offSurface))}` : '六块同一层'} ｜ 整页 ${surfaces.slice(0, 220)}`)
+    await evalJs(page5, `localStorage.setItem('theme', 'dark'); true`)
+    await page5.s('Page.navigate', { url: `${BASE}/studio/desktop` })
+    await waitFor(page5, `document.body.innerText.includes('逐帧审阅桌面客户端')`, 60_000)
+    await shot(page5, 'g-客户端页-深色')
+
+    // ── H 组：窄栏「?」＝帮助面板（帮助文档 + 联系客服二维码）────────────────
+    const HELP = `document.querySelector('aside button[aria-label="帮助"]')`
+    const HELP_PANEL = `document.querySelector('[data-rail-panel="help"]')`
+    const urlBefore = String(await evalJs(page5, 'location.href'))
+    check(await waitFor(page5, HELP, 20_000), 'H1 窄栏底部那枚「?」是按钮（以前是外链，点了把人带走）')
+    await evalJs(page5, `${HELP}.click(); true`)
+    check(await waitFor(page5, HELP_PANEL, 20_000), 'H2 点它开的是栏面，不是新开一个网页')
+    check(String(await evalJs(page5, 'location.href')) === urlBefore,
+      'H2·b 打开面板页面没跳走（旧实现直接跳飞书 wiki）',
+      `→ ${urlBefore} → ${await evalJs(page5, 'location.href')}`)
+
+    const helpGeo = String(await evalJs(page5, `(() => {
+      const p = ${HELP_PANEL}
+      if (!p) return 'null'
+      const b = p.getBoundingClientRect()
+      return JSON.stringify({ left: b.left, top: b.top, width: b.width, height: b.height, vh: innerHeight })
+    })()`))
+    const hg = JSON.parse(helpGeo) as { left: number; top: number; width: number; height: number; vh: number } | null
+    check(Boolean(hg) && Math.abs((hg as any).width - 288) < 1.5 && (hg as any).top === 0
+      && Math.abs((hg as any).height - (hg as any).vh) < 1.5
+      && [52.5, 56].some((x) => Math.abs((hg as any).left - x) < 0.75),
+      'H3 面板贴着窄栏、288px 整高（和通知面板同一条边，不压在窄栏上）', `→ ${helpGeo}`)
+
+    // 图片是面板打开后才开始下载的：上一版在 DOM 刚一出现就量 naturalWidth，读到 0 是抢跑，
+    // 不是裂图（同一时刻的截图里二维码画得好好的）。这里等它真的解码完。
+    await waitFor(page5, `(() => {
+      const img = ${HELP_PANEL}?.querySelector('[data-rail-help-support] img')
+      return !!img && img.complete && img.naturalWidth > 0
+    })()`, 20_000)
+    const helpFacts = String(await evalJs(page5, `(() => {
+      const p = ${HELP_PANEL}
+      if (!p) return 'null'
+      const doc = p.querySelector('[data-rail-help-doc]')
+      const support = p.querySelector('[data-rail-help-support]')
+      const img = support ? support.querySelector('img') : null
+      return JSON.stringify({
+        title: (p.querySelector('p')?.textContent || '').trim(),
+        docText: doc ? (doc.textContent || '').trim() : null,
+        docHref: doc ? doc.getAttribute('href') : null,
+        docTarget: doc ? doc.getAttribute('target') : null,
+        docRel: doc ? doc.getAttribute('rel') : null,
+        supportText: support ? (support.textContent || '').trim() : null,
+        qrSrc: img ? img.getAttribute('src') : null,
+        qrNatural: img ? img.naturalWidth : 0,
+      })
+    })()`))
+    const hf = JSON.parse(helpFacts) as Record<string, any> | null
+    check(Boolean(hf) && hf!.title === '帮助' && /帮助文档/.test(hf!.docText || '') && /联系客服/.test(hf!.supportText || ''),
+      'H4 面板里就两块：帮助文档、联系客服（标题写「帮助」，不再是一枚直接跳走的图标）',
+      `→ ${JSON.stringify({ title: hf?.title, docText: hf?.docText?.slice(0, 40), supportText: hf?.supportText?.slice(0, 40) })}`)
+    check(Boolean(hf) && /^https:\/\/scnqe74t5owc\.feishu\.cn\/wiki\//.test(hf!.docHref || '')
+      && hf!.docTarget === '_blank' && /noopener/.test(hf!.docRel || ''),
+      'H5 帮助文档那行仍指向原来那份飞书 wiki，新标签打开且带 noopener',
+      `→ ${JSON.stringify({ href: hf?.docHref, target: hf?.docTarget, rel: hf?.docRel })}`)
+    check(Boolean(hf) && hf!.qrSrc === '/support/wechat-support.jpg' && Number(hf!.qrNatural) > 0,
+      'H6 客服二维码真的加载出来了（文件在 public/support 下，不是一枚裂图）',
+      `→ ${JSON.stringify({ src: hf?.qrSrc, naturalWidth: hf?.qrNatural })}`)
+    await shot(page5, 'h-帮助面板')
+
+    await page5.s('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await page5.s('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    await sleep(250)
+    check(String(await evalJs(page5, `!${HELP_PANEL} && document.activeElement === ${HELP}`)) === 'true',
+      'H7 Esc 关得掉，且焦点交回那枚「?」')
+
+    await evalJs(page5, `${HELP}.click(); true`)
+    await waitFor(page5, HELP_PANEL, 20_000)
+    await evalJs(page5, `document.querySelector('main')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true`)
+    await sleep(250)
+    check(String(await evalJs(page5, `!${HELP_PANEL}`)) === 'true', 'H8 点面板外面关得掉（和通知面板同一套）')
+
+    // ── I 组：头像菜单（账号卡 + 两行正经菜单）────────────────────────────
+    const AVATAR_BTN = `document.querySelector('aside button[aria-haspopup="menu"]')`
+    const USER_MENU = `document.querySelector('aside [role="menu"]')`
+    check(await waitFor(page5, AVATAR_BTN, 20_000), 'I1 窄栏底部那枚头像按钮在，且声明了 aria-haspopup=menu')
+    await evalJs(page5, `${AVATAR_BTN}.click(); true`)
+    check(await waitFor(page5, USER_MENU, 20_000), 'I2 点头像开菜单')
+    check(String(await evalJs(page5, `${AVATAR_BTN}.getAttribute('aria-expanded')`)) === 'true',
+      'I2·b 打开后 aria-expanded 跟着变 true（读屏知道它开没开）')
+
+    const menuFacts = String(await evalJs(page5, `(() => {
+      const m = ${USER_MENU}
+      if (!m) return 'null'
+      const header = m.firstElementChild
+      const chip = header ? header.firstElementChild : null
+      const rows = [...m.querySelectorAll('[role="menuitem"]')]
+      const divider = m.querySelector('.border-t')
+      const mb = m.getBoundingClientRect()
+      return JSON.stringify({
+        width: mb.width,
+        left: mb.left,
+        inside: mb.left >= 0 && mb.right <= innerWidth && mb.top >= 0 && mb.bottom <= innerHeight,
+        headerText: header ? (header.textContent || '').trim() : null,
+        headerBorder: header ? getComputedStyle(header).borderBottomWidth : null,
+        chip: chip ? { w: chip.getBoundingClientRect().width, h: chip.getBoundingClientRect().height } : null,
+        rows: rows.map((r) => ({
+          text: (r.textContent || '').trim(),
+          href: r.getAttribute('href'),
+          h: r.getBoundingClientRect().height,
+          hasIcon: !!r.querySelector('svg'),
+        })),
+        divider: divider ? getComputedStyle(divider).borderTopWidth : null,
+        // 别按 16px 根字号算：这套壳的根字号是 15px（w-60 落在 225），h-9 还被紧凑档压到 31.875。
+        // 所以量「和同档控件是不是一样」——挂一枚同类的探针比写死数字稳。
+        stepWidth: (() => {
+          const probe = document.createElement('div')
+          probe.className = 'w-60'
+          document.body.appendChild(probe)
+          const w = probe.getBoundingClientRect().width
+          probe.remove()
+          return w
+        })(),
+        stepRow: (() => {
+          const probe = document.createElement('div')
+          probe.className = 'h-9'
+          document.body.appendChild(probe)
+          const h = probe.getBoundingClientRect().height
+          probe.remove()
+          return h
+        })(),
+      })
+    })()`))
+    const mf = JSON.parse(menuFacts) as Record<string, any> | null
+    check(Boolean(mf) && Math.abs(mf!.width - mf!.stepWidth) < 0.6 && mf!.width > 210 && mf!.inside,
+      'I3 菜单宽度就是 w-60 那一档（比原来的 w-56 宽 15px），且完整落在视口里',
+      `→ ${JSON.stringify({ width: mf?.width, w60: mf?.stepWidth, left: mf?.left, inside: mf?.inside })}`)
+    check(Boolean(mf) && /面板主账号/.test(mf!.headerText || '') && /创建人/.test(mf!.headerText || '')
+      && mf!.chip && Math.abs(mf!.chip.w - 36) < 0.6 && Math.abs(mf!.chip.h - 36) < 0.6 && mf!.headerBorder === '1px',
+      'I4 顶部是一张账号卡：36px 头像 + 名字 + 角色，下面一条分隔线（不再只有两行裸字）',
+      `→ ${JSON.stringify({ header: mf?.headerText, chip: mf?.chip, border: mf?.headerBorder })}`)
+    check(Boolean(mf) && mf!.rows.length === 2
+      && mf!.rows[0].href === '/profile' && /个人中心/.test(mf!.rows[0].text) && mf!.rows[0].hasIcon
+      && /退出登录/.test(mf!.rows[1].text) && mf!.rows[1].hasIcon
+      && mf!.rows.every((r: any) => Math.abs(r.h - mf!.stepRow) < 0.6) && mf!.stepRow > 30,
+      'I5 两行都吃 h-9 那一档（和全站控件同一步）、各有图标；「个人中心」仍指 /profile',
+      `→ ${JSON.stringify(mf?.rows)}`)
+    check(Boolean(mf) && mf!.divider === '1px',
+      'I6 退出登录单独隔开（和上面一行之间有一条 1px 细线）', `→ ${JSON.stringify({ divider: mf?.divider })}`)
+    await shot(page5, 'i-头像菜单')
+
+    await evalJs(page5, `${AVATAR_BTN}.click(); true`)
+    await sleep(250)
+    check(String(await evalJs(page5, `!${USER_MENU}`)) === 'true', 'I7 再点一次头像关得掉（开关正常）')
+
+    await closePage(page5)
   }
 
   console.log(`\n合计 ${failures.length === 0 ? '全 PASS' : failures.length + ' FAIL'}`)

@@ -3,21 +3,12 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Play, Pause, SkipBack, SkipForward, Columns2, SplitSquareHorizontal, MessageSquare, X } from 'lucide-react'
-import { secondsToTimecode, formatCommentTimestamp, timecodeToSeconds } from '@/lib/timecode'
+import { timecodeToSeconds } from '@/lib/timecode'
+import { formatTimeDisplay } from '@/lib/time-format'
+import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { InitialsAvatar } from './InitialsAvatar'
 
 const SPEED_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
-
-function formatTimeWithMode(
-  seconds: number,
-  fps: number,
-  videoDurationSeconds: number,
-  mode: 'TIMECODE' | 'AUTO'
-): string {
-  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return mode === 'TIMECODE' ? '00:00:00:00' : '0:00'
-  const timecode = secondsToTimecode(seconds, fps)
-  return formatCommentTimestamp({ timecode, fps, videoDurationSeconds, mode })
-}
 
 interface VideoComparisonControlsProps {
   videoDuration: number
@@ -31,7 +22,6 @@ interface VideoComparisonControlsProps {
   playbackSpeed: number
   onSpeedChange: (speed: number) => void
   videoFps: number
-  timestampDisplayMode: 'TIMECODE' | 'AUTO'
   /** Side whose missing media currently freezes the pair, or null. */
   waitingSide?: 'A' | 'B' | null
   audioSide: 'none' | 'A' | 'B'
@@ -61,12 +51,12 @@ export default function VideoComparisonControls({
   playbackSpeed,
   onSpeedChange,
   videoFps,
-  timestampDisplayMode,
   waitingSide = null,
   audioSide,
   onAudioChange,
   comments = [],
 }: VideoComparisonControlsProps) {
+  const format = useTimeFormat()
   const [isDragging, setIsDragging] = useState(false)
   const [hoveredTime, setHoveredTime] = useState<number | null>(null)
   const [activeCommentGroupKey, setActiveCommentGroupKey] = useState<string | null>(null)
@@ -198,7 +188,7 @@ export default function VideoComparisonControls({
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                  {formatTimeWithMode(activeCommentGroup.time, videoFps, videoDuration, timestampDisplayMode)}
+                  {formatTimeDisplay(activeCommentGroup.time, videoFps, videoDuration, format)}
                 </span>
                 <button
                   type="button"
@@ -285,7 +275,7 @@ export default function VideoComparisonControls({
                   transform: 'translateX(-50%)',
                 }}
               >
-                {formatTimeWithMode(hoveredTime, videoFps, videoDuration, timestampDisplayMode)}
+                {formatTimeDisplay(hoveredTime, videoFps, videoDuration, format)}
               </div>
             )}
           </div>
@@ -298,7 +288,7 @@ export default function VideoComparisonControls({
             const mixedVersions = group.comments.some(comment => comment.comparisonSide !== firstComment.comparisonSide)
             const markerLabel = t('openTimelineComment', {
               author: authorName,
-              time: formatTimeWithMode(group.time, videoFps, videoDuration, timestampDisplayMode),
+              time: formatTimeDisplay(group.time, videoFps, videoDuration, format),
             })
             return (
               <button
@@ -379,7 +369,7 @@ export default function VideoComparisonControls({
 
           {/* Time Display */}
           <div className="text-foreground text-xs sm:text-sm font-sans font-medium tabular-nums ml-1 sm:ml-2 whitespace-nowrap">
-            {formatTimeWithMode(currentTime, videoFps, videoDuration, timestampDisplayMode)} / {formatTimeWithMode(videoDuration, videoFps, videoDuration, timestampDisplayMode)}
+            {formatTimeDisplay(currentTime, videoFps, videoDuration, format)} / {formatTimeDisplay(videoDuration, videoFps, videoDuration, format)}
           </div>
 
           {waitingSide && (

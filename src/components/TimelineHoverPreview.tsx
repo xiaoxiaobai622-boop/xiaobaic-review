@@ -1,25 +1,14 @@
 'use client'
 
 import { memo, useEffect, useRef, useState } from 'react'
-import { formatCommentTimestamp, secondsToTimecode } from '@/lib/timecode'
+import { useTimeFormat } from '@/hooks/useTimeFormat'
+import { formatTimeDisplay } from '@/lib/time-format'
 
 interface TimelineHoverPreviewProps {
   videoUrl?: string | null
   hoveredTime: number | null
   duration: number
   fps: number
-  timestampDisplayMode: 'TIMECODE' | 'AUTO'
-}
-
-function formatTimeWithMode(
-  seconds: number,
-  fps: number,
-  duration: number,
-  mode: 'TIMECODE' | 'AUTO',
-): string {
-  if (!Number.isFinite(seconds)) return mode === 'TIMECODE' ? '00:00:00:00' : '0:00'
-  const timecode = secondsToTimecode(seconds, fps)
-  return formatCommentTimestamp({ timecode, fps, videoDurationSeconds: duration, mode })
 }
 
 function TimelineHoverPreview({
@@ -27,8 +16,8 @@ function TimelineHoverPreview({
   hoveredTime,
   duration,
   fps,
-  timestampDisplayMode,
 }: TimelineHoverPreviewProps) {
+  const format = useTimeFormat()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [ready, setReady] = useState(false)
   const [previewTime, setPreviewTime] = useState<number | null>(null)
@@ -105,7 +94,7 @@ function TimelineHoverPreview({
 
   const percent = Math.max(0, Math.min(100, (hoveredTime / duration) * 100))
   const alignment = percent < 18 ? 'left-0' : percent > 82 ? 'right-0' : 'left-1/2 -translate-x-1/2'
-  const label = formatTimeWithMode(hoveredTime, fps, duration, timestampDisplayMode)
+  const label = formatTimeDisplay(hoveredTime, fps, duration, format)
 
   return (
     <div
@@ -130,7 +119,7 @@ function TimelineHoverPreview({
         </div>
         <div className="flex items-center justify-between gap-2 border-t border-white/10 px-2 py-1.5">
           <span className="text-[10px] font-medium text-white/70 sm:text-[11px]">帧预览</span>
-          <span className="text-[10px] font-sans tabular-nums text-white sm:text-[11px]">{label}</span>
+          <span data-testid="timeline-hover-time" className="text-[10px] font-sans tabular-nums text-white sm:text-[11px]">{label}</span>
         </div>
       </div>
     </div>

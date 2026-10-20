@@ -498,6 +498,55 @@ try {
   check(smallF.missing !== true && smallF.haspopup === 'menu', 'B18 窄屏那枚（卡片态）也是同一块菜单，没被 bare 条件挡掉', `→ ${JSON.stringify(smallF).slice(0, 140)}`)
   await page.s('Emulation.clearDeviceMetricsOverride')
 
+  // ── J 组：侧栏下半区那组操作行（10-19 从七枚描边按钮改成和上面导航同一套行）──
+  const rowFacts = String(await evalJs(page, `(() => {
+    // 只量那组操作行：同一块里还坐着身份块那枚 48px 的触发器，别把它算成一行。
+    const panel = document.querySelector('[data-project-actions]')
+    if (!panel) return 'null'
+    const nav = [...document.querySelectorAll('aside nav button')][0]
+    const pick = (el) => {
+      if (!el) return null
+      const cs = getComputedStyle(el)
+      const icon = el.querySelector('svg')
+      return {
+        text: (el.textContent || '').trim().replace(/\s+/g, ' '),
+        padLeft: cs.paddingLeft,
+        font: cs.fontSize,
+        height: Math.round(el.getBoundingClientRect().height * 10) / 10,
+        bg: cs.backgroundColor,
+        border: cs.borderTopWidth,
+        color: cs.color,
+        iconW: icon ? Math.round(icon.getBoundingClientRect().width) : 0,
+        // 行的左边缘与图标左边缘：导航在上面那张卡里、操作行在下面那张卡里，
+        // 两边的包裹层内边距不一样，只比 paddingLeft 会漏掉「整体右移」。
+        left: Math.round(el.getBoundingClientRect().left * 100) / 100,
+        iconX: icon ? Math.round(icon.getBoundingClientRect().left * 100) / 100 : 0,
+      }
+    }
+    return JSON.stringify({ nav: pick(nav), rows: [...panel.querySelectorAll('button')].map(pick) })
+  })()`))
+  const rf = JSON.parse(rowFacts) as { nav: any; rows: any[] } | null
+  const labels = (rf?.rows || []).map((r) => r.text).join(' / ')
+  check(Boolean(rf) && rf!.rows.length === 7
+    && ['分享审阅链接', '复制收录链接', '查看数据统计', '推送项目批注', '通过整个项目', '归档项目', '删除项目']
+      .every((want) => labels.includes(want)),
+    'J1 那组七件事一件没少，只是换成了行', `→ ${labels}`)
+  const actionRows = (rf?.rows || []).filter((r) => r.text !== '删除项目')
+  check(Boolean(rf) && rf!.nav && actionRows.length > 0 && actionRows.every((r) =>
+    r.padLeft === rf!.nav.padLeft && r.font === rf!.nav.font
+    && Math.abs(r.height - rf!.nav.height) <= 1
+    && r.bg === 'rgba(0, 0, 0, 0)' && r.border === '0px'
+    && r.iconW === rf!.nav.iconW
+    && Math.abs(r.left - rf!.nav.left) <= 0.6 && Math.abs(r.iconX - rf!.nav.iconX) <= 0.6),
+    'J2 每行都和上面那张卡的导航行落在同一条竖线上：左边缘、图标左缘、内边距、字号、行高、图标宽全对齐，无底色无描边',
+    `→ 导航 ${JSON.stringify(rf?.nav)}；首行 ${JSON.stringify(actionRows[0])}`)
+  const del = (rf?.rows || []).find((r) => r.text === '删除项目')
+  const rgb = (del?.color || '').match(/rgba?\((\d+), (\d+), (\d+)/)
+  check(Boolean(del) && del!.bg === 'rgba(0, 0, 0, 0)' && Boolean(rgb) && Number(rgb![1]) > 150 && Number(rgb![2]) < 120,
+    'J3 删除项目只剩红字（没有那整块红底），底子仍是透明的',
+    `→ ${JSON.stringify({ color: del?.color, bg: del?.bg })}`)
+  await shot(page, 'project-actions-rows', { x: 0, y: 430, width: 340, height: 450 })
+
   await closePage(page)
 
   // ── C 组：四语言 ───────────────────────────────────────────────────────

@@ -11,7 +11,6 @@ import { useAuth } from '@/components/AuthProvider'
 type TeamSettingsData = {
   defaultApplyPreviewLut: boolean
   maxUploadSizeGB: number
-  defaultTimestampDisplay: string
   defaultUsePreviewForApprovedPlayback: boolean
   defaultAllowClientAssetUpload: boolean
   defaultAllowReverseShare: boolean
@@ -24,7 +23,6 @@ type TeamSettingsData = {
 const DEFAULTS: TeamSettingsData = {
   defaultApplyPreviewLut: true,
   maxUploadSizeGB: 1,
-  defaultTimestampDisplay: 'TIMECODE',
   defaultUsePreviewForApprovedPlayback: false,
   defaultAllowClientAssetUpload: false,
   defaultAllowReverseShare: true,
@@ -33,8 +31,6 @@ const DEFAULTS: TeamSettingsData = {
   defaultClientCanApprove: true,
   autoApproveProject: true,
 }
-
-const SELECT_CLASS_NAME = 'h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm'
 
 function Toggle({
   label,
@@ -167,17 +163,6 @@ export default function TeamSettingsPage() {
       <Card>
         <CardHeader><CardTitle>视频处理默认值</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-1">
-            <span className="text-sm text-muted-foreground">默认时间码格式</span>
-            <select
-              value={settings.defaultTimestampDisplay}
-              onChange={(event) => update('defaultTimestampDisplay', event.target.value)}
-              className={SELECT_CLASS_NAME}
-            >
-              <option value="TIMECODE">时码</option>
-              <option value="AUTO">自动</option>
-            </select>
-          </label>
           <label className="space-y-1">
             <span className="text-sm text-muted-foreground">最大上传大小（GB）</span>
             <Input

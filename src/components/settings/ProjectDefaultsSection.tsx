@@ -1,12 +1,9 @@
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import { useTranslations } from 'next-intl'
 
 interface ProjectDefaultsSectionProps {
-  defaultTimestampDisplay: string
-  setDefaultTimestampDisplay: (value: string) => void
   autoApproveProject: boolean
   setAutoApproveProject: (value: boolean) => void
   defaultUsePreviewForApprovedPlayback: boolean
@@ -27,8 +24,6 @@ interface ProjectDefaultsSectionProps {
 }
 
 export function ProjectDefaultsSection({
-  defaultTimestampDisplay,
-  setDefaultTimestampDisplay,
   autoApproveProject,
   setAutoApproveProject,
   defaultUsePreviewForApprovedPlayback,
@@ -158,21 +153,6 @@ export function ProjectDefaultsSection({
             checked={defaultShowClientTutorial}
             onCheckedChange={setDefaultShowClientTutorial}
           />
-        </div>
-        <div className="pt-2 mt-2 border-t border-border space-y-3">
-          <Label>{t('videoProcessing.timestampDisplay')}</Label>
-        <Select value={defaultTimestampDisplay} onValueChange={setDefaultTimestampDisplay}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="TIMECODE">{t('videoProcessing.timecode')}</SelectItem>
-            <SelectItem value="AUTO">{t('videoProcessing.simpleTime')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          {t('videoProcessing.timestampHint')}
-        </p>
         </div>
       </div>
     </CollapsibleSection>

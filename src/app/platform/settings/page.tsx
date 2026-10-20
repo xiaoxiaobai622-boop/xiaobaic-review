@@ -41,7 +41,6 @@ interface Settings {
   maxUploadSizeGB: number | null
   maxCommentAttachments: number | null
   maxReverseShareFiles: number | null
-  defaultTimestampDisplay: string | null
   autoApproveProject: boolean | null
   defaultUsePreviewForApprovedPlayback: boolean | null
   defaultAllowClientAssetUpload: boolean | null
@@ -144,7 +143,6 @@ export default function GlobalSettingsPage() {
   const [maxUploadSizeGB, setMaxUploadSizeGB] = useState('1')
   const [maxCommentAttachments, setMaxCommentAttachments] = useState('10')
   const [maxReverseShareFiles, setMaxReverseShareFiles] = useState('10')
-  const [defaultTimestampDisplay, setDefaultTimestampDisplay] = useState('TIMECODE')
   const [autoApproveProject, setAutoApproveProject] = useState(true)
   const [defaultUsePreviewForApprovedPlayback, setDefaultUsePreviewForApprovedPlayback] = useState(false)
   const [defaultAllowClientAssetUpload, setDefaultAllowClientAssetUpload] = useState(false)
@@ -222,7 +220,6 @@ export default function GlobalSettingsPage() {
     setMaxUploadSizeGB(data.maxUploadSizeGB?.toString() || '1')
     setMaxCommentAttachments(data.maxCommentAttachments?.toString() || '10')
     setMaxReverseShareFiles(data.maxReverseShareFiles?.toString() || '10')
-    setDefaultTimestampDisplay(data.defaultTimestampDisplay || 'TIMECODE')
     setAutoApproveProject(data.autoApproveProject ?? true)
     setDefaultUsePreviewForApprovedPlayback(data.defaultUsePreviewForApprovedPlayback ?? false)
     setDefaultAllowClientAssetUpload(data.defaultAllowClientAssetUpload ?? false)
@@ -624,7 +621,6 @@ export default function GlobalSettingsPage() {
         maxUploadSizeGB: parseInt(maxUploadSizeGB, 10) || 1,
         maxCommentAttachments: parseInt(maxCommentAttachments, 10) || 10,
         maxReverseShareFiles: parseInt(maxReverseShareFiles, 10) || 10,
-        defaultTimestampDisplay: defaultTimestampDisplay || 'TIMECODE',
         autoApproveProject: autoApproveProject,
         defaultUsePreviewForApprovedPlayback: defaultUsePreviewForApprovedPlayback,
         defaultAllowClientAssetUpload: defaultAllowClientAssetUpload,
@@ -801,7 +797,6 @@ export default function GlobalSettingsPage() {
   }
 
   const projectDefaultsProps = {
-    defaultTimestampDisplay, setDefaultTimestampDisplay,
     autoApproveProject, setAutoApproveProject,
     defaultUsePreviewForApprovedPlayback, setDefaultUsePreviewForApprovedPlayback,
     defaultAllowClientAssetUpload, setDefaultAllowClientAssetUpload,

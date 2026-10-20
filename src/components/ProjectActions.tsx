@@ -7,7 +7,6 @@ import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { Button } from './ui/button'
 import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, Calendar, Copy, Check, ChevronsUpDown, FileText, Users, Share2, UserPlus } from 'lucide-react'
 import type { ProjectSettingsSection } from './ProjectSettingsPanel'
 import { UnapproveModal } from './UnapproveModal'
@@ -416,59 +415,51 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
             )
           })()}
 
-          <Button
-            variant="outline"
-            size="default"
-            className="w-full"
-            onClick={onShareReview}
-          >
-            <Link2 className="w-4 h-4 mr-2" />
-            {t('shareReviewLink')}
-          </Button>
+          {/* 这一组以前是七枚描边按钮，压在导航那组行下面像另一个控件域。现在换成和上半区
+              工作区导航同一套行：图标 2.5 描边、14px、hover 一层 accent/60，删除只染红不铺整块红。
+              横向要拉回 -mx-3：上面那张卡的导航是「栏 p-2 + 行 px-3」，这张卡外面是「section px-2
+              + 信息区 px-3」，不抵掉这层，整组会比导航右移 11.25px（只抵 px-2 的那个差是上一版）。 */}
+          <div data-project-actions className="-mx-3 flex flex-col gap-1">
+            <button type="button" onClick={onShareReview} className={ACTION_ROW}>
+              <Link2 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+              {t('shareReviewLink')}
+            </button>
 
-          {/* 上传接口在项目没开「允许客户提交素材」时一律 403，所以入口照分享记录面板的规矩只在开着时给。 */}
-          {project.allowReverseShare && (
-            <Button
-              variant="outline"
-              size="default"
-              className="w-full"
-              data-tutorial="copy-collect-link"
-              disabled={collectLinkBusy}
-              onClick={() => void handleCopyCollectLink()}
-            >
-              {collectLinkCopied
-                ? <Check className="w-4 h-4 mr-2 text-emerald-600" />
-                : <Copy className="w-4 h-4 mr-2" />}
-              {collectLinkCopied ? tc('copied') : t('copyCollectLink')}
-            </Button>
-          )}
+            {/* 上传接口在项目没开「允许客户提交素材」时一律 403，所以入口照分享记录面板的规矩只在开着时给。 */}
+            {project.allowReverseShare && (
+              <button
+                type="button"
+                data-tutorial="copy-collect-link"
+                disabled={collectLinkBusy}
+                onClick={() => void handleCopyCollectLink()}
+                className={ACTION_ROW}
+              >
+                {collectLinkCopied
+                  ? <Check className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
+                  : <Copy className="h-4 w-4 shrink-0" strokeWidth={2.5} />}
+                {collectLinkCopied ? tc('copied') : t('copyCollectLink')}
+              </button>
+            )}
 
-          <Button
-            variant="outline"
-            size="default"
-            className="w-full"
-            onClick={() => router.push(`/studio/projects/${project.id}/analytics`)}
-          >
-            <BarChart3 className="w-4 h-4 mr-2" />
-            {t('viewAnalytics')}
-          </Button>
+            <button type="button" onClick={() => router.push(`/studio/projects/${project.id}/analytics`)} className={ACTION_ROW}>
+              <BarChart3 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+              {t('viewAnalytics')}
+            </button>
 
-          {/* Push Project Button - only for ADMIN and SUPER_ADMIN */}
-          {isAdmin && (
-            <FeishuPushButton
-              projectId={project.id}
-              className="w-full"
-              size="default"
-            />
-          )}
-
-          {/* Approve/Unapprove Toggle Button - hidden when archived */}
-          {project.status !== 'ARCHIVED' && (
-            <div>
-              <Button
-                variant="outline"
+            {/* Push Project Button - only for ADMIN and SUPER_ADMIN */}
+            {isAdmin && (
+              <FeishuPushButton
+                projectId={project.id}
+                variant="ghost"
+                className={`${ACTION_ROW} justify-start`}
                 size="default"
-                className="w-full"
+              />
+            )}
+
+            {/* Approve/Unapprove Toggle Button - hidden when archived */}
+            {project.status !== 'ARCHIVED' && (
+              <button
+                type="button"
                 onClick={handleToggleApproval}
                 disabled={isTogglingApproval || (project.status !== 'APPROVED' && !canApproveProject)}
                 title={
@@ -476,57 +467,43 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                     ? t('approveFirst')
                     : ''
                 }
+                className={ACTION_ROW}
               >
-                {project.status === 'APPROVED' ? (
-                  <>
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    {isTogglingApproval ? tc('changing') : t('unapproveProject')}
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    {isTogglingApproval ? tc('changing') : t('approveProject')}
-                  </>
-                )}
-              </Button>
-              {project.status !== 'APPROVED' && !canApproveProject && (
-                <p className="text-xs text-muted-foreground mt-1 px-1">
-                  {t('approveFirstLong')}
-                </p>
-              )}
-            </div>
-          )}
-
-          <Button
-            variant="outline"
-            size="default"
-            className="w-full"
-            onClick={handleToggleArchive}
-            disabled={isArchiving}
-          >
-            {project.status === 'ARCHIVED' ? (
-              <>
-                <ArchiveRestore className="w-4 h-4 mr-2" />
-                {isArchiving ? t('unarchiving') : t('unarchiveProject')}
-              </>
-            ) : (
-              <>
-                <Archive className="w-4 h-4 mr-2" />
-                {isArchiving ? t('archiving') : t('archiveProject')}
-              </>
+                {project.status === 'APPROVED'
+                  ? <RotateCcw className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                  : <CheckCircle className="h-4 w-4 shrink-0" strokeWidth={2.5} />}
+                {isTogglingApproval
+                  ? tc('changing')
+                  : project.status === 'APPROVED' ? t('unapproveProject') : t('approveProject')}
+              </button>
             )}
-          </Button>
 
-          <Button
-            variant="destructive"
-            size="default"
-            className="w-full"
-            onClick={handleDelete}
-            disabled={isDeleting}
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            {isDeleting ? tc('deleting') : t('deleteProject')}
-          </Button>
+            <button
+              type="button"
+              onClick={handleToggleArchive}
+              disabled={isArchiving}
+              className={ACTION_ROW}
+            >
+              {project.status === 'ARCHIVED'
+                ? <ArchiveRestore className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                : <Archive className="h-4 w-4 shrink-0" strokeWidth={2.5} />}
+              {isArchiving
+                ? (project.status === 'ARCHIVED' ? t('unarchiving') : t('archiving'))
+                : (project.status === 'ARCHIVED' ? t('unarchiveProject') : t('archiveProject'))}
+            </button>
+
+            <div className="my-1 border-t border-border" />
+
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className={ACTION_ROW_DESTRUCTIVE}
+            >
+              <Trash2 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+              {isDeleting ? tc('deleting') : t('deleteProject')}
+            </button>
+          </div>
         </ShellContent>
       </Shell>
 
@@ -541,6 +518,10 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
     </>
   )
 }
+
+/** 侧栏下半区那组操作行：和上半区工作区导航同一套（图标 2.5、14px、hover 一层 accent/60）。 */
+const ACTION_ROW = 'flex h-auto w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-[14px] font-medium text-muted-foreground outline-none transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground'
+const ACTION_ROW_DESTRUCTIVE = 'flex h-auto w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-left text-[14px] font-medium text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
 
 /** 项目菜单的一行。字号与内边距用 px 字面量：紧凑档的控件阶梯会把 text-sm/py-* 压平。 */
 function MenuItem({ icon, label, onSelect }: {

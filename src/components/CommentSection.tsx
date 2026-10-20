@@ -14,7 +14,9 @@ import CommentInput from './CommentInput'
 import CommentSortMenu, { type CommentSortMode } from './CommentSortMenu'
 import { useCommentManagement } from '@/hooks/useCommentManagement'
 import { apiFetch } from '@/lib/api-client'
-import { formatCommentTimestamp, timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
+import { timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
+import { formatTimecodeAs } from '@/lib/time-format'
+import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
 
 type CommentWithReplies = Comment & {
@@ -38,6 +40,10 @@ interface CommentSectionProps {
   recipients?: Array<{ id: string; name: string | null; email: string | null }>
   shareToken?: string | null
   showShortcutsButton?: boolean
+  /**
+   * @deprecated 10-19 起屏幕上的时间读数由本机那枚「时间格式」选择决定（`hooks/useTimeFormat`）。
+   *   审片页那两份文件在冻结区还在传这一枚，所以接口留着，组件里不再读它。
+   */
   timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   mobileCollapsible?: boolean
   initialMobileCollapsed?: boolean
@@ -75,7 +81,6 @@ export default function CommentSection({
   adminUser = null,
   shareToken = null,
   showShortcutsButton = false,
-  timestampDisplayMode = 'TIMECODE',
   mobileCollapsible = false,
   initialMobileCollapsed = true,
   authenticatedName = null,
@@ -95,6 +100,7 @@ export default function CommentSection({
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
   const tu = useTranslations('videoUi')
+  const format = useTimeFormat()
   const [isMobileCollapsed, setIsMobileCollapsed] = useState(initialMobileCollapsed)
   const [resolvedOverrides, setResolvedOverrides] = useState<Record<string, boolean>>({})
   const [composerTarget, setComposerTarget] = useState<HTMLElement | null>(null)
@@ -580,20 +586,10 @@ export default function CommentSection({
                   typeof comment.timecode === 'string' &&
                   comment.timecode.trim() !== ''
                 const timestampLabel = showTimestamp
-                  ? formatCommentTimestamp({
-                      timecode: comment.timecode,
-                      fps,
-                      videoDurationSeconds: duration,
-                      mode: timestampDisplayMode,
-                    })
+                  ? formatTimecodeAs(comment.timecode, fps, duration, format)
                   : null
                 const timecodeEndLabel = (comment as any).timecodeEnd
-                  ? formatCommentTimestamp({
-                      timecode: (comment as any).timecodeEnd,
-                      fps,
-                      videoDurationSeconds: duration,
-                      mode: timestampDisplayMode,
-                    })
+                  ? formatTimecodeAs((comment as any).timecodeEnd, fps, duration, format)
                   : null
                 const hasAnnotation = !!(comment as any).annotations
 
@@ -647,7 +643,6 @@ export default function CommentSection({
           sendInsideComposer={sendInsideComposer}          selectedTimestamp={selectedTimestamp}
           selectedVideoFps={selectedVideoFps}
           selectedVideoDurationSeconds={currentVideoDuration}
-          timestampDisplayMode={timestampDisplayMode}
           selectedTimecodeEnd={selectedTimecodeEnd}
           isSelectingTimecodeEnd={isSelectingTimecodeEnd}
           onSetTimecodeEnd={handleSetTimecodeEnd}

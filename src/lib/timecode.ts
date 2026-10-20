@@ -225,7 +225,7 @@ export function formatTimecodeDisplay(timecode: string): string {
   return `${hours}:${minutes}:${seconds}${separator}${frames}`
 }
 
-function formatClockTime(secondsTotal: number, includeHours: boolean): string {
+export function formatClockTime(secondsTotal: number, includeHours: boolean): string {
   const safeSeconds = Number.isFinite(secondsTotal) && secondsTotal > 0 ? Math.floor(secondsTotal) : 0
   const hours = Math.floor(safeSeconds / 3600)
   const minutes = Math.floor((safeSeconds % 3600) / 60)
