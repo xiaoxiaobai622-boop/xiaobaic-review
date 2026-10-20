@@ -19,7 +19,20 @@ import ShareLinksPanel from '@/components/ShareLinksPanel'
 import { ProjectSettingsPanel, type ProjectSettingsSection } from '@/components/ProjectSettingsPanel'
 import { ProjectMembersPanel } from '@/components/ProjectMembersPanel'
 import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
-import { ArrowLeft, Settings, ArrowUpDown, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Grid2X2, List, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck, PanelRight, MonitorPlay } from 'lucide-react'
+import VideoDisplayMenu from '@/components/projects/VideoDisplayMenu'
+import VideoSortMenu from '@/components/projects/VideoSortMenu'
+import ProjectSwitcher from '@/components/projects/ProjectSwitcher'
+import FilterDropdown from '@/components/FilterDropdown'
+import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
+import {
+  loadVideoDisplayPrefs,
+  loadVideoSortPrefs,
+  saveVideoDisplayPrefs,
+  saveVideoSortPrefs,
+  type VideoDisplayPrefs,
+  type VideoSortPrefs,
+} from '@/lib/video-view-prefs'
+import { ArrowLeft, ArrowUpDown, Settings, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck, PanelRight, MonitorPlay, Search } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -329,6 +342,7 @@ function TeamExpiryText() {
 export default function ProjectPage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
+  const tu = useTranslations('videoUi')
   // The 版本信息 panel reuses the video-version strings, which live in `videos`.
   const tv = useTranslations('videos')
   const params = useParams()
@@ -345,8 +359,11 @@ export default function ProjectPage() {
   const [project, setProject] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [shareUrl, setShareUrl] = useState('')
-  const [sortMode, setSortMode] = useState<'status' | 'alphabetical'>('alphabetical')
   const [videoViewMode, setVideoViewMode] = useState<'list' | 'grid'>('grid')
+  const [videoDisplay, setVideoDisplay] = useState<VideoDisplayPrefs>(() => loadVideoDisplayPrefs())
+  const [videoSort, setVideoSort] = useState<VideoSortPrefs>(() => loadVideoSortPrefs())
+  const [videoQuery, setVideoQuery] = useState('')
+  const [videoStatuses, setVideoStatuses] = useState<Set<VideoReviewStatus>>(new Set())
   const [albumSortMode, setAlbumSortMode] = useState<'date' | 'alphabetical'>('date')
   const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'photos' | 'uploads' | 'shares' | 'trash'>('videos')
   const [photoCounts, setPhotoCounts] = useState<{ albums: number; photos: number } | null>(null)
@@ -462,6 +479,9 @@ export default function ProjectPage() {
     setVideoViewMode(mode)
     try { localStorage.setItem(VIDEO_VIEW_MODE_KEY, mode) } catch {}
   }
+
+  useEffect(() => { saveVideoDisplayPrefs(videoDisplay) }, [videoDisplay])
+  useEffect(() => { saveVideoSortPrefs(videoSort) }, [videoSort])
 
   const changeWorkspace = (workspace: 'videos' | 'photos' | 'uploads' | 'shares' | 'trash') => {
     setActiveWorkspace(workspace)
@@ -698,6 +718,41 @@ export default function ProjectPage() {
     () => Array.from(new Set(workspaceVideos.map((v: any) => v.name))) as string[],
     [workspaceVideos]
   )
+
+  const latestVideoByGroup = useMemo(() => {
+    const latest = new Map<string, any>()
+    for (const video of workspaceVideos as any[]) {
+      const current = latest.get(video.name)
+      if (!current || Number(video.version || 0) > Number(current.version || 0)) latest.set(video.name, video)
+    }
+    return latest
+  }, [workspaceVideos])
+
+  const statusFilterActive = videoStatuses.size > 0 && videoStatuses.size < VIDEO_REVIEW_STATUS_OPTIONS.length
+  const videoFiltersActive = videoQuery.trim().length > 0 || statusFilterActive
+
+  const visibleGroupNames = useMemo(() => {
+    const query = videoQuery.trim().toLowerCase()
+    return videoGroupNames.filter((name) => {
+      if (query && !name.toLowerCase().includes(query)) return false
+      if (statusFilterActive) {
+        const status = getEffectiveVideoReviewStatus(latestVideoByGroup.get(name))
+        if (!status || !videoStatuses.has(status)) return false
+      }
+      return true
+    })
+  }, [latestVideoByGroup, statusFilterActive, videoGroupNames, videoQuery, videoStatuses])
+
+  const visibleGroupSet = useMemo(() => new Set(visibleGroupNames), [visibleGroupNames])
+  const visibleWorkspaceVideos = useMemo(
+    () => workspaceVideos.filter((video: any) => visibleGroupSet.has(video.name)),
+    [visibleGroupSet, workspaceVideos]
+  )
+
+  const clearVideoFilters = () => {
+    setVideoQuery('')
+    setVideoStatuses(new Set())
+  }
 
   // 播放器只吃选中素材的 READY 版本：一次点卡签一份，不铺满整项目（令牌有分钟级有效期，也有签发配额）。
   const reviewVersions = useMemo(() => {
@@ -1094,6 +1149,26 @@ export default function ProjectPage() {
     await fetchProject()
   }
 
+  const moveVideoGroups = async (groupNames: string[], folderId: string | null) => {
+    const videos = (project?.videos || []) as any[]
+    for (const groupName of groupNames) {
+      const latest = videos
+        .filter((video) => video.name === groupName)
+        .sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0]
+      if (!latest) continue
+      const response = await apiFetch(`/api/videos/${latest.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId, moveGroup: true }),
+      })
+      if (!response.ok) {
+        appAlert('移动视频失败')
+        return
+      }
+    }
+    await fetchProject()
+  }
+
   const openFolderUpload = () => folderUploadInputRef.current?.click()
 
   const handleFolderUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1284,7 +1359,6 @@ export default function ProjectPage() {
                 hideApprovalAction={true}
                 onStreamAuthExpired={recoverReviewStream}
                 comments={project.hideFeedback ? [] : (project.comments || [])}
-                timestampDisplayMode={project.timestampDisplay}
                 playerSurfaceClassName="bg-popover"
                 playerSurfaceColor="hsl(var(--popover))"
                 controlsSurfaceClassName="bg-popover"
@@ -1342,7 +1416,6 @@ export default function ProjectPage() {
           videos={reviewStreams}
           isAdminView={true}
           adminUser={user}
-          timestampDisplayMode={project.timestampDisplay}
           showShortcutsButton={false}
           showInfoButton={false}
           showCategoryPicker={false}
@@ -1365,13 +1438,16 @@ export default function ProjectPage() {
             css x 2545-2546、底沿 y 1245-1246 都是画布），圆角统一 8px（他栏面四角实测 R≈8：
             左栏顶角从 x69/y59 收到 x63/y65，右列底角从 x2544/y1239 收到 x2539/y1244）。 */}
         <div className="mb-[2px] flex flex-wrap items-center justify-between gap-3 rounded-[8px] bg-popover px-3 py-2">
-          <Link href="/studio/projects">
-            <Button variant="outline" size="default" className="justify-start px-3">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              <span className="hidden sm:inline">{t('backToProjects')}</span>
-              <span className="sm:hidden">{tc('back')}</span>
-            </Button>
-          </Link>
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">
+            <Link
+              href="/studio/projects"
+              className="shrink-0 rounded px-1 py-0.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {tu('allProjects')}
+            </Link>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <ProjectSwitcher currentProjectId={project.id} currentTitle={project.title} />
+          </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <TeamExpiryText />
             <Button
@@ -1491,24 +1567,66 @@ export default function ProjectPage() {
                 <h2 className="flex shrink-0 items-center gap-2 text-lg font-semibold">
                   <span className={iconBadgeClassName}><Video className={iconBadgeIconClassName} /></span>
                   {t('videos')}
-                  <span className={countBadgeClassName}>{videoGroupNames.length}</span>
+                  <span className={countBadgeClassName}>{visibleGroupNames.length}</span>
                 </h2>
-                <div id="video-selection-toolbar" className="flex min-w-0 flex-1 items-center justify-end empty:hidden" />
-                <div className="flex shrink-0 items-center gap-1">
-                  <div className="flex items-center rounded-md border border-border bg-muted/30 p-0.5">
-                    <Button variant={videoViewMode === 'list' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeVideoViewMode('list')} className="h-7 w-7" title={t('listView')} aria-label={t('listView')}>
-                      <List className="h-4 w-4" />
-                    </Button>
-                    <Button variant={videoViewMode === 'grid' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeVideoViewMode('grid')} className="h-7 w-7" title={t('gridView')} aria-label={t('gridView')}>
-                      <Grid2X2 className="h-4 w-4" />
-                    </Button>
+                <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:flex-1">
+                  <div className="relative w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-[190px]">
+                    <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      value={videoQuery}
+                      onChange={(event) => setVideoQuery(event.target.value)}
+                      placeholder={tu('searchAssets')}
+                      aria-label={tu('searchAssets')}
+                      className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-7 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                    {videoQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setVideoQuery('')}
+                        aria-label={tu('clearSearch')}
+                        className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => setSortMode(current => current === 'status' ? 'alphabetical' : 'status')} className="h-8 w-8 text-muted-foreground hover:text-foreground" title={sortMode === 'status' ? t('sortAlphabetically') : t('sortByStatus')}>
-                    <ArrowUpDown className="h-4 w-4" />
-                  </Button>
-                  {/* 素材/版本统计从顶栏挪到这里（用户指定位置）：排序键右侧的空位。 */}
-                  <span className="ml-1 shrink-0 text-xs text-muted-foreground">
-                    {t('materialSummary', { materials: videoGroupNames.length, versions: workspaceVideos.length })}
+                  <div className="flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:flex-nowrap">
+                    <FilterDropdown
+                      width="w-[220px]"
+                      groups={[{
+                        key: 'reviewStatus',
+                        label: tu('sortStatus'),
+                        options: VIDEO_REVIEW_STATUS_OPTIONS.map((option) => ({
+                          value: option.value,
+                          label: tv(option.labelKey),
+                        })),
+                        selected: videoStatuses as Set<string>,
+                        onChange: (selected) => setVideoStatuses(new Set(selected as Set<VideoReviewStatus>)),
+                      }]}
+                    />
+                    {videoFiltersActive && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                        onClick={clearVideoFilters}
+                        title={tu('clearFilters')}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        <span className="hidden lg:inline">{tu('clearFilters')}</span>
+                      </Button>
+                    )}
+                    <VideoSortMenu value={videoSort} onChange={setVideoSort} />
+                    <VideoDisplayMenu
+                      value={videoDisplay}
+                      onChange={setVideoDisplay}
+                      viewMode={videoViewMode}
+                      onViewModeChange={changeVideoViewMode}
+                    />
+                  </div>
+                  <span className="ml-1 hidden shrink-0 text-xs text-muted-foreground xl:inline">
+                    {t('materialSummary', { materials: visibleGroupNames.length, versions: visibleWorkspaceVideos.length })}
                   </span>
                 </div>
               </div>
@@ -1621,7 +1739,34 @@ export default function ProjectPage() {
                 )
               })()}
               <input ref={folderUploadInputRef} type="file" multiple accept={VIDEO_INPUT_ACCEPT} className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
-              <AdminVideoManager projectId={project.id} videos={workspaceVideos} projectStatus={project.status} restrictToLatestVersion={project.restrictCommentsToLatestVersion} onRefresh={fetchProject} sortMode={sortMode} viewMode={videoViewMode} maxRevisions={project.maxRevisions} enableRevisions={project.enableRevisions} comments={project.comments || []} uploadRequestKey={uploadRequestKey} uploadRequestFiles={uploadRequestFiles} uploadRequestFolderId={uploadRequestFolderId} timestampDisplayMode={project.timestampDisplay} selectionToolbarTargetId="video-selection-toolbar" onShowVideoInfo={showVersionInfo} onOpenInPlayerPane={reviewPaneMounted ? showVersionInfo : undefined} onCreateShare={(preset, target) => openObjectShare(preset, target)} />
+              <AdminVideoManager
+                projectId={project.id}
+                videos={visibleWorkspaceVideos}
+                projectStatus={project.status}
+                restrictToLatestVersion={project.restrictCommentsToLatestVersion}
+                onRefresh={fetchProject}
+                sortMode={videoSort.field === 'name' ? 'alphabetical' : 'status'}
+                sortField={videoSort.field}
+                sortDir={videoSort.dir}
+                cardSize={videoDisplay.size}
+                thumbAspect={videoDisplay.aspect}
+                showCardInfo={videoDisplay.showInfo}
+                titleLines={videoDisplay.titleLines}
+                viewMode={videoViewMode}
+                maxRevisions={project.maxRevisions}
+                enableRevisions={project.enableRevisions}
+                comments={project.comments || []}
+                uploadRequestKey={uploadRequestKey}
+                uploadRequestFiles={uploadRequestFiles}
+                uploadRequestFolderId={uploadRequestFolderId}
+                selectionToolbarTargetId="video-selection-toolbar"
+                folders={projectFolders.map((folder) => ({ id: folder.id, name: folder.name }))}
+                onMoveSelection={moveVideoGroups}
+                emptyMessage={videoFiltersActive ? tu('noMatchingAssets') : undefined}
+                onShowVideoInfo={showVersionInfo}
+                onOpenInPlayerPane={reviewPaneMounted ? showVersionInfo : undefined}
+                onCreateShare={(preset, target) => openObjectShare(preset, target)}
+              />
                 </div>
             </section>
 
@@ -1791,6 +1936,7 @@ export default function ProjectPage() {
           onMembersChange={fetchProject}
         />
       )}
+      <div id="video-selection-toolbar" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 empty:hidden" />
     </div>
   )
 }

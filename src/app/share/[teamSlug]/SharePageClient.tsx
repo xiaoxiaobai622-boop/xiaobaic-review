@@ -1629,6 +1629,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   shareToken={shareToken}
                   showShortcutsButton={true}
                   showVisibilitySelector={false}
+                  sendInsideComposer={true}
                   timestampDisplayMode={timestampDisplayMode}
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}

@@ -284,7 +284,9 @@ export const createProjectSchema = z.object({
   isShareOnly: z.boolean().optional(),
   // 受限项目：仅项目成员与团队 OWNER/ADMIN 可见（frame.io restricted 语义）
   restricted: z.boolean().optional(),
-  previewResolution: z.enum(['720p', '1080p', '2160p']).optional()
+  previewResolution: z.enum(['720p', '1080p', '2160p']).optional(),
+  // Creating from inside a console folder files the project there in the same write.
+  groupId: cuidSchema.nullable().optional(),
 })
 
 export const updateProjectSchema = z.object({

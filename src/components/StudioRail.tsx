@@ -3,15 +3,16 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CircleHelp, LogOut, UserRound } from 'lucide-react'
+import { Check, CircleHelp, LogOut, UserRound } from 'lucide-react'
 import { AllApplication, Config } from '@icon-park/react'
 import { useAuth } from '@/components/AuthProvider'
 import { initialsFromName } from '@/components/InitialsAvatar'
-import TeamSwitcher from '@/components/TeamSwitcher'
 import RailSearch from '@/components/RailSearch'
 import RailFeedback from '@/components/RailFeedback'
 import RailNotifications from '@/components/RailNotifications'
-import ThemeToggle from '@/components/ThemeToggle'
+import { apiPost } from '@/lib/api-client'
+import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
+import { THEME_CHOICES, applyThemeChoice, readThemeFromDom, type ThemeChoice } from '@/lib/theme'
 import { getContactEmail } from '@/lib/user-contact'
 import { useTranslations } from 'next-intl'
 
@@ -26,13 +27,13 @@ const RAIL_ICON_BUTTON = 'flex h-[44px] w-[44px] shrink-0 items-center justify-c
 const NAME_CHIP_GRADIENT = 'linear-gradient(180deg, #ff7ef9, #fb5cf7)'
 
 /** 44px 命中区一寸不动，里面收成 32px：有照片是圆图，没照片是名字坐在方片里（他截图那颗就是方角，圆角跟这一列其他控件同一档）。 */
-function RailAvatar({ name, src }: { name: string; src?: string | null }) {
+function RailAvatar({ name, src, size = 32 }: { name: string; src?: string | null; size?: number }) {
   const [imageFailed, setImageFailed] = useState(false)
   useEffect(() => { setImageFailed(false) }, [src])
 
   if (src && !imageFailed) {
     return (
-      <span className="h-[32px] w-[32px] overflow-hidden rounded-full">
+      <span className="overflow-hidden rounded-full" style={{ width: size, height: size }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt="" onError={() => setImageFailed(true)} className="h-full w-full object-cover" />
       </span>
@@ -40,8 +41,8 @@ function RailAvatar({ name, src }: { name: string; src?: string | null }) {
   }
   return (
     <span
-      className="flex h-[32px] w-[32px] items-center justify-center rounded-lg text-[13px] font-semibold text-[#212121]"
-      style={{ backgroundImage: NAME_CHIP_GRADIENT }}
+      className="flex shrink-0 items-center justify-center rounded-lg text-[13px] font-semibold text-[#212121]"
+      style={{ width: size, height: size, backgroundImage: NAME_CHIP_GRADIENT }}
     >
       {initialsFromName(name)}
     </span>
@@ -59,25 +60,76 @@ export default function StudioRail() {
   const pathname = usePathname()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const ta = useTranslations('auth')
+  const tc = useTranslations('controls')
+  const [theme, setTheme] = useState<ThemeChoice>(() => (typeof document !== 'undefined' ? readThemeFromDom() : 'light'))
 
   const userMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const syncTheme = () => setTheme(readThemeFromDom())
+    syncTheme()
+    const observer = new MutationObserver(syncTheme)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!showUserMenu) return
     function handleClickOutside(e: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setShowUserMenu(false)
       }
     }
-    if (showUserMenu) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowUserMenu(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
     }
   }, [showUserMenu])
 
   if (!user) return null
 
+  const roleLabel = user.teamRole === 'OWNER' ? '创建人'
+    : user.teamRole === 'ADMIN' ? '管理员'
+    : user.teamRole === 'MEMBER' ? '成员'
+    : '未加入团队'
   const contactEmail = getContactEmail(user.email)
   const displayName = user.name || user.phone || contactEmail || '微信用户'
+  const activeTeamId = getActiveTeamId() || user.teams?.[0]?.team.id || null
+  const themeLabels: Record<ThemeChoice, string> = {
+    light: tc('themeLight'),
+    mint: tc('themeMint'),
+    frame: tc('themeFrame'),
+    dark: tc('themeDark'),
+  }
+  const themeSwatches: Record<ThemeChoice, string> = {
+    light: '#ffffff',
+    mint: '#c9f2df',
+    frame: '#a5a7c2',
+    dark: '#1a1c25',
+  }
+
+  const switchTeam = async (teamId: string) => {
+    setShowUserMenu(false)
+    if (teamId === activeTeamId) return
+    setActiveTeamId(teamId)
+    try {
+      await apiPost('/api/teams/switch', { teamId })
+    } catch {
+      // Local state is authoritative; the reload pulls the new session.
+    }
+    window.location.reload()
+  }
+
+  const chooseTheme = (choice: ThemeChoice) => {
+    localStorage.setItem('theme', choice)
+    applyThemeChoice(choice)
+    setTheme(choice)
+  }
 
   // 窄栏自己带这条左留白带，这样每个 /studio 页面看到的栏宽都一样：以前只有项目页容器自己补了
   // lg:pl-5，团队管理等页面没有 ⇒ 同样的栏在那边看着窄一截。
@@ -88,10 +140,6 @@ export default function StudioRail() {
       className="sticky top-0 z-40 flex h-screen w-14 shrink-0 flex-col items-center gap-2 bg-background py-3 lg:w-[56px]"
       style={{ backgroundImage: 'var(--rail-gradient)' }}
     >
-      <TeamSwitcher compact />
-
-      <div className="my-1 h-px w-8 bg-border" aria-hidden />
-
       <ProjectsRailItem active={pathname === '/studio/projects'} />
       <RailSearch className={RAIL_ICON_BUTTON} />
       <RailNotifications className={RAIL_ICON_BUTTON} />
@@ -105,9 +153,6 @@ export default function StudioRail() {
 
       <div className="flex-1" aria-hidden />
 
-      {/* 内层 select 点击后会一直占着焦点，focus-within 的环会常驻（用户明确不要外框），所以这里不打焦点环。 */}
-      <ThemeToggle compact className="h-[44px] w-[44px] rounded-lg outline-none" />
-
       <RailItem
         href="https://scnqe74t5owc.feishu.cn/wiki/UOxownMcRiBLeekZwcEc3BBAnc2?from=from_copylink"
         label="帮助文档"
@@ -120,37 +165,97 @@ export default function StudioRail() {
 
       {/* 定宽而不是 w-full：w-full 只有内容盒那 36px，44px 的按钮在里面居不了中（auto 外边距在超宽时归零），
           会整枚贴左、比其他图标右移 4px。给成和控件同宽，交给栏的 items-center 居中。 */}
-      <div className="relative w-[44px]">
+      <div ref={userMenuRef} className="relative w-[44px]">
         <button
           onClick={() => setShowUserMenu(!showUserMenu)}
           className={`${RAIL_ICON_BUTTON}`}
           aria-label={displayName}
+          aria-haspopup="menu"
+          aria-expanded={showUserMenu}
           title={displayName}
         >
           <RailAvatar name={displayName} src={user.avatarUrl} />
         </button>
         {showUserMenu && (
-          <div className="absolute left-full bottom-0 ml-2 w-56 rounded-lg border border-border bg-card shadow-elevation-lg z-50">
-            <div className="px-3 py-2.5 border-b border-border">
-              <p className="text-sm font-medium truncate">{displayName}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {user.teamRole === 'OWNER' ? '创建人' : user.teamRole === 'ADMIN' ? '管理员' : user.teamRole === 'MEMBER' ? '成员' : '未加入团队'}
-              </p>
+          <div
+            role="menu"
+            aria-label={displayName}
+            className="absolute bottom-0 left-full z-50 ml-2 max-h-[calc(100vh-1.5rem)] w-64 overflow-y-auto rounded-lg border border-border bg-card shadow-elevation-lg"
+          >
+            {/* 账号卡：同一枚头像（有照片是照片、没有是名字片），跟窄栏那枚对得上。
+                这一条以前只有两行字，点开像一张裸列表。 */}
+            <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-3 py-2.5">
+              <RailAvatar name={displayName} src={user.avatarUrl} size={36} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">{displayName}</span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">{roleLabel}</span>
+              </span>
             </div>
-            <div className="p-1">
+            <div className="border-b border-border px-3 py-2.5">
+              <p className="text-[11px] font-medium text-muted-foreground">团队</p>
+              <div className="mt-1.5 space-y-0.5">
+                {user.teams && user.teams.length > 0 ? user.teams.map((item) => (
+                  <button
+                    key={item.team.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void switchTeam(item.team.id)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent ${
+                      item.team.id === activeTeamId ? 'bg-accent/60 font-medium text-foreground' : 'text-muted-foreground'
+                    }`}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[11px] font-semibold text-primary">
+                      {item.team.name.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{item.team.name}</span>
+                    {item.team.id === activeTeamId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                  </button>
+                )) : (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">未加入团队</p>
+                )}
+              </div>
+            </div>
+            <div className="border-b border-border px-3 py-2.5">
+              <p className="text-[11px] font-medium text-muted-foreground">主题</p>
+              <div className="mt-1.5 grid grid-cols-2 gap-1">
+                {THEME_CHOICES.map((choice) => (
+                  <button
+                    key={choice}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => chooseTheme(choice)}
+                    className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs outline-none transition-colors hover:bg-accent focus-visible:bg-accent ${
+                      theme === choice ? 'bg-accent/60 font-medium text-foreground' : 'text-muted-foreground'
+                    }`}
+                  >
+                    <span
+                      className={`h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-border ${choice === 'light' ? 'bg-white' : ''}`}
+                      style={choice === 'light' ? undefined : { backgroundColor: themeSwatches[choice] }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{themeLabels[choice]}</span>
+                    {theme === choice && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="p-1.5">
               <Link
                 href="/profile"
+                role="menuitem"
                 onClick={() => setShowUserMenu(false)}
-                className="flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-accent transition-colors"
+                className="flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
               >
-                <UserRound className="w-4 h-4" />
+                <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
                 个人中心
               </Link>
+              <div className="my-1 border-t border-border" />
               <button
+                type="button"
+                role="menuitem"
                 onClick={() => { setShowUserMenu(false); logout() }}
-                className="flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+                className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="h-4 w-4 shrink-0" />
                 {ta('signOut')}
               </button>
             </div>

@@ -49,7 +49,7 @@ export default function AdminLayout({
           跳到主要内容
         </a>
         {!hideHeader && <StudioRail />}
-        <main id="main-content" tabIndex={-1} className={`flex-1 min-h-0 flex flex-col outline-none ${isProjectWorkspace ? 'lg:overflow-hidden' : ''}`}>
+        <main id="main-content" tabIndex={-1} className={`flex-1 min-h-0 min-w-0 flex flex-col outline-none ${isProjectWorkspace ? 'lg:overflow-hidden' : ''}`}>
           {children}
         </main>
         <SessionMonitor />

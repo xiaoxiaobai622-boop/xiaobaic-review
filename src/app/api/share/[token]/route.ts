@@ -113,8 +113,11 @@ export async function GET(
       return NextResponse.json({
         error: shareMessages?.authenticationRequired || 'Authentication required',
         requiresPassword: true,
-        authMode: project.authMode || 'PASSWORD',
-        guestMode: project.guestMode || false
+        // The gate belongs to this share link, not to the project's own default.
+        // Using project.authMode here turned a PASSWORD link on a NONE project
+        // into a 401 that told the client "NONE", so no password form rendered.
+        authMode: projectMeta.authMode || 'PASSWORD',
+        guestMode: projectMeta.guestMode || false
       }, { status: 401 })
     }
 

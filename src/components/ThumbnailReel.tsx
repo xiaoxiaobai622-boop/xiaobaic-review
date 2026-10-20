@@ -24,6 +24,7 @@ interface ThumbnailReelProps {
   onToggleCommentPanel?: () => void
   // Toolbar capabilities vary between internal and client review pages.
   showLanguageToggle?: boolean
+  showThemeToggle?: boolean
   showComparisonAction?: boolean
   // Optional slot rendered after ThemeToggle (e.g. tutorial help button)
   trailingAction?: React.ReactNode
@@ -46,6 +47,7 @@ export default function ThumbnailReel({
   isCommentPanelVisible = true,
   onToggleCommentPanel,
   showLanguageToggle = true,
+  showThemeToggle = true,
   showComparisonAction = true,
   trailingAction,
   beforeToolbarAction,
@@ -207,7 +209,7 @@ export default function ThumbnailReel({
 
             {/* Language and theme toggles */}
             {showLanguageToggle && <LanguageToggle className="h-8 shadow-none" />}
-            <ThemeToggle />
+            {showThemeToggle && <ThemeToggle />}
             {trailingAction}
           </div>
         </div>

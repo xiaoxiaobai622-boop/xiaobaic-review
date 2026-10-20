@@ -9,11 +9,13 @@ import ThumbnailGrid from '@/components/ThumbnailGrid'
 import ThumbnailReel from '@/components/ThumbnailReel'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Check, Share2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
+import ReviewOverflowMenu from '@/components/ReviewOverflowMenu'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import { useTranslations } from 'next-intl'
@@ -119,6 +121,7 @@ async function mapWithConcurrency<T>(
 export default function AdminSharePage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
+  const tu = useTranslations('videoUi')
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -165,6 +168,7 @@ export default function AdminSharePage() {
   const [adminUser, setAdminUser] = useState<any>(null)
   const [hideComments, setHideComments] = useState(false)
   const [viewState, setViewState] = useState<'grid' | 'player'>('grid')
+  const [shareCopied, setShareCopied] = useState(false)
   const [thumbnailsByName, setThumbnailsByName] = useState<Map<string, string>>(new Map())
   const [thumbnailsLoading, setThumbnailsLoading] = useState(true)
   const tokenCacheRef = useRef<Map<string, any>>(new Map())
@@ -894,6 +898,13 @@ export default function AdminSharePage() {
 
   const projectUrl = `/studio/projects/${id}`
 
+  const copyShareLink = useCallback(async () => {
+    const copied = await copyTextToClipboard(window.location.href)
+    if (!copied) return
+    setShareCopied(true)
+    window.setTimeout(() => setShareCopied(false), 1600)
+  }, [])
+
   const handleReturnToSource = useCallback(() => {
     if (window.history.length > 1) {
       router.back()
@@ -1022,28 +1033,42 @@ export default function AdminSharePage() {
         onBackToGrid={handleReturnToSource}
         showBackButton={true}
         backButtonLabel={tc('back')}
-        showLanguageToggle={true}
+        showLanguageToggle={false}
+        showThemeToggle={false}
         showComparisonAction={canManageApproval}
         showCommentToggle={!project.hideFeedback}
         isCommentPanelVisible={!hideComments}
         onToggleCommentPanel={() => setHideComments(!hideComments)}
-        beforeToolbarAction={canManageApproval ? (
+        beforeToolbarAction={
           <div className="flex items-center gap-2">
-            <VideoReviewStatusSelect
-              projectId={project.id}
-              video={activeVideoState?.selectedVideo || null}
-              onUpdated={refreshProject}
-              className="h-8"
-            />
-            {activeVideoState?.selectedVideo && isAdmin && (
-              <FeishuPushButton
+            {canManageApproval && (
+              <VideoReviewStatusSelect
                 projectId={project.id}
-                videoId={activeVideoState.selectedVideo.id}
-                size="sm"
+                video={activeVideoState?.selectedVideo || null}
+                onUpdated={refreshProject}
+                className="h-8"
               />
             )}
+            <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => void copyShareLink()}>
+              {shareCopied ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{shareCopied ? tu('copied') : tu('share')}</span>
+            </Button>
+            <ReviewOverflowMenu>
+              {activeVideoState?.selectedVideo && isAdmin && (
+                <div className="px-1 pb-1">
+                  <FeishuPushButton
+                    projectId={project.id}
+                    videoId={activeVideoState.selectedVideo.id}
+                    size="sm"
+                  />
+                </div>
+              )}
+              <div className="my-1 border-t border-border" />
+              <LanguageToggle className="h-8 w-full justify-between border-0 bg-transparent px-2 shadow-none" />
+              <ThemeToggle className="h-8 w-full justify-between border-0 bg-transparent px-2 shadow-none" />
+            </ReviewOverflowMenu>
           </div>
-        ) : undefined}
+        }
         trailingAction={<ReviewLoginActions compact />}
       />
       {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
@@ -1124,6 +1149,7 @@ export default function AdminSharePage() {
                   shareToken={null}
                   showShortcutsButton={true}
                   showComposerCategoryPicker={false}
+                  sendInsideComposer={true}
                   timestampDisplayMode={timestampDisplayMode}
                   mobileCollapsible={true}
                   initialMobileCollapsed={true}

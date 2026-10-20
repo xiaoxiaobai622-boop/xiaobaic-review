@@ -22,6 +22,16 @@ import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
 import { VideoReviewStatusControl } from './VideoReviewStatusSelect'
 import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
+import {
+  VIDEO_CARD_MAX_WIDTH,
+  VIDEO_GRID_TEMPLATE,
+  VIDEO_THUMB_ASPECT_CLASS,
+  type VideoCardSize,
+  type VideoSortDir,
+  type VideoSortField,
+  type VideoThumbAspect,
+  type VideoTitleLines,
+} from '@/lib/video-view-prefs'
 import type { SharePreset, ShareTarget } from '@/components/CreateShareDialog'
 
 function isVideoFile(file: File): boolean {
@@ -64,6 +74,15 @@ interface AdminVideoManagerProps {
   companyName?: string
   onRefresh?: () => void | Promise<void>
   sortMode?: 'status' | 'alphabetical'
+  sortField?: VideoSortField
+  sortDir?: VideoSortDir
+  cardSize?: VideoCardSize
+  thumbAspect?: VideoThumbAspect
+  showCardInfo?: boolean
+  titleLines?: VideoTitleLines
+  emptyMessage?: string
+  folders?: Array<{ id: string; name: string }>
+  onMoveSelection?: (groupNames: string[], folderId: string | null) => Promise<void>
   viewMode?: 'list' | 'grid'
   maxRevisions?: number
   enableRevisions?: boolean
@@ -71,7 +90,6 @@ interface AdminVideoManagerProps {
   uploadRequestKey?: number
   uploadRequestFiles?: File[]
   uploadRequestFolderId?: string | null
-  timestampDisplayMode?: 'TIMECODE' | 'AUTO'
   onShowVideoInfo?: (videoGroup: { name: string; videos: any[] }) => void
   onOpenInPlayerPane?: (videoGroup: { name: string; videos: any[] }) => void
   onCreateShare?: (preset: SharePreset, target: ShareTarget) => void
@@ -96,12 +114,20 @@ export default function AdminVideoManager({
   companyName: _companyName = 'Studio',
   onRefresh,
   sortMode = 'alphabetical',
+  sortField = 'updated',
+  sortDir = 'desc',
+  cardSize = 'sm',
+  thumbAspect = '16:9',
+  showCardInfo = true,
+  titleLines = 1,
+  emptyMessage,
+  folders = [],
+  onMoveSelection,
   viewMode = 'grid',
   comments = [],
   uploadRequestKey = 0,
   uploadRequestFiles,
   uploadRequestFolderId = null,
-  timestampDisplayMode = 'TIMECODE',
   onShowVideoInfo,
   onOpenInPlayerPane,
   onCreateShare,
@@ -109,6 +135,7 @@ export default function AdminVideoManager({
 }: AdminVideoManagerProps) {
   const t = useTranslations('videos')
   const tc = useTranslations('common')
+  const tu = useTranslations('videoUi')
   const router = useRouter()
 
   // Group videos by name and order each group's versions here. Memoised on the videos
@@ -140,6 +167,22 @@ export default function AdminVideoManager({
 
     return grouped
   }, [videos, sortMode])
+
+  // A search/filter can hide a selected card; dropping it keeps the bottom bar
+  // from acting on rows the user can no longer see.
+  useEffect(() => {
+    setSelectedGroups((current) => {
+      if (current.size === 0) return current
+      const names = new Set(videos.map((video) => video.name))
+      let changed = false
+      const next = new Set<string>()
+      for (const name of current) {
+        if (names.has(name)) next.add(name)
+        else changed = true
+      }
+      return changed ? next : current
+    })
+  }, [videos])
 
   // Only allow one video expanded at a time - default collapsed
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
@@ -175,6 +218,9 @@ export default function AdminVideoManager({
   const [reviewStatusUpdatingVideoId, setReviewStatusUpdatingVideoId] = useState<string | null>(null)
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, VideoReviewStatus | null>>({})
   const [downloadingSelection, setDownloadingSelection] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkMoving, setBulkMoving] = useState(false)
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
   const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -684,22 +730,45 @@ export default function AdminVideoManager({
       })
   }
 
-  const sortedGroupNames = Object.keys(videoGroups).sort((nameA, nameB) => {
-    if (sortMode === 'alphabetical') {
-      return nameA.localeCompare(nameB)
-    } else {
-      // Status sorting
-      // Check if ANY version is approved in each group
-      const hasApprovedA = videoGroups[nameA].some(v => v.approved)
-      const hasApprovedB = videoGroups[nameB].some(v => v.approved)
-
-      // Groups with no approved versions come first, groups with any approved versions come last
-      if (hasApprovedA !== hasApprovedB) {
-        return hasApprovedA ? 1 : -1
-      }
-      // If both have same approval status, sort alphabetically
-      return nameA.localeCompare(nameB)
+  const commentCountByGroup = useMemo(() => {
+    const countByVideo = new Map<string, number>()
+    for (const comment of comments as any[]) {
+      if (!comment.videoId) continue
+      countByVideo.set(comment.videoId, (countByVideo.get(comment.videoId) || 0) + 1)
     }
+    const counts = new Map<string, number>()
+    for (const [name, group] of Object.entries(videoGroups)) {
+      const latest = getLatestVideo(group)
+      counts.set(name, latest ? countByVideo.get(latest.id) || 0 : 0)
+    }
+    return counts
+  }, [comments, videoGroups])
+
+  const sortedGroupNames = Object.keys(videoGroups).sort((nameA, nameB) => {
+    const latestA = getLatestVideo(videoGroups[nameA])
+    const latestB = getLatestVideo(videoGroups[nameB])
+    let comparison = 0
+
+    if (sortField === 'name') {
+      comparison = nameA.localeCompare(nameB)
+    } else if (sortField === 'comments') {
+      comparison = (commentCountByGroup.get(nameA) || 0) - (commentCountByGroup.get(nameB) || 0)
+    } else if (sortField === 'status') {
+      const statusOrder = (video: any) => {
+        if (!video) return -1
+        const status = getEffectiveVideoReviewStatus(getDisplayVideo(video))
+        return status ? VIDEO_REVIEW_STATUS_OPTIONS.findIndex(option => option.value === status) : -1
+      }
+      comparison = statusOrder(latestA) - statusOrder(latestB)
+    } else {
+      const updatedAt = (video: any) => new Date(
+        video?.updatedAt || video?.updated_at || video?.createdAt || video?.created_at || video?.uploadedAt || 0
+      ).getTime()
+      comparison = updatedAt(latestA) - updatedAt(latestB)
+    }
+
+    if (comparison === 0) comparison = nameA.localeCompare(nameB)
+    return sortDir === 'asc' ? comparison : -comparison
   })
 
   const selectedLatestVideos = [...selectedGroups]
@@ -746,8 +815,55 @@ export default function AdminVideoManager({
       setDownloadingSelection(false)
     }
   }
+  const handleBulkDelete = async () => {
+    if (bulkDeleting || selectedGroups.size === 0) return
+    if (!await appConfirm(tu('deleteSelectionConfirm', { count: selectedGroups.size }))) return
+    setBulkDeleting(true)
+    let failed = false
+    try {
+      for (const groupName of [...selectedGroups]) {
+        for (const video of videoGroups[groupName] || []) {
+          try {
+            await apiDelete(`/api/videos/${video.id}`)
+          } catch {
+            failed = true
+          }
+        }
+      }
+      setSelectedGroups(new Set())
+      onRefresh?.()
+      router.refresh()
+    } finally {
+      setBulkDeleting(false)
+      if (failed) appAlert(t('deleteGroupFailed'))
+    }
+  }
+
+  useEffect(() => {
+    if (!bulkMoveOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setBulkMoveOpen(false)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [bulkMoveOpen])
+
+  const handleBulkMove = async (folderId: string | null) => {
+    if (bulkMoving || selectedGroups.size === 0 || !onMoveSelection) return
+    setBulkMoving(true)
+    try {
+      await onMoveSelection([...selectedGroups], folderId)
+      setSelectedGroups(new Set())
+      setBulkMoveOpen(false)
+    } catch {
+      appAlert(t('moveToFolderFailed'))
+    } finally {
+      setBulkMoving(false)
+    }
+  }
+
   const selectionToolbar = selectedGroups.size > 0 ? (
-    <div className="flex w-full flex-wrap items-center gap-2">
+    <div className="pointer-events-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 rounded-xl border border-border bg-popover px-4 py-2.5 text-popover-foreground shadow-elevation-lg">
       <Button
         type="button"
         variant="outline"
@@ -765,7 +881,7 @@ export default function AdminVideoManager({
         className="h-8"
         onClick={() => setSelectedGroups(new Set())}
       >
-        {tc('cancel')}
+        {tu('clearSelection')}
       </Button>
       <span className="text-xs tabular-nums text-muted-foreground">
         {t('selectionCount', { count: selectedGroups.size })}
@@ -778,6 +894,34 @@ export default function AdminVideoManager({
         onValueChange={handleBulkReviewStatus}
         className="bg-background"
       />
+      {onMoveSelection && (
+        <div className="relative">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={() => setBulkMoveOpen((current) => !current)}
+            disabled={bulkMoving}
+            aria-expanded={bulkMoveOpen}
+            aria-haspopup="menu"
+          >
+            {bulkMoving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderInput className="h-4 w-4" />}
+            {tu('moveTo')}
+          </Button>
+          {bulkMoveOpen && (
+            <>
+              <button type="button" className="fixed inset-0 z-[80] cursor-default" aria-label={tc('cancel')} onClick={() => setBulkMoveOpen(false)} />
+              <div role="menu" className="absolute bottom-full right-0 z-[90] mb-2 max-h-64 w-52 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                <button type="button" role="menuitem" onClick={() => void handleBulkMove(null)} className="flex w-full items-center rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">{tu('rootFolder')}</button>
+                {folders.map((folder) => (
+                  <button key={folder.id} type="button" role="menuitem" onClick={() => void handleBulkMove(folder.id)} className="flex w-full items-center rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">{folder.name}</button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <Button
         type="button"
         size="sm"
@@ -789,6 +933,17 @@ export default function AdminVideoManager({
           ? <Loader2 className="h-4 w-4 animate-spin" />
           : <Download className="h-4 w-4" />}
         {tc('download')}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 text-destructive hover:text-destructive"
+        onClick={() => void handleBulkDelete()}
+        disabled={bulkDeleting || downloadingSelection}
+      >
+        {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+        {tc('delete')}
       </Button>
     </div>
   ) : null
@@ -836,8 +991,8 @@ export default function AdminVideoManager({
         <Card>
           <CardContent className="py-10 text-center space-y-3">
             <Video className="w-8 h-8 mx-auto text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{t('noVideosYet')}</p>
-            {projectStatus !== 'APPROVED' && (
+            <p className="text-sm text-muted-foreground">{emptyMessage || t('noVideosYet')}</p>
+            {!emptyMessage && projectStatus !== 'APPROVED' && (
               <Button variant="outline" size="sm" onClick={() => setIsUploadModalOpen(true)}>
                 <Upload className="w-3.5 h-3.5 mr-1" />
                 {t('uploadFirstVideo')}
@@ -849,7 +1004,7 @@ export default function AdminVideoManager({
 
       <div
         className={viewMode === 'grid' ? 'grid content-start gap-3' : 'space-y-4'}
-        style={viewMode === 'grid' ? { gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' } : undefined}
+        style={viewMode === 'grid' ? { gridTemplateColumns: VIDEO_GRID_TEMPLATE[cardSize] } : undefined}
       >
       {sortedGroupNames.map((groupName) => {
         const groupVideos = videoGroups[groupName]
@@ -863,6 +1018,45 @@ export default function AdminVideoManager({
         const hasErrorVideos = errorCount > 0
         const feedbackCount = comments.filter(comment => comment.videoId === latestVideo.id).length
         const isGridCard = viewMode === 'grid' && !isExpanded
+        const titleClass = cn(
+          'min-w-0',
+          isGridCard
+            ? titleLines === 2
+              ? 'line-clamp-2 pr-7 text-sm leading-5'
+              : 'truncate pr-7 text-sm leading-5'
+            : 'text-lg'
+        )
+        const renderQuickActions = () => isGridCard ? (
+          <>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/75 via-black/25 to-transparent opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
+            <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); void handlePreview(groupName, event) }}
+                className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded bg-background/90 px-1.5 text-[10px] font-medium text-foreground shadow-sm hover:bg-background"
+                aria-label={tu('hoverPreview')}
+              >
+                <Play className="h-3 w-3" />{tu('hoverPreview')}
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onCreateShare?.('REVIEW', {
+                    scopeType: 'VIDEO',
+                    scopeId: latestVideo.id,
+                    name: groupName,
+                    versions: groupVideos.map((video) => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })),
+                  })
+                }}
+                className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded bg-background/90 px-1.5 text-[10px] font-medium text-foreground shadow-sm hover:bg-background"
+                aria-label={tu('hoverShare')}
+              >
+                <Share2 className="h-3 w-3" />{tu('hoverShare')}
+              </button>
+            </div>
+          </>
+        ) : null
 
         return (
           <Card
@@ -880,12 +1074,12 @@ export default function AdminVideoManager({
             onDrop={(event) => void handleVersionDrop(event, groupName)}
             className={cn(
               'group relative',
-              // 230px = 线上（改版前外壳）实测卡宽：网格内容区 956px 四等分。外壳把这一列挤窄/撑宽时卡片都不再跟着变。
-              isGridCard && 'h-full max-w-[230px]',
+              isGridCard && 'h-full',
               viewMode === 'grid' && isExpanded && 'col-span-full',
               isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg',
               dropTargetGroup === groupName && 'border-primary ring-2 ring-primary/50'
             )}
+            style={isGridCard ? { maxWidth: VIDEO_CARD_MAX_WIDTH[cardSize] } : undefined}
           >
             <CardHeader
               className={cn(
@@ -920,7 +1114,7 @@ export default function AdminVideoManager({
               <div className={cn('relative flex gap-3 flex-1 min-w-0', isGridCard ? 'flex-col items-stretch' : 'items-center')}>
                 {thumbnails[groupName] ? (
                   <div
-                    className={cn('relative flex-shrink-0 cursor-pointer overflow-hidden rounded-md border border-border bg-black', isGridCard && 'w-full aspect-video')}
+                    className={cn('relative flex-shrink-0 cursor-pointer overflow-hidden rounded-md border border-border bg-black', isGridCard && `w-full ${VIDEO_THUMB_ASPECT_CLASS[thumbAspect]}`)}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -932,24 +1126,37 @@ export default function AdminVideoManager({
                       className={cn('object-contain bg-black', isGridCard ? 'h-full w-full' : 'w-20 h-12 rounded-md')}
                     />
                     {isGridCard && (
-                      <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
+                      <>
+                        <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
+                        {renderQuickActions()}
+                      </>
                     )}
                   </div>
                 ) : (
-                  <div draggable={displayLatestVideo.status === 'READY'} onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)} className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? 'w-full aspect-video' : 'w-20 h-12')}>
+                  <div draggable={displayLatestVideo.status === 'READY'} onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)} className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? `w-full ${VIDEO_THUMB_ASPECT_CLASS[thumbAspect]}` : 'w-20 h-12')}>
                     <Video className="w-5 h-5 text-muted-foreground" />
                     {isGridCard && (
-                      <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
+                      <>
+                        <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
+                        {renderQuickActions()}
+                      </>
                     )}
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     {editingGroupName === groupName ? (
-                      <CardTitle className={cn('min-w-0', isGridCard ? 'truncate text-sm leading-5' : 'text-lg')}>{groupName}</CardTitle>
+                      <CardTitle className={titleClass}>{groupName}</CardTitle>
                     ) : (
                       <>
-                        <CardTitle className={cn('min-w-0', isGridCard ? 'truncate text-sm leading-5' : 'text-lg')}>{groupName}</CardTitle>
+                        <CardTitle
+                          className={titleClass}
+                          title={tu('doubleClickRename')}
+                          onClick={(event) => event.stopPropagation()}
+                          onDoubleClick={(event) => { event.stopPropagation(); handleStartEditGroupName(groupName, event) }}
+                        >
+                          {groupName}
+                        </CardTitle>
                         {!isGridCard && <VideoReviewStatusBadge video={displayLatestVideo} />}
                         {isExpanded && projectStatus !== 'APPROVED' && (
                           <>
@@ -1001,7 +1208,7 @@ export default function AdminVideoManager({
                       </>
                     )}
                   </div>
-                  {editingGroupName !== groupName && (
+                  {showCardInfo && editingGroupName !== groupName && (
                     <p className={cn('mt-1 flex w-full max-w-sm items-center gap-4 whitespace-nowrap text-muted-foreground', isGridCard ? '-translate-y-0.5 overflow-hidden pr-8 text-xs' : 'text-sm')}>
                       <span className="tabular-nums">{formatVideoUploadTime(latestVideo.createdAt, latestVideo.updatedAt, latestVideo.created_at, latestVideo.uploadedAt)}</span>
                       <span className="font-medium">{latestVideo.versionLabel || `v${latestVideo.version}`}</span>
@@ -1409,7 +1616,6 @@ export default function AdminVideoManager({
           videoVersions={comparisonVideos}
           comments={comparisonComments}
           defaultQuality="720p"
-          timestampDisplayMode={timestampDisplayMode}
           onClose={() => {
             setComparisonVideos(null)
             setComparisonComments([])

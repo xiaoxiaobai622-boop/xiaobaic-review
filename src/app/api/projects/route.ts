@@ -192,8 +192,24 @@ export async function POST(request: NextRequest) {
       dueDate,
       dueReminder,
       isShareOnly,
-      restricted
+      restricted,
+      groupId,
     } = validation.data
+
+    let resolvedGroupId: string | null = null
+    if (groupId) {
+      const folder = await prisma.projectGroup.findFirst({
+        where: { id: groupId, teamId },
+        select: { id: true },
+      })
+      if (!folder) {
+        return NextResponse.json(
+          { error: projectMessages.folderNotFound || 'Folder not found' },
+          { status: 400 }
+        )
+      }
+      resolvedGroupId = groupId
+    }
 
     const securityFields = [
       { value: title, scene: 1 },
@@ -271,6 +287,7 @@ export async function POST(request: NextRequest) {
           dueDate: dueDate ? new Date(dueDate) : null,
           dueReminder: dueReminder || null,
           restricted: restricted || false,
+          groupId: resolvedGroupId,
           createdById: admin.id,
           teamId,
         },

@@ -14,6 +14,14 @@ export function readStoredTheme(): ThemeChoice | null {
   return isThemeChoice(saved) ? saved : null
 }
 
+/** The document element is the source of truth; the admin default lives in AccentColorProvider. */
+export function readThemeFromDom(): ThemeChoice {
+  const root = document.documentElement
+  const attribute = root.getAttribute('data-theme')
+  if (attribute === 'mint' || attribute === 'frame') return attribute
+  return root.classList.contains('dark') ? 'dark' : 'light'
+}
+
 /** Site-wide default chosen by the admin; 'auto' follows the OS. */
 export function resolveDefaultTheme(defaultTheme: string | null | undefined): ThemeChoice {
   if (isThemeChoice(defaultTheme)) return defaultTheme

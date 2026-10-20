@@ -351,16 +351,55 @@ export default function CommentInput({
                 </div>
               )}
               {sendInsideComposer && (
-                // 和左边那排画笔同一圈、同一尺寸（bottom-1 / h-7 / h-6 按钮）；左边留出 96px 给画笔，
-                // 栏位窄到装不下时提示文字自己省略号，发送钮永远在右下角不被挤掉。
-                // 整条 pointer-events-none：这一圈压在输入框的文字区上，不能挡住点字定位光标。
+                // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
+                // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
                 <div className="pointer-events-none absolute bottom-1 left-[96px] right-2 flex h-7 items-center justify-end gap-1.5">
+                  {onVisibilityChange && !commentsDisabled && (
+                    <button
+                      ref={emojiBtnRef}
+                      type="button"
+                      onClick={toggleEmojiPicker}
+                      className="pointer-events-auto mr-auto inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label="添加表情符号"
+                      aria-expanded={emojiOpen}
+                      title="添加表情符号"
+                    >
+                      <Smile className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {showVisibilitySelector && onVisibilityChange && (
+                    <button
+                      ref={visBtnRef}
+                      type="button"
+                      onClick={toggleVisibilityDropdown}
+                      className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded-md border border-border/70 bg-background px-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-accent"
+                      aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
+                      aria-expanded={visOpen}
+                      title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}
+                    >
+                      {visibility === 'INTERNAL' ? <Users className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
+                      <span>{visibility === 'INTERNAL' ? '内部' : '公共'}</span>
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  )}
                   <p
                     title={t('enterToSend')}
-                    className="hidden min-w-0 truncate text-right text-xs text-muted-foreground sm:block"
+                    className="hidden min-w-0 truncate text-right text-[10px] text-muted-foreground lg:block"
                   >
                     {t('enterToSend')}
                   </p>
+                  {showShortcutsButton && onShowShortcuts && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onShowShortcuts}
+                      className="pointer-events-auto hidden h-6 px-1.5 text-[10px] lg:inline-flex"
+                    >
+                      <Keyboard className="h-3.5 w-3.5 lg:mr-1" />
+                      <span>{t('shortcuts')}</span>
+                    </Button>
+                  )}
                   <Button
                     onClick={onSubmit}
                     variant="default"
@@ -409,7 +448,7 @@ export default function CommentInput({
                     maxFiles={maxCommentAttachments}
                   />
                 )}
-                {onVisibilityChange && !commentsDisabled && (
+                {!sendInsideComposer && onVisibilityChange && !commentsDisabled && (
                   <button
                     ref={emojiBtnRef}
                     type="button"
@@ -451,7 +490,7 @@ export default function CommentInput({
                   : 'flex h-7 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1'}
               />
               <div className="flex shrink-0 items-center gap-1.5">
-                {showVisibilitySelector && onVisibilityChange && (
+                {!sendInsideComposer && showVisibilitySelector && onVisibilityChange && (
                   <button
                     ref={visBtnRef}
                     type="button"
@@ -469,7 +508,7 @@ export default function CommentInput({
                 {!sendInsideComposer && (
                   <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
                 )}
-                {showShortcutsButton && onShowShortcuts && (
+                {!sendInsideComposer && showShortcutsButton && onShowShortcuts && (
                   <Button type="button" variant="outline" size="sm" onClick={onShowShortcuts} className="hidden h-8 lg:inline-flex">
                     <Keyboard className="h-4 w-4 lg:mr-2" />
                     <span className="hidden lg:inline">{t('shortcuts')}</span>

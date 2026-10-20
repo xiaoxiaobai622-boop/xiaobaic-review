@@ -4,18 +4,10 @@ import { Aperture, Leaf, Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
-import { applyThemeChoice, type ThemeChoice } from '@/lib/theme'
+import { applyThemeChoice, readThemeFromDom, type ThemeChoice } from '@/lib/theme'
 
 interface ThemeToggleProps {
   className?: string
-}
-
-/** The document element is the source of truth; the admin default lives in AccentColorProvider. */
-function readThemeFromDom(): ThemeChoice {
-  const root = document.documentElement
-  const attribute = root.getAttribute('data-theme')
-  if (attribute === 'mint' || attribute === 'frame') return attribute
-  return root.classList.contains('dark') ? 'dark' : 'light'
 }
 
 export default function ThemeToggle({ className, compact = false }: ThemeToggleProps & { compact?: boolean }) {

@@ -6,11 +6,12 @@ import { Comment, Video } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
-import { CheckCircle2, MessageSquare, ChevronDown, ChevronUp, Filter, Info } from 'lucide-react'
+import { CheckCircle2, MessageSquare, ChevronDown, ChevronUp, Filter, Info, Search, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import MessageBubble from './MessageBubble'
 import CommentInput from './CommentInput'
+import CommentSortMenu, { type CommentSortMode } from './CommentSortMenu'
 import { useCommentManagement } from '@/hooks/useCommentManagement'
 import { apiFetch } from '@/lib/api-client'
 import { formatCommentTimestamp, timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
@@ -93,11 +94,14 @@ export default function CommentSection({
 }: CommentSectionProps) {
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
+  const tu = useTranslations('videoUi')
   const [isMobileCollapsed, setIsMobileCollapsed] = useState(initialMobileCollapsed)
   const [resolvedOverrides, setResolvedOverrides] = useState<Record<string, boolean>>({})
   const [composerTarget, setComposerTarget] = useState<HTMLElement | null>(null)
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'RESOLVED'>('ALL')
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | CommentCategory>('ALL')
+  const [commentQuery, setCommentQuery] = useState('')
+  const [commentSort, setCommentSort] = useState<CommentSortMode>('timecode')
 
   useEffect(() => {
     const resolveComposer = () => {
@@ -234,8 +238,18 @@ export default function CommentSection({
     if (statusFilter === 'OPEN' && resolved) return false
     if (statusFilter === 'RESOLVED' && !resolved) return false
     if (categoryFilter !== 'ALL' && (comment as any).category !== categoryFilter) return false
+    const query = commentQuery.trim().toLowerCase()
+    if (query) {
+      const haystack = [
+        comment.content,
+        (comment as any).authorName,
+        (comment as any).user?.name,
+        (comment as any).user?.email,
+      ].filter(Boolean).join(' ').toLowerCase()
+      if (!haystack.includes(query)) return false
+    }
     return true
-  }), [categoryFilter, displayComments, resolvedOverrides, statusFilter])
+  }), [categoryFilter, commentQuery, displayComments, resolvedOverrides, statusFilter])
 
   const sortedComments = useMemo(() => {
     const getTimelineSeconds = (comment: Comment) => {
@@ -251,6 +265,17 @@ export default function CommentSection({
 
     return [...filteredByStatusAndCategory]
       .sort((a, b) => {
+        if (commentSort === 'newest') {
+          const newestDifference = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          return newestDifference || a.id.localeCompare(b.id)
+        }
+
+        if (commentSort === 'unresolved') {
+          const aResolved = resolvedOverrides[a.id] ?? (a as any).resolved === true
+          const bResolved = resolvedOverrides[b.id] ?? (b as any).resolved === true
+          if (aResolved !== bResolved) return aResolved ? 1 : -1
+        }
+
         const aTimelineSeconds = getTimelineSeconds(a)
         const bTimelineSeconds = getTimelineSeconds(b)
         if (aTimelineSeconds !== bTimelineSeconds) return aTimelineSeconds - bTimelineSeconds
@@ -266,7 +291,7 @@ export default function CommentSection({
             )),
           }
         : comment)
-  }, [filteredByStatusAndCategory, videoById])
+  }, [commentSort, filteredByStatusAndCategory, resolvedOverrides, videoById])
 
   const latestComment = useMemo(() => sortedComments.reduce<CommentWithReplies | null>((latest, comment) => {
     if (!latest) return comment
@@ -432,18 +457,42 @@ export default function CommentSection({
               </Tooltip>
             </TooltipProvider>
           )}
-          {(statusFilter !== 'ALL' || categoryFilter !== 'ALL') && (
+          {(statusFilter !== 'ALL' || categoryFilter !== 'ALL' || commentQuery) && (
             <button
               type="button"
               onClick={() => {
                 setStatusFilter('ALL')
                 setCategoryFilter('ALL')
+                setCommentQuery('')
               }}
               className="h-7 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
             >
               清除
             </button>
           )}
+        </div>
+        <div className="mt-2 flex items-center gap-1.5">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              value={commentQuery}
+              onChange={(event) => setCommentQuery(event.target.value)}
+              placeholder={tu('searchComments')}
+              aria-label={tu('searchComments')}
+              className="h-7 w-full rounded-md border border-border bg-background pl-7 pr-6 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            {commentQuery && (
+              <button
+                type="button"
+                onClick={() => setCommentQuery('')}
+                aria-label={tu('clearSearch')}
+                className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <CommentSortMenu value={commentSort} onChange={setCommentSort} />
         </div>
         {selectedVideoId && currentVideo && !isAdminView && (
           <p className="text-xs text-muted-foreground mt-1">
@@ -513,7 +562,11 @@ export default function CommentSection({
           {sortedComments.length === 0 ? (
             <div className="text-center py-12">
               <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">{t('noMessages')}</p>
+              <p className="text-muted-foreground">
+                {commentQuery.trim() || statusFilter !== 'ALL' || categoryFilter !== 'ALL'
+                  ? tu('noMatchingComments')
+                  : t('noMessages')}
+              </p>
             </div>
           ) : (
             <>

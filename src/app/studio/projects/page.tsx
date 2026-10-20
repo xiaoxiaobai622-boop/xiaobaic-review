@@ -359,6 +359,9 @@ export default function AdminPage() {
       }
 
       if (projectDescription) data.description = projectDescription
+      // The ghost/create button lives inside the open folder; file the new project
+      // there in the same request, not back in 未归类.
+      if (openFolderId && openFolderId !== NO_GROUP_KEY) data.groupId = openFolderId
 
       const project = await apiPost('/api/projects', data)
       setShowNewProjectModal(false)
@@ -804,6 +807,7 @@ export default function AdminPage() {
                 emptyMessage={folderEmptyMessage}
                 onMoveProjects={handleMoveProjects}
                 onMutated={() => void loadProjects()}
+                onCreateProject={openNewProjectModal}
               />
             ) : (
               <ProjectsList

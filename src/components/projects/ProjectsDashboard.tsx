@@ -6,7 +6,7 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Video, MessageSquare, Pin, PinOff, Link2, Check, Archive, ArchiveRestore, Trash2, MoreHorizontal, AlertTriangle, Layers, CheckCircle2, FolderKanban, FolderInput, FolderOpen } from 'lucide-react'
+import { Video, MessageSquare, Pin, PinOff, Link2, Check, Archive, ArchiveRestore, Trash2, MoreHorizontal, AlertTriangle, Layers, CheckCircle2, FolderKanban, FolderInput, FolderOpen, Plus } from 'lucide-react'
 import { apiDelete, apiFetch, apiPatch } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
 import { copyTextToClipboard } from '@/lib/clipboard'
@@ -372,10 +372,11 @@ interface ProjectsDashboardProps {
   emptyMessage?: string
   onMoveProjects: (projectIds: string[], folderId: string | null) => Promise<void>
   onMutated: () => void
+  onCreateProject?: () => void
 }
 
 export default function ProjectsDashboard({
-  projects, isAdmin, folders, showFolderChip, emptyMessage, onMoveProjects, onMutated,
+  projects, isAdmin, folders, showFolderChip, emptyMessage, onMoveProjects, onMutated, onCreateProject,
 }: ProjectsDashboardProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -656,14 +657,29 @@ export default function ProjectsDashboard({
 
   const gridClass = 'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]'
   const archivedSelected = [...selected].some((id) => projects.find((p) => p.id === id && p.status === 'ARCHIVED'))
+  const createCard = isAdmin && onCreateProject && !batchMode ? (
+    <button
+      type="button"
+      onClick={onCreateProject}
+      className="flex h-full min-h-[125px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-transparent p-3 text-muted-foreground transition-colors hover:border-primary hover:bg-accent/30 hover:text-foreground"
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
+        <Plus className="h-4 w-4" />
+      </span>
+      <span className="text-[13px] font-medium">{t('newProject')}</span>
+    </button>
+  ) : null
 
   if (projects.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-12 text-center">
-          <p className="text-muted-foreground">{emptyMessage || t('noMatchingProjects')}</p>
-        </CardContent>
-      </Card>
+      <div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">{emptyMessage || t('noMatchingProjects')}</p>
+          </CardContent>
+        </Card>
+        {createCard && <div className={`${gridClass} mt-3`}>{createCard}</div>}
+      </div>
     )
   }
 
@@ -755,7 +771,7 @@ export default function ProjectsDashboard({
       )}
 
       {/* Grouped sections */}
-      {groups.map((g) => (
+      {groups.map((g, index) => (
         <div key={g.key} className="mb-5">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[14.5px] font-bold">{g.label}</span>
@@ -767,9 +783,14 @@ export default function ProjectsDashboard({
                 <ProjectCard {...cardProps(p)} />
               </div>
             ))}
+            {index === groups.length - 1 && createCard}
           </div>
         </div>
       ))}
+
+      {groups.length === 0 && createCard && (
+        <div className={`${gridClass} mb-5`}>{createCard}</div>
+      )}
 
       {/* Archived (collapsed) */}
       {archived.length > 0 && (
