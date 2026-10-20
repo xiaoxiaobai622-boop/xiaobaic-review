@@ -326,17 +326,19 @@ export default function ThumbnailGrid({
                   <VideoReviewStatusBadge video={latestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
 
                   {/* Duration and annotation badges */}
-                  <div className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm">
-                    <Film className="h-2.5 w-2.5" />
-                    {durationLabel}
-                  </div>
-                  <div
-                    className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm"
-                    title={t('feedbackCount', { count: feedbackCount })}
-                    aria-label={t('feedbackCount', { count: feedbackCount })}
-                  >
-                    <MessageSquare className="h-2.5 w-2.5" />
-                    {feedbackCount}
+                  <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
+                    <div className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm">
+                      <Film className="h-2.5 w-2.5" />
+                      {durationLabel}
+                    </div>
+                    <div
+                      className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm"
+                      title={t('feedbackCount', { count: feedbackCount })}
+                      aria-label={t('feedbackCount', { count: feedbackCount })}
+                    >
+                      <MessageSquare className="h-2.5 w-2.5" />
+                      {feedbackCount}
+                    </div>
                   </div>
                 </div>
 
