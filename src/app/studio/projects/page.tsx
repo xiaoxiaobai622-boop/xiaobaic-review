@@ -539,11 +539,10 @@ export default function AdminPage() {
         <div className="w-full px-3 py-3 sm:px-4 lg:pl-0 lg:pr-5">
           <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-bold flex min-h-[44px] items-center gap-2">
                 <FolderKanban className="w-7 h-7 sm:w-8 sm:h-8" />
                 {t('dashboard')}
               </h1>
-              <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('dashboardDescription')}</p>
             </div>
           </div>
           <Card>
@@ -598,11 +597,10 @@ export default function AdminPage() {
         <div className="w-full px-3 py-3 sm:px-4 lg:pl-0 lg:pr-5">
           <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-bold flex min-h-[44px] items-center gap-2">
                 <FolderKanban className="w-7 h-7 sm:w-8 sm:h-8" />
                 {t('dashboard')}
               </h1>
-              <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('dashboardDescription')}</p>
             </div>
             <Button variant="default" size="default" onClick={openNewProjectModal}>
               <Plus className="w-4 h-4 sm:mr-2" />
@@ -664,11 +662,10 @@ export default function AdminPage() {
       <div className="w-full px-3 py-3 sm:px-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-0 lg:pr-[2px] lg:pt-0 lg:pb-[2px]">
         <div className="flex justify-between items-center gap-4 border-b border-border pb-3 mb-3 lg:shrink-0 lg:mb-[2px] lg:rounded-[8px] lg:border-b-0 lg:bg-popover lg:px-4 lg:py-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-semibold flex min-h-[44px] items-center gap-2">
               <FolderKanban className="w-6 h-6" />
               {t('dashboard')}
             </h1>
-            <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('dashboardDescription')}</p>
           </div>
           {isAdmin && <Button variant="default" size="default" onClick={openNewProjectModal}>
             <Plus className="w-4 h-4 sm:mr-2" />

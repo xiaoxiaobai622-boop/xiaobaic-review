@@ -1437,7 +1437,7 @@ export default function ProjectPage() {
             四周边距也照它：顶 0（他那条白色顶栏上方只剩 1px 画布）、右 2px、底 2px（实测他窗口右沿
             css x 2545-2546、底沿 y 1245-1246 都是画布），圆角统一 8px（他栏面四角实测 R≈8：
             左栏顶角从 x69/y59 收到 x63/y65，右列底角从 x2544/y1239 收到 x2539/y1244）。 */}
-        <div className="mb-[2px] flex flex-wrap items-center justify-between gap-3 rounded-[8px] bg-popover px-3 py-2">
+        <div className="mb-[2px] flex flex-wrap items-center justify-between gap-3 rounded-[8px] bg-popover px-3 py-1 lg:py-4">
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
             <Link
               href="/studio/projects"

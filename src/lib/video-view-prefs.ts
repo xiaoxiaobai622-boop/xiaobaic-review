@@ -20,7 +20,7 @@ export const VIDEO_DISPLAY_STORAGE_KEY = 'vitransfer-admin-video-display'
 export const VIDEO_SORT_STORAGE_KEY = 'vitransfer-admin-video-sort'
 
 export const DEFAULT_VIDEO_DISPLAY: VideoDisplayPrefs = {
-  size: 'sm',
+  size: 'lg',
   aspect: '16:9',
   showInfo: true,
   titleLines: 1,
@@ -62,6 +62,11 @@ function readJson<T>(key: string): Partial<T> | null {
 export function loadVideoDisplayPrefs(): VideoDisplayPrefs {
   const stored = readJson<VideoDisplayPrefs>(VIDEO_DISPLAY_STORAGE_KEY)
   if (!stored) return DEFAULT_VIDEO_DISPLAY
+  // The page saves prefs on mount, so the old untouched default would otherwise
+  // keep existing sessions on the small preset. Only migrate that exact snapshot.
+  if (stored.size === 'sm' && stored.aspect === '16:9' && stored.showInfo === true && stored.titleLines === 1) {
+    return DEFAULT_VIDEO_DISPLAY
+  }
   return {
     size: stored.size === 'sm' || stored.size === 'md' || stored.size === 'lg' ? stored.size : DEFAULT_VIDEO_DISPLAY.size,
     aspect: stored.aspect === '16:9' || stored.aspect === '4:3' || stored.aspect === '1:1' ? stored.aspect : DEFAULT_VIDEO_DISPLAY.aspect,
