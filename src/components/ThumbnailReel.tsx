@@ -128,11 +128,21 @@ export default function ThumbnailReel({
     () => (activeVideoName ? videosByName[activeVideoName] : []),
     [activeVideoName, videosByName]
   )
+  // Only READY versions can be played; listing failed/transcoding versions made
+  // the dropdown selectable but switching to them left the player unchanged.
+  const playableVideos = useMemo(
+    () => currentVideos.filter((video: any) => video.status === 'READY'),
+    [currentVideos]
+  )
 
   useEffect(() => {
-    const available = currentVideos.some((video: any) => video.id === selectedVersionId)
-    if (!available) setSelectedVersionId(currentVideos[0]?.id || '')
-  }, [currentVideos, selectedVersionId])
+    if (playableVideos.length === 0) {
+      if (selectedVersionId) setSelectedVersionId('')
+      return
+    }
+    const available = playableVideos.some((video: any) => video.id === selectedVersionId)
+    if (!available) setSelectedVersionId(playableVideos[0].id)
+  }, [playableVideos, selectedVersionId])
 
   useEffect(() => {
     const handleVersionChanged = (event: Event) => {
@@ -170,17 +180,17 @@ export default function ThumbnailReel({
             >
               {activeVideoName}
             </button>
-            {currentVideos.length > 0 && (
+            {playableVideos.length > 1 && (
               <select
                 aria-label="切换版本"
-                value={selectedVersionId || currentVideos[0]?.id}
+                value={selectedVersionId || playableVideos[0]?.id}
                 onChange={(event) => {
                   setSelectedVersionId(event.target.value)
                   window.dispatchEvent(new CustomEvent('selectReviewVersion', { detail: { videoId: event.target.value } }))
                 }}
                 className="h-7 min-w-[46px] max-w-[72px] shrink-0 rounded-[4px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {currentVideos.map((video: any) => (
+                {playableVideos.map((video: any) => (
                   <option key={video.id} value={video.id}>{video.versionLabel || `v${video.version}`}</option>
                 ))}
               </select>
@@ -193,7 +203,7 @@ export default function ThumbnailReel({
           </div>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {showComparisonAction && currentVideos.length > 1 && (
+            {showComparisonAction && playableVideos.length > 1 && (
               <Button
                 variant="outline"
                 size="sm"
