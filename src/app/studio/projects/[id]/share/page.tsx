@@ -7,6 +7,7 @@ import VideoPlayer from '@/components/VideoPlayer'
 import CommentSection from '@/components/CommentSection'
 import ThumbnailGrid from '@/components/ThumbnailGrid'
 import ThumbnailReel from '@/components/ThumbnailReel'
+import ReviewBetaBanner from '@/components/ReviewBetaBanner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Check, Share2 } from 'lucide-react'
@@ -972,6 +973,7 @@ export default function AdminSharePage() {
   if (viewState === 'grid') {
     return (
       <div data-review-surface className="fixed inset-0 bg-background flex flex-col overflow-hidden">
+        <ReviewBetaBanner />
         {/* Grid view toolbar */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
           {/* Left: back to project */}

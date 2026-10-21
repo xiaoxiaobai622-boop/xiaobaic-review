@@ -7,6 +7,7 @@ import VideoPlayer from '@/components/VideoPlayer'
 import CommentSection from '@/components/CommentSection'
 import ThumbnailGrid from '@/components/ThumbnailGrid'
 import ThumbnailReel from '@/components/ThumbnailReel'
+import ReviewBetaBanner from '@/components/ReviewBetaBanner'
 import { OTPInput } from '@/components/OTPInput'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -1471,6 +1472,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     return (
       <>
       <div className="fixed inset-0 bg-background flex flex-col overflow-hidden">
+        <ReviewBetaBanner />
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
           <div className="flex items-center gap-2" data-tutorial="grid-actions">
             <ShareExpiryNote expiresAt={project.shareExpiresAt ?? null} viewsRemaining={project.shareViewsRemaining ?? null} />

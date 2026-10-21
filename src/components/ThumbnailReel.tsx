@@ -1,10 +1,9 @@
 'use client'
 
 import Image from 'next/image'
-import Link from 'next/link'
 import { useRef, useEffect, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { CheckCircle2, ChevronLeft, ChevronRight, Film, ArrowLeft, ArrowRight, GitCompareArrows, MessageSquare, X } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Film, ArrowLeft, GitCompareArrows, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -61,21 +60,7 @@ export default function ThumbnailReel({
   // Start collapsed on first load
   const [isExpanded, setIsExpanded] = useState(false)
   const [selectedVersionId, setSelectedVersionId] = useState<string>('')
-  const [betaBannerDismissed, setBetaBannerDismissed] = useState(false)
   const hasScrolledRef = useRef(false)
-
-  useEffect(() => {
-    try {
-      setBetaBannerDismissed(window.localStorage.getItem('vitransfer_beta_banner_dismissed') === '1')
-    } catch {}
-  }, [])
-
-  const dismissBetaBanner = () => {
-    setBetaBannerDismissed(true)
-    try {
-      window.localStorage.setItem('vitransfer_beta_banner_dismissed', '1')
-    } catch {}
-  }
 
   const handleToggleExpanded = () => {
     setIsExpanded(!isExpanded)
@@ -160,33 +145,6 @@ export default function ThumbnailReel({
 
   return (
     <div className="relative z-20 shrink-0">
-      {/* 与首页顶部同一条内测公告：深色细条，独立新开标签，避免打断审片现场 */}
-      {!betaBannerDismissed && (
-        <div className="relative border-b border-border bg-muted/60 px-3 py-[7px] pr-10 text-xs text-muted-foreground">
-          <div className="flex min-w-0 items-center justify-center gap-2">
-            <span className="min-w-0 truncate">{tShare('betaBannerText')}</span>
-            <Link
-              href="/news/beta"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 font-semibold text-foreground hover:text-primary"
-            >
-              {tShare('betaBannerLink')}
-              <ArrowRight size={12} strokeWidth={2} />
-            </Link>
-          </div>
-          <button
-            type="button"
-            onClick={dismissBetaBanner}
-            className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={tShare('betaBannerDismiss')}
-            title={tShare('betaBannerDismiss')}
-          >
-            <X size={14} strokeWidth={2} />
-          </button>
-        </div>
-      )}
-
       {/* Compact Control Bar - Always visible */}
       <div className="h-12 border-b border-border/70 bg-card px-3 sm:px-4">
         <div className="flex h-full items-center gap-1.5 sm:gap-2">
