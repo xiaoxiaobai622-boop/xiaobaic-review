@@ -5,6 +5,7 @@ import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { BRAND } from '@/lib/marketing/brand'
 import { HUBS, type HubGroup } from '@/lib/marketing/hubs'
 import { JsonLd } from '@/components/marketing/JsonLd'
+import MarketingCta from '@/components/marketing/MarketingCta'
 
 /**
  * `/features` 与 `/compare` 的文案表在 `src/lib/marketing/hubs.ts`（`/llms.txt` 路由也要读它，
@@ -66,12 +67,7 @@ export async function HubPage({ group }: { group: HubGroup }) {
       </ul>
 
       <p className="mt-9">
-        <Link
-          href="/login"
-          className="inline-flex items-center rounded-md bg-[#245fe7] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#1c4bcc]"
-        >
-          {CTA_LABEL}
-        </Link>
+        <MarketingCta href="/login" label={CTA_LABEL} />
       </p>
 
       {/* 未定价平台：schema 里不放 `offers`（2026-10-03 裁决 4）——`price: '0'` 等于向搜索引擎

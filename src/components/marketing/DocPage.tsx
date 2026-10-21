@@ -7,6 +7,7 @@ import { BRAND } from '@/lib/marketing/brand'
 import { HUBS } from '@/lib/marketing/hubs'
 import { MarkdownBody } from '@/components/marketing/MarkdownBody'
 import { JsonLd } from '@/components/marketing/JsonLd'
+import MarketingCta from '@/components/marketing/MarketingCta'
 
 /**
  * `/compare/*` 与 `/features/*` 共用。视觉语言照 `src/components/LegalDoc.tsx`：浅底、
@@ -98,12 +99,7 @@ export async function DocPage({
       </section>
 
       <p className="mt-9">
-        <Link
-          href={doc.cta.href}
-          className="inline-flex items-center rounded-md bg-[#245fe7] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#1c4bcc]"
-        >
-          {doc.cta.label}
-        </Link>
+        <MarketingCta href={doc.cta.href} label={doc.cta.label} />
       </p>
 
       {related.length > 0 && (

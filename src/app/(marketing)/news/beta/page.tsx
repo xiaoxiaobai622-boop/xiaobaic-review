@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { BRAND } from '@/lib/marketing/brand'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { JsonLd } from '@/components/marketing/JsonLd'
+import MarketingCta from '@/components/marketing/MarketingCta'
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
@@ -90,12 +91,7 @@ export default async function BetaAnnouncementPage() {
         </div>
 
         <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
-          <Link
-            href="/login"
-            className="inline-flex items-center rounded-md bg-[#245fe7] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1c4bcc]"
-          >
-            加入内测
-          </Link>
+          <MarketingCta href="/login" label="加入内测" />
           <Link href="/" className="text-sm text-[#6f7580] transition-colors hover:text-[#171a20]">
             返回首页
           </Link>

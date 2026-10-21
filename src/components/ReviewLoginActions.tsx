@@ -433,6 +433,12 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
                 </div>
               )}
               {error && <p className="rounded-md border border-destructive/30 bg-destructive-visible px-3 py-2 text-sm text-destructive" aria-live="polite">{error}</p>}
+              <p className="text-center text-xs leading-5 text-muted-foreground">
+                {ta.rich('termsAgreement', {
+                  terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>,
+                  privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>,
+                })}
+              </p>
               <Button type="submit" className="h-11 w-full" disabled={loading || !phone || (mode === 'password' ? !password : code.length !== 6 || !codeSent)}>
                 {loading ? ta('signingIn') : ta('signIn')}
               </Button>
@@ -443,6 +449,12 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
                 <h2 id="review-login-title" className="text-2xl font-semibold tracking-tight text-foreground">{ta('wechatQrLogin')}</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{ta('wechatScanHint')}</p>
                 <WechatMiniQrLogin inline returnUrl={currentReturnUrl()} className="mt-5" />
+                <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
+                  {ta.rich('termsByScanning', {
+                    terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>,
+                    privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>,
+                  })}
+                </p>
                 <div className="mt-5">
                   <Button type="button" variant="ghost" className="h-10 text-muted-foreground" onClick={() => setView('phone')}>
                     <Phone className="mr-2 h-4 w-4" />{ta('usePhoneLogin')}
