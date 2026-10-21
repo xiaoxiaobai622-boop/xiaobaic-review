@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import BrandLogo from '@/components/BrandLogo'
 import { setTokens } from '@/lib/token-store'
+import { setActiveTeamId } from '@/lib/team-store'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 
 function safeReturnUrl(value: string | null | undefined): string {
@@ -53,6 +54,8 @@ function WechatMiniLoginForm() {
         const data = await response.json()
         if (cancelled || stoppedRef.current) return
         if (data.status === 'success') {
+          // A fresh login must not inherit the previous session's team choice.
+          setActiveTeamId(null)
           if (data.adminTokens?.accessToken && data.adminTokens?.refreshToken) {
             setTokens({
               accessToken: data.adminTokens.accessToken,

@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/ui/password-input'
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { setTokens } from '@/lib/token-store'
+import { setActiveTeamId } from '@/lib/team-store'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
 import { passwordRuleHint, validateAccountPassword } from '@/lib/password-policy'
 
@@ -101,6 +102,7 @@ function OnboardingContent() {
         throw new Error(loginData.error || '自动登录失败，请重新登录')
       }
 
+      setActiveTeamId(null)
       setTokens({
         accessToken: loginData.tokens.accessToken,
         refreshToken: loginData.tokens.refreshToken,

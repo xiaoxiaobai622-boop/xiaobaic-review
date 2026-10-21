@@ -61,7 +61,7 @@ export async function GET(
 
   // 名单里别人的手机号只给掩码，自己的那行仍是明文；需要看全号走带留痕的查看接口。
   members = members.map((member) =>
-    member.user?.id === authResult.id ? member : { ...member, user: withMaskedPhone(member.user) })
+    ({ ...member, user: withMaskedPhone(member.user) }))
 
   const response = NextResponse.json({ members })
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')

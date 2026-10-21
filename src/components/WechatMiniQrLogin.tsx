@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslations } from 'next-intl'
 import { apiFetch } from '@/lib/api-client'
 import { setTokens } from '@/lib/token-store'
+import { setActiveTeamId } from '@/lib/team-store'
 
 interface WechatMiniQrLoginSuccess {
   status: 'success'
@@ -92,6 +93,8 @@ export function WechatMiniQrLogin({
       }
 
       if (data.status === 'success') {
+        // A fresh login must not inherit the previous session's team choice.
+        setActiveTeamId(null)
         if (data.adminTokens?.accessToken && data.adminTokens?.refreshToken) {
           setTokens({
             accessToken: data.adminTokens.accessToken,

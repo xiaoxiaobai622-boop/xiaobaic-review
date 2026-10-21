@@ -11,6 +11,7 @@ import { Monitor, Fingerprint, LogIn, CheckCircle2, XCircle } from 'lucide-react
 import { startAuthentication } from '@simplewebauthn/browser'
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 import { getAccessToken, setTokens } from '@/lib/token-store'
+import { setActiveTeamId } from '@/lib/team-store'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
 import BrandLogo from '@/components/BrandLogo'
 import { useTranslations } from 'next-intl'
@@ -75,6 +76,7 @@ function DeviceAuthForm() {
         throw new Error(data.error || ta('passkeyFailed'))
       }
 
+      setActiveTeamId(null)
       if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
         setTokens({
           accessToken: data.tokens.accessToken,
@@ -124,6 +126,7 @@ function DeviceAuthForm() {
         throw new Error(data.error || ta('loginFailed'))
       }
 
+      setActiveTeamId(null)
       if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
         setTokens({
           accessToken: data.tokens.accessToken,

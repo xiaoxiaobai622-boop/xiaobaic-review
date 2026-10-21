@@ -13,6 +13,7 @@ import RailHelp from '@/components/RailHelp'
 import RailNotifications from '@/components/RailNotifications'
 import { apiPost } from '@/lib/api-client'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 import { THEME_CHOICES, applyThemeChoice, readThemeFromDom, type ThemeChoice } from '@/lib/theme'
 import { getContactEmail } from '@/lib/user-contact'
 import { useTranslations } from 'next-intl'
@@ -60,8 +61,10 @@ export default function StudioRail() {
   const { user, logout } = useAuth()
   const pathname = usePathname()
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [collapsedTeamGroups, setCollapsedTeamGroups] = useState<Record<string, boolean>>({})
   const ta = useTranslations('auth')
   const tc = useTranslations('controls')
+  const ts = useTranslations('selectTeam')
   const [theme, setTheme] = useState<ThemeChoice>(() => (typeof document !== 'undefined' ? readThemeFromDom() : 'light'))
 
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -99,8 +102,14 @@ export default function StudioRail() {
     : user.teamRole === 'MEMBER' ? '成员'
     : '未加入团队'
   const contactEmail = getContactEmail(user.email)
-  const displayName = user.name || user.phone || contactEmail || '微信用户'
+  const displayName = user.name || maskPhoneDisplay(user.phone) || contactEmail || '微信用户'
   const activeTeamId = getActiveTeamId() || user.teams?.[0]?.team.id || null
+  const teamGroups = user.teams && user.teams.length > 0
+    ? [
+        { key: 'created', label: ts('created'), items: user.teams.filter((item) => item.role === 'OWNER') },
+        { key: 'joined', label: ts('joined'), items: user.teams.filter((item) => item.role !== 'OWNER') },
+      ].filter((group) => group.items.length > 0)
+    : []
   const themeLabels: Record<ThemeChoice, string> = {
     light: tc('themeLight'),
     mint: tc('themeMint'),
@@ -190,28 +199,57 @@ export default function StudioRail() {
               </span>
             </div>
             <div className="border-b border-border px-3 py-2.5">
-              <p className="text-[11px] font-medium text-muted-foreground">团队</p>
-              <div className="mt-1.5 space-y-0.5">
-                {user.teams && user.teams.length > 0 ? user.teams.map((item) => (
-                  <button
-                    key={item.team.id}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => void switchTeam(item.team.id)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent ${
-                      item.team.id === activeTeamId ? 'bg-accent/60 font-medium text-foreground' : 'text-muted-foreground'
-                    }`}
-                  >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[11px] font-semibold text-primary">
-                      {item.team.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{item.team.name}</span>
-                    {item.team.id === activeTeamId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                  </button>
-                )) : (
-                  <p className="px-2 py-1.5 text-xs text-muted-foreground">未加入团队</p>
-                )}
-              </div>
+              {teamGroups.length > 0 ? (
+                <div className="space-y-2">
+                  {teamGroups.map((group) => (
+                    <div key={group.key}>
+                      <button
+                        type="button"
+                        onClick={() => setCollapsedTeamGroups((current) => ({ ...current, [group.key]: !current[group.key] }))}
+                        aria-expanded={!collapsedTeamGroups[group.key]}
+                        className="mb-1 flex w-full items-center gap-1.5 rounded px-2 py-0.5 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent"
+                      >
+                        <svg
+                          viewBox="0 0 8 5"
+                          aria-hidden="true"
+                          className={`h-[5px] w-2 shrink-0 transition-transform ${collapsedTeamGroups[group.key] ? '-rotate-90' : ''}`}
+                        >
+                          <path d="M0 0h8L4 5z" fill="currentColor" />
+                        </svg>
+                        {group.label}
+                      </button>
+                      {!collapsedTeamGroups[group.key] && (
+                      <div className="space-y-0.5">
+                        {group.items.map((item) => (
+                          <button
+                            key={item.team.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void switchTeam(item.team.id)}
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent ${
+                              item.team.id === activeTeamId ? 'bg-accent/60 text-foreground' : 'text-muted-foreground'
+                            }`}
+                          >
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[11px] font-semibold text-primary">
+                              {item.team.name.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">{item.team.name}</span>
+                              <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                                {item.team.createdBy?.name || (item.role === 'OWNER' ? ts('roleOwner') : item.role === 'ADMIN' ? ts('roleAdmin') : ts('roleMember'))}
+                              </span>
+                            </span>
+                            {item.team.id === activeTeamId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                          </button>
+                        ))}
+                      </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">{ts('empty')}</p>
+              )}
             </div>
             <div className="border-b border-border px-3 py-2.5">
               <p className="text-[11px] font-medium text-muted-foreground">主题</p>

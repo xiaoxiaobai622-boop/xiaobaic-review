@@ -1178,6 +1178,9 @@
     "stepOf": "{current} van {total}"
   },
   "share": {
+    "betaBannerText": "Gratis tijdens de bèta — op frame nauwkeurige opmerkingen, versievergelijking en veilige levering, nu beschikbaar",
+    "betaBannerLink": "Bèta-info",
+    "betaBannerDismiss": "Bèta-melding sluiten",
     "clientFallback": "Klant",
     "collectionDescription": "Upload hier bronbestanden, referenties, documenten en ander projectmateriaal.",
     "collectionTitle": "Projectverzameling",
@@ -2682,5 +2685,19 @@
     "deleteSelectionConfirm": "{count} geselecteerde assets en al hun versies verwijderen?",
     "loadFailed": "Laden mislukt",
     "retry": "Opnieuw"
+  },
+  "selectTeam": {
+    "title": "Team kiezen",
+    "description": "Je hoort bij meerdere teams. Kies er één om verder te gaan.",
+    "created": "Gemaakte teams",
+    "joined": "Teams waar ik lid van ben",
+    "enter": "Team openen",
+    "empty": "Je bent nog geen lid van een team.",
+    "disabled": "Uitgeschakeld",
+    "failed": "Team wisselen mislukt. Probeer het opnieuw.",
+    "teamCenter": "Naar teamcentrum",
+    "roleOwner": "Maker",
+    "roleAdmin": "Beheerder",
+    "roleMember": "Lid"
   }
 }

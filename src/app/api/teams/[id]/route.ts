@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { getRedis } from '@/lib/redis'
 import { getTeamQuota } from '@/lib/platform-access'
 import { getCurrentUserFromRequest, requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
@@ -109,9 +110,9 @@ export async function GET(
   }
 
   if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
-  // 成员名单是批量展示：别人的号只给掩码，自己那行保持明文。
+  // 成员名单是批量展示：所有手机号都只给掩码，自己的那行也不留明文。
   const members = team.members.map((member: any) =>
-    member.user?.id === authResult.id ? member : { ...member, user: withMaskedPhone(member.user) })
+    ({ ...member, user: withMaskedPhone(member.user) }))
   // 团队页那句「几名成员、几 GB」读的是这里的 team.quota：额度可以被运营逐团改，
   // 页面写死一组数字，改一次就变假话。缺行回落到内测口径（getTeamQuota 不落行）。
   const quota = await getTeamQuota(team.id)
@@ -169,6 +170,23 @@ export async function DELETE(
     return NextResponse.json({ error: 'Owner permission required' }, { status: 403 })
   }
 
+  const body = await request.json().catch(() => null)
+  const phoneVerificationToken = typeof body?.phoneVerificationToken === 'string'
+    ? body.phoneVerificationToken.trim()
+    : ''
+  const redis = getRedis()
+  const grantKey = `account-phone:${authResult.id}:grant:${phoneVerificationToken}`
+  const grantValue = JSON.stringify({ phone: authResult.phone })
+  if (
+    !/^[a-f0-9]{48}$/.test(phoneVerificationToken) ||
+    await redis.get(grantKey) !== grantValue
+  ) {
+    return NextResponse.json(
+      { error: '解散团队需要先完成手机验证', code: 'PHONE_VERIFICATION_REQUIRED' },
+      { status: 403 },
+    )
+  }
+
   const [projectCount, activeMemberCount, orderCount] = await Promise.all([
     prisma.project.count({ where: { teamId: id } }),
     prisma.teamMember.count({ where: { teamId: id, status: 'ACTIVE' } }),
@@ -196,6 +214,7 @@ export async function DELETE(
     )
   }
 
+  await redis.del(grantKey)
   await prisma.team.delete({ where: { id } })
   return NextResponse.json({ success: true })
 }

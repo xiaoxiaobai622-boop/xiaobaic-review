@@ -1,5 +1,6 @@
 import { decrypt, encrypt, hmacIndexValue } from './encryption'
 import { PHONE_ONLY_EMAIL_DOMAIN } from './user-contact'
+import { maskPhoneDisplay } from './phone-display'
 
 // Phone numbers are personal data that must not sit in the database as plain text, but they
 // are also looked up by equality (login, "this number is already bound", recipient portals).
@@ -98,9 +99,7 @@ export function maskPhone(stored: string | null | undefined): string | null {
   const plain = readPhone(stored)
   if (!plain) return null
   // 过渡期库里可能还留着带 +86 或空格的老写法，掩码前先归一到和摘要同一个形状。
-  const digits = normalizePhone(plain) ?? plain.replace(/\D/g, '')
-  if (digits.length < 7) return '****'
-  return `${digits.slice(0, 3)}${'*'.repeat(digits.length - 7)}${digits.slice(-4)}`
+  return maskPhoneDisplay(normalizePhone(plain) ?? plain)
 }
 
 /**

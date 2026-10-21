@@ -1221,6 +1221,9 @@
   },
 
   "share": {
+    "betaBannerText": "Free during beta — frame-accurate comments, version comparison, and secure delivery, available now",
+    "betaBannerLink": "Beta details",
+    "betaBannerDismiss": "Dismiss beta notice",
     "login": "Log in",
     "logout": "Log out",
     "wechatLogin": "WeChat login",
@@ -2760,5 +2763,19 @@
     "deleteSelectionConfirm": "Delete {count} selected assets and all their versions?",
     "loadFailed": "Failed to load",
     "retry": "Retry"
+  },
+  "selectTeam": {
+    "title": "Choose a team",
+    "description": "You're in more than one team. Choose one to enter.",
+    "created": "Created teams",
+    "joined": "Joined teams",
+    "enter": "Enter team",
+    "empty": "You haven't joined any teams yet.",
+    "disabled": "Disabled",
+    "failed": "Could not switch teams. Please try again.",
+    "teamCenter": "Go to team center",
+    "roleOwner": "Owner",
+    "roleAdmin": "Admin",
+    "roleMember": "Member"
   }
 }

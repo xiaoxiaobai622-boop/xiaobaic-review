@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/ui/password-input'
 import { ArrowLeft, ArrowRight, Phone } from 'lucide-react'
 import { setTokens, clearTokens } from '@/lib/token-store'
+import { setActiveTeamId } from '@/lib/team-store'
 import BrandLogo from '@/components/BrandLogo'
 import { AnimatedCharacters } from '@/components/ui/animated-characters'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
@@ -142,6 +143,8 @@ function LoginForm() {
   }
 
   function applyTokens(data: { tokens?: { accessToken?: string; refreshToken?: string } }) {
+    // A fresh login must not inherit the previous session's team choice.
+    setActiveTeamId(null)
     if (data?.tokens?.accessToken && data?.tokens?.refreshToken) {
       setTokens({
         accessToken: data.tokens.accessToken,

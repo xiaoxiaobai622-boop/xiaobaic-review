@@ -1027,6 +1027,7 @@ export default function AdminVideoManager({
         const errorCount = groupVideos.filter(v => v.status === 'ERROR').length
         const hasErrorVideos = errorCount > 0
         const feedbackCount = comments.filter(comment => comment.videoId === latestVideo.id).length
+        const uploadTimeLabel = formatVideoUploadTime(latestVideo.createdAt, latestVideo.updatedAt, latestVideo.created_at, latestVideo.uploadedAt)
         const isGridCard = viewMode === 'grid' && !isExpanded
         const titleClass = cn(
           'min-w-0',
@@ -1224,10 +1225,10 @@ export default function AdminVideoManager({
                     )}
                   </div>
                   {showCardInfo && editingGroupName !== groupName && (
-                    <p className={cn('mt-1 flex w-full max-w-sm items-center gap-4 whitespace-nowrap text-muted-foreground', isGridCard ? '-translate-y-0.5 overflow-hidden pr-8 text-xs' : 'text-sm')}>
-                      <span className="tabular-nums">{formatVideoUploadTime(latestVideo.createdAt, latestVideo.updatedAt, latestVideo.created_at, latestVideo.uploadedAt)}</span>
-                      <span className="font-medium">{latestVideo.versionLabel || `v${latestVideo.version}`}</span>
-                      <span className="inline-flex items-center gap-1 tabular-nums" title={t('feedbackCount', { count: feedbackCount })}>
+                    <p className={cn('mt-1 flex w-full min-w-0 items-center gap-2 text-muted-foreground', isGridCard ? '-translate-y-0.5 overflow-hidden pr-10 text-xs' : 'gap-4 text-sm')}>
+                      <span className="min-w-0 truncate tabular-nums" title={uploadTimeLabel}>{uploadTimeLabel}</span>
+                      <span className="shrink-0 whitespace-nowrap font-medium">{latestVideo.versionLabel || `v${latestVideo.version}`}</span>
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums" title={t('feedbackCount', { count: feedbackCount })}>
                         <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
                         <span>{feedbackCount}</span>
                       </span>

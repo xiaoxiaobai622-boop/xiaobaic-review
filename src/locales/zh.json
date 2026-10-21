@@ -1178,6 +1178,9 @@
     "stepOf": "第 {current} 步，共 {total} 步"
   },
   "share": {
+    "betaBannerText": "内测期间免费开放 — 逐帧批注、版本对比与安全交付，现在就能用",
+    "betaBannerLink": "了解内测",
+    "betaBannerDismiss": "关闭内测提示",
     "login": "登录",
     "logout": "退出登录",
     "wechatLogin": "微信登录",
@@ -2682,5 +2685,19 @@
     "deleteSelectionConfirm": "删除选中的 {count} 个素材及其全部版本？",
     "loadFailed": "加载失败",
     "retry": "重试"
+  },
+  "selectTeam": {
+    "title": "选择团队",
+    "description": "你加入了多个团队，先选一个进入。",
+    "created": "创建的团队",
+    "joined": "加入的团队",
+    "enter": "进入团队",
+    "empty": "你还没有加入任何团队。",
+    "disabled": "已停用",
+    "failed": "切换团队失败，请重试。",
+    "teamCenter": "前往团队中心",
+    "roleOwner": "创建人",
+    "roleAdmin": "管理员",
+    "roleMember": "成员"
   }
 }

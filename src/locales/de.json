@@ -1178,6 +1178,9 @@
     "stepOf": "{current} von {total}"
   },
   "share": {
+    "betaBannerText": "Während der Beta kostenlos — Frame-genaue Kommentare, Versionsvergleich und sichere Lieferung, jetzt verfügbar",
+    "betaBannerLink": "Beta-Details",
+    "betaBannerDismiss": "Beta-Hinweis schließen",
     "clientFallback": "Kunde",
     "collectionDescription": "Lade Quelldateien, Referenzen, Dokumente und weitere Projektmaterialien hier hoch.",
     "collectionTitle": "Projektsammlung",
@@ -2682,5 +2685,19 @@
     "deleteSelectionConfirm": "{count} ausgewählte Assets und alle Versionen löschen?",
     "loadFailed": "Laden fehlgeschlagen",
     "retry": "Erneut versuchen"
+  },
+  "selectTeam": {
+    "title": "Team auswählen",
+    "description": "Du gehörst zu mehreren Teams. Wähle eines zum Fortfahren.",
+    "created": "Erstellte Teams",
+    "joined": "Beigetretene Teams",
+    "enter": "Team öffnen",
+    "empty": "Du bist noch keinem Team beigetreten.",
+    "disabled": "Deaktiviert",
+    "failed": "Teamwechsel fehlgeschlagen. Bitte erneut versuchen.",
+    "teamCenter": "Zum Teamcenter",
+    "roleOwner": "Ersteller",
+    "roleAdmin": "Administrator",
+    "roleMember": "Mitglied"
   }
 }

@@ -77,7 +77,14 @@ export async function GET(request: NextRequest) {
           select: {
             role: true,
             team: {
-              select: { id: true, name: true, slug: true, avatarUrl: true, status: true },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                avatarUrl: true,
+                status: true,
+                createdBy: { select: { id: true, name: true } },
+              },
             },
           },
         }),

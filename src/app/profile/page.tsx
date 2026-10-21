@@ -14,6 +14,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { clearTokens } from '@/lib/token-store'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 import { useTranslations } from 'next-intl'
 import { validateAccountPassword } from '@/lib/password-policy'
 import Link from 'next/link'
@@ -316,7 +317,7 @@ function ProfileContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
-  const displayName = form.name || form.phone || t('roleMember')
+  const displayName = form.name || maskPhoneDisplay(form.phone) || t('roleMember')
   const visibleReturnUrl = returnUrl?.startsWith('/studio/') && user?.role !== 'ADMIN'
     ? null
     : returnUrl
@@ -552,7 +553,7 @@ function ProfileContent() {
               </div>
               <div className="min-w-0">
                 <p className="truncate text-xl font-semibold">{displayName}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{form.phone || t('phoneNotLinked')} · {user?.role === 'ADMIN' ? t('roleAdmin') : t('roleMember')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{maskPhoneDisplay(form.phone) || t('phoneNotLinked')} · {user?.role === 'ADMIN' ? t('roleAdmin') : t('roleMember')}</p>
               </div>
             </div>
 
@@ -585,7 +586,7 @@ function ProfileContent() {
                   <p className="mt-0.5 max-w-md text-xs text-muted-foreground">{t('changePhoneFlow')}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground">{form.phone || t('notLinked')}</span>
+                  <span className="text-sm text-muted-foreground">{maskPhoneDisplay(form.phone) || t('notLinked')}</span>
                   <Button type="button" variant="outline" size="sm" onClick={() => void changePhone()}>{t('changePhone')}</Button>
                 </div>
               </div>

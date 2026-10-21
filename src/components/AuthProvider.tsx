@@ -19,7 +19,17 @@ interface User {
   projectAccessScope?: string
   teamRole?: 'OWNER' | 'ADMIN' | 'MEMBER'
   isPlatformAdmin?: boolean
-  teams?: Array<{ role: 'OWNER' | 'ADMIN' | 'MEMBER'; team: { id: string; name: string; slug: string; avatarUrl: string | null; status?: string } }>
+  teams?: Array<{
+    role: 'OWNER' | 'ADMIN' | 'MEMBER'
+    team: {
+      id: string
+      name: string
+      slug: string
+      avatarUrl: string | null
+      status?: string
+      createdBy?: { id: string; name: string | null } | null
+    }
+  }>
 }
 
 interface AuthContextType {
@@ -61,10 +71,13 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
         const data = await response.json()
         if (data.authenticated && data.user) {
           const teams = Array.isArray(data.user.teams) ? data.user.teams : []
-          const activeTeamId = getActiveTeamId()
-          const activeTeam = teams.find((item: any) => item.team.id === activeTeamId) || teams[0]
-          if (activeTeam?.team?.id) setActiveTeamId(activeTeam.team.id)
-          const teamRole = activeTeam?.role || (teams.length > 0 ? 'MEMBER' : undefined)
+          const storedTeamId = getActiveTeamId()
+          const activeTeam = teams.find((item: any) => item.team.id === storedTeamId)
+          // Multiple teams with no saved choice must not fall back to the first
+          // one: the selection gate below needs to see that the choice is missing.
+          const resolvedTeam = activeTeam || (teams.length === 1 ? teams[0] : null)
+          if (resolvedTeam?.team?.id) setActiveTeamId(resolvedTeam.team.id)
+          const teamRole = resolvedTeam?.role
           setUser({
             ...data.user,
             teams,
@@ -119,8 +132,26 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
     }
     if (pathname && pathname.startsWith('/studio') && !user.phone) {
       router.replace(`/profile?requirePhone=1&returnUrl=${encodeURIComponent(pathname || '/studio/projects')}`)
+      return
+    }
+    if (pathname?.startsWith('/studio') && (user.teams?.length ?? 0) > 1) {
+      const activeTeamId = getActiveTeamId()
+      if (!user.teams!.some((item) => item.team.id === activeTeamId)) {
+        const target = `${pathname}${typeof window !== 'undefined' ? window.location.search : ''}`
+        router.replace(`/select-team?returnUrl=${encodeURIComponent(target)}`)
+      }
     }
   }, [requireAuth, loading, user, pathname, router])
+
+  const teams = user?.teams ?? []
+  const hasActiveTeam = teams.some((item) => item.team.id === getActiveTeamId())
+  const needsTeamSelection = Boolean(
+    requireAuth &&
+    user &&
+    pathname?.startsWith('/studio') &&
+    teams.length > 1 &&
+    !hasActiveTeam
+  )
 
   async function logout() {
     try {
@@ -146,6 +177,7 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
     // Clear client-side storage (defense in depth)
     try {
       clearTokens()
+      setActiveTeamId(null)
       localStorage.removeItem('vitransfer_preferences')
       sessionStorage.clear()
     } catch (storageError) {
@@ -162,7 +194,7 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
 
   // SECURITY: Show loading state while checking auth OR when unauthenticated (before redirect)
   // This prevents content flash - NO content should render until auth is confirmed
-  if (requireAuth && (loading || !user)) {
+  if (requireAuth && (loading || !user || needsTeamSelection)) {
     return (
       <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
         <div className="text-center">

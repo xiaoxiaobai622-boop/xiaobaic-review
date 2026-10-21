@@ -9,6 +9,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Mail, Phone, Edit, Trash2, Plus, Star, Check, Bell, BellOff, User, Eye } from 'lucide-react'
 import { apiFetch, apiPost, apiPatch, apiDelete } from '@/lib/api-client'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 
 interface Recipient {
   id?: string
@@ -361,7 +362,7 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                     )}
                     {recipient.phone && (
                       <div className="flex items-center gap-2 pl-6 text-xs text-muted-foreground">
-                        <Phone className="w-3.5 h-3.5" />{recipient.phone}
+                        <Phone className="w-3.5 h-3.5" />{maskPhoneDisplay(recipient.phone)}
                       </div>
                     )}
                   </div>

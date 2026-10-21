@@ -12,9 +12,15 @@ export const dynamic = 'force-dynamic'
  * 营销面才用的手法，站内任务页就该是一个底。
  *
  * 主视觉用真截图（客户端里就是这一屏），靠描边＋投影立起来，不靠底色反差。
- * 版本／大小／日期／校验和全部服务端现读更新源的 latest.yml（见 src/lib/desktop-feed.ts）；
- * 读不到就整块换成一句实话，不许留一个上次缓存下来的版本号在这骗人。
+ * Windows 的版本／大小／日期／校验和服务端现读 latest.yml（见 src/lib/desktop-feed.ts）；
+ * macOS 包是手工发到 CDN 版本目录的，没有 latest-mac.yml，下面直接按版本号拼直链。
  */
+const MAC_RELEASE_VERSION = '0.1.17'
+const MAC_DOWNLOADS = [
+  { arch: 'arm64', label: 'Apple 芯片', bytes: 129_195_489 },
+  { arch: 'x64', label: 'Intel', bytes: 133_027_253 },
+] as const
+
 export default async function DesktopClientPage() {
   const release = await readDesktopRelease()
   const size = release ? formatBytes(release.sizeBytes) : null
@@ -33,7 +39,7 @@ export default async function DesktopClientPage() {
             </span>
             <h1 className="mt-4 text-[28px] font-semibold leading-tight tracking-tight text-foreground">逐帧审阅桌面客户端</h1>
             <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
-              和浏览器里打开的是同一个站点，装到 Windows 上常驻托盘：关窗口不退出，批注回复弹系统通知，发新版自己更新。
+              和浏览器里打开的是同一个站点，装到 Windows 或 macOS 上常驻：关窗口不退出，批注回复弹系统通知；Windows 版发新版可自己更新。
             </p>
 
             {release ? (
@@ -68,8 +74,19 @@ export default async function DesktopClientPage() {
                     <span className="text-xs text-muted-foreground">暂时读不到版本</span>
                   )}
                 </Row>
-                <Row muted icon={<Apple className="h-5 w-5" aria-hidden />} name="macOS" note="暂无发布计划">
-                  <span className="text-xs text-muted-foreground">未提供</span>
+                <Row icon={<Apple className="h-5 w-5" aria-hidden />} name="macOS" note={`${MAC_RELEASE_VERSION} · 未签名，首次打开需允许`}>
+                  <div className="flex items-center gap-2">
+                    {MAC_DOWNLOADS.map((download) => (
+                      <Button key={download.arch} asChild size="sm" variant="outline" className="h-8 px-2.5 text-xs">
+                        <a
+                          href={`https://dl.vidx.cn/desktop/${MAC_RELEASE_VERSION}/vidx-desktop-${MAC_RELEASE_VERSION}-${download.arch}.dmg`}
+                          title={`${download.label} · ${formatBytes(download.bytes)}`}
+                        >
+                          {download.label}
+                        </a>
+                      </Button>
+                    ))}
+                  </div>
                 </Row>
                 <Row icon={<Globe className="h-5 w-5" aria-hidden />} name="网页版" note="功能一致，无需安装">
                   <Button asChild size="sm" variant="outline">
@@ -101,10 +118,10 @@ export default async function DesktopClientPage() {
               <p className="mt-1 text-xs text-muted-foreground">这四件事和浏览器里不一样，装完值得知道。</p>
               <div className="mt-4 grid gap-x-8 gap-y-5 sm:grid-cols-2">
                 {[
-                  ['关窗口不是退出', '窗口收进系统托盘；要真退出走托盘或菜单里的「退出逐帧审阅」。'],
+                  ['关窗口不是退出', '窗口收进系统托盘（macOS 收进菜单栏）；要真退出走托盘或菜单里的「退出逐帧审阅」。'],
                   ['开机自启', '在应用菜单里勾上，之后开机自动在托盘待着。'],
                   ['批注回复提醒', '同事回复你的批注时弹系统通知，不用开着窗口。'],
-                  ['自动更新', '发新版后客户端自己检查并下载安装，不用回来重新下包。'],
+                  ['自动更新', 'Windows 下客户端会自己检查并安装新版本；macOS 未签名版暂需重新下载安装包。'],
                 ].map(([title, body]) => (
                   <div key={title}>
                     <p className="text-sm font-medium text-foreground">{title}</p>
@@ -118,7 +135,8 @@ export default async function DesktopClientPage() {
               <p className="flex items-start gap-2.5 text-sm leading-relaxed text-muted-foreground">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <span>
-                  安装包还没有代码签名：Windows 首次运行会拦一道 SmartScreen，点「更多信息」再点「仍要运行」即可。
+                  安装包还没有代码签名：Windows 首次运行会拦一道 SmartScreen，点「更多信息」再点「仍要运行」即可；
+                  macOS 首次打开会提示无法验证开发者，去「系统设置 → 隐私与安全性」点「仍要打开」。
                   装不上或者链接失效，用窄栏底部那颗灯泡反馈给运营。
                 </span>
               </p>

@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { apiFetch } from '@/lib/api-client'
 import { getContactEmail } from '@/lib/user-contact'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 
 function TeamExpiryBadge() {
   const [label, setLabel] = useState<string | null>(null)
@@ -72,7 +73,7 @@ export default function AdminHeader() {
 
   // Phone/WeChat accounts carry a placeholder mailbox as an internal login id; it is not contact info.
   const contactEmail = getContactEmail(user.email)
-  const displayName = user.name || user.phone || contactEmail || '微信用户'
+  const displayName = user.name || maskPhoneDisplay(user.phone) || contactEmail || '微信用户'
 
   return (
     <div className="relative z-40 bg-card border-b border-border/50 shadow-elevation-sm backdrop-blur-sm">

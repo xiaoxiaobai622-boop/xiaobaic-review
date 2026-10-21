@@ -40,6 +40,7 @@ export default function MarketingLayout({ children }: Readonly<{ children: React
           <nav className="flex items-center gap-4 text-sm text-[#6f7580]">
             <Link href="/features" className="hover:text-[#171a20]">功能</Link>
             <Link href="/compare" className="hover:text-[#171a20]">对比</Link>
+            <Link href="/news/beta" className="hover:text-[#171a20]">内测公告</Link>
             <Link href="/" className="hover:text-[#171a20]">返回首页</Link>
           </nav>
         </div>

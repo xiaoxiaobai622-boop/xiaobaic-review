@@ -6,11 +6,13 @@ import { ArrowRight, Building2, CheckCircle2, Copy, Pencil, Plus, UserRound } fr
 import { useSearchParams } from 'next/navigation'
 import { appPrompt } from '@/components/AppDialogProvider'
 import TeamOverview from '@/components/TeamOverview'
+import TeamDangerZone from '@/components/TeamDangerZone'
 import { useAuth } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 
 type TeamRole = 'OWNER' | 'ADMIN' | 'MEMBER'
@@ -144,7 +146,7 @@ function PersonalInfoPanel({ team }: { team: TeamData }) {
 
   return <div className="space-y-5">
     <Card><CardHeader><CardTitle className="text-base">账号资料</CardTitle></CardHeader><CardContent>
-      <div className="flex items-center gap-4"><InitialsAvatar name={user?.name || user?.email || '我'} src={user?.avatarUrl} size="lg" isInternal /><div className="min-w-0"><p className="font-medium">{user?.name || '未设置姓名'}</p><p className="mt-1 truncate text-sm text-muted-foreground">{user?.phone || user?.email}</p></div></div>
+      <div className="flex items-center gap-4"><InitialsAvatar name={user?.name || user?.email || '我'} src={user?.avatarUrl} size="lg" isInternal /><div className="min-w-0"><p className="font-medium">{user?.name || '未设置姓名'}</p><p className="mt-1 truncate text-sm text-muted-foreground">{maskPhoneDisplay(user?.phone) || user?.email}</p></div></div>
       <Button asChild className="mt-5" variant="outline"><Link href="/profile"><UserRound className="h-4 w-4" />编辑账号姓名与头像<ArrowRight className="h-4 w-4" /></Link></Button>
     </CardContent></Card>
     <Card><CardHeader><CardTitle className="text-base">团队个人资料</CardTitle><p className="text-sm text-muted-foreground">这些信息只属于当前团队，用于批注作者识别，不会覆盖账号全局姓名。</p></CardHeader><CardContent className="space-y-4">
@@ -220,5 +222,6 @@ export default function TeamPage() {
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}
     {team && team.status !== 'ACTIVE' && <div role="status" className="rounded-md border border-warning/30 bg-warning-visible p-3 text-sm text-foreground">该团队当前已停用，项目和团队接口暂不可用。请联系平台运营启用团队。</div>}
     {!team ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">还没有团队，先创建一个团队开始管理。</p><Button className="mt-4" onClick={createTeam}><Plus className="h-4 w-4" />创建团队</Button></CardContent></Card> : tab === 'team' ? <TeamInfoPanel team={team} role={activeRole} /> : tab === 'personal' ? <PersonalInfoPanel team={team} /> : team.status !== 'ACTIVE' ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm font-medium">团队已停用</p><p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p><Button className="mt-4" variant="outline" onClick={() => { window.history.replaceState(null, '', '/studio/team?tab=team'); window.dispatchEvent(new PopStateEvent('popstate')) }}>查看团队信息</Button></CardContent></Card> : <TeamOverview teamId={team.id} showHeading={false} />}
+    {team && activeRole && team.status === 'ACTIVE' && <TeamDangerZone team={team} role={activeRole} />}
   </div>
 }

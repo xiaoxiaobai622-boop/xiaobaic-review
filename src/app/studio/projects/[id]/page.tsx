@@ -41,6 +41,7 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import { isVideoCandidate, VIDEO_INPUT_ACCEPT } from '@/lib/video-file-signature'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import { useAuth } from '@/components/AuthProvider'
+import { getActiveTeamId } from '@/lib/team-store'
 import FolderInteraction from '@/components/ui/folder-interaction'
 import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
 
@@ -349,6 +350,8 @@ export default function ProjectPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useAuth()
+  const activeTeam = user?.teams?.find((item) => item.team.id === getActiveTeamId()) || user?.teams?.[0]
+  const activeTeamName = activeTeam?.team.name
   const id = params?.id as string
 
   useEffect(() => {
@@ -1441,9 +1444,9 @@ export default function ProjectPage() {
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
             <Link
               href="/studio/projects"
-              className="shrink-0 rounded px-1 py-0.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="max-w-[12rem] shrink-0 truncate rounded px-1 py-0.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {tu('allProjects')}
+              {activeTeamName || tu('allProjects')}
             </Link>
             <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <ProjectSwitcher currentProjectId={project.id} currentTitle={project.title} />

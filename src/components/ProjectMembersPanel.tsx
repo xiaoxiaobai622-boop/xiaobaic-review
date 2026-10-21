@@ -9,6 +9,7 @@ import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { ProjectOverlay } from '@/components/ProjectOverlay'
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 import { apiDelete, apiFetch, apiPost } from '@/lib/api-client'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 
 /**
  * 「这行的人是凭什么进来的」——三句不同的话，撤的权限只给第三种：
@@ -126,7 +127,7 @@ export function ProjectMembersPanel({ projectId, projectTitle, onClose, onMember
   }
 
   const contactOf = (row: { phone: string | null; email: string | null }) =>
-    [row.phone, row.email].filter(Boolean).join(' · ')
+    [maskPhoneDisplay(row.phone), row.email].filter(Boolean).join(' · ')
 
   const firstLoad = loading && members === null
   const count = members?.length ?? 0

@@ -16,6 +16,7 @@ import { InitialsAvatar } from '@/components/InitialsAvatar'
 import Link from 'next/link'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
 import { getContactEmail } from '@/lib/user-contact'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
 import { cn } from '@/lib/utils'
 
@@ -44,7 +45,7 @@ function contactNameOf(
   wechatFallback: string,
 ): string | null {
   const email = getContactEmail(user.email)
-  return user.name || user.phone || email || (user.email ? wechatFallback : null)
+  return user.name || maskPhoneDisplay(user.phone) || email || (user.email ? wechatFallback : null)
 }
 
 function notifyReviewAuth(authenticated: boolean, name: string | null = null, email: string | null = null) {
@@ -321,7 +322,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
   const profileHref = currentUser?.id
     ? `/profile?returnUrl=${encodeURIComponent(typeof window === 'undefined' ? '/' : currentReturnUrl())}`
     : '/profile'
-  const secondaryContact = currentUser?.phone || getContactEmail(currentUser?.email)
+  const secondaryContact = maskPhoneDisplay(currentUser?.phone) || getContactEmail(currentUser?.email)
 
   return (
     <>

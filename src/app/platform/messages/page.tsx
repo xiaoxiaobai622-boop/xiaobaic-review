@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { MessageSquarePlus, Send, Users } from 'lucide-react'
 import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
+import { maskPhoneDisplay } from '@/lib/phone-display'
 import { formatBeijingDateTime } from '@/lib/utils'
 
 interface SentItem {
@@ -175,7 +176,7 @@ export default function PlatformMessagesPage() {
                   <option value="">选择用户…</option>
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {u.name || u.phone || u.email || u.id}
+                      {u.name || maskPhoneDisplay(u.phone) || u.email || u.id}
                     </option>
                   ))}
                 </select>
