@@ -272,19 +272,23 @@ export async function PATCH(request: NextRequest) {
 
     const securityValues = {
       httpsEnabled: effectiveHttpsEnabled,
-      hotlinkProtection: hotlinkProtection ?? 'LOG_ONLY',
-      ipRateLimit: ipRateLimit ? parseInt(ipRateLimit, 10) : 1000,
-      sessionRateLimit: sessionRateLimit ? parseInt(sessionRateLimit, 10) : 600,
-      shareSessionRateLimit: shareSessionRateLimit ? parseInt(shareSessionRateLimit, 10) : 300,
-      shareTokenTtlSeconds: shareTokenTtlSeconds ? parseInt(shareTokenTtlSeconds, 10) : null,
-      passwordAttempts: passwordAttempts ? parseInt(passwordAttempts, 10) : 5,
-      sessionTimeoutValue: sessionTimeoutValue ? parseInt(sessionTimeoutValue, 10) : 15,
-      sessionTimeoutUnit: sessionTimeoutUnit || 'MINUTES',
-      adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : 7,
-      adminSessionTimeoutUnit: adminSessionTimeoutUnit || 'DAYS',
-      trackAnalytics: trackAnalytics ?? true,
-      trackSecurityLogs: trackSecurityLogs ?? true,
-      viewSecurityEvents: viewSecurityEvents ?? false,
+      // 每一档都以"库里现有的值"兜底，而不是硬编码默认：这个处理器是 PATCH 语义，
+      // 只改一项时其余字段不在 body 里，用字面默认值整行覆盖等于把没提交的设置一起重置
+      // （10-17 台账 #12：改个超时顺手关掉「查看安全事件」、复位限流阈值，还可能误触发
+      // invalidateAllShareSessions() 把全体外链观众踢掉）。
+      hotlinkProtection: hotlinkProtection ?? currentSettings?.hotlinkProtection ?? 'LOG_ONLY',
+      ipRateLimit: ipRateLimit ? parseInt(ipRateLimit, 10) : currentSettings?.ipRateLimit ?? 1000,
+      sessionRateLimit: sessionRateLimit ? parseInt(sessionRateLimit, 10) : currentSettings?.sessionRateLimit ?? 600,
+      shareSessionRateLimit: shareSessionRateLimit ? parseInt(shareSessionRateLimit, 10) : currentSettings?.shareSessionRateLimit ?? 300,
+      shareTokenTtlSeconds: shareTokenTtlSeconds ? parseInt(shareTokenTtlSeconds, 10) : currentSettings?.shareTokenTtlSeconds ?? null,
+      passwordAttempts: passwordAttempts ? parseInt(passwordAttempts, 10) : currentSettings?.passwordAttempts ?? 5,
+      sessionTimeoutValue: sessionTimeoutValue ? parseInt(sessionTimeoutValue, 10) : currentSettings?.sessionTimeoutValue ?? 15,
+      sessionTimeoutUnit: sessionTimeoutUnit || currentSettings?.sessionTimeoutUnit || 'MINUTES',
+      adminSessionTimeoutValue: adminSessionTimeoutValue ? parseInt(adminSessionTimeoutValue, 10) : currentSettings?.adminSessionTimeoutValue ?? 7,
+      adminSessionTimeoutUnit: adminSessionTimeoutUnit || currentSettings?.adminSessionTimeoutUnit || 'DAYS',
+      trackAnalytics: trackAnalytics ?? currentSettings?.trackAnalytics ?? true,
+      trackSecurityLogs: trackSecurityLogs ?? currentSettings?.trackSecurityLogs ?? true,
+      viewSecurityEvents: viewSecurityEvents ?? currentSettings?.viewSecurityEvents ?? false,
     }
 
     const settings = await prisma.securitySettings.upsert({

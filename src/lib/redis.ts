@@ -36,12 +36,13 @@ export function getRedis(): IORedis {
     db: REDIS_DB,
     maxRetriesPerRequest: 3,
     enableReadyCheck: true,
+    // 这里返回 null 是 ioredis 的"别再重连了"信号。原来写成 `times > 3 → null`，
+    // 于是 Redis 抖一次、或滚动重载极短一瞬断联，这个客户端就永久死亡：之后所有命令
+    // 直接 "Stream isn't writeable and enableOfflineQueue options is false"，而限流是
+    // fail-closed ⇒ 登录与播放一起挂，直到进程重启才恢复。改成有上限地一直重连（最多 5 秒一次）。
     retryStrategy: (times) => {
-      if (times > 3) {
-        logError('Redis connection failed after 3 retries')
-        return null
-      }
-      return Math.min(times * 100, 3000)
+      if (times === 4) logError('Redis 连续重连 4 次仍未成功，继续按 5 秒上限重试（不再放弃）')
+      return Math.min(times * 200, 5000)
     }
   })
 
