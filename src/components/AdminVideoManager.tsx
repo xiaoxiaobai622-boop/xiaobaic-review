@@ -25,7 +25,7 @@ import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoR
 import {
   VIDEO_CARD_MAX_WIDTH,
   VIDEO_GRID_TEMPLATE,
-  VIDEO_THUMB_ASPECT_CLASS,
+  VIDEO_THUMB_ASPECT_RATIO,
   type VideoCardSize,
   type VideoSortDir,
   type VideoSortField,
@@ -948,6 +948,16 @@ export default function AdminVideoManager({
     </div>
   ) : null
 
+  // 4:3 下统一采用项目里最高封面的比例，保证所有卡片同形；横版封面居中留边。
+  const gridThumbAspect = thumbAspect === '4:3' && viewMode === 'grid'
+    ? sortedGroupNames.reduce((aspect, groupName) => {
+        const latest = getLatestVideo(videoGroups[groupName])
+        return latest && latest.width > 0 && latest.height > 0
+          ? Math.min(aspect, latest.width / latest.height)
+          : aspect
+      }, VIDEO_THUMB_ASPECT_RATIO['4:3'])
+    : VIDEO_THUMB_ASPECT_RATIO[thumbAspect]
+
   return (
     <div className="space-y-4 rounded-lg">
       {/* Upload Modal - handles full upload with TUS, processing shows inline after */}
@@ -1003,7 +1013,7 @@ export default function AdminVideoManager({
       )}
 
       <div
-        className={viewMode === 'grid' ? 'grid content-start gap-3' : 'space-y-4'}
+        className={viewMode === 'grid' ? 'grid content-start items-start gap-3' : 'space-y-4'}
         style={viewMode === 'grid' ? { gridTemplateColumns: VIDEO_GRID_TEMPLATE[cardSize] } : undefined}
       >
       {sortedGroupNames.map((groupName) => {
@@ -1074,7 +1084,6 @@ export default function AdminVideoManager({
             onDrop={(event) => void handleVersionDrop(event, groupName)}
             className={cn(
               'group relative',
-              isGridCard && 'h-full',
               viewMode === 'grid' && isExpanded && 'col-span-full',
               isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg',
               dropTargetGroup === groupName && 'border-primary ring-2 ring-primary/50'
@@ -1114,7 +1123,8 @@ export default function AdminVideoManager({
               <div className={cn('relative flex gap-3 flex-1 min-w-0', isGridCard ? 'flex-col items-stretch' : 'items-center')}>
                 {thumbnails[groupName] ? (
                   <div
-                    className={cn('relative flex-shrink-0 cursor-pointer overflow-hidden rounded-md border border-border bg-black', isGridCard && `w-full ${VIDEO_THUMB_ASPECT_CLASS[thumbAspect]}`)}
+                    className={cn('relative flex-shrink-0 cursor-pointer overflow-hidden rounded-md border border-border bg-black', isGridCard && 'w-full')}
+                    style={isGridCard ? { aspectRatio: String(gridThumbAspect) } : undefined}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -1123,7 +1133,12 @@ export default function AdminVideoManager({
                       src={thumbnails[groupName]}
                       alt={groupName}
                       loading="lazy"
-                      className={cn('object-contain bg-black', isGridCard ? 'h-full w-full' : 'w-20 h-12 rounded-md')}
+                      className={cn(
+                        'bg-black',
+                        isGridCard
+                          ? cn('absolute inset-0 h-full w-full object-center', thumbAspect === '4:3' ? 'object-cover' : 'object-contain')
+                          : 'w-20 h-12 rounded-md object-contain'
+                      )}
                     />
                     {isGridCard && (
                       <>
@@ -1133,7 +1148,7 @@ export default function AdminVideoManager({
                     )}
                   </div>
                 ) : (
-                  <div draggable={displayLatestVideo.status === 'READY'} onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)} className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? `w-full ${VIDEO_THUMB_ASPECT_CLASS[thumbAspect]}` : 'w-20 h-12')}>
+                  <div draggable={displayLatestVideo.status === 'READY'} onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)} className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? 'w-full' : 'w-20 h-12')} style={isGridCard ? { aspectRatio: String(gridThumbAspect) } : undefined}>
                     <Video className="w-5 h-5 text-muted-foreground" />
                     {isGridCard && (
                       <>

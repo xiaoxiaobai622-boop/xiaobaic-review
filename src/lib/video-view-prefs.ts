@@ -43,10 +43,10 @@ export const VIDEO_CARD_MAX_WIDTH: Record<VideoCardSize, string> = {
   lg: '280px',
 }
 
-export const VIDEO_THUMB_ASPECT_CLASS: Record<VideoThumbAspect, string> = {
-  '16:9': 'aspect-video',
-  '4:3': 'aspect-[4/3]',
-  '1:1': 'aspect-square',
+export const VIDEO_THUMB_ASPECT_RATIO: Record<VideoThumbAspect, number> = {
+  '16:9': 16 / 9,
+  '4:3': 4 / 3,
+  '1:1': 1,
 }
 
 function readJson<T>(key: string): Partial<T> | null {
