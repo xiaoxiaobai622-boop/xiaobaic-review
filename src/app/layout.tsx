@@ -38,11 +38,19 @@ export async function generateMetadata(): Promise<Metadata> {
   // 依据是 10-21 的生产日志全窗口：Googlebot-Image 10-15/10-17、Baiduspider 10-20 都取到了
   // `/api/branding/favicon`（200），而 **Bingbot 一次都没请求过图标**——它最认 `<link rel="icon">`
   // 指向的 ICO，SVG 是它最不认的格式。三条声明全指 SVG 时，等于对 Bing 没有图标可读。
+  //
+  // `?v=` 是刻意的：引擎与浏览器的图标缓存都按 **URL** 做键，同一个地址它取过一次就不再取。
+  // 换版本号＝给它一个没见过的 URL，才会重新下载这张图（下次换图标时把日期再改一次）。
+  const FAVICON_URL = '/favicon.ico?v=20261021'
   const icons: Metadata['icons'] = {
     icon: [
-      { url: '/favicon.ico', sizes: '16x16 32x32 48x48', type: 'image/x-icon' },
+      { url: FAVICON_URL, sizes: '16x16 32x32 48x48', type: 'image/x-icon' },
       ...(customFavicon
-        ? [{ url: customFavicon }]
+        ? [
+            { url: customFavicon },
+            // 光栅格式再给一份：有的抓取方只收 PNG，SVG 与 ICO 都不认。
+            { url: '/brand/logo-192.png', sizes: '192x192', type: 'image/png' },
+          ]
         : [
             { url: '/brand/icon.svg', type: 'image/svg+xml' },
             { url: '/brand/logo-192.png', sizes: '192x192', type: 'image/png' },
@@ -50,7 +58,7 @@ export async function generateMetadata(): Promise<Metadata> {
     ],
     // iOS 只吃 PNG：这条此前指向 SVG 接口（10-17 台账 #62），换成仓库里那张 180×180。
     apple: [{ url: '/brand/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
-    shortcut: '/favicon.ico',
+    shortcut: FAVICON_URL,
   }
 
   return {
