@@ -34,20 +34,24 @@ export async function generateMetadata(): Promise<Metadata> {
     customFavicon = null
   }
 
-  const icons: Metadata['icons'] = customFavicon
-    ? {
-        icon: [{ url: customFavicon }],
-        apple: [{ url: customFavicon }],
-        shortcut: customFavicon,
-      }
-    : {
-        icon: [
-          { url: '/brand/icon.svg', type: 'image/svg+xml' },
-          { url: '/brand/logo-192.png', sizes: '192x192', type: 'image/png' },
-        ],
-        apple: [{ url: '/brand/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
-        shortcut: '/brand/icon.svg',
-      }
+  // 静态 ICO 始终在列，管理端上传的那枚（多为 SVG）跟在它后面。
+  // 依据是 10-21 的生产日志全窗口：Googlebot-Image 10-15/10-17、Baiduspider 10-20 都取到了
+  // `/api/branding/favicon`（200），而 **Bingbot 一次都没请求过图标**——它最认 `<link rel="icon">`
+  // 指向的 ICO，SVG 是它最不认的格式。三条声明全指 SVG 时，等于对 Bing 没有图标可读。
+  const icons: Metadata['icons'] = {
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48', type: 'image/x-icon' },
+      ...(customFavicon
+        ? [{ url: customFavicon }]
+        : [
+            { url: '/brand/icon.svg', type: 'image/svg+xml' },
+            { url: '/brand/logo-192.png', sizes: '192x192', type: 'image/png' },
+          ]),
+    ],
+    // iOS 只吃 PNG：这条此前指向 SVG 接口（10-17 台账 #62），换成仓库里那张 180×180。
+    apple: [{ url: '/brand/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+    shortcut: '/favicon.ico',
+  }
 
   return {
     title: { default: BRAND.tabTitle, template: BRAND.titleTemplate },
