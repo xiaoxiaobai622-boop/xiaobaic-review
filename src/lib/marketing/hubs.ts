@@ -6,14 +6,18 @@ export type HubGroup = 'features' | 'compare'
  * 列表里每条的标题与副文案不进这张表——它们直接读六篇文稿自己的 frontmatter `title` /
  * `description`。放在 lib 是因为 `/llms.txt` 这个纯文本路由也要用它。
  */
-export const HUBS: Record<HubGroup, { title: string; description: string; blurb: string }> = {
+export const HUBS: Record<HubGroup, { title: string; seoTitle: string; description: string; blurb: string }> = {
   features: {
     title: '功能',
+    // 只进 `<title>` 与 og:title。光写「功能 | 逐帧审阅」在结果页里不带任何品类词，
+    // 搜「视频审片 功能」的人看不出这一条和他有关。
+    seoTitle: '视频审片功能：逐帧批注、版本记录与审片链接',
     description: '逐帧批注、版本记录、带密码的审片链接——影视团队交付时用得到的部分。',
     blurb: '交付一条片子会用到的几件事',
   },
   compare: {
     title: '对比',
+    seoTitle: '视频审片工具对比：Frame.io、分秒帧与网盘微信',
     description: '和网盘微信、和分秒帧、和 Frame.io 的实质差异，含各自更适合的场景。',
     blurb: '现在这套流程哪里卡',
   },

@@ -3,7 +3,7 @@ import { loadDocs } from '@/lib/marketing/content'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 
 /**
- * 只收 200 打得开、并且允许索引的 URL：首页 + 两个枢纽 + 隐私/条款 + 六篇文稿。
+ * 只收 200 打得开、并且允许索引的 URL：首页 + 两个枢纽 + 隐私/条款 + 六篇文稿 + 内测公告。
  * `/login`（noindex）、`/studio`、`/share`、`/[shareCode]` 短链一律不进——进了就等于邀请
  * 搜索引擎去索引 robots 里已经 Disallow 的东西。
  *
@@ -26,5 +26,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     lastModified: new Date(d.updatedOn),
   }))
 
-  return [...statics, ...docs]
+  // 内测公告：营销导航与审片页横幅都链向它、页面自带 index + canonical，此前却漏在 sitemap 外。
+  // 日期与页内 `<time>` / `article:modified_time` 同值（`news/beta/page.tsx`）。
+  const news: MetadataRoute.Sitemap = [{ url: `${site}/news/beta`, lastModified: new Date('2026-10-20') }]
+
+  return [...statics, ...docs, ...news]
 }

@@ -6,6 +6,7 @@ export async function generateMetadata() {
   const site = await getSiteUrlFromRequest()
   return {
     title: '用户服务协议',
+    description: '逐帧审阅用户服务协议：账号注册与登录、上传内容的权利与责任、审片链接使用规则及服务变更说明。',
     alternates: { canonical: `${site}/terms` },
   }
 }

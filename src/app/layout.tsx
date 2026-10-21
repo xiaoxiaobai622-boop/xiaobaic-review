@@ -70,6 +70,10 @@ export async function generateMetadata(): Promise<Metadata> {
     verification: { google: 'jcbUCYdaa4CZ9pyjSOvZ5vQhZRC2tfHjwTarSqENXuo' },
     manifest: '/manifest.json',
     icons,
+    // 只给百度看：告诉它这是自适应页，不必再找单独的移动版 URL。Google/Bing 忽略。
+    // 子级 metadata 都没写 `other`，所以全站继承。`no-transform` 那条要 http-equiv 形态，
+    // Metadata API 只会印 `name=`，所以放在下面 RootLayout 里直接写 <meta>。
+    other: { 'applicable-device': 'pc,mobile' },
     appleWebApp: {
       capable: true,
       statusBarStyle: 'black-translucent',
@@ -101,6 +105,9 @@ export default async function RootLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <body className="min-h-dvh overflow-x-clip font-sans flex flex-col">
+        {/* 禁止百度移动搜索把页面转码成它自己的版式（转码页会丢掉 canonical 与 JSON-LD）。
+            百度只认 http-equiv 形态；React 19 会把 <meta> 提升进 <head>。 */}
+        <meta httpEquiv="Cache-Control" content="no-transform" />
         {/* Parser-blocking and first in the document, so a saved colour theme is
             on <html> before any content is painted — no flash of the default. */}
         <script nonce={cspNonce} dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />

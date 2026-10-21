@@ -27,6 +27,8 @@ const PAGES = [
     h2: ['自动成版本', '意见挂在具体版本上', '通过与定稿留痕', '旧版本不会静默消失', '只放行已批准版本'] },
   { path: '/features/share-link', h1: '带密码和有效期的审片链接',
     h2: ['密码与有效期', '一次性验证码', '谁打开过有记录', '客户顺着链接回传原片', '微信里打开的效果'] },
+  { path: '/features/review-workflow', h1: '从传第一版到定稿，一条片子怎么走完',
+    h2: ['传第一版', '发审片链接', '客户写意见', '处理意见、重传下一版', '点通过、交付原片', '让客户回传素材'] },
 ]
 const HUBS = ['/features', '/compare']
 
@@ -148,6 +150,38 @@ report(
 )
 // Google 站长验证靠这枚 meta；根 layout 一改就容易静默丢掉，掉了验证状态就废。
 report(home.body.includes('<meta name="google-site-verification"'), '首页有 google-site-verification')
+
+// —— 10-21 SEO/GEO 补强 ——
+// 首页 description 原来 27 字，只占百度摘要三分之一的位置。
+const homeDesc = home.body.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? ''
+report([...homeDesc].length >= 60, `首页 description ≥60 字（实测 ${[...homeDesc].length}）`)
+// 内测期首页不得出现价格类字样；description 会原样进搜索结果摘要和 AI 转述。
+report(!/价格|套餐|计费|试用|￥|¥|元\/月/.test(homeDesc), '首页 description 不含价格类字样')
+report(home.body.includes('<meta name="keywords"'), '首页有 keywords（百度/360 弱信号）')
+report(/"@type":"SoftwareApplication"/.test(home.body) && /"featureList":\[/.test(home.body), '首页有 SoftwareApplication 且带 featureList')
+report(/<meta http-equiv="Cache-Control" content="no-transform"/i.test(home.body), '首页声明 no-transform（禁百度转码）')
+report(home.body.includes('<meta name="applicable-device" content="pc,mobile"'), '首页声明 applicable-device')
+// SoftwareApplication 只许一个：挪进 BrandLd 后枢纽页那份已删，别再出第二个同名节点。
+for (const p of HUBS) {
+  const { body } = await html(p)
+  report((body.match(/"@type":"SoftwareApplication"/g) || []).length === 1, `${p} 只有一个 SoftwareApplication 节点`)
+  report(/"@type":"ItemList"/.test(body), `${p} 有 ItemList 节点`)
+}
+for (const p of PAGES) {
+  const { body } = await html(p.path)
+  report(/"@type":"BreadcrumbList"/.test(body), `${p.path} 有 BreadcrumbList 节点`)
+  // 长标题要带品类词，不能只是导航里那几个字（「逐帧批注 | 逐帧审阅」）。
+  const t = body.match(/<title>([^<]*)<\/title>/)?.[1] ?? ''
+  report([...t].length >= 18, `${p.path} title 是带品类词的长标题（实测「${t}」）`)
+}
+report(sm.body.includes(`<loc>${SITE}/news/beta</loc>`), 'sitemap 含 /news/beta')
+report(llms.body.includes('## 一句话介绍') && llms.body.includes('## 核心能力'), '/llms.txt 有可直接转述的介绍与能力清单')
+report(llms.body.includes(`${SITE}/news/beta`), '/llms.txt 收录 /news/beta')
+for (const p of ['/privacy', '/terms']) {
+  const { body } = await html(p)
+  const d = body.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? ''
+  report(d !== '面向影视团队的在线审片、版本管理与素材收录平台' && [...d].length >= 30, `${p} 有自己的 description（不是全站兜底那句）`)
+}
 
 // —— 搜索结果里那枚小图标（10-13 诊断）——
 // 引擎画的是 <head> 声明的图标地址。此前三条声明全指向 `/api/branding/favicon`，而

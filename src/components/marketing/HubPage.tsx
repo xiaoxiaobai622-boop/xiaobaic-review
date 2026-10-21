@@ -25,14 +25,16 @@ export async function hubMetadata(group: HubGroup): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
   const url = `${site}/${group}`
   return {
-    title: hub.title,
+    // `<title>` 用带品类词的长标题；导航、面包屑、llms.txt 仍用短的 `hub.title`。
+    title: hub.seoTitle,
     description: hub.description,
+    keywords: [...BRAND.keywords],
     alternates: { canonical: url },
     openGraph: {
       type: 'website',
       siteName: BRAND.zh,
       locale: 'zh_CN',
-      title: hub.title,
+      title: hub.seoTitle,
       description: hub.description,
       url,
       images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
@@ -70,17 +72,20 @@ export async function HubPage({ group }: { group: HubGroup }) {
         <MarketingCta href="/login" label={CTA_LABEL} />
       </p>
 
-      {/* 未定价平台：schema 里不放 `offers`（2026-10-03 裁决 4）——`price: '0'` 等于向搜索引擎
-          登记一个我们没对外承诺过的价格。这是内容口径，不是对计费代码状态的陈述。 */}
+      {/* `SoftwareApplication` 已挪进 `BrandLd`（营销 layout 每页都带），这里不再出第二个同名节点。 */}
       <JsonLd
         value={{
           '@context': 'https://schema.org',
-          '@type': 'SoftwareApplication',
-          name: BRAND.zh,
-          url: site,
-          description: BRAND.description,
-          applicationCategory: 'MultimediaApplication',
-          operatingSystem: 'Web',
+          '@type': 'ItemList',
+          // 不能用 `#hub`：`DocPage` 的 `Article.isPartOf` 已经把 `#hub` 声明成 CollectionPage。
+          '@id': `${url}#list`,
+          name: hub.seoTitle,
+          itemListElement: docs.map((d, i) => ({
+            '@type': 'ListItem',
+            position: i + 1,
+            name: d.title,
+            url: `${site}/${d.group}/${d.slug}`,
+          })),
         }}
       />
 

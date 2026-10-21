@@ -3,6 +3,7 @@
   "group": "compare",
   "slug": "frame-io",
   "title": "Frame.io 的中文可用替代",
+  "seoTitle": "Frame.io 国内替代：中文视频审片平台怎么选",
   "description": "Frame.io 有简体中文站，也有逐帧批注和免注册分享链接。这一页只写国内团队确实能对上的几处摩擦：带宽、登录、中文程度、意见落点，以及什么时候还是该选它。",
   "h1": "Frame.io 在国内用起来别扭的地方",
   "updatedOn": "2026-10-03",

@@ -22,12 +22,15 @@ export async function docMetadata(group: string, slug: string): Promise<Metadata
   const site = await getSiteUrlFromRequest()
   const url = `${site}/${group}/${slug}`
   return {
-    title: doc.title,
+    title: doc.seoTitle,
     description: doc.description,
+    keywords: [...BRAND.keywords],
     alternates: { canonical: url },
     openGraph: {
       type: 'article',
-      title: doc.title,
+      siteName: BRAND.zh,
+      locale: 'zh_CN',
+      title: doc.seoTitle,
       description: doc.description,
       url,
       publishedTime: doc.updatedOn,
@@ -140,7 +143,22 @@ export async function DocPage({
             name: HUBS[group].title,
           },
           mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+          about: { '@id': `${site}/#software` },
+          image: `${site}/og/brand-1200x630.png`,
           url,
+        }}
+      />
+
+      {/* 内容页此前没有面包屑节点（只有枢纽页有），引擎在结果页里只能显示裸 URL。 */}
+      <JsonLd
+        value={{
+          '@context': 'https://schema.org',
+          '@type': 'BreadcrumbList',
+          itemListElement: [
+            { '@type': 'ListItem', position: 1, name: BRAND.zh, item: site },
+            { '@type': 'ListItem', position: 2, name: HUBS[group].title, item: `${site}/${group}` },
+            { '@type': 'ListItem', position: 3, name: doc.title, item: url },
+          ],
         }}
       />
 
@@ -148,6 +166,7 @@ export async function DocPage({
         value={{
           '@context': 'https://schema.org',
           '@type': 'FAQPage',
+          '@id': `${url}#faq`,
           mainEntity: doc.faq.map((f) => ({
             '@type': 'Question',
             name: f.q,

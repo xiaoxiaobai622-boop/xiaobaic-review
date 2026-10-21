@@ -4,6 +4,8 @@ import { join } from 'node:path'
 export type Section = { heading: string; html: string }
 export type MarketingDoc = {
   slug: string; group: 'compare' | 'features'; title: string; description: string
+  /** 只进 `<title>` / og:title 的长标题（带品类词）；缺省回落到 `title`。导航、相关链接、llms.txt 仍用短 `title`。 */
+  seoTitle: string
   h1: string; updatedOn: string; sections: Section[]; cta: { href: string; label: string }
   related: string[]; faq: { q: string; a: string }[]; bodyHtml: string
 }
@@ -80,8 +82,13 @@ function validate(meta: Record<string, unknown>, file: string): MarketingDoc {
       throw new Error(`${file} faq[${i}] 缺 q 或 a`)
     }
   })
+  const seoTitle = meta.seoTitle
+  if (seoTitle !== undefined && (typeof seoTitle !== 'string' || !seoTitle.trim())) {
+    throw new Error(`${file} seoTitle 若写就必须是非空字符串`)
+  }
   return {
     group: group as MarketingDoc['group'], slug, title: req('title'),
+    seoTitle: typeof seoTitle === 'string' ? seoTitle : req('title'),
     description: req('description'), h1: req('h1'), updatedOn: req('updatedOn'),
     sections: [], cta: { href: cta.href, label: cta.label },
     related: related as string[], faq: faq as { q: string; a: string }[], bodyHtml: '',

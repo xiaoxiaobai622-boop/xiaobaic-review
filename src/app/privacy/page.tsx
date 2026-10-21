@@ -7,6 +7,7 @@ export async function generateMetadata() {
   const site = await getSiteUrlFromRequest()
   return {
     title: '隐私政策',
+    description: '逐帧审阅隐私政策：说明在线审片平台收集哪些个人信息、用于什么目的、保存多久，以及您如何查询、更正和删除。',
     alternates: { canonical: `${site}/privacy` },
   }
 }
