@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import Link from 'next/link'
 import AdminVideoManager from '@/components/AdminVideoManager'
 import ProjectActions from '@/components/ProjectActions'
+import ProjectMembersButton from '@/components/ProjectMembersButton'
 import PanelToggleButton from '@/components/PanelToggleButton'
 import VideoPlayer from '@/components/VideoPlayer'
 import CommentSection from '@/components/CommentSection'
@@ -1041,7 +1042,7 @@ export default function ProjectPage() {
   const shareWholeProjectReview = () =>
     openObjectShare('REVIEW', { scopeType: 'PROJECT', scopeId: project.id, name: project.title })
 
-  // 「复制收录链接」在没有可复制的链接时退到创建流，范围与分享记录面板那枚按钮一字不差
+  // 「复制项目链接」在没有可复制的链接时退到创建流，范围与分享记录面板那枚按钮一字不差
   const createCollectLink = () =>
     openObjectShare('COLLECT', { scopeType: 'PROJECT', scopeId: '', name: project.title })
 
@@ -1453,6 +1454,10 @@ export default function ProjectPage() {
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <TeamExpiryText />
+            <ProjectMembersButton
+              memberCount={typeof project.memberCount === 'number' ? project.memberCount : 0}
+              onOpen={openMembers}
+            />
             <Button
               size="default"
               className={projectToolbarButtonClassName}
@@ -1500,7 +1505,6 @@ export default function ProjectPage() {
                 { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
                 { id: 'photos' as const, label: t('photoAlbums'), count: photoCounts?.albums || 0, icon: Images },
                 { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
-                { id: 'shares' as const, label: t('shareWorkspace'), count: sharesCount || 0, icon: Share2 },
                 { id: 'trash' as const, label: t('recycleBin'), count: recycleBinCount || 0, icon: Trash2 },
               ]).map((item) => {
                 const Icon = item.icon
@@ -1535,7 +1539,7 @@ export default function ProjectPage() {
               <section className="scrollbar-hidden hidden rounded-[8px] bg-popover px-2 lg:mt-[2px] lg:block lg:min-h-0 lg:overflow-y-auto" aria-label={selectedVideoGroup ? tv('versionInfo') : t('projectInfoSection')}>
                 {selectedVideoGroup ? renderVersionInspector(true) : (
                   <div id="project-info-panel" className="px-3 pb-3 pt-3">
-                    <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} />
+                    <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} />
                   </div>
                 )}
               </section>
@@ -1561,12 +1565,18 @@ export default function ProjectPage() {
               {/* 工具栏吸顶：main 才是滚动容器，负边距让它铺满滚动区、内边距补回原来的留白。
                   底色必须是实色，半透明会让下方滚过的卡片透出字影；z 要压过卡片左上角的勾选圈（z-20），
                   又低于卡片菜单那批 fixed z-[50]/z-[70]。
-                  上面那圈负边距只管左右：main 的 padding-top 在吸顶条之上、仍在溢出裁剪区内，滚下来时
-                  卡片会从这条 16px 的带子里露出来（实测他截图：卡片顶边 css y70 = main 顶边，吸顶条顶边
-                  y85 = main 内容区顶边，中间 15px 全是滚过去的缩略图）。所以再垫一条等高伪元素往上盖。
-                  -top-4/h-4 用 rem 而不是字面量 px：它必须永远等于 main 的 sm:p-4，紧凑档把 root 降到
-                  15px 时两者一起变 15px，不会盖不全或多盖。 */}
-              <div className="sticky top-0 z-30 -mx-3 mb-4 flex flex-wrap items-center gap-2 bg-popover px-3 py-2 before:pointer-events-none before:absolute before:inset-x-0 before:-top-4 before:h-4 before:bg-popover before:content-[''] sm:-mx-4 sm:px-4">
+                  窄于 lg 时 main 不滚，吸顶条贴在内容盒顶、上面留出 main 的 padding-top 那条 15px：
+                  滚过的卡片会从那条带子里露出来（实测他截图：卡片顶边 css y70 = main 顶边，吸顶条顶边
+                  y85 = main 内容区顶边），所以垫一条等高伪元素往上盖。-top-4/h-4 用 rem 而不是字面量 px：
+                  它必须永远等于 main 的 sm:p-4，紧凑档把 root 降到 15px 时两者一起变 15px。
+                  lg 起改成把吸顶条自己往上顶满那 15px（-mt-4 吃掉 main 的上内边距，-top-4 让吸住的位置
+                  和静止位置是同一处，滚动时不会跳 15px），覆盖带随之不再需要。他 10-22 的口径是这一行
+                  「高度低一点，内容要高度居中」：那 15px 白在行上面，读起来就是行高 64px、字沉在下面。
+                  条子铺满整幅后被 main 的 lg:rounded-[8px] 裁掉两角，所以它看着就是这块栏面的圆角抬头。
+                  下沿那 2px 是画布缝（after）：工具栏和它下面的网格都坐在同一块白色栏面上，之间原本
+                  只有 16px 同色留白，读起来是一整片；补一条和顶栏/栏面之间同款的画布带，才分成两块。
+                  跟着吸顶条一起走，滚过的卡片被这条线切齐。 */}
+              <div className="sticky top-0 z-30 -mx-3 mb-4 flex flex-wrap items-center gap-2 bg-popover px-3 py-2 before:pointer-events-none before:absolute before:inset-x-0 before:-top-4 before:h-4 before:bg-popover before:content-[''] lg:-mt-4 lg:-top-4 lg:before:hidden after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-[2px] after:h-[2px] after:bg-background after:content-[''] sm:-mx-4 sm:px-4">
                 <h2 className="flex shrink-0 items-center gap-2 text-lg font-semibold">
                   <span className={iconBadgeClassName}><Video className={iconBadgeIconClassName} /></span>
                   {t('videos')}
@@ -1855,7 +1865,7 @@ export default function ProjectPage() {
           {/* 宽屏不再占右列：版本信息已搬进左侧项目侧栏的下半区，这块只服务窄屏。 */}
           <aside className="scrollbar-hidden border-t border-border p-3 lg:hidden">
             {selectedVideoGroup ? renderVersionInspector(false) : (
-              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} />
+              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} />
             )}
           </aside>
         </div>

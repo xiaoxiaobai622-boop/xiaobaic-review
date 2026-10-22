@@ -19,6 +19,7 @@
 .heroZone {
   position: relative;
   overflow: clip;
+  touch-action: pan-y pinch-zoom;
   background:
     radial-gradient(1200px 620px at 82% -14%, rgba(104, 86, 214, 0.16), transparent 66%),
     linear-gradient(178deg, #0a0912 0%, #07070d 52%, #05050a 100%);
@@ -39,29 +40,13 @@
   z-index: 1;
 }
 
-/* 装饰层铺满整块首屏（对标 frame.io 那枚 1696×1347 的 HeroGradient_canvas）。
-   但强度必须带方向：紫色光带整屏等强度就会变成玻璃球。这里用一条斜向线性蒙版把亮带推到
-   画面中间偏右（素材格那一圈），主标题那一侧压到只剩一点边——径向蒙版会在下沿留出一道
-   看得见的弧边，线性不会。H46 量的就是「字压在画出来的像素上」还剩多少对比。
-   pointer-events 保持 none：指针事件由 ColorBends 自己在 window 上听。 */
-
-.bendsWrap {
+.mistWrap {
   position: absolute;
-  inset: 0;
+  inset: 0 0 auto;
   z-index: 0;
-  opacity: 0.78;
-  filter: saturate(0.92);
-  /* 两层蒙版取交集：斜向那层决定亮带落点，纵向这层让光带在首屏区下半段淡出，
-     不再一路拖到「平台能力」下面和第一块章节面板硬接。纵向起点放在 60%，
-     高度 1700 左右的首屏区里约 1000px 才开始淡，视口内（≤900）的亮度不受影响。 */
-  -webkit-mask-image:
-    linear-gradient(104deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.78) 24%, #000 56%, rgba(0, 0, 0, 0.84) 82%, rgba(0, 0, 0, 0.62) 100%),
-    linear-gradient(180deg, #000 0%, #000 60%, transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(104deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.78) 24%, #000 56%, rgba(0, 0, 0, 0.84) 82%, rgba(0, 0, 0, 0.62) 100%),
-    linear-gradient(180deg, #000 0%, #000 60%, transparent 100%);
-  mask-composite: intersect;
+  height: 100svh;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 60%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 60%, transparent 100%);
   pointer-events: none;
 }
 

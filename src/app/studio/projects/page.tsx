@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Building2, FolderKanban, FolderTree, Plus, AlertCircle, ChevronRight, Lock, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus } from 'lucide-react'
+import { Building2, FolderKanban, FolderTree, Plus, AlertCircle, ChevronRight, Lock, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus, Users } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
@@ -602,10 +602,17 @@ export default function AdminPage() {
                 {t('dashboard')}
               </h1>
             </div>
-            <Button variant="default" size="default" onClick={openNewProjectModal}>
-              <Plus className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">{t('newProject')}</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="icon" className="h-9 w-9">
+                <Link href="/studio/team/members" aria-label={t('projectMembers')} title={t('projectMembers')}>
+                  <Users className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button variant="default" size="default" onClick={openNewProjectModal}>
+                <Plus className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">{t('newProject')}</span>
+              </Button>
+            </div>
           </div>
           <Card>
             <div className="py-12 text-center">
@@ -667,10 +674,17 @@ export default function AdminPage() {
               {t('dashboard')}
             </h1>
           </div>
-          {isAdmin && <Button variant="default" size="default" onClick={openNewProjectModal}>
-            <Plus className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">{t('newProject')}</span>
-          </Button>}
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="icon" className="h-9 w-9">
+              <Link href="/studio/team/members" aria-label={t('projectMembers')} title={t('projectMembers')}>
+                <Users className="h-4 w-4" />
+              </Link>
+            </Button>
+            {isAdmin && <Button variant="default" size="default" onClick={openNewProjectModal}>
+              <Plus className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">{t('newProject')}</span>
+            </Button>}
+          </div>
         </div>
 
         <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[2px]">

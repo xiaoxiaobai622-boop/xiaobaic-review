@@ -457,9 +457,9 @@
     "company": "Company",
     "companyPlaceholder": "e.g., XYZ Corporation",
 
-    "shareReviewLink": "Share review link",
+    "shareReviewLink": "Share review",
     "copyCollectLink": "Copy collection link",
-    "viewAnalytics": "View Analytics",
+    "viewAnalytics": "Project stats",
     "projectActions": "Project Actions",
 
     "sendNotification": "Send Notification",
@@ -522,7 +522,7 @@
   "failedToReprocessVideos": "Failed to reprocess videos",
   "failedToUnapproveProjectApi": "Failed to unapprove project",
 
-    "approveProject": "Approve Project",
+    "approveProject": "Approve project",
     "confirmApproveProject": "Are you sure you want to approve this project?",
     "approveFirst": "Approve one version of each video first",
     "approvedSuccessfully": "Project approved successfully",
@@ -593,7 +593,7 @@
     "allowPhotoDownloadsDescription": "Allow clients to download photos from the project's photo albums",
     "photos": "Photos",
     "photoAlbums": "Photo Albums",
-    "shareWorkspace": "Shares",
+    "shareWorkspace": "Link management",
     "allowClientFileAttachments": "Allow File Attachments",
     "allowClientFileAttachmentsDescription": "Allow clients to attach files (images, documents, audio) to their comments",
     "allowReverseShare": "Allow File Submissions",

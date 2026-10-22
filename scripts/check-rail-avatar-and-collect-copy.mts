@@ -13,7 +13,7 @@ import { allocateTeamId } from '../src/lib/team-id'
  *    照片加载失败→同样回落到名字片）；那条粉色渐变归窄栏背景，不归头像（他 10-02 拿对标截图更正）；
  *    44px 命中区与窄栏那一列宽度一寸不动、灰色小人不再出现；
  *    照片的来路也包括「User 表没头像但微信身份有」这一支，否则线上他自己还是灰小人。
- *  B 组 项目信息里「分享审阅链接」与「查看数据统计」中间多一枚「复制收录链接」：
+ *  B 组 项目信息里「分享审阅」与「查看数据统计」中间多一枚「复制收录链接」：
  *    点一下把该项目的收录短链写进剪贴板、按钮变「已复制」再自己变回去；一条 ACTIVE 收录链接
  *    都没有时点它开现成的创建窗；项目没开收录时这枚按钮不出现。
  * 登录只在浏览器里做（会话指纹绑设备头＋UA，Node 侧令牌在浏览器一刷就烧掉整枚会话）。
@@ -451,24 +451,24 @@ try {
   const findBtn = (label: string) => `[...document.querySelectorAll('button')].filter(b => b.offsetParent !== null && b.textContent.includes(${JSON.stringify(label)}))`
   // 只认「看得见的第一个」：这枚组件在项目页挂了两次（侧栏 bare 与卡片），按文本找会挑到另一实例。
   const collectBtn = `[...document.querySelectorAll('[data-tutorial="copy-collect-link"]')].filter(b => b.offsetParent !== null)[0]`
-  // 顺序按「分享审阅链接」所在的那一层兄弟节点量，跨实例不作数。
+  // 顺序按「分享审阅」所在的那一层兄弟节点量，跨实例不作数。
   const threeOrder = `(() => {
-    const review = ${findBtn('分享审阅链接')}[0];
+    const review = ${findBtn('分享审阅')}[0];
     const parent = review && review.parentElement;
     const texts = parent ? [...parent.querySelectorAll(':scope > button')].map(b => b.textContent.trim()) : [];
     const idx = n => texts.findIndex(t => t.includes(n));
-    return JSON.stringify({ review: idx('分享审阅链接'), copy: idx('复制收录链接'), analytics: idx('查看数据统计'), siblings: texts.length });
+    return JSON.stringify({ review: idx('分享审阅'), copy: idx('复制收录链接'), analytics: idx('项目统计'), siblings: texts.length });
   })()`
 
   const pb = await openPage()
   check(/^200 session$/.test(await loginInBrowser(pb, USERS[0].email)), 'B0 浏览器内登录（收录复制这趟）')
   await run(pb, `/studio/projects/${project.id}`)
-  const reviewBtn = await waitFor(pb, `${findBtn('分享审阅链接')}.length`, 120_000)
-  check(reviewBtn, 'B1 项目信息面板画出来了（「分享审阅链接」在）', reviewBtn ? '' : '→ 没等到')
+  const reviewBtn = await waitFor(pb, `${findBtn('分享审阅')}.length`, 120_000)
+  check(reviewBtn, 'B1 项目信息面板画出来了（「分享审阅」在）', reviewBtn ? '' : '→ 没等到')
   const order = JSON.parse(String(await evalJs(pb, threeOrder)))
   check(order.copy >= 0, 'B2 两枚中间多了一枚「复制收录链接」', `→ ${JSON.stringify(order)}`)
-  check(order.review === 0 && order.copy === 1 && order.analytics === 2,
-    'B3 同一层里顺序就是「审阅 → 收录 → 统计」（不是并排到别处）', `→ ${JSON.stringify(order)}`)
+  check(order.review === 0 && order.copy === 1 && order.analytics === 3,
+    'B3 同一层里顺序是「分享审阅 → 复制收录链接 → 链接管理 → 项目统计」（链接管理是他点名插在第三的）', `→ ${JSON.stringify(order)}`)
 
   await pb.s('Page.bringToFront')
   await evalJs(pb, `navigator.clipboard.writeText(${JSON.stringify(SENTINEL)})`)
@@ -511,7 +511,7 @@ try {
   const pd = await openPage()
   await loginInBrowser(pd, USERS[0].email)
   await run(pd, `/studio/projects/${closed.id}`)
-  check(await waitFor(pd, `${findBtn('分享审阅链接')}.length`, 120_000), 'B10 未开收录的项目：面板照常画出来（另两枚在）')
+  check(await waitFor(pd, `${findBtn('分享审阅')}.length`, 120_000), 'B10 未开收录的项目：面板照常画出来（另两枚在）')
   await sleep(1_500)
   const closedHas = await evalJs(pd, `document.querySelectorAll('[data-tutorial="copy-collect-link"]').length`)
   check(Number(closedHas) === 0, 'B11 未开收录时「复制收录链接」不出现（点了也只会拿到 403）', `→ ${String(closedHas)} 枚`)

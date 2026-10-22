@@ -439,19 +439,19 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
         onClick={handleOpen}
       >
         <Send className="h-4 w-4" strokeWidth={2.5} />
-        {videoId ? '推送本集' : '推送项目批注'}
+        {videoId ? '推送本集' : '发送批注通知'}
       </Button>
 
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="flex w-[calc(100%-1rem)] max-w-[760px] max-h-[calc(100vh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[90vh]">
           <DialogHeader className="shrink-0 border-b px-5 py-5 pr-12 sm:px-6">
             <DialogTitle className="text-xl">
-              {videoId ? '推送本集批注到飞书' : '推送项目批注到飞书'}
+              {videoId ? '推送本集批注到飞书' : '发送批注通知到飞书'}
             </DialogTitle>
             <DialogDescription>
               {videoId
                 ? '将当前视频的批注推送到飞书群'
-                : '将项目下所有视频的批注推送到飞书群'}
+                : '将项目下所有视频的批注发送到飞书群'}
             </DialogDescription>
           </DialogHeader>
 

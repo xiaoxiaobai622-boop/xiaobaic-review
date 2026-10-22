@@ -42,7 +42,7 @@ interface ProjectActionsProps {
   onRefresh?: () => void
   /** 侧栏下半区不要白底卡片壳：只换掉 Card 三层外壳，结构、间距与交互一字不动。 */
   bare?: boolean
-  /** 「分享审阅链接」按下的那一下由页面接管：整项目范围的创建弹窗只有页面那份状态能开。 */
+  /** 「分享审阅」按下的那一下由页面接管：整项目范围的创建弹窗只有页面那份状态能开。 */
   onShareReview: () => void
   /** 还没有可复制的收录链接时，这枚按钮开的也是页面那枚创建窗。 */
   onCreateCollectLink: () => void
@@ -50,9 +50,11 @@ interface ProjectActionsProps {
   onOpenSettings: (section: ProjectSettingsSection) => void
   /** 第四项开的是成员窗：同样是页面那一层浮栏，不是第二条路由。 */
   onOpenMembers: () => void
+  /** 「分享」从上面那张导航卡挪下来的一行：它切的是工作区（不是动作），所以带 active 与条数。 */
+  shares?: { count: number; active: boolean; onOpen: () => void }
 }
 
-export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings, onOpenMembers }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings, onOpenMembers, shares }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -70,7 +72,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
-  // 「复制收录链接」是读操作：拿该项目最新一条有效收录短链写进剪贴板，
+  // 「复制项目链接」是读操作：拿该项目最新一条有效收录短链写进剪贴板，
   // 已取消与已过期的都不算——复制出去只会让人拿到打不开的地址。
   const [collectLinkBusy, setCollectLinkBusy] = useState(false)
   const [collectLinkCopied, setCollectLinkCopied] = useState(false)
@@ -438,6 +440,21 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                   ? <Check className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
                   : <Copy className="h-4 w-4 shrink-0" strokeWidth={2.5} />}
                 {collectLinkCopied ? tc('copied') : t('copyCollectLink')}
+              </button>
+            )}
+
+            {shares && (
+              <button
+                type="button"
+                onClick={shares.onOpen}
+                aria-current={shares.active ? 'page' : undefined}
+                className={`${ACTION_ROW} ${shares.active ? 'bg-accent font-semibold text-foreground' : ''}`}
+              >
+                <Share2 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                {t('shareWorkspace')}
+                {shares.count > 0 && (
+                  <span className="ml-auto tabular-nums text-xs text-muted-foreground">{shares.count}</span>
+                )}
               </button>
             )}
 

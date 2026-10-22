@@ -386,11 +386,11 @@ try {
   check(/^200 session$/.test(loginIn), 'U15 浏览器内登录拿到会话（产品自己的登录路，不是伪造的令牌）', `→ ${JSON.stringify(loginIn)}`)
 
   await run(pd, `/studio/projects/${project.id}`)
-  const findBtn = `[...document.querySelectorAll('button')].find(b => b.textContent.includes('分享审阅链接'))`
+  const findBtn = `[...document.querySelectorAll('button')].find(b => b.textContent.includes('分享审阅'))`
   const btnThere = await waitFor(pd, findBtn, 90_000)
   const btnText = btnThere ? String(await evalJs(pd, `${findBtn}.textContent`)) : ''
   const staleLabel = await evalJs(pd, `document.body.innerText.includes('预览客户页面')`)
-  check(btnThere && /分享审阅链接/.test(btnText), 'U16 项目信息里那条按钮画的是「分享审阅链接」', btnThere ? '' : `→ ${(await snapshot(pd)).slice(0, 240)}`)
+  check(btnThere && /分享审阅/.test(btnText), 'U16 项目信息里那条按钮画的是「分享审阅」', btnThere ? '' : `→ ${(await snapshot(pd)).slice(0, 240)}`)
   check(btnThere && staleLabel === false, 'U17 旧那句「预览客户页面」整页不再出现（是换掉，不是并排留着）', staleLabel ? '→ 还在' : '')
 
   // 基线在点击前一刻现取：进页面这一步本身就会把项目主链接落成一行（实测 3→4），写死数字会假败。

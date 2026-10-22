@@ -526,11 +526,15 @@ try {
     return JSON.stringify({ nav: pick(nav), rows: [...panel.querySelectorAll('button')].map(pick) })
   })()`))
   const rf = JSON.parse(rowFacts) as { nav: any; rows: any[] } | null
-  const labels = (rf?.rows || []).map((r) => r.text).join(' / ')
-  check(Boolean(rf) && rf!.rows.length === 7
-    && ['分享审阅链接', '复制收录链接', '查看数据统计', '推送项目批注', '通过整个项目', '归档项目', '删除项目']
-      .every((want) => labels.includes(want)),
-    'J1 那组七件事一件没少，只是换成了行', `→ ${labels}`)
+  const rowTexts = (rf?.rows || []).map((r) => r.text)
+  const labels = rowTexts.join(' / ')
+  // 顺序是他 10-20 点名给的：分享审阅 → 复制收录链接 → 链接管理，后面五件事原序。
+  // 「链接管理」那行可能带条数（“链接管理 4”），所以按前缀比。
+  const wantOrder = ['分享审阅', '复制收录链接', '链接管理', '项目统计', '发送批注通知', '通过项目', '归档项目', '删除项目']
+  check(Boolean(rf) && rowTexts.length === wantOrder.length
+    && wantOrder.every((want, i) => rowTexts[i].startsWith(want)),
+    'J1 八行按他给的顺序排：分享审阅 / 复制收录链接 / 链接管理 / 项目统计 / 发送批注通知 / 通过项目 / 归档项目 / 删除项目',
+    `→ ${labels}`)
   const actionRows = (rf?.rows || []).filter((r) => r.text !== '删除项目')
   check(Boolean(rf) && rf!.nav && actionRows.length > 0 && actionRows.every((r) =>
     r.padLeft === rf!.nav.padLeft && r.font === rf!.nav.font
@@ -545,7 +549,18 @@ try {
   check(Boolean(del) && del!.bg === 'rgba(0, 0, 0, 0)' && Boolean(rgb) && Number(rgb![1]) > 150 && Number(rgb![2]) < 120,
     'J3 删除项目只剩红字（没有那整块红底），底子仍是透明的',
     `→ ${JSON.stringify({ color: del?.color, bg: del?.bg })}`)
+  const navTexts = String(await evalJs(page, `JSON.stringify([...document.querySelectorAll('aside nav button')].map(b => (b.textContent || '').trim()))`))
+  check(!/链接管理|分享/.test(navTexts.replace(/\s+/g, '')),
+    'J4 上面那张导航卡里不再有「链接管理」（是挪下去，不是上下各留一份）', `→ ${navTexts}`)
   await shot(page, 'project-actions-rows', { x: 0, y: 430, width: 340, height: 450 })
+
+  // 挪下来还得能用：点这行要真的切到分享工作区，并且自己亮着。
+  const shareRow = `[...document.querySelectorAll('[data-project-actions] button')].find(b => (b.textContent || '').trim().startsWith('链接管理'))`
+  await evalJs(page, `${shareRow}?.click(); true`)
+  check(await waitFor(page, `(document.querySelector('main')?.innerText || '').includes('管理项目、文件夹、视频和收录链接')`, 20_000),
+    'J5 点「链接管理」那行真的切到分享工作区（不是挪下去就断线）')
+  check(String(await evalJs(page, `${shareRow}?.getAttribute('aria-current')`)) === 'page',
+    'J5·b 切过去之后这行自己标着 aria-current=page（和原来导航里的选中态一个意思）')
 
   await closePage(page)
 

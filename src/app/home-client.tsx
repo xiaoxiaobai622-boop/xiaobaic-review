@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
-import ColorBends from '@/components/ColorBends'
+import LightMist from '@/components/LightMist'
 import styles from './home.module.css'
 
 /** 内测期间首页只说「免费内测」，不写金额，也不写档位。 */
@@ -366,23 +366,8 @@ export default function HomeClient() {
   return (
     <div className={styles.page}>
       <div className={styles.heroZone}>
-        <div className={styles.bendsWrap} aria-hidden="true">
-          {/* 着色器里 w = 1 - exp(-BW/exp(BW·m))，m 实测在 1~1.5：BW=4 时 w 只剩 0.015，
-              整块画布叠到页面上是灰 9.7（对标 frame.io 同一块量到 37.2）——带子细到看不见，
-              指针耦合再真也只是测得出、看不出。BW 收到 1.4 才把 w 抬到 0.25 那一档。 */}
-          <ColorBends
-            colors={['#8f7bff', '#4a2a9e']}
-            speed={0.2}
-            frequency={0.8}
-            noise={0.06}
-            rotation={90}
-            intensity={1.6}
-            bandWidth={1.4}
-            mouseInfluence={2.2}
-            parallax={1.6}
-            trail
-            transparent
-          />
+        <div className={styles.mistWrap} aria-hidden="true">
+          <LightMist />
         </div>
 
         <div className={styles.promoBar}>
