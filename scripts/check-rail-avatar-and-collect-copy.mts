@@ -437,15 +437,11 @@ try {
   const twoSlots = Number(facts.photo?.avatarTopGap) + Number(facts.photo?.avatarBottomGap) + Number(facts.photo?.hit.h)
   check(washPx === PINNED_WASH_PX,
     `A14 这条洗按他点单收在 ${PINNED_WASH_PX}px（栏高 ${railH}px ＝ ${(washPx / railH * 100).toFixed(0)}%；最底两枚图标上缘＝${twoSlots}px，再往上多吃 ${washPx - twoSlots}px）`, `→ ${railCss.slice(0, 190)}`)
-  // 深色这条不关掉、也不吃浅色那支原样：同一支粉按 alpha 压，强度要和浅色那条对齐
-  // （浅色底端距栏面 ΔE 31.1，深色 .35 合成 #554456＝ΔE 34.0，同一档）。
-  // 所以钉「同一支粉、alpha ≤ .35、仍收在 130px」。抬档要连这条一起改，别让它漂回浅色那支。
   const darkRail = String(facts.photo?.railBgDark)
-  const darkNear = [...darkRail.matchAll(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)/g)]
-    .map(m => ({ rgb: [m[1], m[2], m[3]].join(','), a: m[4] === undefined ? 1 : Number(m[4]) }))[0]
-  check(darkNear?.rgb === '243,193,245' && darkNear.a <= 0.35 && /130px/.test(darkRail),
-    'A13 深色下这条洗换强度不换方向：同一支粉压到 ≤35%、仍收在 130px（吃浅色那支原样会在纯黑上糊成一块粉斑）',
-    `→ ${darkRail.slice(0, 140)}`)
+  const darkStops = gradientStops(darkRail).map(s => s.join(','))
+  check(darkStops[0] === '73,25,72' && darkStops.at(-1) === '0,0,0' && /to top/.test(darkRail) && /180px\)$/.test(darkRail),
+    'A13 深色窄栏底部为深紫粉，向上180px融入黑色，不再使用浅粉透明叠色',
+    `→ ${darkRail}`)
 
   // ── B 组：复制收录链接 ─────────────────────────────────────────────────
   const findBtn = (label: string) => `[...document.querySelectorAll('button')].filter(b => b.offsetParent !== null && b.textContent.includes(${JSON.stringify(label)}))`

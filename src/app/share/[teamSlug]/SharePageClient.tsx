@@ -1608,6 +1608,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
                 fillContainer={true}
+                controlsSurfaceClassName="bg-card"
               />
               <div id="review-comment-composer" className="lg:mt-auto" />
             </div>

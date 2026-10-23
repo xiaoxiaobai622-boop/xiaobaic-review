@@ -343,13 +343,13 @@ export default function CommentInput({
               {sendInsideComposer && (
                 // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
                 // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
-                <div className="pointer-events-none absolute bottom-1 left-[96px] right-2 flex h-7 items-center justify-end gap-1.5">
+                <div className="pointer-events-none absolute bottom-1 left-[84px] right-2 flex h-7 items-center justify-end gap-1.5">
                   {onVisibilityChange && !commentsDisabled && (
                     <button
                       ref={emojiBtnRef}
                       type="button"
                       onClick={toggleEmojiPicker}
-                      className="pointer-events-auto mr-auto inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="pointer-events-auto mr-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       aria-label="添加表情符号"
                       aria-expanded={emojiOpen}
                       title="添加表情符号"
@@ -362,7 +362,7 @@ export default function CommentInput({
                       ref={visBtnRef}
                       type="button"
                       onClick={toggleVisibilityDropdown}
-                      className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded-md border border-border/70 bg-background px-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-accent"
+                      className="pointer-events-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-accent"
                       aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                       aria-expanded={visOpen}
                       title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}
@@ -485,7 +485,7 @@ export default function CommentInput({
                     ref={visBtnRef}
                     type="button"
                     onClick={toggleVisibilityDropdown}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent"
                     aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                     aria-expanded={visOpen}
                     title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}

@@ -276,7 +276,6 @@ type ProjectOverlayState = { kind: 'settings'; section: ProjectSettingsSection }
 function TeamExpiryText() {
   const [state, setState] = useState<{ plan: string; days: string; danger: boolean } | null>(null)
   const [tipOpen, setTipOpen] = useState(false)
-  const [hovered, setHovered] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -308,11 +307,9 @@ function TeamExpiryText() {
   return (
     <span className="relative flex shrink-0 items-center gap-2">
       <span
-        className={`inline-flex cursor-default items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-          hovered ? 'bg-[#eeb400] text-[#191b29]' : 'bg-[#dee0ed] text-[#eeb400]'
-        }`}
-        onMouseEnter={() => { setHovered(true); setTipOpen(true) }}
-        onMouseLeave={() => { setHovered(false); setTipOpen(false) }}
+        className="inline-flex cursor-default items-center gap-1.5 rounded-full bg-[#eeb400] px-2.5 py-1 text-xs font-medium text-[#191b29]"
+        onMouseEnter={() => setTipOpen(true)}
+        onMouseLeave={() => setTipOpen(false)}
       >
         {/* 四角星 ✦，fill 实心，同 frame.io */}
         <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
