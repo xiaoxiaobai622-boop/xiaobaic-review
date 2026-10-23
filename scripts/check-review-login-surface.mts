@@ -330,16 +330,29 @@ check(anyTermsMemory.length === 0,
   'T1 条款同意状态不再读写 localStorage（记住了＝下次进来默认勾上，正是被点名的做法）',
   `→ 还在引用：${anyTermsMemory.join(' ') || '无'}`)
 const agreedInit = loginPageSrc.match(/const \[agreed, setAgreed\] = useState\((\w+)\)/)
-check(!!agreedInit && agreedInit[1] === 'false' && !/setAgreed\(\s*(true|localStorage|!agreed)/.test(loginPageSrc),
-  'T2 勾选框初始必须是未勾，且没有任何地方把它硬置成已同意或从缓存里读回来', `→ 初值=${agreedInit?.[1] ?? '没找到'}`)
-const guardAt = at(loginPageSrc, /if \(!agreed\)/)
-const smsFetchAt = at(loginPageSrc, /fetch\('\/api\/auth\/sms\/verify-code'/)
-const pwdFetchAt = at(loginPageSrc, /fetch\('\/api\/auth\/login'/)
-check(guardAt >= 0 && guardAt < smsFetchAt && guardAt < pwdFetchAt,
-  'T2b 没勾就不许走到任何登录/建号请求（校验必须排在两条 fetch 之前）',
-  `→ 校验@${guardAt}，验证码@${smsFetchAt}，密码@${pwdFetchAt}`)
-check(/setError\(t\('termsRequired'\)\)/.test(loginPageSrc),
-  'T3 未勾时给的是界面自己的提示（走 locale，不是服务器回的错误串）', '')
+const confirmAt = at(loginPageSrc, /function confirmConsent\(/)
+const cancelAt = at(loginPageSrc, /function cancelConsent\(/)
+const confirmBlock = confirmAt >= 0 && cancelAt > confirmAt ? loginPageSrc.slice(confirmAt, cancelAt) : ''
+const hardSets = [...loginPageSrc.matchAll(/setAgreed\(\s*(true|localStorage|!agreed)/g)]
+check(!!agreedInit && agreedInit[1] === 'false' && hardSets.length === 1 && confirmBlock.includes('setAgreed(true)'),
+  'T2 勾选框初始未勾；只有用户点条款确认框的「已阅读并同意」才置真，不写缓存',
+  `→ 初值=${agreedInit?.[1] ?? '没找到'}，硬置=${hardSets.length}`)
+const consentAt = at(loginPageSrc, /function requestConsent\(/)
+const performAt = at(loginPageSrc, /async function performSubmit\(/)
+const submitAt = at(loginPageSrc, /function handleSubmit\(/)
+const termsAt = at(loginPageSrc, /const terms =/)
+const consentBlock = consentAt >= 0 && confirmAt > consentAt ? loginPageSrc.slice(consentAt, confirmAt) : ''
+const performBlock = performAt >= 0 && submitAt > performAt ? loginPageSrc.slice(performAt, submitAt) : ''
+const submitBlock = submitAt >= 0 && termsAt > submitAt ? loginPageSrc.slice(submitAt, termsAt) : ''
+check(consentAt >= 0 && /if \(agreed\)/.test(consentBlock) && /setConsentOpen\(true\)/.test(consentBlock)
+  && confirmBlock.includes('pendingActionRef.current')
+  && /requestConsent\(\(\) => \{ void performSubmit\(\) \}\)/.test(submitBlock) && !/fetch\(/.test(submitBlock)
+  && /fetch\('\/api\/auth\/sms\/verify-code'/.test(performBlock) && /fetch\('\/api\/auth\/login'/.test(performBlock)
+  && /onClick=\{confirmConsent\}/.test(loginPageSrc),
+  'T2b 未勾选时先弹条款确认框；确认前不会触发登录/建号请求（两处 fetch 只在 performSubmit 里）',
+  `→ 确认框@${consentAt}，提交@${submitAt}，请求@${performAt}`)
+check(/termsConsentPrompt/.test(loginPageSrc) && /termsAgree/.test(loginPageSrc),
+  'T3 未勾时给的是本地的条款确认框（termsConsentPrompt / termsAgree），不是服务器错误串', '')
 
 // ── U 组：同一枚码并发时不许把用户打成 500（压测实测 5 路并发＝1×200 + 4×500）──
 const catchBlock = smsRoute.slice(at(smsRoute, /catch \(error\)/))
