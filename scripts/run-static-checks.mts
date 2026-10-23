@@ -22,6 +22,7 @@ const CHECKS: Array<{ file: string; args?: string[] }> = [
   { file: 'scripts/check-home-media-budget.mts' },
   { file: 'scripts/check-playback-drift.mts' },
   { file: 'scripts/check-time-format.mts' },
+  { file: 'scripts/check-wechat-phone-bind.mts' },
   { file: 'scripts/check-review-login-surface.mts' },
   { file: 'scripts/check-team-numeric-id.mts', args: ['--static'] },
   { file: 'scripts/check-platform-team-identity.mts' },

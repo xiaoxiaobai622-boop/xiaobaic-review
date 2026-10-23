@@ -25,7 +25,7 @@ const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Conte
 const CSS_FILE = 'src/app/home.module.css'
 const CLIENT_FILE = 'src/app/home-client.tsx'
 const BENDS_FILE = 'src/components/ColorBends.tsx'
-const HERO_MP4 = 'public/home/hero.mp4'
+const HERO_MP4 = 'scripts/fixtures/home-hero.mp4' // 线上走 CDN，母版留在 fixtures 给 ffprobe
 const HERO_POSTER = 'public/home/hero-poster.jpg'
 /** 首屏就放视频，体积是唯一的代价：3MB 是「不许拖 LCP」那条线的落地值。 */
 const HERO_MAX_BYTES = 3 * 1024 * 1024
@@ -298,8 +298,10 @@ try {
   const { execFileSync: probe } = await import('node:child_process')
   const fps = (p: string, args: string[]) => { try { return probe('ffprobe', ['-v', 'error', ...args, p], { encoding: 'utf8' }).trim() } catch { return '' } }
   const movieTag = (client.match(/<video[\s\S]{0,700}?\/>/) || [''])[0]
-  check(/src="\/home\/hero\.mp4"/.test(movieTag) && /poster="\/home\/hero-poster\.jpg"/.test(movieTag) && /muted/.test(movieTag) && /loop/.test(movieTag) && /playsInline/.test(movieTag),
-    'H36 首屏是 <video src=hero.mp4 poster=hero-poster.jpg muted loop playsInline>', movieTag ? `→ 标签 ${movieTag.length} 字` : '→ markup 里没有 <video>')
+  const mediaLib = readFileSync('src/lib/public-media.ts', 'utf8')
+  check(/src=\{HOME_HERO_VIDEO_URL\}/.test(movieTag) && /poster="\/home\/hero-poster\.jpg"/.test(movieTag) && /muted/.test(movieTag) && /loop/.test(movieTag) && /playsInline/.test(movieTag)
+    && /'https:\/\/media\.vidx\.cn\/home\/hero-[a-f0-9]{8}\.mp4'/.test(mediaLib),
+    'H36 首屏是 <video src=CDN home/hero.mp4 poster=hero-poster.jpg muted loop playsInline>', movieTag ? `→ 标签 ${movieTag.length} 字` : '→ markup 里没有 <video>')
   let mp4Bytes = 0
   try { mp4Bytes = statSync(HERO_MP4).size } catch { /* 还没录出来，下面按缺文件判红 */ }
   if (mp4Bytes === 0) {
@@ -309,7 +311,9 @@ try {
     const dur = Number(fps(HERO_MP4, ['-show_entries', 'format=duration', '-of', 'csv=p=0']))
     const audio = fps(HERO_MP4, ['-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0'])
     check(w >= 1540, `H36·c hero.mp4 实测宽 ${w}（1440 视口里渲染宽实测 770 CSS px，2x 屏要 1540；10-08 从 1920 降到 1600 就是为了砍这一半字节）`)
-    check(dur >= 10 && dur <= 16, `H36·d 时长 ${dur.toFixed(1)}s（对标那枚 hero 18.2s，短于 10s 循环感就露出来了）`)
+    // 上界原先按 13s 片段写死；10-23 他点单换成自己那条完整录屏（46.8s，明确「不要裁」），
+    // 所以只保留「不短于 10s」这一半——循环感的下限与「整段放完」的取舍归他。
+    check(dur >= 10 && dur <= 60, `H36·d 时长 ${dur.toFixed(1)}s（不短于 10s；10-23 起允许整段长录屏）`)
     check(audio === '', 'H36·e 没有音轨（自动播的装饰片不许带声音）', audio)
     const head = readFileSync(HERO_MP4).subarray(0, 262_144).toString('latin1')
     const mdat = head.indexOf('mdat')

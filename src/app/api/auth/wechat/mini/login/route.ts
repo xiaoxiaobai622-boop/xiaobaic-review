@@ -6,7 +6,7 @@ import { signWechatSession } from '@/lib/wechat-auth'
 import { logError } from '@/lib/logging'
 import { getRedis } from '@/lib/redis'
 import { getWechatQrKey } from '@/lib/wechat-mini-login'
-import { findOrCreateUserFromWechat } from '@/lib/wechat-mini-auth'
+import { bindWechatPhone, findOrCreateUserFromWechat } from '@/lib/wechat-mini-auth'
 
 export const runtime = 'nodejs'
 
@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
   if (!code || code.length > 128) return NextResponse.json({ error: '微信登录 code 无效' }, { status: 400 })
   const qrId = typeof body.qrId === 'string' ? body.qrId.trim() : ''
   const nickname = safeText(body.nickname, 100)
+  // 小程序「手机号快速验证组件」的 code；没有就跳过，不影响登录。
+  const phoneCode = safeText(body.phoneCode, 128) || ''
   const avatarUrl = safeText(body.avatarUrl, 1000)
 
   try {
@@ -116,11 +118,23 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ status: 'bound', token, user })
       }
 
-      const adminUser = await findOrCreateUserFromWechat({
+      const created = await findOrCreateUserFromWechat({
         openid: data.openid,
         unionid: data.unionid || null,
         nickname: nickname || '微信用户',
       })
+      let phoneBound = false
+      let adminUser = created
+      if (phoneCode && !created.phone) {
+        const phoneResult = await bindWechatPhone(created.id, phoneCode)
+        if (phoneResult === 'conflict') {
+          return NextResponse.json({ error: '该手机号已绑定其他账号', code: 'PHONE_ACCOUNT_CONFLICT' }, { status: 409 })
+        }
+        if (phoneResult === 'bound') {
+          phoneBound = true
+          adminUser = await prisma.user.findUniqueOrThrow({ where: { id: created.id } })
+        }
+      }
 
       adminTokens = await issueAdminTokens({
         id: adminUser.id,
@@ -148,6 +162,7 @@ export async function POST(request: NextRequest) {
           user,
           adminTokens,
           needsOnboarding,
+          ...(phoneBound ? { phoneBound: true } : {}),
         }),
         'EX',
         120

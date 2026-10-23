@@ -10,6 +10,7 @@ import {
 import { useEffect, useId, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import LightMist from '@/components/LightMist'
+import { HOME_HERO_VIDEO_URL } from '@/lib/public-media'
 import styles from './home.module.css'
 
 /** 内测期间首页只说「免费内测」，不写金额，也不写档位。 */
@@ -441,10 +442,10 @@ export default function HomeClient() {
             <video
               ref={shotRef}
               className={styles.shotImg}
-              src="/home/hero.mp4"
+              src={HOME_HERO_VIDEO_URL}
               poster="/home/hero-poster.jpg"
               width={1600}
-              height={900}
+              height={884}
               muted
               loop
               playsInline

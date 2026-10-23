@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getRedis } from '@/lib/redis'
 import { issueAdminTokens } from '@/lib/auth'
-import { exchangeMiniProgramCode, findOrCreateUserFromWechat } from '@/lib/wechat-mini-auth'
+import { bindWechatPhone, exchangeMiniProgramCode, findOrCreateUserFromWechat } from '@/lib/wechat-mini-auth'
 import { getWechatQrKey } from '@/lib/wechat-mini-login'
 import { rateLimit } from '@/lib/rate-limit'
 
@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
   const qrId = typeof body?.qrId === 'string' ? body.qrId.trim() : ''
   const mode = body?.mode === 'bind' ? 'bind' : 'login'
   const nickname = typeof body?.nickname === 'string' ? body.nickname.slice(0, 100) : null
+  // 小程序「手机号快速验证组件」的 code；没有就跳过，不影响登录。
+  const phoneCode = typeof body?.phoneCode === 'string' ? body.phoneCode.trim().slice(0, 128) : ''
 
   try {
     const identity = await exchangeMiniProgramCode(code)
@@ -65,6 +67,13 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      if (phoneCode) {
+        const phoneResult = await bindWechatPhone(session.userId, phoneCode)
+        if (phoneResult === 'conflict') {
+          return NextResponse.json({ error: '该手机号已绑定其他账号', code: 'PHONE_ACCOUNT_CONFLICT' }, { status: 409 })
+        }
+      }
+
       const ttl = await redis.ttl(qrKey)
       await redis.set(
         qrKey,
@@ -77,10 +86,22 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 登录模式（原有逻辑）────────────────────────────────────────
-    const user = await findOrCreateUserFromWechat({
+    const created = await findOrCreateUserFromWechat({
       ...identity,
       nickname,
     })
+    let phoneBound = false
+    let user = created
+    if (phoneCode && !created.phone) {
+      const phoneResult = await bindWechatPhone(created.id, phoneCode)
+      if (phoneResult === 'conflict') {
+        return NextResponse.json({ error: '该手机号已绑定其他账号', code: 'PHONE_ACCOUNT_CONFLICT' }, { status: 409 })
+      }
+      if (phoneResult === 'bound') {
+        phoneBound = true
+        user = await prisma.user.findUniqueOrThrow({ where: { id: created.id } })
+      }
+    }
     const tokens = await issueAdminTokens({
       id: user.id,
       email: user.email,
@@ -103,6 +124,7 @@ export async function POST(request: NextRequest) {
         role: user.role,
       },
       needsOnboarding: user.onboardingCompleted === false,
+      phoneBound,
       tokens,
     })
   } catch (error) {

@@ -4,6 +4,8 @@ import { safeReturnUrl } from '@/lib/return-url'
 
 const DANGEROUS_PROTOCOL = /^(javascript|data|vbscript):/i
 const PUBLIC_MEDIA_ORIGIN = 'https://vidx.cn'
+// 首页演示视频这类静态媒体直接走对象存储 CDN；域名写死一份，免得本地 .env 没配就播不出来。
+const PUBLIC_MEDIA_CDN_ORIGIN = 'https://media.vidx.cn'
 
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
@@ -80,7 +82,7 @@ export async function proxy(request: NextRequest) {
 
   // Env-derived origins are appended to both media-facing directives, in the
   // same order, so the two lists can never drift apart.
-  const extraMediaOrigins = [mediaCdnOrigin, s3Origin, s3BucketOrigin]
+  const extraMediaOrigins = [PUBLIC_MEDIA_CDN_ORIGIN, mediaCdnOrigin, s3Origin, s3BucketOrigin]
     .filter(Boolean)
     .map((origin) => ` ${origin}`)
     .join('')

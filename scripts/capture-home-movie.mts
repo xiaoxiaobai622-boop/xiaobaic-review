@@ -8,7 +8,8 @@ import { hashPassword } from '../src/lib/encryption'
 
 /**
  * 录首页首屏那段产品视频：把本地演示数据里的审片页真跑一遍（播片 → 悬批注钉出帧预览气泡 →
- * 点一枚钉跳帧），用 CDP `Page.startScreencast` 逐帧收下来，ffmpeg 拼成 public/home/hero.mp4，
+ * 点一枚钉跳帧），用 CDP `Page.startScreencast` 逐帧收下来，ffmpeg 拼成 scripts/fixtures/home-hero.mp4
+ * （母版，不进镜像；线上那份在对象存储 home/hero-<hash>.mp4，换片后要改 src/lib/public-media.ts），
  * 首帧另存 public/home/hero-poster.jpg 当海报。
  *
  * 为什么是录屏而不是拿素材片凑：frame.io 首屏那枚的 aria-label 就叫「Frame.io 界面视频」，
@@ -45,7 +46,7 @@ const POSTER_MAX_BYTES = 150 * 1024
 const ENC_FPS = 24
 /** 录到第几秒喊停（判据那头发 10–16s 的窗口，这里取中间偏上，留出交互动作的时间）。 */
 const RECORD_MS = Number(process.env.MOVIE_MS || 13_000)
-const MP4 = 'public/home/hero.mp4'
+const MP4 = 'scripts/fixtures/home-hero.mp4'
 const POSTER = 'public/home/hero-poster.jpg'
 
 const prisma = new PrismaClient()
@@ -404,7 +405,7 @@ async function main() {
     bytes >= MP4_MAX_BYTES ? '→ 超预算：先把 CRF 抬一档或确认渲染宽（判据 M1 同一枚数）' : '')
   check(Number(dur) >= 10 && Number(dur) <= 16, `成片时长 ${Number(dur).toFixed(1)}s 落在 10–16s`)
   check(audio === '', '没有音轨', audio)
-  if (DRY) console.log('DRY：没写 public/home')
+  if (DRY) console.log('DRY：没写 fixtures/海报')
   else console.log(`出片：${mp4}（${(bytes / 1024).toFixed(0)}KB / ${Number(dur).toFixed(1)}s）＋ ${POSTER}`)
 
   await page.s('Target.closeTarget', { targetId: page.targetId }).catch(() => null)

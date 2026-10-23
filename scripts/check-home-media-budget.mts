@@ -12,6 +12,7 @@
  * 跑法：npx tsx scripts/check-home-media-budget.mts
  */
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 const ROOT = process.cwd()
@@ -64,21 +65,24 @@ function srcBlob(): string {
   return walk('src', []).map(rel => fs.readFileSync(rel, 'utf8')).join('\n')
 }
 
-const heroPath = 'public/home/hero.mp4'
+const heroPath = 'scripts/fixtures/home-hero.mp4' // 母版：线上走 CDN，public 里不再放
 const posterPath = 'public/home/hero-poster.jpg'
 /**
- * 上限不是拍脑袋：10-08 定档 1600×900/CRF32 实测 1,202,719 B，这里留 4% 余量
- * （同一档重录不该变红，回到原来那枚 1920×1080 的 2,433,089 B 必须变红）。
+ * 上限不是拍脑袋：
+ * - 10-08 定档 13s 片段 1600×900/CRF32 实测 1,202,719 B，留 4% 余量；
+ * - 10-23 他点单换成自己那条完整录屏（原片 3840×2120 / 60fps / 46.8s），并明确「不要裁」：
+ *   整段不剪、不裁画幅，压成 1600×884 / 24fps / CRF32 实测 2,071,948 B，上限跟着抬到 2.2MB（+6%）。
+ *   旧的 1.25MB 是给 13s 片段定的，已随那条片段一起退役。
  * 分辨率下限（≥1540＝实测渲染宽 770 CSS px × 2）住在 check-home-redesign.mts 的 H36·c/H38·b，
  * 那两条要 ffprobe 与真浏览器，不在这里重复一遍。
  */
-const HERO_MAX_BYTES = 1_250_000
+const HERO_MAX_BYTES = 2_200_000
 const POSTER_MAX_BYTES = 150 * 1024
 
 console.log('=== 首屏直出的字节上限 ===')
 const heroBytes = bytes(heroPath)
 check(heroBytes > 0 && heroBytes <= HERO_MAX_BYTES,
-  'M1 hero.mp4 ≤ 1.25MB（它是产品录屏背景，不是内容）',
+  'M1 hero.mp4 ≤ 2.2MB（母版在 fixtures；整段真实录屏、不裁，上限来自 10-23 实测 2.07MB）',
   heroBytes < 0 ? '文件不存在' : `${(heroBytes / KB).toFixed(0)} KB / 上限 ${(HERO_MAX_BYTES / KB).toFixed(0)} KB`)
 const posterBytes = bytes(posterPath)
 check(posterBytes > 0 && posterBytes <= POSTER_MAX_BYTES,
@@ -105,6 +109,15 @@ check(orphans.length === 0,
 console.log('=== 演示原料住在 scripts，不住在 public ===')
 check(bytes('scripts/fixtures/film-set.mp4') > 0,
   'M5 兜底原料在 scripts/fixtures/（build-home-demo 的 SOURCE_CLIP）', `scripts/fixtures/film-set.mp4 ${(bytes('scripts/fixtures/film-set.mp4') / KB).toFixed(0)} KB`)
+const clientSrc = fs.readFileSync('src/app/home-client.tsx', 'utf8')
+const mediaLibSrc = fs.readFileSync('src/lib/public-media.ts', 'utf8')
+const fixtureHash = createHash('sha256').update(fs.readFileSync(heroPath)).digest('hex').slice(0, 8)
+const urlKey = mediaLibSrc.match(/HOME_HERO_VIDEO_URL\s*=\s*'https:\/\/media\.vidx\.cn\/home\/hero-([a-f0-9]{8})\.mp4'/)
+check(clientSrc.includes('HOME_HERO_VIDEO_URL') && Boolean(urlKey) && urlKey![1] === fixtureHash,
+  'M8 首屏引用的是 CDN 地址，且 key 里的 hash 就是母版 sha256 前 8 位（immutable 缓存：换片必换 key）',
+  `→ 常量 ${urlKey?.[0] ?? '没匹配到'} / 母版 ${fixtureHash}`)
+check(!fs.existsSync('public/home/hero.mp4'),
+  'M9 public 里不再有 hero.mp4（这 2MB 不进镜像、不随每次部署重发）', '')
 check(bytes('public/home/film-set.mp4') === -1,
   'M6 这枚原料不再随镜像发布', 'public/home/film-set.mp4 应不存在')
 check(/SOURCE_CLIP\s*=\s*'scripts\/fixtures\/film-set\.mp4'/.test(fs.readFileSync('scripts/build-home-demo.mts', 'utf8')),

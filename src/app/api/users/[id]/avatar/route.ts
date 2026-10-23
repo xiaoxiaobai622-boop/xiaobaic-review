@@ -39,7 +39,10 @@ export async function POST(
   if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  if (authResult.id !== id && authResult.role !== 'ADMIN') {
+  // 这里以前判的是 `role === 'ADMIN'`——而 User.role 的 schema 默认值就是 ADMIN，
+  // 于是「只有管理员能改别人头像」对所有人恒真：任何登录用户都能覆盖别人（含别的团队）的头像。
+  // 平台管理员的真实标记是 isPlatformAdmin（/api/users/[id] 那处一直是这么判的）。
+  if (authResult.id !== id && !authResult.isPlatformAdmin) {
     return NextResponse.json({ error: 'You can only update your own avatar' }, { status: 403 })
   }
 
