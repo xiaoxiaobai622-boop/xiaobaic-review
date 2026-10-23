@@ -171,6 +171,7 @@ const shaders = {
     void main() {
       vec2 v = texture(velocity, vUv).xy;
       vec2 p = (vUv - 0.5) * vec2(aspect, 1.0);
+      p += vec2(sin(time * 0.10) * 0.12, sin(time * 0.13) * 0.16);
       p += v * 0.12;
       float clock = time * 0.032;
       vec2 warp = vec2(fbm(p * 1.5 + vec2(clock, 2.0)),

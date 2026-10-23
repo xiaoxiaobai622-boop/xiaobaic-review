@@ -219,7 +219,7 @@ async function railFacts(page: Page, displayName: string) {
       discH: dbox ? Math.round(dbox.height) : null,
       discRadius: disc ? getComputedStyle(disc).borderRadius : null,
       btnRadius: getComputedStyle(btn).borderRadius,
-      // 主题切换那枚是 <label>（里面藏着 select），它自己带底色和描边＝窄栏上那块方框
+      // 主题切换已收进头像菜单；窄栏里若再出现带底色和描边的 <label> 方框，这条要拦住。
       themeBox: (() => {
         const lab = aside.querySelector('label:has(select)')
         if (!lab) return null
@@ -417,8 +417,8 @@ try {
     'A18 窄栏画到边：栏面右缘顶到内容区，中间不再留那条 20px 空带',
     `→ ${USERS.map(u => `${u.key}: 栏右 ${facts[u.key]?.railRight} ／ 内容左 ${facts[u.key]?.nextLeft}`).join(' ')}`)
   const tbs = USERS.map(u => facts[u.key]?.themeBox)
-  check(tbs.every(b => b && b.bg === 'rgba(0, 0, 0, 0)' && b.border === '0px'),
-    'A19 主题切换那枚的背景与描边都去掉（窄栏里它不该是一块自己的方框）', `→ ${JSON.stringify(tbs)}`)
+  check(tbs.every(b => b === null || (b.bg === 'rgba(0, 0, 0, 0)' && b.border === '0px')),
+    'A19 窄栏不再出现独立的主题切换方框（主题已收进头像菜单）', `→ ${JSON.stringify(tbs)}`)
 
   const railCss = String(facts.photo?.railBg)
   const railStops = gradientStops(railCss).map(s => s.join(','))
