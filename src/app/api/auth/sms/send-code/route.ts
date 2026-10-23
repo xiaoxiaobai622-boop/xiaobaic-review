@@ -39,9 +39,11 @@ export async function POST(request: NextRequest) {
     if (message === 'SMS_NOT_CONFIGURED') {
       return NextResponse.json({ error: '短信服务尚未配置，请联系管理员' }, { status: 503 })
     }
-    const friendly = message.includes('FREQUENCY') || message.includes('frequency')
-      ? '发送过于频繁，请稍后再试'
-      : '验证码发送失败，请稍后再试'
+    const friendly = /天级|Permits|day/i.test(message)
+      ? '今日验证码发送次数已达上限，请明日再试'
+      : /BUSINESS_LIMIT_CONTROL|FREQUENCY|frequency/.test(message)
+        ? '发送过于频繁，请稍后再试'
+        : '验证码发送失败，请稍后再试'
     return NextResponse.json({ error: friendly }, { status: 502 })
   }
 

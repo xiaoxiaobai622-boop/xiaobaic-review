@@ -39,11 +39,11 @@ async function sendAliyunSms(
 ): Promise<void> {
   const accessKeyId = process.env.ALIYUN_SMS_ACCESS_KEY_ID
   const accessKeySecret = process.env.ALIYUN_SMS_ACCESS_KEY_SECRET
-  // 号码认证服务（Dypnsapi）只允许使用控制台赠送的签名和赠送模板，
-  // 不需要去普通短信服务的“签名管理”申请自定义签名。
-  const signName = process.env.ALIYUN_SMS_SIGN_NAME || '恒创联众'
+  // 短信服务（Dysmsapi）的签名与模板都在控制台维护；当前验证码模板
+  // “逐帧审阅登录”（SMS_512480754）只声明了 code 一个变量。
+  const signName = process.env.ALIYUN_SMS_SIGN_NAME
   const templateCode = options?.templateCode || process.env.ALIYUN_SMS_TEMPLATE_CODE
-  const endpoint = process.env.ALIYUN_SMS_ENDPOINT || 'https://dypnsapi.aliyuncs.com'
+  const endpoint = process.env.ALIYUN_SMS_ENDPOINT || 'https://dysmsapi.aliyuncs.com'
 
   if (!accessKeyId || !accessKeySecret || !signName || !templateCode) {
     throw new Error('SMS_NOT_CONFIGURED')
@@ -51,23 +51,17 @@ async function sendAliyunSms(
 
   const commonParams: Record<string, string> = {
     AccessKeyId: accessKeyId,
-    Action: 'SendSmsVerifyCode',
-    CodeType: '1',
-    CountryCode: '86',
+    Action: 'SendSms',
     Format: 'JSON',
-    PhoneNumber: phone,
+    PhoneNumbers: phone,
     RegionId: 'cn-hangzhou',
     SignName: signName,
     SignatureMethod: 'HMAC-SHA1',
     SignatureNonce: crypto.randomUUID(),
     SignatureVersion: '1.0',
     TemplateCode: templateCode,
-    TemplateParam: JSON.stringify({
-      code,
-      min: String(options?.min ?? 5),
-    }),
+    TemplateParam: JSON.stringify({ code }),
     Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    ValidTime: '300',
     Version: '2017-05-25',
   }
 
@@ -85,11 +79,12 @@ async function sendAliyunSms(
     signal: AbortSignal.timeout(10000),
   })
 
-  if (!response.ok) throw new Error(`SMS_PROVIDER_ERROR_${response.status}`)
-
   const data = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(`SMS_PROVIDER_ERROR_${response.status}: ${data?.Code || ''} ${data?.Message || ''}`.trim())
+  }
   if (data?.Code !== 'OK') {
-    throw new Error(data?.Message || `SMS_PROVIDER_ERROR_${data?.Code || 'UNKNOWN'}`)
+    throw new Error(`SMS_PROVIDER_ERROR_${data?.Code || 'UNKNOWN'}: ${data?.Message || ''}`.trim())
   }
 }
 
