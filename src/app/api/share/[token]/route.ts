@@ -9,7 +9,7 @@ import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-t
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions, noneAccessSessionId } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions, noneAccessSessionId, shareAllowsProjectPhotos } from '@/lib/share-links'
 export const runtime = 'nodejs'
 
 
@@ -237,6 +237,7 @@ export async function GET(
     // project/video order so an approved video does not jump to the end.
     const sortedVideosByName: Record<string, any[]> = videosByName
 
+    const photosVisible = shareAllowsProjectPhotos(policy) && (!isGuest || project.guestShowPhotos)
     const [smtpConfigured, globalSettings, primaryRecipient, photoAlbumCount] = await Promise.all([
       isSmtpConfigured(),
       prisma.settings.findUnique({
@@ -251,12 +252,12 @@ export async function GET(
         },
       }),
       getPrimaryRecipient(project.id),
-      isGuest && !project.guestShowPhotos ? Promise.resolve(0) : prisma.photoAlbum.count({
+      photosVisible ? prisma.photoAlbum.count({
         where: {
           projectId: project.id,
           photos: { some: { uploadCompletedAt: { not: null } } },
         },
-      })
+      }) : Promise.resolve(0)
     ])
 
     let allRecipients: Array<{id: string, name: string | null, email: string | null}> = []
@@ -372,7 +373,7 @@ export async function GET(
       }),
 
       allowAssetDownload: project.allowAssetDownload,
-      allowPhotoDownload: project.allowPhotoDownload,
+      allowPhotoDownload: photosVisible ? project.allowPhotoDownload : false,
       hasPhotos: photoAlbumCount > 0,
       allowClientAssetUpload: project.allowClientAssetUpload,
       allowReverseShare: project.allowReverseShare,

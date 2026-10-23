@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getCurrentUserFromRequest, requireApiAdmin } from '@/lib/auth'
+import { getCurrentUserFromRequest, getShareContext, requireApiAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
+import { shareTokenAllowsProjectPhotos } from '@/lib/share-links'
 import { validatePhotoFile, sanitizeDisplayFilename, isInvalidFileType } from '@/lib/file-validation'
 import { generateAlbumAccessToken } from '@/lib/photo-access'
 import { z } from 'zod'
@@ -56,6 +57,13 @@ export async function GET(
       requiredPermission: 'view',
     })
     if (!accessCheck.authorized) {
+      return NextResponse.json({ error: photoMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+    }
+    const shareContext = await getShareContext(request)
+    if (!accessCheck.isAdmin && !shareContext) {
+      return NextResponse.json({ error: photoMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+    }
+    if (!(await shareTokenAllowsProjectPhotos(shareContext?.shareId))) {
       return NextResponse.json({ error: photoMessages.unauthorized || 'Unauthorized' }, { status: 403 })
     }
 

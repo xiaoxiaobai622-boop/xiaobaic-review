@@ -368,6 +368,20 @@ export function linkPermissions(policy: SharePolicy | null): string[] {
   return policy.permissions.length > 0 ? policy.permissions : ['view']
 }
 
+/** Photos are project-level content: only a whole-project review/delivery link
+ *  carries them. Folder/video/version links and collect links must not expose
+ *  the project's photo albums alongside their scoped videos. */
+export function shareAllowsProjectPhotos(policy: SharePolicy | null): boolean {
+  if (!policy) return true
+  return policy.type !== 'COLLECT' && policy.scopeType === 'PROJECT'
+}
+
+/** No share token means an admin session; otherwise judge the link's scope. */
+export async function shareTokenAllowsProjectPhotos(token: string | null | undefined): Promise<boolean> {
+  if (!token) return true
+  return shareAllowsProjectPhotos((await resolveShareMetadata(token)).policy)
+}
+
 /**
  * The one writer of the stored `permissions` array. A link is judged by what is
  * in that column, so it must never end up empty: an empty array means a URL that

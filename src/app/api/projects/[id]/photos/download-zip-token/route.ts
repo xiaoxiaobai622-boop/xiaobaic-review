@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { getShareContext } from '@/lib/auth'
+import { shareTokenAllowsProjectPhotos } from '@/lib/share-links'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
@@ -69,6 +71,14 @@ export async function POST(
       requiredPermission: 'download',
     })
     if (!accessCheck.authorized) {
+      return NextResponse.json({ error: photoMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+    }
+
+    const shareContext = await getShareContext(request)
+    if (!accessCheck.isAdmin && !shareContext) {
+      return NextResponse.json({ error: photoMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+    }
+    if (!(await shareTokenAllowsProjectPhotos(shareContext?.shareId))) {
       return NextResponse.json({ error: photoMessages.unauthorized || 'Unauthorized' }, { status: 403 })
     }
 
