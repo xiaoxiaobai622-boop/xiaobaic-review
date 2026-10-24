@@ -9,6 +9,7 @@ import { hashPhoneCode, phoneCodeKey, PHONE_REGEX } from '@/lib/phone-auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { createPhoneOnlyEmail, normalizePhone, phoneHashField, phoneWhereOrNone, readPhone } from '@/lib/phone-field'
 import { logWarn } from '@/lib/logging'
+import { WECHAT_SESSION_COOKIE } from '@/lib/wechat-auth'
 
 // 兜底比对只捞「没摘要」那批行，它们按定义就是回填的缺口本身（线上回填后为 0 行），
 // 所以给一个够不着的上限，绝不让它退化成每次登录都解密全表。
@@ -48,7 +49,10 @@ export async function POST(request: NextRequest) {
     await redis.setex(key, Math.max(ttl, 1), JSON.stringify({ ...stored, attempts: stored.attempts + 1 }))
     return NextResponse.json({ error: '验证码错误' }, { status: 400 })
   }
-  const currentUser = await getCurrentUserFromRequest(request)
+  // 登录页的短信登录是「以这个号码登录」；只有显式 intent=bind 才是把号码绑到当前会话。
+  // 登录页若沿用当前会话的语义，已登录用户换号登录会被当成绑定而 409。
+  const intent = body?.intent === 'login' ? 'login' : 'bind'
+  const currentUser = intent === 'bind' ? await getCurrentUserFromRequest(request) : null
   const existingPhoneUser = await prisma.user.findFirst({ where: phoneWhereOrNone(phone) })
 
   let user
@@ -131,7 +135,7 @@ export async function POST(request: NextRequest) {
     projectAccessScope: user.projectAccessScope,
   })
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     user: {
       id: user.id,
       email: user.email,
@@ -145,4 +149,7 @@ export async function POST(request: NextRequest) {
     needsOnboarding: user.onboardingCompleted === false,
     tokens,
   })
+  // 换号登录后旧微信会话不能再留在 cookie 里，否则只带 cookie 的接口仍按旧账号认人。
+  if (intent === 'login') response.cookies.delete(WECHAT_SESSION_COOKIE)
+  return response
 }

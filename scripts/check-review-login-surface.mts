@@ -322,6 +322,11 @@ check(retiredLeft.length === 0 && !retiredKeys.some(k => loginPageSrc.includes(k
   'N5 确认那套的三句文案已经跟着删净（留着＝孤儿 key，界面永远不会画）', `→ 还在：${retiredLeft.join(' ') || '无'}`)
 check(loginPageSrc.includes("t('unregisteredPhoneHint')"),
   'N6 自动建号的合规前提：那句「未注册的手机号验证通过后将自动创建账号」必须还在页面上明说', '')
+const loginSmsIntent = /fetch\('\/api\/auth\/sms\/verify-code'[\s\S]{0,500}?intent:\s*'login'/.test(loginPageSrc)
+const routeIntentGate = /intent === 'bind' \? await getCurrentUserFromRequest\(request\)/.test(smsRoute)
+check(loginSmsIntent && routeIntentGate,
+  'N7 登录页的短信登录显式声明 intent=login；服务端只有 intent=bind 才按「绑定当前账号」处理',
+  `→ 页面声明=${loginSmsIntent}，服务端分流=${routeIntentGate}`)
 
 // ── T 组：条款同意必须每次手动勾（工信部 26 条点名「不得采用默认勾选…诱导用户同意」）──
 const anyTermsMemory = ['app/login/page.tsx', 'components/ReviewLoginActions.tsx', 'components/WechatMiniQrLogin.tsx']

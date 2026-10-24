@@ -171,7 +171,7 @@ function LoginForm() {
             'Content-Type': 'application/json',
             ...getDeviceAuthHeaders(),
           },
-          body: JSON.stringify({ phone, code }),
+          body: JSON.stringify({ phone, code, intent: 'login' }),
         })
         const data = await response.json().catch(() => ({}))
         if (!response.ok) {
