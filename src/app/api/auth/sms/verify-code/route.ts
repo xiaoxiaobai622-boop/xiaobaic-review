@@ -49,9 +49,9 @@ export async function POST(request: NextRequest) {
     await redis.setex(key, Math.max(ttl, 1), JSON.stringify({ ...stored, attempts: stored.attempts + 1 }))
     return NextResponse.json({ error: '验证码错误' }, { status: 400 })
   }
-  // 登录页的短信登录是「以这个号码登录」；只有显式 intent=bind 才是把号码绑到当前会话。
-  // 登录页若沿用当前会话的语义，已登录用户换号登录会被当成绑定而 409。
-  const intent = body?.intent === 'login' ? 'login' : 'bind'
+  // 短信验证默认就是「以这个号码登录」；只有显式 intent=bind 才是绑到当前会话。
+  // 旧登录页不会带 intent，若默认成 bind，已登录用户换号会被当成绑定而 409。
+  const intent = body?.intent === 'bind' ? 'bind' : 'login'
   const currentUser = intent === 'bind' ? await getCurrentUserFromRequest(request) : null
   const existingPhoneUser = await prisma.user.findFirst({ where: phoneWhereOrNone(phone) })
 

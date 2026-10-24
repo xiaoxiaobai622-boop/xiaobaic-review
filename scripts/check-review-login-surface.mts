@@ -324,9 +324,10 @@ check(loginPageSrc.includes("t('unregisteredPhoneHint')"),
   'N6 自动建号的合规前提：那句「未注册的手机号验证通过后将自动创建账号」必须还在页面上明说', '')
 const loginSmsIntent = /fetch\('\/api\/auth\/sms\/verify-code'[\s\S]{0,500}?intent:\s*'login'/.test(loginPageSrc)
 const routeIntentGate = /intent === 'bind' \? await getCurrentUserFromRequest\(request\)/.test(smsRoute)
-check(loginSmsIntent && routeIntentGate,
-  'N7 登录页的短信登录显式声明 intent=login；服务端只有 intent=bind 才按「绑定当前账号」处理',
-  `→ 页面声明=${loginSmsIntent}，服务端分流=${routeIntentGate}`)
+const routeDefaultLogin = /intent === 'bind' \? 'bind' : 'login'/.test(smsRoute)
+check(loginSmsIntent && routeIntentGate && routeDefaultLogin,
+  'N7 登录页显式声明 intent=login；服务端只有 intent=bind 才按「绑定当前账号」处理，旧页面缺 intent 默认按登录',
+  `→ 页面声明=${loginSmsIntent}，服务端分流=${routeIntentGate}，默认登录=${routeDefaultLogin}`)
 const logoutRouteSrc = stripComments(read('app/api/auth/logout/route.ts'))
 const passwordRouteSrc = stripComments(read('app/api/auth/login/route.ts'))
 const clearsWechatOnLogout = /cookies\.delete\(WECHAT_SESSION_COOKIE\)/.test(logoutRouteSrc)
