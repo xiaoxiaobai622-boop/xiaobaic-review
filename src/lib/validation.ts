@@ -142,6 +142,9 @@ const notificationEventTypeSchema = z.enum([
 ])
 
 const notificationSecretSchema = z.string().min(1).max(512).trim()
+// Zod 4's z.record(enumKey, value) demands every enum key. Destinations may
+// legitimately carry only the checked events, so keep the v3 partial-record shape.
+const subscriptionMapSchema = z.partialRecord(notificationEventTypeSchema, z.boolean())
 
 const gotifyDestinationSchema = z.object({
   provider: z.literal('GOTIFY'),
@@ -153,7 +156,7 @@ const gotifyDestinationSchema = z.object({
   secrets: z.object({
     appToken: notificationSecretSchema,
   }),
-  subscriptions: z.record(notificationEventTypeSchema, z.boolean()).optional(),
+  subscriptions: subscriptionMapSchema.optional(),
 })
 
 const ntfyDestinationSchema = z.object({
@@ -167,7 +170,7 @@ const ntfyDestinationSchema = z.object({
   secrets: z.object({
     accessToken: notificationSecretSchema.optional(),
   }),
-  subscriptions: z.record(notificationEventTypeSchema, z.boolean()).optional(),
+  subscriptions: subscriptionMapSchema.optional(),
 })
 
 const pushoverDestinationSchema = z.object({
@@ -179,7 +182,7 @@ const pushoverDestinationSchema = z.object({
     userKey: notificationSecretSchema,
     apiToken: notificationSecretSchema,
   }),
-  subscriptions: z.record(notificationEventTypeSchema, z.boolean()).optional(),
+  subscriptions: subscriptionMapSchema.optional(),
 })
 
 const telegramDestinationSchema = z.object({
@@ -192,7 +195,7 @@ const telegramDestinationSchema = z.object({
   secrets: z.object({
     botToken: notificationSecretSchema,
   }),
-  subscriptions: z.record(notificationEventTypeSchema, z.boolean()).optional(),
+  subscriptions: subscriptionMapSchema.optional(),
 })
 
 export const createNotificationDestinationSchema = z.discriminatedUnion('provider', [
