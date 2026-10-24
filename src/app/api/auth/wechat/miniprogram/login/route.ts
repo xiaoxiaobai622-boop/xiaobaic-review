@@ -111,6 +111,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ needsPhone: true })
     }
 
+    if (user.phone && (!user.onboardingCompleted || !user.name)) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...(user.onboardingCompleted ? {} : { onboardingCompleted: true }),
+          ...(user.name ? {} : { name: user.phone.slice(-4) }),
+        },
+      })
+    }
+
     const tokens = await issueAdminTokens({
       id: user.id,
       email: user.email,

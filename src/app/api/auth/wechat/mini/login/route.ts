@@ -142,6 +142,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '需要授权手机号', code: 'PHONE_REQUIRED' }, { status: 400 })
       }
 
+      if (adminUser.phone && (!adminUser.onboardingCompleted || !adminUser.name)) {
+        adminUser = await prisma.user.update({
+          where: { id: adminUser.id },
+          data: {
+            ...(adminUser.onboardingCompleted ? {} : { onboardingCompleted: true }),
+            ...(adminUser.name ? {} : { name: adminUser.phone.slice(-4) }),
+          },
+        })
+      }
+
       adminTokens = await issueAdminTokens({
         id: adminUser.id,
         email: adminUser.email,

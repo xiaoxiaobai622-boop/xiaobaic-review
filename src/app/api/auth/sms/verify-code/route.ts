@@ -104,9 +104,10 @@ export async function POST(request: NextRequest) {
         phone,
         ...phoneHashField(phone),
         password: await hashPassword(crypto.randomBytes(24).toString('hex')),
+        name: phone.slice(-4),
         role: 'MEMBER',
         projectAccessScope: 'ASSIGNED_ONLY',
-        onboardingCompleted: false,
+        onboardingCompleted: true,
       },
       })
     } catch (error) {
@@ -119,6 +120,18 @@ export async function POST(request: NextRequest) {
       user = raced
       isNewUser = false
     }
+  }
+
+  // Legacy auto-created accounts may still carry the old onboarding flag; complete
+  // them here so the registration screen is never shown again.
+  if (!user.onboardingCompleted || !user.name) {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        ...(user.onboardingCompleted ? {} : { onboardingCompleted: true }),
+        ...(user.name ? {} : { name: phone.slice(-4) }),
+      },
+    })
   }
 
   // 一次性码留到「这件事真的要做」之后才烧：前面任何一条岔路（码错、冲突）都不该把它消耗掉。

@@ -104,10 +104,6 @@ export function WechatMiniQrLogin({
 
         setPhase('success')
         setMessage(ta('loginSuccess'))
-        if (data.needsOnboarding) {
-          window.location.href = `/onboarding?returnUrl=${encodeURIComponent(data.returnUrl || returnUrl || '/studio/projects')}`
-          return
-        }
         if (inline) {
           const target = data.returnUrl || returnUrl || '/studio/projects'
           window.location.href = target

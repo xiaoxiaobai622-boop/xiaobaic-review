@@ -204,10 +204,6 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
       } else {
         clearTokens()
       }
-      if (data.needsOnboarding) {
-        window.location.href = `/onboarding?returnUrl=${encodeURIComponent(currentReturnUrl())}`
-        return
-      }
       const identity = { id: data.user?.id || '', name: contactNameOf(data.user, wechatUserLabel), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
       setPasswordUser(identity)
       const email = getContactEmail(identity.email) || null
@@ -278,10 +274,6 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
         setTokens({ accessToken: data.tokens.accessToken, refreshToken: data.tokens.refreshToken })
       } else {
         clearTokens()
-      }
-      if (data.needsOnboarding) {
-        window.location.href = `/onboarding?returnUrl=${encodeURIComponent(currentReturnUrl())}`
-        return
       }
       const identity = { id: data.user?.id || '', name: contactNameOf(data.user, wechatUserLabel), email: data.user?.email || '', phone: data.user?.phone, role: data.user?.role, avatarUrl: data.user?.avatarUrl }
       setPasswordUser(identity)

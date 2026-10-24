@@ -126,10 +126,6 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
 
   useEffect(() => {
     if (!requireAuth || loading || !user || pathname === '/onboarding') return
-    if (user.onboardingCompleted === false) {
-      router.replace(`/onboarding?returnUrl=${encodeURIComponent(pathname || '/studio/projects')}`)
-      return
-    }
     if (pathname && pathname.startsWith('/studio') && !user.phone) {
       router.replace(`/profile?requirePhone=1&returnUrl=${encodeURIComponent(pathname || '/studio/projects')}`)
       return

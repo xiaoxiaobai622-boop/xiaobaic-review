@@ -185,12 +185,6 @@ function LoginForm() {
         }
 
         applyTokens(data)
-        if (data.needsOnboarding) {
-          const onboardingUrl = `/onboarding?returnUrl=${encodeURIComponent(returnUrl)}`
-          router.replace(onboardingUrl)
-          router.refresh()
-          return
-        }
         const destination = returnUrl
         router.push(destination)
         router.refresh()

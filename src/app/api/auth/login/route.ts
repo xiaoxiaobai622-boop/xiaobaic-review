@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
 import { verifyCredentials, issueAdminTokens } from '@/lib/auth'
 import { checkRateLimit, incrementRateLimit, clearRateLimit } from '@/lib/rate-limit'
 import { validateRequest, loginSchema, safeParseBody } from '@/lib/validation'
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify credentials (supports both username and email)
-    const user = await verifyCredentials(email, password)
+    let user = await verifyCredentials(email, password)
 
     if (!user) {
       // FAILED LOGIN: Increment rate limit counter FOR THIS SPECIFIC USERNAME/EMAIL
@@ -138,6 +139,18 @@ export async function POST(request: NextRequest) {
 
     // SUCCESSFUL LOGIN: Clear rate limit counter for this username/email
     await clearRateLimit(request, 'login', email)
+
+    // Accounts created by SMS/WeChat skip the registration screen; complete any
+    // legacy row that still carries the old onboarding flag.
+    if (!user.onboardingCompleted || !user.name) {
+      const fallbackName = user.phone ? user.phone.slice(-4) : null
+      if (fallbackName) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { name: user.name || fallbackName, onboardingCompleted: true },
+        })
+      }
+    }
 
     const fingerprint = getAdminDeviceFingerprint(request)
     const tokens = await issueAdminTokens(user, fingerprint)

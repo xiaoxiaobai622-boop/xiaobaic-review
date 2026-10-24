@@ -84,11 +84,6 @@ function DeviceAuthForm() {
         })
       }
 
-      if (data.needsOnboarding) {
-        window.location.href = `/onboarding?returnUrl=${encodeURIComponent('/device')}`
-        return
-      }
-
       setStep('authorize')
     } catch (err: any) {
       if (err.name === 'NotAllowedError') {
