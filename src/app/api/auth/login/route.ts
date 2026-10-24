@@ -8,6 +8,7 @@ import { enqueueExternalNotification } from '@/lib/external-notifications/enqueu
 import { getAppUrl, buildFailedLoginLink } from '@/lib/url'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { getAdminDeviceFingerprint } from '@/lib/studio-device'
+import { WECHAT_SESSION_COOKIE } from '@/lib/wechat-auth'
 export const runtime = 'nodejs'
 
 
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
       },
     }).catch(() => {})
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       user: {
         id: user.id,
@@ -188,6 +189,9 @@ export async function POST(request: NextRequest) {
         refreshExpiresAt: tokens.refreshExpiresAt,
       },
     })
+    // Password login switches to the phone account; drop the old WeChat identity.
+    response.cookies.delete(WECHAT_SESSION_COOKIE)
+    return response
   } catch (error) {
     return NextResponse.json(
       { error: authMessages.errorOccurredDuringLogin || 'An error occurred during login' },

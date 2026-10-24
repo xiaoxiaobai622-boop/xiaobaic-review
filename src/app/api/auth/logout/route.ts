@@ -3,6 +3,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { parseBearerToken, revokePresentedTokens } from '@/lib/auth'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { WECHAT_SESSION_COOKIE } from '@/lib/wechat-auth'
 
 export const runtime = 'nodejs'
 
@@ -23,10 +24,16 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const authMessages = messages?.auth || {}
 
-  const logoutFailedResponse = () => NextResponse.json(
-    { error: authMessages.logoutFailed || 'Logout failed. Please try again.' },
-    { status: 503 }
-  )
+  const logoutFailedResponse = () => {
+    const response = NextResponse.json(
+      { error: authMessages.logoutFailed || 'Logout failed. Please try again.' },
+      { status: 503 }
+    )
+    // Token revocation may fail (e.g. Redis down), but the browser still asked
+    // to log out; do not leave the WeChat identity behind.
+    response.cookies.delete(WECHAT_SESSION_COOKIE)
+    return response
+  }
 
   try {
     const rateLimitResult = await rateLimit(request, {
@@ -48,7 +55,11 @@ export async function POST(request: NextRequest) {
       return logoutFailedResponse()
     }
 
-    return NextResponse.json({ success: true })
+    const response = NextResponse.json({ success: true })
+    // The WeChat identity is a second session source: leaving the cookie behind
+    // makes share pages treat the browser as still logged in after logout.
+    response.cookies.delete(WECHAT_SESSION_COOKIE)
+    return response
   } catch (error) {
     logError('Logout error:', error)
     return logoutFailedResponse()

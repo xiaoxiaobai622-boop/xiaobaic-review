@@ -327,6 +327,13 @@ const routeIntentGate = /intent === 'bind' \? await getCurrentUserFromRequest\(r
 check(loginSmsIntent && routeIntentGate,
   'N7 登录页的短信登录显式声明 intent=login；服务端只有 intent=bind 才按「绑定当前账号」处理',
   `→ 页面声明=${loginSmsIntent}，服务端分流=${routeIntentGate}`)
+const logoutRouteSrc = stripComments(read('app/api/auth/logout/route.ts'))
+const passwordRouteSrc = stripComments(read('app/api/auth/login/route.ts'))
+const clearsWechatOnLogout = /cookies\.delete\(WECHAT_SESSION_COOKIE\)/.test(logoutRouteSrc)
+const clearsWechatOnPasswordLogin = /cookies\.delete\(WECHAT_SESSION_COOKIE\)/.test(passwordRouteSrc)
+check(clearsWechatOnLogout && clearsWechatOnPasswordLogin,
+  'N8 退出登录与密码登录都清掉微信会话 cookie（否则退出/换号后分享页还认旧微信身份）',
+  `→ 退出=${clearsWechatOnLogout}，密码登录=${clearsWechatOnPasswordLogin}`)
 
 // ── T 组：条款同意必须每次手动勾（工信部 26 条点名「不得采用默认勾选…诱导用户同意」）──
 const anyTermsMemory = ['app/login/page.tsx', 'components/ReviewLoginActions.tsx', 'components/WechatMiniQrLogin.tsx']
