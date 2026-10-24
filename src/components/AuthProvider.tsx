@@ -134,6 +134,20 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
       router.replace(`/profile?requirePhone=1&returnUrl=${encodeURIComponent(pathname || '/studio/projects')}`)
       return
     }
+    // A user with no team should land on the create-team screen, not on a
+    // team-scoped page whose API answers 403. The team landing, join and invite
+    // routes must stay reachable so an invite can still add the first team.
+    if (pathname?.startsWith('/studio') && (user.teams?.length ?? 0) === 0) {
+      const canEnterTeamOnboarding = pathname === '/studio/team'
+        || pathname === '/studio/team/'
+        || pathname.startsWith('/studio/team/join')
+        || pathname.startsWith('/studio/team/invite/')
+        || pathname === '/studio/desktop'
+      if (!canEnterTeamOnboarding) {
+        router.replace('/studio/team')
+        return
+      }
+    }
     if (pathname?.startsWith('/studio') && (user.teams?.length ?? 0) > 1) {
       const activeTeamId = getActiveTeamId()
       if (!user.teams!.some((item) => item.team.id === activeTeamId)) {

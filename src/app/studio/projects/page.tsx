@@ -195,9 +195,16 @@ export default function AdminPage() {
         // A failed request must not render as "no projects yet", which reads as
         // if the team's data had disappeared.
         setProjects([])
-        setLoadError(projectsRes.status === 403
-          ? '没有权限读取项目列表，请确认你已加入当前团队'
-          : `项目列表加载失败（HTTP ${projectsRes.status}）`)
+        if (projectsRes.status === 403) {
+          const body = await projectsRes.json().catch(() => null) as { error?: string } | null
+          if (body?.error === 'You do not belong to a team') {
+            router.replace('/studio/team')
+            return
+          }
+          setLoadError('当前账号没有权限读取项目列表')
+        } else {
+          setLoadError(`项目列表加载失败（HTTP ${projectsRes.status}）`)
+        }
       }
     } catch {
       setProjects([])
@@ -573,7 +580,11 @@ export default function AdminPage() {
           <Card>
             <div className="py-12 text-center" role="alert">
               <p className="text-sm font-medium text-destructive">{loadError}</p>
-              <p className="mt-1 text-sm text-muted-foreground">项目数据仍在服务器上，恢复连接后重试即可。</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {loadError.includes('没有权限')
+                  ? '请切换到有权限的团队，或联系团队管理员。'
+                  : '项目数据仍在服务器上，恢复连接后重试即可。'}
+              </p>
               <Button
                 variant="outline"
                 className="mt-4"
