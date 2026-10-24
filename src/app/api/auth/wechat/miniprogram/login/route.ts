@@ -5,6 +5,9 @@ import { issueAdminTokens } from '@/lib/auth'
 import { bindWechatPhone, exchangeMiniProgramCode, findOrCreateUserFromWechat } from '@/lib/wechat-mini-auth'
 import { getWechatQrKey } from '@/lib/wechat-mini-login'
 import { rateLimit } from '@/lib/rate-limit'
+import { logError } from '@/lib/logging'
+import { exchangeWechatPhoneCode, WechatPhoneError } from '@/lib/wechat-mini-phone'
+import { bindPhoneToWechatUser } from '@/lib/wechat-account-merge'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,8 +27,9 @@ export async function POST(request: NextRequest) {
   const qrId = typeof body?.qrId === 'string' ? body.qrId.trim() : ''
   const mode = body?.mode === 'bind' ? 'bind' : 'login'
   const nickname = typeof body?.nickname === 'string' ? body.nickname.slice(0, 100) : null
-  // 小程序「手机号快速验证组件」的 code；没有就跳过，不影响登录。
-  const phoneCode = typeof body?.phoneCode === 'string' ? body.phoneCode.trim().slice(0, 128) : ''
+  const avatarUrl = typeof body?.avatarUrl === 'string' ? body.avatarUrl.slice(0, 1000) : null
+  // 小程序「手机号快速验证组件」的 code；登录模式没有它且账号无手机号时，要求先授权。
+  const phoneCode = typeof body?.phoneCode === 'string' ? body.phoneCode.trim().slice(0, 512) : ''
 
   try {
     const identity = await exchangeMiniProgramCode(code)
@@ -85,23 +89,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: 'bound' })
     }
 
-    // ── 登录模式（原有逻辑）────────────────────────────────────────
-    const created = await findOrCreateUserFromWechat({
+    // ── 登录模式：手机号是账号主键；号码已有账号就合并到那个账号 ──────
+    const wechatUser = await findOrCreateUserFromWechat({
       ...identity,
       nickname,
     })
-    let phoneBound = false
-    let user = created
-    if (phoneCode && !created.phone) {
-      const phoneResult = await bindWechatPhone(created.id, phoneCode)
-      if (phoneResult === 'conflict') {
-        return NextResponse.json({ error: '该手机号已绑定其他账号', code: 'PHONE_ACCOUNT_CONFLICT' }, { status: 409 })
-      }
-      if (phoneResult === 'bound') {
-        phoneBound = true
-        user = await prisma.user.findUniqueOrThrow({ where: { id: created.id } })
-      }
+
+    let user = wechatUser
+    let merged = false
+    if (phoneCode) {
+      const phone = await exchangeWechatPhoneCode(phoneCode)
+      const bound = await bindPhoneToWechatUser({
+        userId: wechatUser.id,
+        phone,
+        nickname,
+        avatarUrl,
+      })
+      user = bound.user
+      merged = bound.merged
+    } else if (!wechatUser.phone) {
+      return NextResponse.json({ needsPhone: true })
     }
+
     const tokens = await issueAdminTokens({
       id: user.id,
       email: user.email,
@@ -124,14 +133,29 @@ export async function POST(request: NextRequest) {
         role: user.role,
       },
       needsOnboarding: user.onboardingCompleted === false,
-      phoneBound,
+      accountMerged: merged,
       tokens,
     })
   } catch (error) {
+    if (error instanceof WechatPhoneError) {
+      const messages: Record<string, string> = {
+        PHONE_CODE_MISSING: '需要授权手机号',
+        PHONE_CODE_INVALID: '手机号授权已失效，请重试',
+        PHONE_UNSUPPORTED_REGION: '暂不支持中国大陆以外的手机号',
+        PHONE_INVALID: '手机号格式无效',
+        PHONE_EXCHANGE_FAILED: '手机号获取失败，请稍后重试',
+      }
+      return NextResponse.json({
+        error: messages[error.code] || '手机号获取失败，请稍后重试',
+        code: error.code,
+      }, { status: 400 })
+    }
+
     const message = error instanceof Error ? error.message : 'Wechat login failed'
     if (message === 'WECHAT_MINI_NOT_CONFIGURED') {
       return NextResponse.json({ error: 'WeChat mini program is not configured' }, { status: 503 })
     }
+    logError('Wechat mini program login failed:', error)
     return NextResponse.json({ error: 'Wechat login failed' }, { status: 401 })
   }
 }

@@ -8,6 +8,10 @@ import { normalizePhone, phoneStoreFields, wherePhone } from '../src/lib/phone-f
  * `requireApiUser`，`user.phone` 为空一律 403 PHONE_REQUIRED。所以小程序那边授权了
  * 号码，服务端必须真的接住并落库（加密列 + phoneHash），不是只在界面上问一句。
  *
+ * 10-24 起的规则是「手机号是账号主键」：登录模式必须先拿到手机号；号码已经属于
+ * 另一个账号时，把微信占位账号合并进那个手机号账号，不再报「已绑定其他账号」。
+ * 绑定模式（把微信挂到已登录账号）仍走 `bindWechatPhone` 的冲突检查。
+ *
  * 换号码那一步要打微信接口，本地没法端到端跑（要真 AppID/Secret 与真 code），
  * 这里钉的是接线与落库口径；网络那一段的验收要在小程序里点一次授权。
  */
@@ -22,6 +26,8 @@ function checkTrue(name: string, ok: boolean, detail = '') {
 }
 
 const LIB = read('src/lib/wechat-mini-auth.ts')
+const PHONE_LIB = read('src/lib/wechat-mini-phone.ts')
+const MERGE_LIB = read('src/lib/wechat-account-merge.ts')
 const MINI = read('src/app/api/auth/wechat/mini/login/route.ts')
 const MINI_PROGRAM = read('src/app/api/auth/wechat/miniprogram/login/route.ts')
 
@@ -51,31 +57,47 @@ checkTrue('W2·c 绑定函数用 phoneStoreFields 写、不用 data: { phone } �
 
 console.log('=== 覆盖与冲突 ===')
 
-checkTrue('W3 已经有号码的不覆盖（改号走个人中心那套双验证）',
+checkTrue('W3 绑定模式已有号码不覆盖（改号走个人中心那套双验证）',
   /bindWechatPhone[\s\S]*?if \(user\.phone\) return 'skipped'/.test(LIB))
-checkTrue('W3·b 号码被别人占用时返回 conflict，由路由回 409 PHONE_ACCOUNT_CONFLICT',
-  /bindWechatPhone[\s\S]*?findFirst\(\{[\s\S]*?NOT: \{ id: userId \}/.test(LIB)
-  && (MINI.includes('PHONE_ACCOUNT_CONFLICT') && MINI_PROGRAM.includes('PHONE_ACCOUNT_CONFLICT')))
-checkTrue('W3·c 冲突判断按 phoneHash 查（where 里含 wherePhone(phone)）',
-  /bindWechatPhone[\s\S]*?wherePhone\(phone\)/.test(LIB))
+checkTrue('W3·b 登录模式不再报冲突：号码已有账号时把微信占位账号合并进去，没手机号就不发登录态',
+  MERGE_LIB.includes('phoneWhereOrNone(phone)')
+  && MERGE_LIB.includes('mergeWechatUserIntoPhoneAccount')
+  && MINI_PROGRAM.includes('needsPhone: true')
+  && MINI.includes("code: 'PHONE_REQUIRED'"))
+checkTrue('W3·c 合并前的查找按 phoneHash（不拿密文列做等值）',
+  /findFirst\(\{ where: phoneWhereOrNone\(phone\) \}\)/.test(MERGE_LIB)
+  && !/findUnique\(\{ where: \{ phone[,}]/.test(MERGE_LIB))
+checkTrue('W3·d 合并要搬走 Restrict 外键（订单/订单事件），否则删占位号会失败',
+  MERGE_LIB.includes('tx.order.updateMany')
+  && MERGE_LIB.includes('tx.orderEvent.updateMany')
+  && MERGE_LIB.includes('tx.platformFeedback.updateMany'))
 
-console.log('=== 两条登录链都要收 phoneCode，且在发令牌之前绑 ===')
+console.log('=== 两条登录链都要收 phoneCode，且在发令牌之前绑/合并 ===')
 
-checkTrue('W4 miniprogram/login 解析 phoneCode，并在 issueAdminTokens 之前调用 bindWechatPhone',
+checkTrue('W4 miniprogram/login 解析 phoneCode，并在 issueAdminTokens 之前绑/合并',
   MINI_PROGRAM.includes("body?.phoneCode") &&
-  MINI_PROGRAM.indexOf('bindWechatPhone(created.id, phoneCode)') > 0 &&
-  MINI_PROGRAM.indexOf('bindWechatPhone(created.id, phoneCode)') < MINI_PROGRAM.indexOf('issueAdminTokens('))
-checkTrue('W4·b miniprogram/login 的「绑定微信到已登录账号」那一支也顺手绑号（session.userId）',
+  MINI_PROGRAM.indexOf('await bindPhoneToWechatUser(') > 0 &&
+  MINI_PROGRAM.indexOf('await bindPhoneToWechatUser(') < MINI_PROGRAM.indexOf('issueAdminTokens('))
+checkTrue('W4·b miniprogram/login 的「绑定微信到已登录账号」那一支仍走 bindWechatPhone(session.userId)',
   MINI_PROGRAM.includes('bindWechatPhone(session.userId, phoneCode)'))
-checkTrue('W4·c mini/login（扫码确认那条）同样在发令牌前绑号',
-  MINI.includes("safeText(body.phoneCode, 128)") &&
-  MINI.indexOf('bindWechatPhone(created.id, phoneCode)') > 0 &&
-  MINI.indexOf('bindWechatPhone(created.id, phoneCode)') < MINI.indexOf('issueAdminTokens('))
-checkTrue('W4·d 绑成功后重新读一次库再发令牌（否则令牌里还是绑号前的 phone）',
-  MINI_PROGRAM.includes('findUniqueOrThrow({ where: { id: created.id } })')
-  && MINI.includes('findUniqueOrThrow({ where: { id: created.id } })'))
-checkTrue('W4·e 响应里带 phoneBound，小程序能知道这次到底绑上没有',
-  MINI_PROGRAM.includes('phoneBound,') && MINI.includes('phoneBound: true'))
+checkTrue('W4·c mini/login（扫码确认那条）同样在发令牌前绑/合并',
+  MINI.includes('safeText(body.phoneCode, 512)') &&
+  MINI.indexOf('await bindPhoneToWechatUser(') > 0 &&
+  MINI.indexOf('await bindPhoneToWechatUser(') < MINI.indexOf('issueAdminTokens('))
+checkTrue('W4·d 合并/绑定返回的账号直接用来发令牌（不是拿占位账号的旧 id）',
+  MINI_PROGRAM.includes('user = bound.user') && MINI.includes('adminUser = bound.user')
+  && MINI_PROGRAM.indexOf('user = bound.user') < MINI_PROGRAM.indexOf('issueAdminTokens(')
+  && MINI.indexOf('adminUser = bound.user') < MINI.indexOf('issueAdminTokens('))
+checkTrue('W4·e 响应告诉小程序这次是否合并了账号；没有手机号就不发登录态',
+  MINI_PROGRAM.includes('accountMerged: merged')
+  && MINI_PROGRAM.includes('needsPhone: true')
+  && MINI.includes("code: 'PHONE_REQUIRED'"))
+checkTrue('W4·f 新号先换微信手机号接口，超时与错误码都接住，不把内部错误直接甩给用户',
+  PHONE_LIB.includes('wxa/business/getuserphonenumber')
+  && PHONE_LIB.includes('AbortSignal.timeout(10_000)')
+  && PHONE_LIB.includes('PHONE_CODE_INVALID')
+  && MINI_PROGRAM.includes('PHONE_UNSUPPORTED_REGION')
+  && MINI.includes('PHONE_UNSUPPORTED_REGION'))
 
 console.log(`\n合计 ${passed} PASS / ${failures.length} FAIL`)
 for (const f of failures) console.log(`  FAIL  ${f}`)

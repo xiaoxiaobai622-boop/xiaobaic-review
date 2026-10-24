@@ -6,7 +6,9 @@ import { signWechatSession } from '@/lib/wechat-auth'
 import { logError } from '@/lib/logging'
 import { getRedis } from '@/lib/redis'
 import { getWechatQrKey } from '@/lib/wechat-mini-login'
-import { bindWechatPhone, findOrCreateUserFromWechat } from '@/lib/wechat-mini-auth'
+import { findOrCreateUserFromWechat } from '@/lib/wechat-mini-auth'
+import { exchangeWechatPhoneCode, WechatPhoneError } from '@/lib/wechat-mini-phone'
+import { bindPhoneToWechatUser } from '@/lib/wechat-account-merge'
 
 export const runtime = 'nodejs'
 
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest) {
   const qrId = typeof body.qrId === 'string' ? body.qrId.trim() : ''
   const nickname = safeText(body.nickname, 100)
   // 小程序「手机号快速验证组件」的 code；没有就跳过，不影响登录。
-  const phoneCode = safeText(body.phoneCode, 128) || ''
+  const phoneCode = safeText(body.phoneCode, 512) || ''
   const avatarUrl = safeText(body.avatarUrl, 1000)
 
   try {
@@ -81,6 +83,7 @@ export async function POST(request: NextRequest) {
 
     let adminTokens: Awaited<ReturnType<typeof issueAdminTokens>> | null = null
     let needsOnboarding = false
+    let qrUser = user
     let qrSession: { returnUrl?: string; mode?: string; userId?: string | null } | null = null
 
     if (qrId && /^[A-Za-z0-9_-]{16,64}$/.test(qrId)) {
@@ -118,22 +121,25 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ status: 'bound', token, user })
       }
 
-      const created = await findOrCreateUserFromWechat({
+      // ── 登录模式：手机号是账号主键；号码已有账号就合并到那个账号 ──
+      const wechatUser = await findOrCreateUserFromWechat({
         openid: data.openid,
         unionid: data.unionid || null,
         nickname: nickname || '微信用户',
       })
-      let phoneBound = false
-      let adminUser = created
-      if (phoneCode && !created.phone) {
-        const phoneResult = await bindWechatPhone(created.id, phoneCode)
-        if (phoneResult === 'conflict') {
-          return NextResponse.json({ error: '该手机号已绑定其他账号', code: 'PHONE_ACCOUNT_CONFLICT' }, { status: 409 })
-        }
-        if (phoneResult === 'bound') {
-          phoneBound = true
-          adminUser = await prisma.user.findUniqueOrThrow({ where: { id: created.id } })
-        }
+
+      let adminUser = wechatUser
+      if (phoneCode) {
+        const phone = await exchangeWechatPhoneCode(phoneCode)
+        const bound = await bindPhoneToWechatUser({
+          userId: wechatUser.id,
+          phone,
+          nickname,
+          avatarUrl,
+        })
+        adminUser = bound.user
+      } else if (!wechatUser.phone) {
+        return NextResponse.json({ error: '需要授权手机号', code: 'PHONE_REQUIRED' }, { status: 400 })
       }
 
       adminTokens = await issueAdminTokens({
@@ -147,6 +153,12 @@ export async function POST(request: NextRequest) {
         projectAccessScope: adminUser.projectAccessScope,
       })
       needsOnboarding = adminUser.onboardingCompleted === false
+      qrUser = {
+        id: identity.id,
+        nickname: adminUser.name || identity.nickname,
+        avatarUrl: adminUser.avatarUrl || identity.avatarUrl,
+        linked: Boolean(identity.unionId),
+      }
       await prisma.wechatIdentity.update({
         where: { id: identity.id },
         data: { userId: adminUser.id },
@@ -159,10 +171,9 @@ export async function POST(request: NextRequest) {
           status: 'success',
           returnUrl: qrSession?.returnUrl || '',
           token,
-          user,
+          user: qrUser,
           adminTokens,
           needsOnboarding,
-          ...(phoneBound ? { phoneBound: true } : {}),
         }),
         'EX',
         120
@@ -176,6 +187,19 @@ export async function POST(request: NextRequest) {
       needsOnboarding,
     })
   } catch (error) {
+    if (error instanceof WechatPhoneError) {
+      const messages: Record<string, string> = {
+        PHONE_CODE_MISSING: '需要授权手机号',
+        PHONE_CODE_INVALID: '手机号授权已失效，请重新扫码',
+        PHONE_UNSUPPORTED_REGION: '暂不支持中国大陆以外的手机号',
+        PHONE_INVALID: '手机号格式无效',
+        PHONE_EXCHANGE_FAILED: '手机号获取失败，请重试',
+      }
+      return NextResponse.json({
+        error: messages[error.code] || '手机号获取失败，请重试',
+        code: error.code,
+      }, { status: 400 })
+    }
     logError('Wechat mini login error:', error)
     return NextResponse.json({ error: '微信登录服务暂时不可用' }, { status: 502 })
   }
