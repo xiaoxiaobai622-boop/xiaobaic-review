@@ -114,10 +114,7 @@ export async function POST(request: NextRequest) {
     if (user.phone && (!user.onboardingCompleted || !user.name)) {
       user = await prisma.user.update({
         where: { id: user.id },
-        data: {
-          ...(user.onboardingCompleted ? {} : { onboardingCompleted: true }),
-          ...(user.name ? {} : { name: user.phone.slice(-4) }),
-        },
+        data: { name: user.phone.slice(-4), onboardingCompleted: true },
       })
     }
 

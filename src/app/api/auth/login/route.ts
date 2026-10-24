@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       if (fallbackName) {
         user = await prisma.user.update({
           where: { id: user.id },
-          data: { name: user.name || fallbackName, onboardingCompleted: true },
+          data: { name: fallbackName, onboardingCompleted: true },
         })
       }
     }
