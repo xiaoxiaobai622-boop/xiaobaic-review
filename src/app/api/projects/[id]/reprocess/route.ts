@@ -19,9 +19,7 @@ const reprocessSchema = z.object({
   // reprocessing re-queues every READY/ERROR video in the project for transcoding,
   // which consumes significant COS traffic and server CPU.
   confirm: z.literal(true, {
-    errorMap: () => ({
-      message: '重新处理需要显式确认：请求体必须包含 "confirm": true',
-    }),
+    error: '重新处理需要显式确认：请求体必须包含 "confirm": true',
   }),
   videoIds: z.array(z.string().min(1)).max(50).optional(),
 })
@@ -56,7 +54,7 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
     const parsed = reprocessSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 })
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 })
     }
     const { videoIds } = parsed.data
 
