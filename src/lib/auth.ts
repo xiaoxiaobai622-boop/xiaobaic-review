@@ -583,7 +583,10 @@ export async function getCurrentUserFromRequest(request: NextRequest): Promise<A
  * `type` claims, so a request can only ever present one of them.
  */
 export async function getConsoleUserFromRequest(request: NextRequest): Promise<AuthUser | null> {
-  return (await getCurrentUserFromRequest(request)) ?? (await getPlatformUserFromRequest(request))
+  // Platform token first. The WeChat session cookie can belong to a linked
+  // non-platform account, and letting it win made /api/settings answer 403 in
+  // the platform console even when the request carried a valid platform token.
+  return (await getPlatformUserFromRequest(request)) ?? (await getCurrentUserFromRequest(request))
 }
 
 export async function hasWebsiteLoginSession(request: NextRequest): Promise<boolean> {
