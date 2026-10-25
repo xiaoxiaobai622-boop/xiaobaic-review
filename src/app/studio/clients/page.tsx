@@ -307,8 +307,8 @@ export default function ClientsPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 min-h-0 bg-background">
-        <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
+      <div className="max-w-screen-2xl mx-auto">
+        <div>
           <div className="flex items-center justify-center h-64">
             <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
@@ -318,8 +318,8 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 bg-background">
-      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
+    <div className="max-w-screen-2xl mx-auto">
+      <div>
         <div className="flex justify-between items-center gap-4 mb-4 sm:mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">

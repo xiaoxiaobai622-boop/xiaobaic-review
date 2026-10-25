@@ -3,7 +3,7 @@
 import { useLayoutEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { FolderKanban, GitBranch, HardDrive, LayoutDashboard, Settings2, Users, type LucideIcon } from 'lucide-react'
+import { Building2, FolderKanban, GitBranch, HardDrive, LayoutDashboard, Settings2, Users, type LucideIcon } from 'lucide-react'
 
 type TeamAdminSection = {
   key: string
@@ -15,6 +15,7 @@ type TeamAdminSection = {
 const sections: TeamAdminSection[] = [
   { key: 'overview', label: '团队概览', href: '/studio/team', icon: LayoutDashboard },
   { key: 'members', label: '成员管理', href: '/studio/team/members', icon: Users },
+  { key: 'clients', label: '客户管理', href: '/studio/clients', icon: Building2 },
   { key: 'storage', label: '容量管理', href: '/studio/team/storage', icon: HardDrive },
   { key: 'projects', label: '项目管理', href: '/studio/team/projects', icon: FolderKanban },
   { key: 'workflow', label: '流程管理', href: '/studio/team/workflow', icon: GitBranch },

@@ -91,7 +91,6 @@ const robots = await html('/robots.txt')
 // 用 `$` 收尾，这样"写回带斜杠的旧形态"会直接红，不会静默放行。
 report(robots.status === 200 && /^Disallow: \/studio$/m.test(robots.body), 'robots.txt Disallow 覆盖裸 /studio')
 // 负向断言必须自带 status 前置：`/robots.txt` 挂了时 body 是空串，"里面没有 X"会恒真空过。
-report(robots.status === 200 && !/^Disallow: \/portal/m.test(robots.body), '/portal 不进 Disallow（它自带 noindex，见 robots.ts 注释）')
 report(/Sitemap: https?:\/\//.test(robots.body), 'robots.txt 有绝对 Sitemap 行')
 
 const sm = await html('/sitemap.xml')

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Building2, FolderKanban, FolderTree, Plus, AlertCircle, ChevronRight, Lock, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus, Users } from 'lucide-react'
@@ -111,6 +112,10 @@ export default function AdminPage() {
   const [restricted, setRestricted] = useState(false)
   const [projectTitle, setProjectTitle] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
+  const [projectDueDate, setProjectDueDate] = useState('')
+  const [newProjectClients, setNewProjectClients] = useState<Array<{ id: string; name: string }> | null>(null)
+  const [selectedNewProjectClientId, setSelectedNewProjectClientId] = useState<string | null>(null)
+  const [showMoreOptions, setShowMoreOptions] = useState(false)
   const [formError, setFormError] = useState('')
   // Load saved views from API
   useEffect(() => {
@@ -344,9 +349,29 @@ export default function AdminPage() {
   function openNewProjectModal() {
     setProjectTitle('')
     setProjectDescription('')
+    setProjectDueDate('')
+    setSelectedNewProjectClientId(null)
+    setShowMoreOptions(false)
     setRestricted(false)
     setFormError('')
     setShowNewProjectModal(true)
+
+    if (newProjectClients === null) {
+      void (async () => {
+        try {
+          const response = await apiFetch('/api/clients')
+          if (!response.ok) throw new Error('Failed to load clients')
+          const data = await response.json()
+          setNewProjectClients(
+            Array.isArray(data.companies)
+              ? data.companies.map((company: { id: string; name: string }) => ({ id: company.id, name: company.name }))
+              : []
+          )
+        } catch {
+          setNewProjectClients([])
+        }
+      })()
+    }
   }
 
   async function handleCreateProject() {
@@ -366,6 +391,14 @@ export default function AdminPage() {
       }
 
       if (projectDescription) data.description = projectDescription
+      if (projectDueDate) data.dueDate = `${projectDueDate}T12:00:00.000Z`
+      const selectedClient = selectedNewProjectClientId
+        ? newProjectClients?.find((client) => client.id === selectedNewProjectClientId)
+        : null
+      if (selectedClient) {
+        data.clientCompanyId = selectedClient.id
+        data.companyName = selectedClient.name
+      }
       // The ghost/create button lives inside the open folder; file the new project
       // there in the same request, not back in 未归类.
       if (openFolderId && openFolderId !== NO_GROUP_KEY) data.groupId = openFolderId
@@ -430,6 +463,53 @@ export default function AdminPage() {
               />
             </div>
 
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => setShowMoreOptions((value) => !value)}
+                aria-expanded={showMoreOptions}
+                aria-controls="new-project-more"
+                className="flex items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ChevronRight className={`h-4 w-4 transition-transform ${showMoreOptions ? 'rotate-90' : ''}`} />
+                {t('moreOptions')}
+              </button>
+
+              {showMoreOptions && (
+                <div id="new-project-more" className="space-y-4 rounded-lg border border-border p-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="projectDueDate">{t('dueDateOptional')}</Label>
+                    <Input
+                      id="projectDueDate"
+                      type="date"
+                      value={projectDueDate}
+                      onChange={(event) => setProjectDueDate(event.target.value)}
+                      disabled={creating}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="projectClient">{t('clientOptional')}</Label>
+                    <Select
+                      value={selectedNewProjectClientId ?? 'none'}
+                      onValueChange={(value) => setSelectedNewProjectClientId(value === 'none' ? null : value)}
+                      disabled={creating}
+                    >
+                      <SelectTrigger id="projectClient">
+                        <SelectValue placeholder={t('selectClient')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t('noClient')}</SelectItem>
+                        {(newProjectClients ?? []).map((client) => (
+                          <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* 设为受限：对标 frame.io restricted。开 = 仅受邀成员与团队管理员可见，关 = 团队全员可见。 */}
             <div className="rounded-lg bg-muted/60 p-4">
               <div className="flex items-start justify-between gap-4">
@@ -452,6 +532,7 @@ export default function AdminPage() {
                 />
               </div>
             </div>
+
           </div>
           <DialogFooter>
             <DialogClose asChild>
@@ -619,10 +700,6 @@ export default function AdminPage() {
                   <Users className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button variant="default" size="default" onClick={openNewProjectModal}>
-                <Plus className="w-4 h-4 sm:mr-2" />
-                <span className="hidden sm:inline">{t('newProject')}</span>
-              </Button>
             </div>
           </div>
           <Card>
@@ -673,6 +750,47 @@ export default function AdminPage() {
     />
   )
 
+  const renderFolderBreadcrumb = (inToolbar = false) => (
+    <div className={`flex min-w-0 flex-wrap items-center gap-2 ${inToolbar ? '' : 'mb-2'} ${openFolderId ? '' : 'lg:hidden'}`}>
+      <Button variant="outline" size="sm" className="lg:hidden px-2.5 text-[12.5px]" onClick={() => setFolderDrawer(true)}>
+        <FolderTree className="w-3.5 h-3.5 mr-1" />
+        {breadcrumbs[breadcrumbs.length - 1]?.name || t('folder')}
+      </Button>
+
+      {openFolderId && (
+        // Under lg the drawer button above already says which folder this is,
+        // and the tree it opens is the way back up — the full path would just
+        // repeat it on a screen two crumbs wide.
+        <nav aria-label={t('folder')} className="hidden lg:flex items-center gap-1 text-[13px] min-w-0">
+          <button
+            type="button"
+            onClick={() => openFolder(null)}
+            className="text-muted-foreground hover:text-foreground rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {t('statAll')}
+          </button>
+          {breadcrumbs.map((folder, i) => (
+            <span key={folder.id} className="flex items-center gap-1 min-w-0">
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" aria-hidden />
+              {i === breadcrumbs.length - 1 ? (
+                <span className="font-semibold truncate max-w-[200px]" title={folder.name}>{folder.name}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => openFolder(folder.id)}
+                  title={folder.name}
+                  className="text-muted-foreground hover:text-foreground truncate max-w-[140px] rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {folder.name}
+                </button>
+              )}
+            </span>
+          ))}
+        </nav>
+      )}
+    </div>
+  )
+
   const folderTree = renderFolderTree(false)
 
   return (
@@ -691,10 +809,6 @@ export default function AdminPage() {
                 <Users className="h-4 w-4" />
               </Link>
             </Button>
-            {isAdmin && <Button variant="default" size="default" onClick={openNewProjectModal}>
-              <Plus className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">{t('newProject')}</span>
-            </Button>}
           </div>
         </div>
 
@@ -745,46 +859,8 @@ export default function AdminPage() {
           </aside>
 
           <div className="scrollbar-hidden min-w-0 flex-1 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px] lg:bg-popover lg:px-4 lg:py-4">
-            {/* On desktop this row only holds the breadcrumb, so it must not reserve
-                height while no folder is open. On mobile it holds the folder trigger. */}
-            <div className={`flex items-center gap-2 flex-wrap mb-2 ${openFolderId ? 'min-h-[32px]' : 'lg:hidden'}`}>
-              <Button variant="outline" size="sm" className="lg:hidden px-2.5 text-[12.5px]" onClick={() => setFolderDrawer(true)}>
-                <FolderTree className="w-3.5 h-3.5 mr-1" />
-                {breadcrumbs[breadcrumbs.length - 1]?.name || t('folder')}
-              </Button>
-
-              {openFolderId && (
-                // Under lg the drawer button above already says which folder this is,
-                // and the tree it opens is the way back up — the full path would just
-                // repeat it on a screen two crumbs wide.
-                <nav aria-label={t('folder')} className="hidden lg:flex items-center gap-1 text-[13px] min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => openFolder(null)}
-                    className="text-muted-foreground hover:text-foreground rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {t('statAll')}
-                  </button>
-                  {breadcrumbs.map((folder, i) => (
-                    <span key={folder.id} className="flex items-center gap-1 min-w-0">
-                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" aria-hidden />
-                      {i === breadcrumbs.length - 1 ? (
-                        <span className="font-semibold truncate max-w-[200px]" title={folder.name}>{folder.name}</span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => openFolder(folder.id)}
-                          title={folder.name}
-                          className="text-muted-foreground hover:text-foreground truncate max-w-[140px] rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {folder.name}
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                </nav>
-              )}
-            </div>
+            {/* 列表视图没有分组/批量那一行，面包屑仍留在工具栏上方。 */}
+            {viewMode !== 'grid' && renderFolderBreadcrumb()}
 
             {/* One toolbar row: saved views and filters on the left, search docked to the right end. */}
             <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -827,6 +903,7 @@ export default function AdminPage() {
                 folders={folders}
                 showFolderChip={openFolderId === null}
                 emptyMessage={folderEmptyMessage}
+                folderBreadcrumb={renderFolderBreadcrumb(true)}
                 onMoveProjects={handleMoveProjects}
                 onMutated={() => void loadProjects()}
                 onCreateProject={openNewProjectModal}

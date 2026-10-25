@@ -19,7 +19,7 @@ export function isWechatWebConfigured(): boolean {
 }
 
 export function safeWechatReturnUrl(value: string | null | undefined): string {
-  return safeReturnUrl(value, '/portal')
+  return safeReturnUrl(value, '/login')
 }
 
 export function signWechatSession(identity: { id: string; nickname?: string | null; avatarUrl?: string | null }): string {

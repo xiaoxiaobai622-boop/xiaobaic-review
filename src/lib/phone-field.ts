@@ -3,7 +3,7 @@ import { PHONE_ONLY_EMAIL_DOMAIN } from './user-contact'
 import { maskPhoneDisplay } from './phone-display'
 
 // Phone numbers are personal data that must not sit in the database as plain text, but they
-// are also looked up by equality (login, "this number is already bound", recipient portals).
+// are also looked up by equality (login, "this number is already bound", recipient lookups).
 // AES-GCM gives a different ciphertext per write, so equality moves to this keyed digest.
 const PHONE_DOMAIN = 'vidx.phone.index'
 

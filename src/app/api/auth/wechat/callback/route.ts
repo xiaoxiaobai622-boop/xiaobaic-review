@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code')
   const state = request.nextUrl.searchParams.get('state')
   const expectedState = request.cookies.get(WECHAT_STATE_COOKIE)?.value
-  const returnUrl = request.cookies.get(WECHAT_RETURN_COOKIE)?.value || '/portal'
+  const returnUrl = request.cookies.get(WECHAT_RETURN_COOKIE)?.value || '/login'
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return redirectWithResult(request, returnUrl, 'failed')

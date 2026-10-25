@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
 import { Card, CardContent } from '@/components/ui/card'
@@ -370,13 +370,14 @@ interface ProjectsDashboardProps {
   /** The path chip is noise while you are already browsing inside that folder. */
   showFolderChip: boolean
   emptyMessage?: string
+  folderBreadcrumb?: ReactNode
   onMoveProjects: (projectIds: string[], folderId: string | null) => Promise<void>
   onMutated: () => void
   onCreateProject?: () => void
 }
 
 export default function ProjectsDashboard({
-  projects, isAdmin, folders, showFolderChip, emptyMessage, onMoveProjects, onMutated, onCreateProject,
+  projects, isAdmin, folders, showFolderChip, emptyMessage, folderBreadcrumb, onMoveProjects, onMutated, onCreateProject,
 }: ProjectsDashboardProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -673,6 +674,7 @@ export default function ProjectsDashboard({
   if (projects.length === 0) {
     return (
       <div>
+        {folderBreadcrumb && <div className="mb-3">{folderBreadcrumb}</div>}
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{emptyMessage || t('noMatchingProjects')}</p>
@@ -687,30 +689,44 @@ export default function ProjectsDashboard({
     <div ref={rootRef} className={batchMode ? 'batch-on' : ''}>
       {/* Controls: group-by + batch toggle */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <div className="inline-flex rounded-lg bg-secondary p-0.5 text-xs">
-          {GROUP_BY_OPTIONS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setGroupBy(option)}
-              className={`h-8 inline-flex items-center px-3 rounded-md font-medium transition-colors ${groupBy === option ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              {groupByLabels[option]}
-            </button>
-          ))}
+        <div className="flex min-w-0 items-center gap-2">
+          {groups[0] ? (
+            <>
+              <span className="truncate text-[14.5px] font-bold">{groups[0].label}</span>
+              <span className="shrink-0 rounded-full bg-secondary px-2 text-[12px] text-muted-foreground">{groups[0].list.length} {t('projectsCount')}</span>
+            </>
+          ) : folderBreadcrumb}
         </div>
-        {isAdmin && (
-          batchMode ? (
-            <Button size="sm" variant="ghost" onClick={exitBatch}>{tc('cancel')}</Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => setBatchMode(true)}>
-              <Check className="w-3.5 h-3.5 mr-1" />
-              {t('batchManage')}
-            </Button>
-          )
-        )}
-        {actionError && <span className="text-[12.5px] text-destructive">{actionError}</span>}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg bg-secondary p-0.5 text-xs">
+            {GROUP_BY_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setGroupBy(option)}
+                className={`h-8 inline-flex items-center px-3 rounded-md font-medium transition-colors ${groupBy === option ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {groupByLabels[option]}
+              </button>
+            ))}
+          </div>
+          {isAdmin && (
+            batchMode ? (
+              <Button size="sm" variant="ghost" onClick={exitBatch}>{tc('cancel')}</Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => setBatchMode(true)}>
+                <Check className="w-3.5 h-3.5 mr-1" />
+                {t('batchManage')}
+              </Button>
+            )
+          )}
+          {actionError && <span className="text-[12.5px] text-destructive">{actionError}</span>}
+        </div>
       </div>
+
+      {folderBreadcrumb && groups.length > 0 && (
+        <div className="mb-3">{folderBreadcrumb}</div>
+      )}
 
       {/* Attention: overdue / due soon */}
       {urgent.length > 0 && !batchMode && (
@@ -773,10 +789,12 @@ export default function ProjectsDashboard({
       {/* Grouped sections */}
       {groups.map((g, index) => (
         <div key={g.key} className="mb-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[14.5px] font-bold">{g.label}</span>
-            <span className="text-[12px] text-muted-foreground bg-secondary rounded-full px-2">{g.list.length} {t('projectsCount')}</span>
-          </div>
+          {index !== 0 && (
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[14.5px] font-bold">{g.label}</span>
+              <span className="text-[12px] text-muted-foreground bg-secondary rounded-full px-2">{g.list.length} {t('projectsCount')}</span>
+            </div>
+          )}
           <div className={gridClass}>
             {g.list.map((p) => (
               <div key={p.id} className="group/card">

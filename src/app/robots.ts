@@ -31,8 +31,8 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
    * 抵消：爬虫抓不到页面，就永远读不到那行 noindex，搜索引擎退化成"凭外链把 URL 收进索引、不带摘要"。
    * `/login` 是全站唯一被公开外站链接指向的应用路由（六篇文稿的 CTA 都指向它），而
    * `src/app/login/layout.tsx` 已经给了真 noindex —— 所以要的是"可抓 + noindex"。
-   * 同一个理由适用于 `/portal`、`/profile`、`/onboarding`：这三条各自的 layout 里写着
-   * `robots: { index: false, follow: false }`（`portal/layout.tsx:8`、`profile/layout.tsx:7`、
+   * 同一个理由适用于 `/profile`、`/onboarding`：这两条各自的 layout 里写着
+   * `robots: { index: false, follow: false }`（`profile/layout.tsx:7`、
    * `onboarding/layout.tsx:7`），所以它们**不进**这张表；把能自己声明 noindex 的路径再 Disallow 一遍，
    * 等于花掉抓取机会去换一个已经生效的指令。
    * 表里的路径**一律不带尾斜杠**：`Disallow: /studio/` 匹配不到裸 `/studio`，而裸路径实测 200 可抓

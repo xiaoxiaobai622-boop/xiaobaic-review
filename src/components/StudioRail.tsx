@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Check, LogOut, MonitorDown, UserRound } from 'lucide-react'
+import { Calendar, Check, LogOut, MonitorDown, UserRound } from 'lucide-react'
 import { AllApplication, Config } from '@icon-park/react'
 import { useAuth } from '@/components/AuthProvider'
 import { initialsFromName } from '@/components/InitialsAvatar'
@@ -147,12 +147,19 @@ export default function StudioRail() {
   // 根字号是 15px（globals.css:10），所以基础档 w-14 其实是 52.5px，只有窄屏用得到。
   return (
     <aside
-      className="sticky top-0 z-40 flex h-screen w-14 shrink-0 flex-col items-center gap-2 bg-background py-3 lg:w-[56px]"
+      className="sticky top-0 z-40 flex h-screen w-14 shrink-0 flex-col items-center gap-2 bg-background py-3 lg:w-[56px] lg:rounded-br-[8px]"
       style={{ backgroundImage: 'var(--rail-gradient)' }}
     >
       <ProjectsRailItem active={pathname === '/studio/projects'} />
       <RailSearch className={RAIL_ICON_BUTTON} />
       <RailNotifications className={RAIL_ICON_BUTTON} />
+      <RailItem
+        href="/studio/calendar"
+        label="项目日历"
+        active={pathname === '/studio/calendar' || Boolean(pathname?.startsWith('/studio/calendar/'))}
+      >
+        <Calendar className="h-[20px] w-[20px]" />
+      </RailItem>
       <RailItem href="/studio/desktop" label="桌面客户端" active={pathname === '/studio/desktop'}>
         <MonitorDown className="h-[20px] w-[20px]" />
       </RailItem>
@@ -340,7 +347,7 @@ function RailItem({
       : 'text-muted-foreground hover:text-accent-foreground'
   }`
   return (
-    <Link href={href} className={className} title={title || label}>
+    <Link href={href} className={className} title={title || label} aria-current={active ? 'page' : undefined}>
       {children}
     </Link>
   )
