@@ -21,6 +21,7 @@ const CHECKS: Array<{ file: string; args?: string[] }> = [
   { file: 'scripts/check-team-writeable.mts' },
   { file: 'scripts/check-home-media-budget.mts' },
   { file: 'scripts/check-playback-drift.mts' },
+  { file: 'scripts/check-hls-recovery.mts' },
   { file: 'scripts/check-time-format.mts' },
   { file: 'scripts/check-wechat-phone-bind.mts' },
   { file: 'scripts/check-zod-schemas.mts' },
