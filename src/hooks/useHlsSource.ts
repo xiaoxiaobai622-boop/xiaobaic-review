@@ -79,6 +79,10 @@ export function useHlsSource({
     let pendingSeekPosition: number | null = null
     let pendingForceLoad = false
     let recoveryTimer: ReturnType<typeof setTimeout> | null = null
+    let restartTimer: ReturnType<typeof setTimeout> | null = null
+    let nativeRestartTimer: ReturnType<typeof setTimeout> | null = null
+    let sourceRestartAttempts = 0
+    let nativeRestartAttempts = 0
     let lastLoadRequestPosition: number | null = null
     let lastLoadRequestAt = 0
     let lastScheduledPosition: number | null = null
@@ -253,27 +257,89 @@ export function useHlsSource({
       }
     }
 
-    const handleMediaElementError = () => {
-      if (sourceType === 'hls') {
+    // A transient CDN failure can kill the media element before hls.js has a
+    // chance to retry the fragment (our repro aborted one segment and the
+    // element reported DEMUXER_ERROR_COULD_NOT_PARSE). Rebuilding only the
+    // buffer is not enough when the loader has already stopped; tear down the
+    // whole HLS session and attach a fresh one before falling back. HLS-only
+    // videos have no progressive URL, so a premature fallback is a dead end.
+    const restartHls = () => {
+      const media = video
+      if (disposed || !media) return
+      // Several errors can arrive for the same dying session (media element,
+      // hls.js media error, stalled loader). One pending rebuild supersedes
+      // all of them; without this gate they exhaust the retry budget before
+      // the first rebuild even starts.
+      if (restartTimer !== null) return
+      if (!hls || sourceRestartAttempts >= 2) {
         activateFallback()
-      } else if (sourceType === 'fallback') {
-        const mediaErrorCode = video.error?.code
-        onPlaybackErrorRef.current?.({
-          cause: classifyPlaybackFailure(lastNetworkStatus, mediaErrorCode),
-          httpStatus: lastNetworkStatus,
-          mediaErrorCode,
-        })
+        return
       }
+      sourceRestartAttempts += 1
+      if (Number.isFinite(media.currentTime) && media.currentTime > 0) {
+        pendingSeekPosition = Math.max(0, media.currentTime)
+      }
+      manifestReady = false
+      networkRecoveryAttempts = 0
+      mediaRecoveryAttempts = 0
+      lastNetworkStatus = undefined
+      if (recoveryTimer !== null) {
+        clearTimeout(recoveryTimer)
+        recoveryTimer = null
+      }
+      if (restartTimer !== null) clearTimeout(restartTimer)
+      if (nativeRestartTimer !== null) clearTimeout(nativeRestartTimer)
+      restartTimer = setTimeout(() => {
+        restartTimer = null
+        if (disposed) return
+        startHlsJs()
+      }, 400 * sourceRestartAttempts)
     }
 
-    listenToVideo('error', handleMediaElementError)
+    // Native HLS (Safari/WebKit, and some embedded WebViews) has no retry
+    // layer of its own: one failed segment leaves the media element in an
+    // unrecoverable error state. Reload the manifest/source and resume at the
+    // previous position before giving up. The hls.js path above uses the same
+    // budget with a full session rebuild.
+    const restartNativeHls = () => {
+      const media = video
+      if (disposed || !media || !hlsUrl || nativeRestartTimer !== null) return
+      if (nativeRestartAttempts >= 2) {
+        activateFallback()
+        return
+      }
+      nativeRestartAttempts += 1
+      if (Number.isFinite(media.currentTime) && media.currentTime > 0) {
+        pendingSeekPosition = Math.max(0, media.currentTime)
+      }
+      const shouldResume = !media.paused || playIntentRef?.current === true
+      nativeRestartTimer = setTimeout(() => {
+        nativeRestartTimer = null
+        if (disposed) return
+        setVideoSource(hlsUrl, 'hls')
+        if (shouldResume) {
+          media.addEventListener('loadedmetadata', () => {
+            if (!disposed) void media.play().catch(() => {})
+          }, { once: true })
+        }
+      }, 400 * nativeRestartAttempts)
+    }
 
-    if (hlsUrl && video.canPlayType('application/vnd.apple.mpegurl')) {
-      setVideoSource(hlsUrl, 'hls')
-    } else if (hlsUrl && Hls.isSupported()) {
+    function startHlsJs() {
+      const media = video
+      const sourceUrl = hlsUrl
+      if (disposed || !media || !sourceUrl) return
+      if (hls) {
+        try {
+          hls.destroy()
+        } catch {
+          // The previous instance may already have torn down its media source.
+        }
+        hls = null
+      }
       sourceType = 'hls'
       setIsUsingHls(true)
-      video.preload = 'auto'
+      media.preload = 'auto'
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
@@ -295,7 +361,7 @@ export function useHlsSource({
       })
 
       hls.on(Events.MEDIA_ATTACHED, () => {
-        if (!disposed) hls?.loadSource(hlsUrl)
+        if (!disposed) hls?.loadSource(sourceUrl)
       })
 
       hls.on(Events.MANIFEST_PARSED, () => {
@@ -307,33 +373,13 @@ export function useHlsSource({
 
       hls.on(Events.FRAG_LOADED, () => {
         // A completed fragment proves the current source is healthy. Network
-        // failures from earlier seek targets must not carry into later seeks.
+        // failures from earlier seek targets must not carry into later seeks,
+        // and a rebuilt session starts its retry budget over.
         networkRecoveryAttempts = 0
+        mediaRecoveryAttempts = 0
+        sourceRestartAttempts = 0
         lastNetworkStatus = undefined
       })
-
-      // Keep seeks made before the manifest/metadata is ready. hls.js cannot
-      // select a fragment for those seeks yet, so replay the latest target as
-      // soon as the level is available.
-      listenToVideo('seeking', () => {
-        if (disposed || !Number.isFinite(video.currentTime)) return
-        pendingSeekPosition = Math.max(0, video.currentTime)
-        if (manifestReady) scheduleLoadAt(video.currentTime)
-      })
-
-      // hls.js exposes `loadingEnabled` as a start/stop switch, not as an
-      // indication that a fragment request is currently in flight. Let the
-      // position/cooldown guard in scheduleLoadAt decide whether a restart
-      // is useful so a stalled loader can recover as well.
-      const handleWaiting = () => {
-        if (disposed || !manifestReady || !Number.isFinite(video.currentTime)) return
-        scheduleLoadAt(video.currentTime)
-      }
-      listenToVideo('waiting', handleWaiting)
-      listenToVideo('stalled', handleWaiting)
-
-      listenToVideo('loadedmetadata', applyPendingSeek)
-      listenToVideo('durationchange', applyPendingSeek)
 
       hls.on(Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal || disposed || !hls) return
@@ -355,8 +401,8 @@ export function useHlsSource({
             recoveryTimer = setTimeout(() => {
               recoveryTimer = null
               if (disposed || !hls) return
-              if (manifestReady && Number.isFinite(video.currentTime)) {
-                scheduleLoadAt(video.currentTime, true)
+              if (manifestReady && Number.isFinite(media.currentTime)) {
+                scheduleLoadAt(media.currentTime, true)
               } else {
                 hls.startLoad()
               }
@@ -371,10 +417,70 @@ export function useHlsSource({
           return
         }
 
-        activateFallback()
+        restartHls()
       })
 
-      hls.attachMedia(video)
+      hls.attachMedia(media)
+    }
+
+    const handleMediaElementError = () => {
+      if (sourceType === 'hls') {
+        if (hls) {
+          if (mediaRecoveryAttempts < 1) {
+            mediaRecoveryAttempts += 1
+            try {
+              hls.recoverMediaError()
+              return
+            } catch {
+              // Fall through to a full session rebuild when the buffer swap
+              // cannot be issued at all.
+            }
+          }
+          restartHls()
+          return
+        }
+        restartNativeHls()
+      } else if (sourceType === 'fallback') {
+        const mediaErrorCode = video.error?.code
+        onPlaybackErrorRef.current?.({
+          cause: classifyPlaybackFailure(lastNetworkStatus, mediaErrorCode),
+          httpStatus: lastNetworkStatus,
+          mediaErrorCode,
+        })
+      }
+    }
+
+    listenToVideo('error', handleMediaElementError)
+
+    // Keep seeks made before the manifest/metadata is ready. hls.js cannot
+    // select a fragment for those seeks yet, so replay the latest target as
+    // soon as the level is available. Registered once; a rebuilt HLS session
+    // reuses the same listeners.
+    listenToVideo('seeking', () => {
+      if (disposed || !Number.isFinite(video.currentTime)) return
+      pendingSeekPosition = Math.max(0, video.currentTime)
+      if (manifestReady) scheduleLoadAt(video.currentTime)
+    })
+
+    // hls.js exposes `loadingEnabled` as a start/stop switch, not as an
+    // indication that a fragment request is currently in flight. Let the
+    // position/cooldown guard in scheduleLoadAt decide whether a restart
+    // is useful so a stalled loader can recover as well.
+    const handleWaiting = () => {
+      if (disposed || !manifestReady || !Number.isFinite(video.currentTime)) return
+      scheduleLoadAt(video.currentTime)
+    }
+    listenToVideo('waiting', handleWaiting)
+    listenToVideo('stalled', handleWaiting)
+
+    listenToVideo('playing', () => { nativeRestartAttempts = 0 })
+    listenToVideo('loadedmetadata', applyPendingSeek)
+    listenToVideo('durationchange', applyPendingSeek)
+
+    if (hlsUrl && video.canPlayType('application/vnd.apple.mpegurl')) {
+      setVideoSource(hlsUrl, 'hls')
+    } else if (hlsUrl && Hls.isSupported()) {
+      startHlsJs()
     } else if (fallbackUrl) {
       setVideoSource(fallbackUrl, 'fallback')
     } else {
@@ -388,6 +494,8 @@ export function useHlsSource({
       for (const [type, handler] of videoListeners) video.removeEventListener(type, handler)
       if (seekLoadTimer !== null) clearTimeout(seekLoadTimer)
       if (recoveryTimer !== null) clearTimeout(recoveryTimer)
+      if (restartTimer !== null) clearTimeout(restartTimer)
+      if (nativeRestartTimer !== null) clearTimeout(nativeRestartTimer)
       pendingForceLoad = false
       hls?.destroy()
       video.pause()
