@@ -39,8 +39,8 @@ const METRICS: Array<{ key: MetricKey; label: string; minWidth: number }> = [
   { key: 'newProjects', label: '新建项目', minWidth: 72 },
   { key: 'newUsers', label: '新用户', minWidth: 60 },
   { key: 'comments', label: '批注', minWidth: 60 },
-  { key: 'visits', label: '访问', minWidth: 72 },
-  { key: 'activeProjects', label: '活跃项目', minWidth: 72 },
+  { key: 'visits', label: '外部访问', minWidth: 80 },
+  { key: 'activeProjects', label: '外部活跃项目', minWidth: 96 },
   { key: 'shareSessions', label: '独立会话', minWidth: 72 },
 ]
 
@@ -230,7 +230,7 @@ export default function PlatformDashboardPage() {
         ) : (
           <div className={`mt-3 overflow-x-auto transition-opacity ${refreshing ? 'opacity-60' : ''}`}>
             <table className="w-full text-sm">
-              <caption className="sr-only">近 {days.length} 天每日使用量，按北京日切分，单元格底色宽度表示该列当天在窗口内的相对量级</caption>
+              <caption className="sr-only">近 {days.length} 天每日使用量，按北京日切分；外部访问与外部活跃项目只统计非团队观看，单元格底色宽度表示该列当天在窗口内的相对量级</caption>
               <thead>
                 <tr className="text-xs text-muted-foreground">
                   <th scope="col" className="py-1 pr-3 text-left font-normal whitespace-nowrap">
@@ -287,7 +287,7 @@ export default function PlatformDashboardPage() {
           <p className="mt-2 text-xs text-muted-foreground lg:hidden">表格可左右滑动，右侧还有指标。</p>
         )}
         <p className="mt-3 text-xs text-muted-foreground">
-          访问＝审片页打开次数，活跃项目＝当天有访问的项目数，独立会话按访客去重。回收站里的素材当天仍计入上传量，所以这一列不等于当前占用。
+          外部访问＝外部分享链接的审片页打开次数（团队自己从审片页、桌面端、小程序观看不计入），外部活跃项目＝当天有外部访问的项目数，独立会话按外部分享访客去重。回收站里的素材当天仍计入上传量，所以这一列不等于当前占用。
         </p>
       </section>
 
