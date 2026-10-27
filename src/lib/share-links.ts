@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { prisma } from '@/lib/db'
 import { allocateShareToken } from '@/lib/share-tokens'
 
@@ -366,6 +367,58 @@ export function linkPermissions(policy: SharePolicy | null): string[] {
   if (!policy) return ['view']
   if (policy.type === 'COLLECT') return policy.permissions.includes('upload') ? ['upload'] : []
   return policy.permissions.length > 0 ? policy.permissions : ['view']
+}
+
+function digest(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('base64url').slice(0, 22)
+}
+
+/**
+ * A viewer bearer is only valid while the policy it was minted under is. The
+ * hash covers everything that can change what the token may do, so editing a
+ * link's permissions retires its existing bearers immediately; renaming it or
+ * changing a display-only field does not.
+ */
+export function sharePolicyFingerprint(
+  policy: SharePolicy | null,
+  project: { allowReverseShare?: boolean | null } | null,
+): string | null {
+  if (!policy) return null
+  return digest(JSON.stringify({
+    type: policy.type,
+    scopeType: policy.scopeType,
+    scopeId: policy.scopeId,
+    permissions: [...policy.permissions].sort(),
+    authMode: policy.authMode,
+    sharePassword: policy.sharePassword ?? null,
+    expiresAt: policy.expiresAt ? new Date(policy.expiresAt).getTime() : null,
+    status: policy.status,
+    master: policy.isProjectMaster,
+    allowReverseShare: Boolean(project?.allowReverseShare),
+  }))
+}
+
+/** Credential-bound part of the policy: a renewal must not outlive a password or auth-mode change. */
+export function shareAuthFingerprint(policy: SharePolicy | null): string | null {
+  if (!policy) return null
+  return digest(`${policy.authMode}:${policy.sharePassword ?? ''}`)
+}
+
+/**
+ * The single upload-capability rule. The visitor payload and the POST route
+ * both read this, so the upload entry can never advertise an action the route
+ * refuses. The project's flag remains the kill switch; an explicit link must
+ * additionally be a COLLECT link that carries the upload permission.
+ */
+export function shareAllowsUploads(
+  policy: SharePolicy | null,
+  project: { allowReverseShare?: boolean | null; status?: string | null } | null,
+): boolean {
+  if (!policy || !project) return false
+  if (project.status === 'ARCHIVED') return false
+  if (!project.allowReverseShare) return false
+  if (policy.isProjectMaster) return true
+  return policy.type === 'COLLECT' && policy.permissions.includes('upload')
 }
 
 /** Photos are project-level content: only a whole-project review/delivery link

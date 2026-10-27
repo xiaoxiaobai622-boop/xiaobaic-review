@@ -1227,6 +1227,7 @@
     "passwordRequiredShort": "Wachtwoord is verplicht",
     "tooManyPasswordAttempts": "Te veel mislukte wachtwoordpogingen. Probeer het later opnieuw.",
     "sessionExpiredOrInvalid": "Sessie verlopen of ongeldig. Authenticeer opnieuw.",
+    "sessionExpiredRefresh": "Sessie verlopen. Vernieuw de pagina.",
     "authenticationRequired": "Authenticatie vereist",
     "guestEntryRequired": "Gasttoegang vereist",
     "unableToProcessRequest": "Kan het verzoek niet verwerken",

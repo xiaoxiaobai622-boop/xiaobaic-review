@@ -104,7 +104,7 @@ function PopupSample({ candidate, sample, inline }: { candidate: boolean; sample
       <Composer newComment={text} onCommentChange={setText} onSubmit={() => { if (text.trim()) { setComments(value => [...value, text]); setText(''); setNotice('已加入本页样本，没有发送到项目。') } }}
         loading={sample === 'loading'} selectedTimestamp={12.32} selectedVideoFps={25} selectedVideoDurationSeconds={93.312}
         replyingToComment={null} onCancelReply={() => {}} currentVideoRestricted={false} commentsDisabled={sample === 'disabled'}
-        showCategoryPicker={false} visibility={visibility} onVisibilityChange={setVisibility} sendInsideComposer={inline}
+ visibility={visibility} onVisibilityChange={setVisibility} sendInsideComposer={inline}
         onStartDrawing={() => setNotice('此处只试用浮层，画面标注未连接。')} />
       <p className={styles.notice} role="status">{notice || '样本操作不会改变真实项目或审片偏好。'}</p>
     </div>

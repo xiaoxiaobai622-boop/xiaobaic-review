@@ -7,10 +7,13 @@ const MAX_AUTH_RETRIES = 2
 
 /**
  * TUS `onAfterResponse` handler that refreshes the access token on 401/403.
- * TUS awaits this before deciding whether to retry, so the refreshed token
- * is available by the time `onBeforeRequest` runs for the retry.
+ * Share uploads pass their own renewal so the retry sends the replacement
+ * viewer bearer; studio uploads keep the account refresh.
  */
-export function createTusAfterResponseHandler(uploadRef: { current: object | null }) {
+export function createTusAfterResponseHandler(
+  uploadRef: { current: object | null },
+  refreshAuth?: () => Promise<unknown>,
+) {
   return async (_req: HttpRequest, res: HttpResponse) => {
     const status = res.getStatus()
     if (status !== 401 && status !== 403) return
@@ -22,7 +25,8 @@ export function createTusAfterResponseHandler(uploadRef: { current: object | nul
     if (attempts >= MAX_AUTH_RETRIES) return
 
     authRetryCounters.set(upload, attempts + 1)
-    await attemptRefresh()
+    if (refreshAuth) await refreshAuth()
+    else await attemptRefresh()
   }
 }
 
@@ -72,6 +76,11 @@ export function getTusUploadErrorMessage(error: unknown): string {
   const statusFromMessage = statusFromMessageMatch ? Number.parseInt(statusFromMessageMatch[1], 10) : null
   const status = Number.isFinite(statusFromResponse) ? statusFromResponse : statusFromMessage
 
+  // Share endpoints answer with `{ error, code }`; show that localized text
+  // instead of the generic status line.
+  const structured = parseStructuredError(body)
+  if (structured?.message) return structured.message
+
   if (combined.includes('NetworkError') || combined.includes('Failed to fetch')) {
     return 'Network error. Please check your connection and try again.'
   }
@@ -107,4 +116,16 @@ function safeString(value: unknown): string {
   if (typeof value === 'string') return value
   if (value == null) return ''
   return String(value)
+}
+
+function parseStructuredError(body: string): { message: string; code?: string } | null {
+  if (!body.trim().startsWith('{')) return null
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown; code?: unknown }
+    return typeof parsed.error === 'string'
+      ? { message: parsed.error, code: typeof parsed.code === 'string' ? parsed.code : undefined }
+      : null
+  } catch {
+    return null
+  }
 }

@@ -13,7 +13,7 @@ import { safeParseBody } from '@/lib/validation'
 import jwt from 'jsonwebtoken'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { resolveShareMetadata, isShareLinkActive, linkPermissions } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, linkPermissions, shareAuthFingerprint, sharePolicyFingerprint } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -248,6 +248,8 @@ export async function POST(
       projectId: project.id,
       permissions: linkPermissions(resolved.policy),
       guest: false,
+      policyFingerprint: sharePolicyFingerprint(resolved.policy, resolved.project) ?? undefined,
+      authFingerprint: shareAuthFingerprint(resolved.policy) ?? undefined,
       ttlSeconds: shareTokenTtl,
     })
 

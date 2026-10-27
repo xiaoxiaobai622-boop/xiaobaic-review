@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { hasWebsiteLoginSession, parseBearerToken, verifyAdminAccessToken, verifyShareToken } from '@/lib/auth'
+import { hasWebsiteLoginSession, parseBearerToken, peekShareToken, verifyAdminAccessToken, verifyShareTokenResult } from '@/lib/auth'
+import { isShareLinkActive, resolveShareMetadata, shareAllowsUploads } from '@/lib/share-links'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 
 interface S3UploadTarget {
   videoId?: string
@@ -122,7 +125,7 @@ export async function verifyS3UploadAccess(
   const accountBearer = parseBearerToken(request)
   const explicitShareBearer = parseBearerToken(request, 'x-share-token')
   if (!accountBearer && !explicitShareBearer) {
-    return { errorResponse: NextResponse.json({ error: 'Authentication required' }, { status: 401 }) }
+    return { errorResponse: NextResponse.json({ error: 'Authentication required', code: SHARE_ERROR_CODES.AUTH_REQUIRED }, { status: 401 }) }
   }
 
   const adminPayload = accountBearer ? await verifyAdminAccessToken(accountBearer) : null
@@ -133,28 +136,59 @@ export async function verifyS3UploadAccess(
   }
 
   if (!isAdmin) {
-    const shareBearer = explicitShareBearer || accountBearer
-    const sharePayload = shareBearer ? await verifyShareToken(shareBearer) : null
-    if (!sharePayload) {
-      return { errorResponse: NextResponse.json({ error: 'Access denied' }, { status: 403 }) }
+    const shareBearer = explicitShareBearer || (accountBearer && peekShareToken(accountBearer) ? accountBearer : null)
+    if (!shareBearer) {
+      const endpoint = requestEndpoint(request)
+      logShareDenial({
+        shareToken: accountBearer ? peekShareToken(accountBearer)?.shareId ?? null : null,
+        endpoint,
+        reason: SHARE_ERROR_CODES.PERMISSION_DENIED,
+      })
+      return { errorResponse: NextResponse.json({ error: 'Access denied', code: SHARE_ERROR_CODES.PERMISSION_DENIED }, { status: 403 }) }
+    }
+
+    const shareResult = await verifyShareTokenResult(shareBearer)
+    if (!shareResult.payload) {
+      return {
+        errorResponse: NextResponse.json(
+          { error: shareResult.failure.message, code: shareResult.failure.code },
+          { status: 401 },
+        ),
+      }
+    }
+    const sharePayload = shareResult.payload
+    const endpoint = requestEndpoint(request)
+    const denied = (code: string, message: string, status = 403) => {
+      if (status === 403) logShareDenial({ shareToken: sharePayload.shareId, endpoint, reason: code })
+      return { errorResponse: NextResponse.json({ error: message, code }, { status }) }
+    }
+
+    const resolved = await resolveShareMetadata(sharePayload.shareId)
+    if (!resolved.policy || !resolved.project) {
+      return denied(SHARE_ERROR_CODES.LINK_MISSING, 'Share link no longer exists', 401)
+    }
+    if (!isShareLinkActive(resolved.policy)) {
+      return {
+        errorResponse: NextResponse.json({ error: 'Share link is no longer active', code: SHARE_ERROR_CODES.LINK_INACTIVE }, { status: 410 }),
+      }
     }
 
     // Share tokens cannot touch video or photo uploads (admin-only)
     if (videoId || photoId) {
-      return { errorResponse: NextResponse.json({ error: 'Admin access required' }, { status: 403 }) }
+      return denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Admin access required')
     }
 
     // Non-abort paths require comment permission and block guests
     if (requireUploadPermission) {
       if (!assetId && !projectUploadId) {
-        return { errorResponse: NextResponse.json({ error: 'Share tokens can only upload assets or project files' }, { status: 403 }) }
+        return denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Share tokens can only upload assets or project files')
       }
       if (assetId) {
         if (!sharePayload.permissions?.includes('comment')) {
-          return { errorResponse: NextResponse.json({ error: 'Comment permission required' }, { status: 403 }) }
+          return denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Comment permission required')
         }
         if (sharePayload.guest) {
-          return { errorResponse: NextResponse.json({ error: 'Guest access cannot upload files' }, { status: 403 }) }
+          return denied(SHARE_ERROR_CODES.GUEST_RESTRICTED, 'Guest access cannot upload files')
         }
       }
     }
@@ -162,29 +196,23 @@ export async function verifyS3UploadAccess(
     // ── Verify ownership + feature flags for projectUploadId ─────────────────
     if (projectUploadId) {
       if (!(await hasWebsiteLoginSession(request))) {
-        return { errorResponse: NextResponse.json({ error: '请登录后上传素材' }, { status: 401 }) }
+        return { errorResponse: NextResponse.json({ error: '请登录后上传素材', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 }) }
       }
       const projectUpload = await prisma.projectUpload.findUnique({
         where: { id: projectUploadId },
         select: { storagePath: true, projectId: true, uploadedBySessionId: true },
       })
       if (!projectUpload) {
-        return { errorResponse: NextResponse.json({ error: 'Upload record not found' }, { status: 404 }) }
+        return { errorResponse: NextResponse.json({ error: 'Upload record not found', code: SHARE_ERROR_CODES.LINK_MISSING }, { status: 404 }) }
       }
       if (projectUpload.projectId !== sharePayload.projectId) {
-        return { errorResponse: NextResponse.json({ error: 'Upload does not belong to your project' }, { status: 403 }) }
+        return denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Upload does not belong to your project')
       }
       if (projectUpload.uploadedBySessionId !== sharePayload.sessionId) {
-        return { errorResponse: NextResponse.json({ error: 'Upload does not belong to your session' }, { status: 403 }) }
+        return denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Upload does not belong to your session')
       }
-      if (requireUploadPermission) {
-        const project = await prisma.project.findUnique({
-          where: { id: sharePayload.projectId },
-          select: { allowReverseShare: true },
-        })
-        if (!project?.allowReverseShare) {
-          return { errorResponse: NextResponse.json({ error: 'File submissions are not enabled for this project' }, { status: 403 }) }
-        }
+      if (requireUploadPermission && !shareAllowsUploads(resolved.policy, resolved.project)) {
+        return denied(SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, 'File submissions are not enabled for this link')
       }
       return { isAdmin: false, s3Key: projectUpload.storagePath }
     }
@@ -201,16 +229,16 @@ export async function verifyS3UploadAccess(
         },
       })
       if (!asset) {
-        return { errorResponse: NextResponse.json({ error: 'Asset record not found' }, { status: 404 }) }
+        return { errorResponse: NextResponse.json({ error: 'Asset record not found', code: SHARE_ERROR_CODES.LINK_MISSING }, { status: 404 }) }
       }
       if (asset.uploadedBy !== 'client') {
-        return { errorResponse: NextResponse.json({ error: 'Access denied' }, { status: 403 }) }
+        return denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Access denied')
       }
       if (asset.video.projectId !== sharePayload.projectId) {
-        return { errorResponse: NextResponse.json({ error: 'Asset does not belong to your project' }, { status: 403 }) }
+        return denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Asset does not belong to your project')
       }
       if (asset.uploadedBySessionId !== sharePayload.sessionId) {
-        return { errorResponse: NextResponse.json({ error: 'Asset does not belong to your session' }, { status: 403 }) }
+        return denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Asset does not belong to your session')
       }
       if (requireUploadPermission) {
         const project = await prisma.project.findUnique({
@@ -218,7 +246,7 @@ export async function verifyS3UploadAccess(
           select: { allowClientAssetUpload: true },
         })
         if (!project?.allowClientAssetUpload) {
-          return { errorResponse: NextResponse.json({ error: 'File attachments are not enabled for this project' }, { status: 403 }) }
+          return denied(SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, 'File attachments are not enabled for this project')
         }
       }
       return { isAdmin: false, s3Key: asset.storagePath }

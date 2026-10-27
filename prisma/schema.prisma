@@ -730,7 +730,6 @@ model Comment {
   content      String
   authorName   String? // made optional to allow anonymous comments
   authorEmail  String?
-  category     String? // client-facing quick tag: PICTURE, AUDIO, SUBTITLE, EDITING, OTHER
   isInternal   Boolean  @default(false) // true = from studio, false = from client
   visibility   String   @default("PUBLIC") // PUBLIC = 成员与共享链接查看者均可见；INTERNAL = 仅限拥有权限的成员查看（不影响 isInternal 的来源语义）
   createdAt    DateTime @default(now())
@@ -756,7 +755,6 @@ model Comment {
 
   @@index([projectId])
   @@index([videoId])
-  @@index([category])
   @@index([parentId])
   @@index([userId])
 }

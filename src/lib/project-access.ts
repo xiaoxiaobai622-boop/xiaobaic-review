@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserFromRequest, getShareContext } from '@/lib/auth'
+import { getCurrentUserFromRequest, getShareAuth, getPresentedShareTokenId } from '@/lib/auth'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { getClientIpAddress } from '@/lib/utils'
-import type { AuthUser } from '@/lib/auth'
+import type { AuthUser, ShareTokenFailure } from '@/lib/auth'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint, shareTokenFromPath } from '@/lib/share-auth'
 import type { Prisma, PrismaClient } from '@prisma/client'
 
 type DbClient = PrismaClient | Prisma.TransactionClient
@@ -216,16 +218,26 @@ export async function nextProjectCode(db: DbClient, teamId: string) {
 }
 
 function insufficientPermissionResponse(
+  request: NextRequest,
+  shareToken: string | null,
   permissions: string[],
   options?: { requiredPermission?: string; requiredAnyPermission?: string[] },
 ): NextResponse | null {
   const required = options?.requiredPermission
   if (required && !permissions.includes(required)) {
-    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+    logShareDenial({ shareToken, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.PERMISSION_DENIED })
+    return NextResponse.json(
+      { error: 'Insufficient permissions', code: SHARE_ERROR_CODES.PERMISSION_DENIED, requiredPermission: required },
+      { status: 403 },
+    )
   }
   const anyOf = options?.requiredAnyPermission
   if (anyOf && anyOf.length > 0 && !anyOf.some(permission => permissions.includes(permission))) {
-    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+    logShareDenial({ shareToken, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.PERMISSION_DENIED })
+    return NextResponse.json(
+      { error: 'Insufficient permissions', code: SHARE_ERROR_CODES.PERMISSION_DENIED, requiredAnyPermission: anyOf },
+      { status: 403 },
+    )
   }
   return null
 }
@@ -261,6 +273,7 @@ export async function verifyProjectAccess(
   isGuest?: boolean
   permissions?: string[]
   shareTokenSessionId?: string
+  shareFailure?: ShareTokenFailure
   errorResponse?: NextResponse
 }> {
   const allowGuest = options?.allowGuest ?? true
@@ -268,7 +281,9 @@ export async function verifyProjectAccess(
   // Check if user is admin (admins bypass password protection)
   const currentUser = await getCurrentUserFromRequest(request)
   const isAdmin = Boolean(currentUser)
-  const shareContext = await getShareContext(request)
+  const shareAuth = await getShareAuth(request)
+  const shareContext = shareAuth.payload
+  const shareToken = shareContext?.shareId || getPresentedShareTokenId(request) || shareTokenFromPath(request)
 
   const hasTeamAccess = currentUser
     ? await canAccessProject(prisma, currentUser, projectId)
@@ -286,6 +301,24 @@ export async function verifyProjectAccess(
     }
   }
 
+  // A bearer that was presented and refused is an authentication failure. It
+  // must be answered before the anonymous (authMode NONE) branch, which would
+  // otherwise treat the missing context as a view-only visitor and turn an
+  // expired token into "Insufficient permissions".
+  if (shareAuth.failure) {
+    return {
+      authorized: false,
+      isAdmin: false,
+      isAuthenticated: false,
+      permissions: [],
+      shareFailure: shareAuth.failure,
+      errorResponse: NextResponse.json(
+        { error: shareAuth.failure.message, code: shareAuth.failure.code },
+        { status: 401 },
+      ),
+    }
+  }
+
   const isUnauthenticated = authMode === 'NONE'
   if (isUnauthenticated && !shareContext) {
     const sessionId = `none:${projectId}:${getClientIpAddress(request)}`
@@ -293,7 +326,7 @@ export async function verifyProjectAccess(
     // a grant for commenting, downloading or approving, so the caller's
     // requiredPermission still has to be satisfied by this baseline.
     const permissions = ['view']
-    const denied = insufficientPermissionResponse(permissions, options)
+    const denied = insufficientPermissionResponse(request, shareToken, permissions, options)
     if (denied) {
       return {
         authorized: false,
@@ -320,7 +353,7 @@ export async function verifyProjectAccess(
       isAdmin: false,
       isAuthenticated: false,
       errorResponse: NextResponse.json(
-        { error: 'Authentication required', authMode },
+        { error: 'Authentication required', code: SHARE_ERROR_CODES.AUTH_REQUIRED, authMode },
         { status: 401 }
       )
     }
@@ -332,7 +365,7 @@ export async function verifyProjectAccess(
       isAdmin: false,
       isAuthenticated: false,
       errorResponse: NextResponse.json(
-        { error: 'Access denied' },
+        { error: 'Access denied', code: SHARE_ERROR_CODES.TOKEN_SCOPE_MISMATCH },
         { status: 401 }
       )
     }
@@ -342,6 +375,7 @@ export async function verifyProjectAccess(
   const permissions = Array.isArray(shareContext.permissions) ? shareContext.permissions : []
 
   if (!allowGuest && isGuest) {
+    logShareDenial({ shareToken, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.GUEST_RESTRICTED })
     return {
       authorized: false,
       isAdmin: false,
@@ -349,13 +383,13 @@ export async function verifyProjectAccess(
       isGuest: true,
       permissions,
       errorResponse: NextResponse.json(
-        { error: 'Guest access is restricted for this action' },
+        { error: 'Guest access is restricted for this action', code: SHARE_ERROR_CODES.GUEST_RESTRICTED },
         { status: 403 }
       )
     }
   }
 
-  const permissionDenied = insufficientPermissionResponse(permissions, options)
+  const permissionDenied = insufficientPermissionResponse(request, shareToken, permissions, options)
   if (permissionDenied) {
     return {
       authorized: false,

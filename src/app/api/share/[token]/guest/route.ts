@@ -9,7 +9,7 @@ import { getClientIpAddress } from '@/lib/utils'
 import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-tracking'
 import jwt from 'jsonwebtoken'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShareMetadata } from '@/lib/share-links'
+import { resolveShareMetadata, shareAuthFingerprint, sharePolicyFingerprint } from '@/lib/share-links'
 export const runtime = 'nodejs'
 
 
@@ -61,6 +61,9 @@ export async function POST(
       permissions: ['view'],
       guest: true,
       sessionId: crypto.randomBytes(16).toString('base64url'),
+      authMode: resolved.policy?.authMode,
+      policyFingerprint: sharePolicyFingerprint(resolved.policy, resolved.project) ?? undefined,
+      authFingerprint: shareAuthFingerprint(resolved.policy) ?? undefined,
       ttlSeconds,
     })
 

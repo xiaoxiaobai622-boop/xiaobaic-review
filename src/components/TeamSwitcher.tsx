@@ -66,8 +66,19 @@ export default function TeamSwitcher({ compact = false }: { compact?: boolean } 
       }
     }
 
-    if (open) document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !open) return
+      event.stopPropagation()
+      setOpen(false)
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('keydown', handleKeyDown, true)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown, true)
+    }
   }, [open])
 
   useEffect(() => {
@@ -153,8 +164,8 @@ export default function TeamSwitcher({ compact = false }: { compact?: boolean } 
 
       {open && (
         <div className={compact
-          ? 'absolute left-full top-0 z-50 ml-2 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg'
-          : 'absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg'}>
+          ? 'absolute left-full top-0 z-50 ml-2 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg animate-in fade-in-0 zoom-in-95 duration-150'
+          : 'absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-elevation-lg animate-in fade-in-0 zoom-in-95 duration-150'}>
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
             <Building2 className="h-4 w-4 text-primary" />
             <div className="min-w-0 flex-1">

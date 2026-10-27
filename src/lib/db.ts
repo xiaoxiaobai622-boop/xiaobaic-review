@@ -60,12 +60,22 @@ function looksLikeCipher(value: unknown): value is string {
 }
 
 /**
+ * 只重建普通对象：Date/Buffer/Decimal 这类实例没有可枚举自有字段，
+ * 用 Object.entries 复制会把它们抹成 {}（线上邀请接口的 500 就是这么来的）。
+ */
+function isPlainRecord(value: object): boolean {
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+/**
  * Walks a result object and returns readable phones for every stored ciphertext, including
  * the ones nested inside included relations.
  */
 function mapPhoneFields<T>(value: T, transform: (phone: string) => string): T {
   if (Array.isArray(value)) return value.map(item => mapPhoneFields(item, transform)) as unknown as T
   if (!value || typeof value !== 'object') return value
+  if (!isPlainRecord(value)) return value
 
   const out: Record<string, unknown> = {}
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
@@ -84,6 +94,7 @@ function mapPhoneFields<T>(value: T, transform: (phone: string) => string): T {
 function encryptPhoneFields<T>(value: T): T {
   if (Array.isArray(value)) return value.map(item => encryptPhoneFields(item)) as unknown as T
   if (!value || typeof value !== 'object') return value
+  if (!isPlainRecord(value)) return value
 
   const out: Record<string, unknown> = {}
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) out[key] = entry

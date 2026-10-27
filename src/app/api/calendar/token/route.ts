@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import crypto from 'crypto'
@@ -11,8 +11,9 @@ export async function GET(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const calendarMessages = messages?.calendar || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return authResult
+  // 日历订阅令牌按 userId 存，纯属个人；普通成员和无团队账号都该拿得到。
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -54,8 +55,8 @@ export async function DELETE(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const calendarMessages = messages?.calendar || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return authResult
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,

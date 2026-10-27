@@ -100,7 +100,7 @@ export default function CommentAttachments({
             {isDownloading ? (
               <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin flex-shrink-0" />
             ) : (
-              <Download className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+              <Download className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity flex-shrink-0" />
             )}
           </button>
         )

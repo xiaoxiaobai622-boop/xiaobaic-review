@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiUser } from '@/lib/auth'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -11,8 +11,10 @@ export const dynamic = 'force-dynamic'
  * 每条带出我自己的已读时间（没读过就是 null），未读数由前端累计。
  */
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
+  // 平台通知按用户投递，不属于任何团队：还没建团队/入队的账号也得读得到，
+  // 否则侧栏每 30 秒轮询一次就是一次 403。
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const limited = await rateLimit(request, {
     windowMs: 60 * 1000,

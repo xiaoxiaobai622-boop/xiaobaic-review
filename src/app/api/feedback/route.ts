@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiUser } from '@/lib/auth'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { isFeedbackCategory } from '@/lib/feedback-categories'
 
@@ -11,8 +11,9 @@ const MAX_CONTENT = 2000
 
 /** GET /api/feedback — 我提交过的反馈（含运营回复）。 */
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
+  // 反馈是账号自己的记录，不属于团队：还没建团队的账号也要读得到。
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const limited = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -32,8 +33,9 @@ export async function GET(request: NextRequest) {
 
 /** POST /api/feedback — 提交一条反馈给平台运营。 */
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
+  // 提交反馈同样只认身份；侧栏按钮对所有账号可见。
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const limited = await rateLimit(request, {
     windowMs: 10 * 60 * 1000,

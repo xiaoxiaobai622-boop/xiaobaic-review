@@ -7,7 +7,6 @@ import { Trash2, Brush, Check, Users } from 'lucide-react'
 import DOMPurify from 'isomorphic-dompurify'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachments from './CommentAttachments'
-import { getCommentCategory } from '@/lib/comment-categories'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -100,7 +99,6 @@ function MessageBubble({
 
   const threadReplies = !isReply && replies && replies.length > 0 ? replies : EMPTY_REPLIES
   const hasReplies = threadReplies.length > 0
-  const category = getCommentCategory((comment as any).category)
   const sanitizedCommentContent = useMemo(() => sanitizeContent(comment.content), [comment.content])
   const sanitizedReplyContent = useMemo(() => (
     new Map(threadReplies.map((reply) => [reply.id, sanitizeContent(reply.content)]))
@@ -151,12 +149,6 @@ function MessageBubble({
               {teamLabel && comment.isInternal && (
                 <span className="shrink-0 text-sm font-semibold text-amber-500 dark:text-amber-400">
                   @{teamLabel}
-                </span>
-              )}
-              {!isReply && category && (
-                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${category.chipClass}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${category.dotClass}`} />
-                  {category.label}
                 </span>
               )}
             </div>

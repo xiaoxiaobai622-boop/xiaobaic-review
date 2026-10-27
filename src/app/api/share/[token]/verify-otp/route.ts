@@ -13,7 +13,7 @@ import { enqueueExternalNotification } from '@/lib/external-notifications/enqueu
 import { safeParseBody } from '@/lib/validation'
 import crypto from 'crypto'
 import { logError } from '@/lib/logging'
-import { resolveShareMetadata, isShareLinkActive, linkPermissions } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, linkPermissions, shareAuthFingerprint, sharePolicyFingerprint } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -230,6 +230,8 @@ export async function POST(
       permissions: linkPermissions(resolved.policy),
       guest: false,
       recipientId: recipient?.id,
+      policyFingerprint: sharePolicyFingerprint(resolved.policy, resolved.project) ?? undefined,
+      authFingerprint: shareAuthFingerprint(resolved.policy) ?? undefined,
       ttlSeconds: shareTokenTtl,
     })
 

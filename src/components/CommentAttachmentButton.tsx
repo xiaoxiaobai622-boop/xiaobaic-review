@@ -25,6 +25,8 @@ import { useS3MultipartUpload } from '@/hooks/useS3MultipartUpload'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 import { formatFileSize } from '@/lib/utils'
 import { ALL_ALLOWED_EXTENSIONS, ACCEPTED_FILE_INPUT } from '@/lib/asset-validation'
+import { shareApiPost, shareFetch, readShareTokenRaw, renewShareToken, shareSlugFromToken } from '@/lib/share-token-store'
+import { SHARE_RENEWABLE_CODES } from '@/lib/share-error-codes'
 
 interface PendingAttachment {
   assetId: string
@@ -38,6 +40,7 @@ interface PendingAttachment {
 interface CommentAttachmentButtonProps {
   videoId: string
   shareToken: string | null
+  shareSlug?: string | null
   onAttachmentAdded: (attachment: PendingAttachment) => void
   onUploadError?: (message: string | null) => void
   disabled?: boolean
@@ -75,12 +78,14 @@ function validateFile(file: File): string | null {
 export default function CommentAttachmentButton({
   videoId,
   shareToken,
+  shareSlug = null,
   onAttachmentAdded,
   onUploadError,
   disabled = false,
   maxFiles: maxFilesProp,
 }: CommentAttachmentButtonProps) {
   const t = useTranslations('comments')
+  const tShare = useTranslations('share')
   const tc = useTranslations('common')
   const MAX_FILES = maxFilesProp ?? DEFAULT_MAX_FILES
   const [open, setOpen] = useState(false)
@@ -99,6 +104,7 @@ export default function CommentAttachmentButton({
   const anyFailed = items.some((i) => i.status === 'error')
   const hasFiles = items.length > 0
   const atLimit = items.length >= MAX_FILES
+  const effectiveShareSlug = shareSlug || shareSlugFromToken(shareToken)
 
   const addFiles = (files: FileList | File[]) => {
     setItems((prev) => {
@@ -151,27 +157,33 @@ export default function CommentAttachmentButton({
     let category: string
 
     try {
-      const response = await fetch(`/api/videos/${videoId}/client-assets`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          fileName: item.file.name,
-          fileSize: item.file.size,
-          category: undefined,
-        }),
-      })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err.error || t('failedToCreateAsset'))
+      const body = {
+        fileName: item.file.name,
+        fileSize: item.file.size,
+        category: undefined,
       }
+      const data = shareToken && effectiveShareSlug
+        ? await shareApiPost<any>(effectiveShareSlug, `/api/videos/${videoId}/client-assets`, body)
+        : await fetch(`/api/videos/${videoId}/client-assets`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+          }).then(async (response) => {
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}))
+              throw Object.assign(new Error(err.error || t('failedToCreateAsset')), { code: err.code })
+            }
+            return response.json()
+          })
 
-      const data = await response.json()
       assetId = data.assetId
       fileName = data.fileName
       category = data.category
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('failedToCreateAsset')
+      const code = (error as { code?: string } | null)?.code
+      const message = code && SHARE_RENEWABLE_CODES.has(code)
+        ? tShare('sessionExpiredRefresh')
+        : error instanceof Error ? error.message : t('failedToCreateAsset')
       setItems((prev) =>
         prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: message } : i))
       )
@@ -186,7 +198,7 @@ export default function CommentAttachmentButton({
         s3AbortKeysRef.current.set(item.id, s3Key)
         startS3Upload(
           item.file,
-          { assetId, bearerToken: shareToken || undefined },
+          { assetId, shareToken: shareToken || undefined, shareSlug: effectiveShareSlug || undefined },
           {
             onProgress: (bytesUploaded, bytesTotal) => {
               const pct = Math.round((bytesUploaded / bytesTotal) * 100)
@@ -204,9 +216,13 @@ export default function CommentAttachmentButton({
               setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: err.message, assetId } : i)))
               s3AbortKeysRef.current.delete(item.id)
               clearUploadMetadata(item.file)
-              const deleteHeaders: Record<string, string> = {}
-              if (shareToken) deleteHeaders['Authorization'] = `Bearer ${shareToken}`
-              fetch(`/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE', headers: deleteHeaders }).catch(() => {})
+              if (shareToken && effectiveShareSlug) {
+                shareFetch(effectiveShareSlug, `/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE' }).catch(() => {})
+              } else {
+                const deleteHeaders: Record<string, string> = {}
+                if (shareToken) deleteHeaders['Authorization'] = `Bearer ${shareToken}`
+                fetch(`/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE', headers: deleteHeaders }).catch(() => {})
+              }
               resolve(false)
             },
           },
@@ -230,7 +246,12 @@ export default function CommentAttachmentButton({
         chunkSize: getTusChunkSizeBytes(item.file.size),
         storeFingerprintForResuming: true,
         removeFingerprintOnSuccess: true,
-        onAfterResponse: createTusAfterResponseHandler(uploadRef),
+        onAfterResponse: createTusAfterResponseHandler(
+          uploadRef,
+          effectiveShareSlug
+            ? async () => { await renewShareToken(effectiveShareSlug, readShareTokenRaw(effectiveShareSlug) || shareToken) }
+            : undefined,
+        ),
         onShouldRetry: createTusShouldRetryHandler(uploadRef),
 
         onProgress: (bytesUploaded, bytesTotal) => {
@@ -276,14 +297,18 @@ export default function CommentAttachmentButton({
           clearTUSFingerprint(item.file)
 
           // Try to clean up the asset record on failure
-          const deleteHeaders: Record<string, string> = {}
-          if (shareToken) {
-            deleteHeaders['Authorization'] = `Bearer ${shareToken}`
+          if (shareToken && effectiveShareSlug) {
+            shareFetch(effectiveShareSlug, `/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE' }).catch(() => {})
+          } else {
+            const deleteHeaders: Record<string, string> = {}
+            if (shareToken) {
+              deleteHeaders['Authorization'] = `Bearer ${shareToken}`
+            }
+            fetch(`/api/videos/${videoId}/client-assets?assetId=${assetId}`, {
+              method: 'DELETE',
+              headers: deleteHeaders,
+            }).catch(() => {})
           }
-          fetch(`/api/videos/${videoId}/client-assets?assetId=${assetId}`, {
-            method: 'DELETE',
-            headers: deleteHeaders,
-          }).catch(() => {})
 
           resolve(false)
         },
@@ -292,9 +317,11 @@ export default function CommentAttachmentButton({
           const xhr = req.getUnderlyingObject()
           xhr.withCredentials = true
 
-          // Use share token for auth
-          if (shareToken) {
-            xhr.setRequestHeader('Authorization', `Bearer ${shareToken}`)
+          // Use the newest share bearer: the upload can outlive the one this
+          // dialog opened with, and a renewal may have replaced it.
+          const currentToken = (effectiveShareSlug && readShareTokenRaw(effectiveShareSlug)) || shareToken
+          if (currentToken) {
+            xhr.setRequestHeader('Authorization', `Bearer ${currentToken}`)
           }
         },
       })

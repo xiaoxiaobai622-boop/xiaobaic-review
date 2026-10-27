@@ -6,6 +6,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Comment, Video, Prisma } from '@prisma/client'
 import { useTranslations } from 'next-intl'
 import { apiPost, apiDelete } from '@/lib/api-client'
+import { shareApiPost, shareApiDelete, shareSlugFromToken } from '@/lib/share-token-store'
+import { SHARE_RENEWABLE_CODES } from '@/lib/share-error-codes'
 import { secondsToTimecode, timecodeToSeconds } from '@/lib/timecode'
 import { AnnotationData } from '@/types/annotations'
 import type { DrawingTool } from '@/types/annotations'
@@ -30,6 +32,7 @@ interface UseCommentManagementProps {
   adminUser?: any
   restrictToLatestVersion: boolean
   shareToken?: string | null
+  shareSlug?: string | null
   useAdminAuth?: boolean
   authenticatedName?: string | null
 }
@@ -41,14 +44,15 @@ export function useCommentManagement({
   adminUser = null,
   restrictToLatestVersion,
   shareToken = null,
+  shareSlug = null,
   useAdminAuth = false,
   authenticatedName = null,
 }: UseCommentManagementProps) {
   const tComments = useTranslations('comments')
+  const tShare = useTranslations('share')
 
   const [optimisticComments, setOptimisticComments] = useState<CommentWithReplies[]>([])
   const [newComment, setNewComment] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<'PICTURE' | 'AUDIO' | 'SUBTITLE' | 'EDITING' | 'OTHER' | null>(null)
   // 批注可见范围（对标 frame.io 的 公共/内部）：只影响共享端能否看到，isInternal 的来源语义不动。
   const [commentVisibility, setCommentVisibility] = useState<'PUBLIC' | 'INTERNAL'>('PUBLIC')
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null) // Internal: still use seconds for video player integration
@@ -69,6 +73,13 @@ export function useCommentManagement({
   const rangeWasAdjustedRef = useRef(false)
 
   const authorName = adminUser?.name || adminUser?.phone || adminUser?.email || authenticatedName || ''
+  const effectiveShareSlug = shareSlug || shareSlugFromToken(shareToken)
+
+  const shareErrorMessage = (error: unknown, fallback: string): string => {
+    const code = (error as { code?: string } | null)?.code
+    if (code && SHARE_RENEWABLE_CODES.has(code)) return tShare('sessionExpiredRefresh')
+    return error instanceof Error ? error.message : fallback
+  }
 
   // Remove optimistic comments that have been confirmed by the server
   const activeOptimisticComments = optimisticComments.filter(oc => {
@@ -113,7 +124,9 @@ export function useCommentManagement({
   const cleanupAttachmentAsset = useCallback(async (attachment: PendingAttachment) => {
     const url = `/api/videos/${attachment.videoId}/client-assets?assetId=${attachment.assetId}`
     try {
-      if (shareToken) {
+      if (shareToken && effectiveShareSlug) {
+        await shareApiDelete(effectiveShareSlug, url)
+      } else if (shareToken) {
         await fetch(url, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${shareToken}` },
@@ -126,7 +139,7 @@ export function useCommentManagement({
     } catch {
       // Best-effort cleanup only. Ignore errors for now.
     }
-  }, [shareToken, useAdminAuth])
+  }, [effectiveShareSlug, shareToken, useAdminAuth])
 
   // Auto-select first video when videos list changes (admin panel without player)
   useEffect(() => {
@@ -357,10 +370,6 @@ export function useCommentManagement({
     }
   }
 
-  const handleCategoryChange = (category: 'PICTURE' | 'AUDIO' | 'SUBTITLE' | 'EDITING' | 'OTHER' | null) => {
-    setSelectedCategory(category)
-  }
-
   const handleSubmitComment = async () => {
     let annotationForComment = pendingAnnotation
     let annotationVideoId: string | null = null
@@ -465,7 +474,6 @@ export function useCommentManagement({
       content: commentContent,
       authorName: commentAuthorName,
       authorEmail: isInternalComment ? adminUser?.email || null : null,
-      category: selectedCategory,
       visibility: commentVisibility,
       isInternal: isInternalComment,
       createdAt: new Date(),
@@ -480,7 +488,6 @@ export function useCommentManagement({
 
     const commentParentId = replyingToCommentId
     setNewComment('')
-    setSelectedCategory(null)
     setSelectedTimestamp(null)
     // Keep selectedVideoId so user can post multiple comments
     setHasAutoFilledTimestamp(false)
@@ -502,7 +509,6 @@ export function useCommentManagement({
         videoId: validatedVideoId,
         timecode,
         content: commentContent,
-        category: selectedCategory,
         visibility: commentVisibility,
       }
 
@@ -523,16 +529,16 @@ export function useCommentManagement({
         requestBody.assetIds = commentAssetIds
       }
 
-      const submitPromise = shareToken || useAdminAuth
-        ? apiPost('/api/comments', requestBody, shareToken ? {
-            headers: { 'X-Share-Token': `Bearer ${shareToken}` },
-          } : undefined)
-        : Promise.reject(new Error('Authentication required to submit comment'))
-
-      // Keep the submit lifecycle inside this async function. Previously the
-      // promise was detached, which cleared `loading` immediately and allowed
-      // duplicate POSTs while the first request was still in flight.
-      const updatedComments = await submitPromise
+      let updatedComments: CommentWithReplies[]
+      if (shareToken && effectiveShareSlug) {
+        updatedComments = await shareApiPost<CommentWithReplies[]>(effectiveShareSlug, '/api/comments', requestBody)
+      } else if (shareToken || useAdminAuth) {
+        updatedComments = await apiPost<CommentWithReplies[]>('/api/comments', requestBody, shareToken ? {
+          headers: { 'X-Share-Token': `Bearer ${shareToken}` },
+        } : undefined)
+      } else {
+        throw new Error('Authentication required to submit comment')
+      }
       setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
 
       window.dispatchEvent(new CustomEvent('commentPosted', {
@@ -545,7 +551,7 @@ export function useCommentManagement({
       setSelectedTimestamp(commentTimestamp)
       setSelectedVideoId(validatedVideoId)
       setPendingAnnotation(annotationForComment)
-      setAttachmentError(error instanceof Error ? error.message : 'Failed to submit comment')
+      setAttachmentError(shareErrorMessage(error, 'Failed to submit comment'))
       setPendingAttachments(prev => {
         const existingIds = new Set(prev.map(a => a.assetId))
         const toRestore = attachmentsForComment.filter(a => !existingIds.has(a.assetId))
@@ -582,7 +588,9 @@ export function useCommentManagement({
     }
 
     try {
-      if (shareToken) {
+      if (shareToken && effectiveShareSlug) {
+        await shareApiDelete(effectiveShareSlug, `/api/comments/${commentId}`)
+      } else if (shareToken) {
         await apiDelete(`/api/comments/${commentId}`, {
           headers: { 'X-Share-Token': `Bearer ${shareToken}` },
         })
@@ -596,7 +604,7 @@ export function useCommentManagement({
         detail: { commentId, projectId },
       }))
     } catch (error) {
-      appAlert(`批注删除失败：${error instanceof Error ? error.message : '未知错误'}`)
+      appAlert(`批注删除失败：${shareErrorMessage(error, '未知错误')}`)
     }
   }
 
@@ -678,7 +686,6 @@ export function useCommentManagement({
   return {
     comments,
     newComment,
-    selectedCategory,
     commentVisibility,
     setCommentVisibility,
     selectedTimestamp,
@@ -693,7 +700,6 @@ export function useCommentManagement({
     attachmentNotice,
     pendingAnnotation: !!pendingAnnotation,
     handleCommentChange,
-    handleCategoryChange,
     handleSubmitComment,
     handleReply,
     handleCancelReply,

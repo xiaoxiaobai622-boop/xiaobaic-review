@@ -24,6 +24,8 @@ import { getRequestedTeamId } from './team-access'
 import { getAdminSessionTimeoutSeconds } from './settings'
 import { WECHAT_SESSION_COOKIE, verifyWechatSession } from './wechat-auth'
 import { IMPOSSIBLE_PHONE_HASH, hashPhone } from './phone-field'
+import { resolveShareMetadata, sharePolicyFingerprint } from './share-links'
+import { SHARE_ERROR_CODES, type ShareErrorCode } from './share-error-codes'
 
 export interface AuthUser {
   id: string
@@ -74,7 +76,7 @@ interface PlatformRefreshPayload extends jwt.JwtPayload {
   rotationId: string
 }
 
-interface SharePayload extends jwt.JwtPayload {
+export interface SharePayload extends jwt.JwtPayload {
   type: 'share'
   shareId: string
   projectId: string
@@ -84,6 +86,23 @@ interface SharePayload extends jwt.JwtPayload {
   recipientId?: string
   authMode?: string
   adminOverride?: boolean
+  policyFingerprint?: string
+  authFingerprint?: string
+}
+
+export interface ShareTokenFailure {
+  code: ShareErrorCode
+  message: string
+}
+
+export type ShareTokenResult =
+  | { payload: SharePayload; failure: null }
+  | { payload: null; failure: ShareTokenFailure }
+
+export interface ShareAuthState {
+  presented: boolean
+  payload: SharePayload | null
+  failure: ShareTokenFailure | null
 }
 
 function safeParseInt(value: string | undefined, fallback: number): number {
@@ -167,6 +186,8 @@ export function signShareToken(params: {
   recipientId?: string
   authMode?: string
   adminOverride?: boolean
+  policyFingerprint?: string
+  authFingerprint?: string
   ttlSeconds?: number
 }): string {
   if (!SHARE_TOKEN_SECRET) throw new Error('SHARE_TOKEN_SECRET missing')
@@ -181,6 +202,8 @@ export function signShareToken(params: {
     recipientId: params.recipientId,
     authMode: params.authMode,
     adminOverride: params.adminOverride,
+    policyFingerprint: params.policyFingerprint,
+    authFingerprint: params.authFingerprint,
   }
   return jwt.sign(payload, SHARE_TOKEN_SECRET, {
     expiresIn: params.ttlSeconds || SHARE_TOKEN_DURATION,
@@ -209,28 +232,125 @@ export async function verifyAdminAccessToken(token: string): Promise<AdminAccess
   }
 }
 
-export async function verifyShareToken(token: string): Promise<SharePayload | null> {
+function shareFailure(code: ShareErrorCode, message: string): ShareTokenResult {
+  return { payload: null, failure: { code, message } }
+}
+
+/**
+ * The detailed form every share endpoint needs: an expired bearer is a 401
+ * token problem, never a 403 permission problem, and a policy edit retires
+ * bearers minted before it.
+ */
+export async function verifyShareTokenResult(token: string): Promise<ShareTokenResult> {
+  let decoded: SharePayload
   try {
-    if (!SHARE_TOKEN_SECRET) return null
-    const decoded = jwt.verify(token, SHARE_TOKEN_SECRET, { algorithms: ['HS256'] }) as SharePayload
-    if (decoded.type !== 'share') return null
-    if (await isTokenRevoked(token)) return null
-
-    // Check if session is revoked (auth mode changes, etc.)
-    if (decoded.sessionId && await isShareSessionRevoked(decoded.sessionId)) {
-      return null
+    if (!SHARE_TOKEN_SECRET) return shareFailure(SHARE_ERROR_CODES.TOKEN_INVALID, 'Share session is invalid')
+    decoded = jwt.verify(token, SHARE_TOKEN_SECRET, { algorithms: ['HS256'] }) as SharePayload
+  } catch (error) {
+    if ((error as { name?: string })?.name === 'TokenExpiredError') {
+      return shareFailure(SHARE_ERROR_CODES.TOKEN_EXPIRED, 'Share session has expired')
     }
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_INVALID, 'Share session is invalid')
+  }
 
-    // A revoked or deleted link drops its viewer bearer even while the JWT
-    // itself is still inside its TTL.
-    if (decoded.shareId && await isShareLinkRevoked(decoded.shareId)) {
-      return null
+  if (decoded.type !== 'share') {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_INVALID, 'Share session is invalid')
+  }
+  if (await isTokenRevoked(token)) {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_REVOKED, 'Share session has been revoked')
+  }
+
+  // Check if session is revoked (auth mode changes, etc.)
+  if (decoded.sessionId && await isShareSessionRevoked(decoded.sessionId)) {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_REVOKED, 'Share session has been revoked')
+  }
+
+  // A revoked or deleted link drops its viewer bearer even while the JWT
+  // itself is still inside its TTL.
+  if (decoded.shareId && await isShareLinkRevoked(decoded.shareId)) {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_REVOKED, 'Share link has been revoked')
+  }
+
+  if (decoded.policyFingerprint && decoded.shareId) {
+    const resolved = await resolveShareMetadata(decoded.shareId)
+    if (!resolved.policy) {
+      return shareFailure(SHARE_ERROR_CODES.LINK_MISSING, 'Share link no longer exists')
     }
+    if (sharePolicyFingerprint(resolved.policy, resolved.project) !== decoded.policyFingerprint) {
+      return shareFailure(SHARE_ERROR_CODES.POLICY_CHANGED, 'Share permissions have changed')
+    }
+  }
 
-    return decoded
+  return { payload: decoded, failure: null }
+}
+
+export async function verifyShareToken(token: string): Promise<SharePayload | null> {
+  return (await verifyShareTokenResult(token)).payload
+}
+
+/**
+ * Renewal deliberately ignores the bearer's clock and its policy fingerprint:
+ * the whole point is to trade a dead bearer for one minted under the current
+ * policy. Revocation and auth changes are still terminal.
+ */
+export async function verifyShareTokenForRenewal(token: string): Promise<ShareTokenResult> {
+  let decoded: SharePayload
+  try {
+    if (!SHARE_TOKEN_SECRET) return shareFailure(SHARE_ERROR_CODES.TOKEN_INVALID, 'Share session is invalid')
+    decoded = jwt.verify(token, SHARE_TOKEN_SECRET, { algorithms: ['HS256'], ignoreExpiration: true }) as SharePayload
+  } catch {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_INVALID, 'Share session is invalid')
+  }
+
+  if (decoded.type !== 'share') {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_INVALID, 'Share session is invalid')
+  }
+  if (await isTokenRevoked(token)) {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_REVOKED, 'Share session has been revoked')
+  }
+  if (decoded.sessionId && await isShareSessionRevoked(decoded.sessionId)) {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_REVOKED, 'Share session has been revoked')
+  }
+  if (decoded.shareId && await isShareLinkRevoked(decoded.shareId)) {
+    return shareFailure(SHARE_ERROR_CODES.TOKEN_REVOKED, 'Share link has been revoked')
+  }
+
+  return { payload: decoded, failure: null }
+}
+
+/** Decode only to route a renewal or to label a log line; never an auth decision. */
+export function peekShareToken(token: string): SharePayload | null {
+  try {
+    const decoded = jwt.decode(token) as SharePayload | null
+    return decoded?.type === 'share' ? decoded : null
   } catch {
     return null
   }
+}
+
+export function getPresentedShareTokenId(request: NextRequest): string | null {
+  const raw = parseBearerToken(request, 'x-share-token') || parseBearerToken(request)
+  return raw ? peekShareToken(raw)?.shareId ?? null : null
+}
+
+/**
+ * A share bearer may travel in its own header (dual-auth routes) or as the
+ * Authorization bearer (visitor-only routes). An account token in Authorization
+ * is not a broken share token and must not be reported as one.
+ */
+export async function getShareAuth(request: NextRequest): Promise<ShareAuthState> {
+  const explicit = parseBearerToken(request, 'x-share-token')
+  let token = explicit
+
+  if (!token) {
+    const bearer = parseBearerToken(request)
+    if (bearer && peekShareToken(bearer)) token = bearer
+  }
+
+  if (!token) return { presented: false, payload: null, failure: null }
+
+  const result = await verifyShareTokenResult(token)
+  return { presented: true, payload: result.payload, failure: result.failure }
 }
 
 export function parseBearerToken(request: NextRequest, headerName: string = 'authorization'): string | null {
@@ -692,9 +812,7 @@ export async function requireApiUser(request: NextRequest): Promise<AuthUser | R
 export async function getShareContext(request: NextRequest): Promise<SharePayload | null> {
   // Requests that need both account authentication and share access send the
   // account token in Authorization and the project token separately.
-  const bearer = parseBearerToken(request, 'x-share-token') || parseBearerToken(request)
-  if (!bearer) return null
-  return verifyShareToken(bearer)
+  return (await getShareAuth(request)).payload
 }
 
 /**
@@ -710,12 +828,20 @@ export async function getAuthContext(request: NextRequest): Promise<{
   user: AuthUser | null
   isAdmin: boolean
   shareContext: SharePayload | null
+  shareFailure: ShareTokenFailure | null
+  shareTokenPresented: boolean
 }> {
   const user = await getCurrentUserFromRequest(request)
-  const shareContext = await getShareContext(request)
+  const shareAuth = await getShareAuth(request)
   const isAdmin = user?.role === 'ADMIN'
 
-  return { user, isAdmin, shareContext }
+  return {
+    user,
+    isAdmin,
+    shareContext: shareAuth.payload,
+    shareFailure: shareAuth.failure,
+    shareTokenPresented: shareAuth.presented,
+  }
 }
 
 function remainingTtl(token: string, secret: string | undefined | null): number {

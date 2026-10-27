@@ -1,5 +1,6 @@
 'use client'
 
+import OverlayMenu from '@/components/OverlayMenu'
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
 import { useState, useEffect, useRef, type ElementType, type ReactNode } from 'react'
@@ -68,6 +69,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
 
   // 身份块整块是一枚弹出式按钮（对标那排也是整块可点），点开的是这个项目自己的菜单。
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [projectMenuRect, setProjectMenuRect] = useState<{ left: number; top: number; width: number } | null>(null)
   const menuRootRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -256,39 +258,6 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
       })
   }
 
-  // 菜单开着才挂 document 监听：点外面关掉（照 TeamSwitcher 那套手搓下拉的规矩）、Escape 关并把焦点
-  // 还给身份块、方向键在项间走。这组件在项目页挂两枚（侧栏 bare ＋ 窄屏卡片），监听必须随开随摘。
-  useEffect(() => {
-    if (!projectMenuOpen) return
-    const root = menuRootRef.current
-    const handleMouseDown = (event: MouseEvent) => {
-      if (root && !root.contains(event.target as Node)) setProjectMenuOpen(false)
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setProjectMenuOpen(false)
-        triggerRef.current?.focus()
-        return
-      }
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-      event.preventDefault()
-      const items = menuRef.current
-        ? Array.from(menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'))
-        : []
-      if (items.length === 0) return
-      const at = items.indexOf(document.activeElement as HTMLElement)
-      const down = event.key === 'ArrowDown'
-      const next = at === -1 ? (down ? 0 : items.length - 1) : (at + (down ? 1 : -1) + items.length) % items.length
-      items[next].focus()
-    }
-    document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [projectMenuOpen])
-
   // 菜单这一排＝设置那三节 + 成员窗：关掉菜单，把要开的那层交给页面。
   // 焦点必须先交回身份块再开浮层：浮层挂载时抓的是 document.activeElement，而这一枚 menuitem
   // 在同一次提交里就卸掉了，不接住的话关掉浮层后焦点掉回 <body>，键盘和读屏找不回刚才那排。
@@ -331,7 +300,16 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               data-tutorial="project-info-trigger"
               aria-haspopup="menu"
               aria-expanded={projectMenuOpen}
-              onClick={() => setProjectMenuOpen((open) => !open)}
+              onClick={() => {
+                if (!projectMenuOpen) {
+                  const root = menuRootRef.current
+                  const rect = root?.getBoundingClientRect()
+                  if (rect) {
+                    setProjectMenuRect({ left: bare ? rect.left - 20 : rect.left, top: rect.bottom + 1, width: bare ? rect.width + 40 : rect.width })
+                  }
+                }
+                setProjectMenuOpen((open) => !open)
+              }}
               className="flex w-full min-w-0 items-center gap-[16px] rounded-[8px] text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span
@@ -350,13 +328,29 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               <ChevronsUpDown className="h-[16px] w-[16px] shrink-0 text-foreground" aria-hidden="true" />
             </button>
 
-            {projectMenuOpen && (
-              <div
-                ref={menuRef}
-                role="menu"
-                aria-label={t('projectMenuLabel')}
-                className={`absolute top-[calc(100%+1px)] z-50 rounded-lg bg-popover p-1 shadow-elevation-lg ${bare ? '-left-5 -right-5' : 'left-0 right-0'}`}
+            {projectMenuRect && (
+              <OverlayMenu
+                open={projectMenuOpen}
+                onOpenChange={(open) => { if (!open) setProjectMenuOpen(false) }}
+                label={t('projectMenuLabel')}
+                left={projectMenuRect.left}
+                top={projectMenuRect.top}
+                width={projectMenuRect.width}
+                triggerRef={triggerRef}
+                menuRef={menuRef}
+                className="border-0 shadow-elevation-lg"
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+                  event.preventDefault()
+                  const items = menuRef.current ? Array.from(menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')) : []
+                  if (items.length === 0) return
+                  const at = items.indexOf(document.activeElement as HTMLElement)
+                  const down = event.key === 'ArrowDown'
+                  const next = at === -1 ? (down ? 0 : items.length - 1) : (at + (down ? 1 : -1) + items.length) % items.length
+                  items[next].focus()
+                }}
               >
+                {isAdmin && (<>
                 <MenuItem
                   icon={<FileText className="h-4 w-4 shrink-0" />}
                   label={t('projectDetails')}
@@ -372,12 +366,13 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                   label={t('clientSharePage')}
                   onSelect={() => pickSection('client-share')}
                 />
+                </>)}
                 <MenuItem
                   icon={<UserPlus className="h-4 w-4 shrink-0" />}
                   label={t('projectMembers')}
                   onSelect={pickMembers}
                 />
-              </div>
+              </OverlayMenu>
             )}
           </div>
         </ShellHeader>
@@ -428,7 +423,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
             </button>
 
             {/* 上传接口在项目没开「允许客户提交素材」时一律 403，所以入口照分享记录面板的规矩只在开着时给。 */}
-            {project.allowReverseShare && (
+            {isAdmin && project.allowReverseShare && (
               <button
                 type="button"
                 data-tutorial="copy-collect-link"
@@ -443,7 +438,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               </button>
             )}
 
-            {shares && (
+            {isAdmin && shares && (
               <button
                 type="button"
                 onClick={shares.onOpen}
@@ -458,10 +453,12 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               </button>
             )}
 
+            {isAdmin && (
             <button type="button" onClick={() => router.push(`/studio/projects/${project.id}/analytics`)} className={ACTION_ROW}>
               <BarChart3 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
               {t('viewAnalytics')}
             </button>
+            )}
 
             {/* Push Project Button - only for ADMIN and SUPER_ADMIN */}
             {isAdmin && (
@@ -474,7 +471,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
             )}
 
             {/* Approve/Unapprove Toggle Button - hidden when archived */}
-            {project.status !== 'ARCHIVED' && (
+            {isAdmin && project.status !== 'ARCHIVED' && (
               <button
                 type="button"
                 onClick={handleToggleApproval}
@@ -495,6 +492,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               </button>
             )}
 
+            {isAdmin && (<>
             <button
               type="button"
               onClick={handleToggleArchive}
@@ -520,6 +518,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               <Trash2 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
               {isDeleting ? tc('deleting') : t('deleteProject')}
             </button>
+            </>)}
           </div>
         </ShellContent>
       </Shell>

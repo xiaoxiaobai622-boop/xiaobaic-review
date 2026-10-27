@@ -8,6 +8,8 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { checkTeamStorageQuota } from '@/lib/platform-access'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 
 export const runtime = 'nodejs'
 
@@ -49,8 +51,9 @@ export async function POST(
 
     // Check if client asset upload is enabled for this project
     if (!project.allowClientAssetUpload) {
+      logShareDenial({ shareToken: null, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED })
       return NextResponse.json(
-        { error: videosMessages.fileAttachmentsNotEnabledForProject || 'File attachments are not enabled for this project' },
+        { error: videosMessages.fileAttachmentsNotEnabledForProject || 'File attachments are not enabled for this project', code: SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED },
         { status: 403 }
       )
     }
@@ -68,12 +71,15 @@ export async function POST(
     )
 
     if (!accessCheck.authorized) {
-      return accessCheck.errorResponse || NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return accessCheck.errorResponse || NextResponse.json(
+        { error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.AUTH_REQUIRED },
+        { status: 401 }
+      )
     }
 
     const uploaderSessionId = accessCheck.shareTokenSessionId
     if (!uploaderSessionId) {
-      return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 })
     }
 
     // Parse JSON body
@@ -211,12 +217,15 @@ export async function GET(
     )
 
     if (!accessCheck.authorized) {
-      return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return accessCheck.errorResponse || NextResponse.json(
+        { error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.AUTH_REQUIRED },
+        { status: 401 }
+      )
     }
 
     const uploaderSessionId = accessCheck.shareTokenSessionId
     if (!uploaderSessionId) {
-      return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 })
     }
 
     const assets = await prisma.videoAsset.findMany({
@@ -300,12 +309,15 @@ export async function DELETE(
     )
 
     if (!accessCheck.authorized) {
-      return accessCheck.errorResponse || NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return accessCheck.errorResponse || NextResponse.json(
+        { error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.AUTH_REQUIRED },
+        { status: 401 }
+      )
     }
 
     const uploaderSessionId = accessCheck.shareTokenSessionId
     if (!uploaderSessionId) {
-      return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 })
     }
 
     const asset = await prisma.videoAsset.findFirst({

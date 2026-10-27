@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo, useRef, type ElementType } from 'react'
-import { createPortal } from 'react-dom'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Link from 'next/link'
 import AdminVideoManager from '@/components/AdminVideoManager'
+import OverlayMenu from '@/components/OverlayMenu'
 import ProjectActions from '@/components/ProjectActions'
 import ProjectMembersButton from '@/components/ProjectMembersButton'
 import PanelToggleButton from '@/components/PanelToggleButton'
@@ -399,38 +399,16 @@ export default function ProjectPage() {
   const [rollbackError, setRollbackError] = useState('')
   const [deletingVersionId, setDeletingVersionId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
+  const workspaceRef = useRef<HTMLElement | null>(null)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
 
-  useEffect(() => {
-    if (!contextMenu) return
-    const frame = requestAnimationFrame(() => {
-      contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"], button, a')?.focus()
-    })
-    // Esc 只挂在菜单元素上＝焦点一旦离开菜单就退不出去，键盘出口统一走文档级监听。
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setContextMenu(null)
-      document.getElementById('review-workspace')?.focus()
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [contextMenu])
-
   const closeContextMenu = (restoreFocus = true) => {
-    setContextMenu(null)
+    setContextMenuOpen(false)
     if (restoreFocus) document.getElementById('review-workspace')?.focus()
   }
 
   const handleContextMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      closeContextMenu()
-      return
-    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
 
     event.preventDefault()
@@ -455,33 +433,18 @@ export default function ProjectPage() {
   const [projectFolders, setProjectFolders] = useState<Array<{ id: string; name: string; createdAt?: string; _count?: { videos: number } }>>([])
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ id: string; left: number; top: number } | null>(null)
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false)
   const [folderShareMenuId, setFolderShareMenuId] = useState<string | null>(null)
   const folderMenuRef = useRef<HTMLDivElement | null>(null)
   const folderMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   const closeFolderMenu = (restoreFocus = true) => {
-    setFolderMenu(null)
+    setFolderMenuOpen(false)
     setFolderShareMenuId(null)
     if (restoreFocus) requestAnimationFrame(() => folderMenuTriggerRef.current?.focus())
+    // Keep the measured position until the exit animation has finished.
+    window.setTimeout(() => setFolderMenu(null), 160)
   }
-
-  useEffect(() => {
-    if (!folderMenu) return
-    const frame = requestAnimationFrame(() => {
-      folderMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"], button')?.focus()
-    })
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setFolderMenu(null)
-      setFolderShareMenuId(null)
-      requestAnimationFrame(() => folderMenuTriggerRef.current?.focus())
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [folderMenu])
 
   const focusFolderShareMenu = (afterRender = false) => {
     const run = () => {
@@ -495,12 +458,6 @@ export default function ProjectPage() {
   }
 
   const handleFolderMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      closeFolderMenu()
-      return
-    }
     if (event.key === 'ArrowRight') {
       const active = document.activeElement as HTMLElement | null
       if (active?.getAttribute('data-submenu-trigger') === 'folder-share') {
@@ -1108,6 +1065,9 @@ export default function ProjectPage() {
     || user.teamRole === 'ADMIN'
     || project.createdById === user.id
   ))
+  // 与 requireApiAdmin 同一把尺子：上传/收录/回收站/分享链接/统计这些接口只收团队 OWNER/ADMIN，
+  // 成员看得见按钮只会点出 403。
+  const canAdminister = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'
   const openRollbackDialog = (video: any) => {
     setRollbackError('')
     setRollbackTarget(video)
@@ -1264,6 +1224,8 @@ export default function ProjectPage() {
     event.preventDefault()
     event.stopPropagation()
     setFolderDropTargetId(undefined)
+    // 拖入文件会打开上传窗、拖入视频会 PATCH /api/videos，两条都只对 OWNER/ADMIN 开放。
+    if (!canAdminister) return
     const droppedFiles = Array.from(event.dataTransfer.files || []).filter(isVideoCandidate)
     if (droppedFiles.length > 0) {
       if (project.status === 'APPROVED') return
@@ -1551,7 +1513,6 @@ export default function ProjectPage() {
           adminUser={user}
           showShortcutsButton={false}
           showInfoButton={false}
-          showCategoryPicker={false}
           sendInsideComposer={true}
         />
       </div>
@@ -1587,6 +1548,7 @@ export default function ProjectPage() {
               memberCount={typeof project.memberCount === 'number' ? project.memberCount : 0}
               onOpen={openMembers}
             />
+            {canAdminister && (
             <Button
               size="default"
               className={projectToolbarButtonClassName}
@@ -1599,6 +1561,7 @@ export default function ProjectPage() {
               <Upload className="mr-2 h-4 w-4" />
               {t('uploadVideos')}
             </Button>
+            )}
             {!project.allowReverseShare && (
               <Link href={`/studio/projects/${id}/settings`}>
                 <Button variant="outline" size="default" className={projectToolbarButtonClassName}>
@@ -1633,8 +1596,10 @@ export default function ProjectPage() {
               {([
                 { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
                 { id: 'photos' as const, label: t('photoAlbums'), count: photoCounts?.albums || 0, icon: Images },
-                { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
-                { id: 'trash' as const, label: t('recycleBin'), count: recycleBinCount || 0, icon: Trash2 },
+                ...(canAdminister ? [
+                  { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
+                  { id: 'trash' as const, label: t('recycleBin'), count: recycleBinCount || 0, icon: Trash2 },
+                ] : []),
               ]).map((item) => {
                 const Icon = item.icon
                 const active = activeWorkspace === item.id
@@ -1675,27 +1640,28 @@ export default function ProjectPage() {
             )}
           </aside>
 
-          <main id="review-workspace" tabIndex={-1} className="scrollbar-hidden relative min-w-0 overscroll-contain bg-popover p-3 focus:outline-none sm:p-4 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px]" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) }}>
-            {contextMenu && (
-              <div
-                ref={contextMenuRef}
-                role="menu"
-                aria-label={t('projectActions')}
-                className="fixed z-[100] w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl"
-                style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 260) }}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={handleContextMenuKeyDown}
-              >
-                <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
-                <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); changeWorkspace('videos'); openFolderUpload() }}><FolderUp className="h-4 w-4" />上传文件夹</button>
+          <main ref={workspaceRef as React.RefObject<HTMLElement>} id="review-workspace" tabIndex={-1} className="scrollbar-hidden relative min-w-0 overscroll-contain bg-popover p-3 focus:outline-none sm:p-4 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px]" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }); setContextMenuOpen(true) }}>
+            <OverlayMenu
+              open={contextMenuOpen}
+              onOpenChange={(open) => { if (!open) setContextMenuOpen(false) }}
+              label={t('projectActions')}
+              left={contextMenu ? Math.min(contextMenu.x, window.innerWidth - 220) : 0}
+              top={contextMenu ? Math.min(contextMenu.y, window.innerHeight - 260) : 0}
+              menuRef={contextMenuRef}
+              onKeyDown={handleContextMenuKeyDown}
+              returnFocusRef={workspaceRef}
+            >
+                {canAdminister && (<>
+                <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
+                <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); changeWorkspace('videos'); openFolderUpload() }}><FolderUp className="h-4 w-4" />上传文件夹</button>
+                </>)}
                 <div className={MENU_SEPARATOR_CLASS_NAME} />
-                <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>
+                {canAdminister && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>}
                 <button type="button" role="menuitem" disabled={workspaceRefreshing} className={cn(CONTEXT_MENU_ITEM_CLASS_NAME, 'disabled:opacity-60')} onClick={() => { void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
                 <div className={MENU_SEPARATOR_CLASS_NAME} />
-                <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenu(null); openSettings('project-details') }}><Settings className="h-4 w-4" />项目设置</button>
-                <Link href="/studio/team" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME}><Users className="h-4 w-4" />邀请成员</Link>
-              </div>
-            )}
+                {canAdminister && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); openSettings('project-details') }}><Settings className="h-4 w-4" />项目设置</button>}
+                <Link href="/studio/team" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => setContextMenuOpen(false)}><Users className="h-4 w-4" />邀请成员</Link>
+            </OverlayMenu>
             <section className={activeWorkspace === 'videos' ? undefined : 'hidden'}>
               {/* 页内播放器与批注栏不在这块里：它们是和素材网格并排的独立竖栏，见 </main> 之后。 */}
               <div>
@@ -1834,7 +1800,8 @@ export default function ProjectPage() {
                             ? rect.bottom + 6
                             : Math.max(8, rect.top - menuHeight - 6)
                           setFolderShareMenuId(null)
-                          setFolderMenu((current) => current?.id === folder.id ? null : { id: folder.id, left, top })
+                          setFolderMenu((current) => current?.id === folder.id ? current : { id: folder.id, left, top })
+                          setFolderMenuOpen((current) => !(current && folderMenu?.id === folder.id))
                         }}>
                           <MoreVertical className="h-4 w-4" />
                         </button>
@@ -1846,63 +1813,64 @@ export default function ProjectPage() {
                   })}
                 </div>
               )}
-              {folderMenu && typeof document !== 'undefined' && (() => {
+              {folderMenu && (() => {
                 const folder = projectFolders.find((item) => item.id === folderMenu.id)
                 if (!folder) return null
                 const menuItemClass = 'flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                return createPortal(
-                  <>
-                    {/* 点外关闭的捕获面：铺满整屏，所以不进 Tab 顺序、也不报给读屏
-                        （原先那枚 <button aria-label="关闭"> 是个 1440×900 的隐形焦点目标）。
-                        键盘出口在 folderMenu 那条文档级 Esc 上。 */}
-                    <div aria-hidden className="fixed inset-0 z-[80] cursor-default" onClick={() => closeFolderMenu()} />
-                    <div
-                      ref={folderMenuRef}
-                      role="menu"
-                      aria-label={`${folder.name} 文件夹操作`}
-                      className="fixed z-[90] w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl"
-                      style={{ left: folderMenu.left, top: folderMenu.top }}
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={handleFolderMenuKeyDown}
-                    >
-                      <div className="relative" onMouseEnter={() => setFolderShareMenuId(folder.id)} onMouseLeave={() => setFolderShareMenuId(null)}>
-                        <button type="button" role="menuitem" className={menuItemClass} data-submenu-trigger="folder-share" onClick={(event) => { event.stopPropagation(); setFolderShareMenuId(folder.id); focusFolderShareMenu(true) }} aria-haspopup="menu" aria-expanded={folderShareMenuId === folder.id}>
-                          <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                        {folderShareMenuId === folder.id && <div role="menu" aria-label={`${folder.name} 分享类型`} data-submenu-panel="folder-share" className="absolute left-full top-0 z-[100] -ml-px w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-                          <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('REVIEW', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><MessageSquare className="h-4 w-4" />审阅分享</button>
-                          <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('DELIVERY', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><PackageCheck className="h-4 w-4" />交付分享</button>
-                        </div>}
-                      </div>
-                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => openFolderInNewTab(folder.id)}>
-                        <ExternalLink className="h-4 w-4" />新标签页打开
+                return (
+                  <OverlayMenu
+                    open={folderMenuOpen}
+                    onOpenChange={(open) => { if (!open) closeFolderMenu(false) }}
+                    label={`${folder.name} 文件夹操作`}
+                    left={folderMenu.left}
+                    top={folderMenu.top}
+                    triggerRef={folderMenuTriggerRef}
+                    menuRef={folderMenuRef}
+                    onKeyDown={handleFolderMenuKeyDown}
+                    onEscape={() => {
+                      if (!folderShareMenuId) return false
+                      setFolderShareMenuId(null)
+                      folderMenuRef.current?.querySelector<HTMLElement>('[data-submenu-trigger="folder-share"]')?.focus()
+                      return true
+                    }}
+                  >
+                    <div className="relative" onMouseEnter={() => setFolderShareMenuId(folder.id)} onMouseLeave={() => setFolderShareMenuId(null)}>
+                      <button type="button" role="menuitem" className={menuItemClass} data-submenu-trigger="folder-share" onClick={(event) => { event.stopPropagation(); setFolderShareMenuId(folder.id); focusFolderShareMenu(true) }} aria-haspopup="menu" aria-expanded={folderShareMenuId === folder.id}>
+                        <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
                       </button>
-                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyFolderShareLink(folder.id)}>
-                        {copiedFolderId === folder.id ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
-                        {copiedFolderId === folder.id ? tc('copied') : '复制文件链接'}
-                      </button>
-                      <div className={MENU_SEPARATOR_CLASS_NAME} />
-                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderZip(folder.id)}>
-                        <Package className="h-4 w-4" />打包下载
-                      </button>
-                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderOriginals(folder.id)}>
-                        <Download className="h-4 w-4" />下载原文件
-                      </button>
-                      <button type="button" role="menuitem" className={menuItemClass} onClick={() => void renameProjectFolder(folder)}>
-                        <Pencil className="h-4 w-4" />重命名
-                      </button>
-                      <div className={MENU_SEPARATOR_CLASS_NAME} />
-                      <button type="button" role="menuitem" className={cn(menuItemClass, 'text-destructive hover:bg-destructive/10')} onClick={() => void deleteProjectFolder(folder.id)}>
-                        <Trash2 className="h-4 w-4" />放入回收站
-                      </button>
+                      {folderShareMenuId === folder.id && <div role="menu" aria-label={`${folder.name} 分享类型`} data-submenu-panel="folder-share" className="absolute left-full top-0 z-[100] -ml-px w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150">
+                        <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('REVIEW', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><MessageSquare className="h-4 w-4" />审阅分享</button>
+                        <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('DELIVERY', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><PackageCheck className="h-4 w-4" />交付分享</button>
+                      </div>}
                     </div>
-                  </>,
-                  document.body
+                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => openFolderInNewTab(folder.id)}>
+                      <ExternalLink className="h-4 w-4" />新标签页打开
+                    </button>
+                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyFolderShareLink(folder.id)}>
+                      {copiedFolderId === folder.id ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
+                      {copiedFolderId === folder.id ? tc('copied') : '复制文件链接'}
+                    </button>
+                    <div className={MENU_SEPARATOR_CLASS_NAME} />
+                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderZip(folder.id)}>
+                      <Package className="h-4 w-4" />打包下载
+                    </button>
+                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderOriginals(folder.id)}>
+                      <Download className="h-4 w-4" />下载原文件
+                    </button>
+                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => void renameProjectFolder(folder)}>
+                      <Pencil className="h-4 w-4" />重命名
+                    </button>
+                    <div className={MENU_SEPARATOR_CLASS_NAME} />
+                    <button type="button" role="menuitem" className={cn(menuItemClass, 'text-destructive hover:bg-destructive/10')} onClick={() => void deleteProjectFolder(folder.id)}>
+                      <Trash2 className="h-4 w-4" />放入回收站
+                    </button>
+                  </OverlayMenu>
                 )
               })()}
               <input ref={folderUploadInputRef} type="file" multiple accept={VIDEO_INPUT_ACCEPT} className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
               <AdminVideoManager
                 projectId={project.id}
+                canUpload={canAdminister}
                 videos={visibleWorkspaceVideos}
                 projectStatus={project.status}
                 restrictToLatestVersion={project.restrictCommentsToLatestVersion}
@@ -1946,6 +1914,7 @@ export default function ProjectPage() {
               <PhotoAlbumsBlock key={`albums-${workspaceRefreshKey}`} projectId={project.id} sortMode={albumSortMode} onCountsChange={handlePhotoCounts} />
             </section>
 
+            {canAdminister && (<>
             <section id="collection-inbox" className={activeWorkspace === 'uploads' ? 'scroll-mt-4' : 'hidden'}>
               <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
                 <span className={iconBadgeClassName}><FolderUp className={iconBadgeIconClassName} /></span>
@@ -1983,6 +1952,7 @@ export default function ProjectPage() {
               </div>
               <ShareLinksPanel key={`shares-${workspaceRefreshKey}`} project={project} onCountChange={setSharesCount} />
             </section>
+            </>)}
           </main>
 
           {/* 页内审阅的两块面板：和素材网格同级的网格子项，宽屏时是并排的等高竖栏

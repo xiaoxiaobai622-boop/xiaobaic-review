@@ -26,7 +26,9 @@ import { useS3MultipartUpload } from '@/hooks/useS3MultipartUpload'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 import { ALL_ALLOWED_EXTENSIONS, ACCEPTED_FILE_INPUT } from '@/lib/asset-validation'
 import { getAccessToken } from '@/lib/token-store'
-import { apiFetch } from '@/lib/api-client'
+import { attemptRefresh } from '@/lib/api-client'
+import { shareApiPost, shareFetch, readShareTokenRaw, renewShareToken } from '@/lib/share-token-store'
+import { SHARE_RENEWABLE_CODES } from '@/lib/share-error-codes'
 
 const ALLOWED_EXTENSIONS = new Set(ALL_ALLOWED_EXTENSIONS)
 
@@ -92,13 +94,6 @@ export default function ReverseShareUploadPanel({
   const hasFiles = items.length > 0
   const hasPending = items.some((i) => i.status === 'pending')
   const accountAuthenticated = isReviewAuthenticated || Boolean(getAccessToken())
-
-  const accountShareHeaders = useCallback((includeContentType = false): Record<string, string> => {
-    return {
-      ...(includeContentType ? { 'Content-Type': 'application/json' } : {}),
-      'X-Share-Token': `Bearer ${shareToken}`,
-    }
-  }, [shareToken])
 
   const requestFilePicker = useCallback(() => {
     // The parent can briefly hold the previous auth state immediately after
@@ -169,30 +164,18 @@ export default function ReverseShareUploadPanel({
     let uploadId: string
 
     try {
-      const response = await apiFetch(`/api/share/${shareSlug}/project-uploads`, {
-        method: 'POST',
-        headers: accountShareHeaders(true),
-        // Only OTP-bound share tokens carry a recipient the server can look up,
-        // so a WeChat/phone visitor's identity has to travel with the request.
-        // The route caps these at 100 and 254 chars and rejects an overlong or
-        // malformed value, which would fail the upload outright.
-        body: JSON.stringify({
-          fileName: item.file.name,
-          fileSize: item.file.size,
-          ...(authorName ? { authorName: authorName.slice(0, 100) } : {}),
-          ...(authorEmail ? { authorEmail: authorEmail.slice(0, 254) } : {}),
-        }),
+      const data = await shareApiPost<{ uploadId: string }>(shareSlug, `/api/share/${shareSlug}/project-uploads`, {
+        fileName: item.file.name,
+        fileSize: item.file.size,
+        ...(authorName ? { authorName: authorName.slice(0, 100) } : {}),
+        ...(authorEmail ? { authorEmail: authorEmail.slice(0, 254) } : {}),
       })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err.error || t('failedToCreateUpload'))
-      }
-
-      const data = await response.json()
       uploadId = data.uploadId
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('failedToCreateUpload')
+      const code = (error as { code?: string } | null)?.code
+      const message = code && SHARE_RENEWABLE_CODES.has(code)
+        ? t('sessionExpiredRefresh')
+        : error instanceof Error ? error.message : t('failedToCreateUpload')
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: message } : i)))
       return false
     }
@@ -204,7 +187,7 @@ export default function ReverseShareUploadPanel({
         s3AbortKeysRef.current.set(item.id, s3Key)
         startS3Upload(
           item.file,
-          { projectUploadId: uploadId, shareToken },
+          { projectUploadId: uploadId, shareToken, shareSlug },
           {
             onProgress: (bytesUploaded, bytesTotal) => {
               const pct = Math.round((bytesUploaded / bytesTotal) * 100)
@@ -221,9 +204,8 @@ export default function ReverseShareUploadPanel({
               setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: err.message } : i)))
               s3AbortKeysRef.current.delete(item.id)
               clearUploadMetadata(item.file)
-              apiFetch(`/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
+              shareFetch(shareSlug, `/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
                 method: 'DELETE',
-                headers: accountShareHeaders(),
               }).catch(() => {})
               resolve(false)
             },
@@ -247,7 +229,13 @@ export default function ReverseShareUploadPanel({
         chunkSize: getTusChunkSizeBytes(item.file.size),
         storeFingerprintForResuming: true,
         removeFingerprintOnSuccess: true,
-        onAfterResponse: createTusAfterResponseHandler(uploadRef),
+        onAfterResponse: createTusAfterResponseHandler(
+          uploadRef,
+          async () => {
+            await renewShareToken(shareSlug, readShareTokenRaw(shareSlug) || shareToken)
+            await attemptRefresh()
+          },
+        ),
         onShouldRetry: createTusShouldRetryHandler(uploadRef),
 
         onProgress: (bytesUploaded, bytesTotal) => {
@@ -272,9 +260,8 @@ export default function ReverseShareUploadPanel({
           resetTusAuthRetry(uploadRef.current)
           clearUploadMetadata(item.file)
           clearTUSFingerprint(item.file)
-          apiFetch(`/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
+          shareFetch(shareSlug, `/api/share/${shareSlug}/project-uploads?uploadId=${uploadId}`, {
             method: 'DELETE',
-            headers: accountShareHeaders(),
           }).catch(() => {})
           resolve(false)
         },
@@ -282,7 +269,9 @@ export default function ReverseShareUploadPanel({
         onBeforeRequest: (req) => {
           const xhr = req.getUnderlyingObject()
           xhr.withCredentials = true
-          xhr.setRequestHeader('Authorization', `Bearer ${shareToken}`)
+          xhr.setRequestHeader('Authorization', `Bearer ${readShareTokenRaw(shareSlug) || shareToken}`)
+          const accountToken = getAccessToken()
+          if (accountToken) xhr.setRequestHeader('X-Account-Token', `Bearer ${accountToken}`)
         },
       })
 

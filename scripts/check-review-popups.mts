@@ -32,7 +32,7 @@ function Composer() {
     newComment: text, onCommentChange: setText, onSubmit() {}, loading: false,
     selectedTimestamp: null, selectedVideoFps: 25, replyingToComment: null,
     onCancelReply() {}, currentVideoRestricted: false, commentsDisabled: false,
-    showCategoryPicker: false, visibility, onVisibilityChange: setVisibility,
+    visibility, onVisibilityChange: setVisibility,
     sendInsideComposer: true,
   })
 }
@@ -119,7 +119,7 @@ test('a reply request focuses the composer and places the caret at the end', asy
       newComment: text, onCommentChange: setText, onSubmit() {}, loading: false,
       selectedTimestamp: null, selectedVideoFps: 25, replyingToComment: null,
       onCancelReply() {}, currentVideoRestricted: false, commentsDisabled: false,
-      showCategoryPicker: false, visibility: 'PUBLIC', onVisibilityChange() {},
+      visibility: 'PUBLIC', onVisibilityChange() {},
       sendInsideComposer: true, focusRequest: 1,
     })
   }

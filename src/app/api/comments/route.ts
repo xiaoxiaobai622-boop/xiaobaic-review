@@ -12,6 +12,8 @@ import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
 } from '@/lib/wechat-content-security'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 import {
 
   validateCommentPermissions,
@@ -59,8 +61,9 @@ export async function GET(request: NextRequest) {
     })
 
     if (!project) {
+      logShareDenial({ shareToken: null, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.LINK_MISSING })
       return NextResponse.json(
-        { error: shareMessages.accessDenied || 'Access denied' },
+        { error: shareMessages.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.LINK_MISSING },
         { status: 403 }
       )
     }
@@ -225,13 +228,19 @@ export async function POST(request: NextRequest) {
       parentId,
       assetIds,
       annotations,
-      category,
       visibility,
     } = validation.data
 
+    if (authContext.shareFailure && !authContext.user) {
+      return NextResponse.json(
+        { error: authContext.shareFailure.message, code: authContext.shareFailure.code },
+        { status: 401 }
+      )
+    }
+
     if (!authContext.user) {
       return NextResponse.json(
-        { error: 'Authentication required' },
+        { error: 'Authentication required', code: SHARE_ERROR_CODES.LOGIN_REQUIRED },
         { status: 401 }
       )
     }
@@ -256,6 +265,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        sharePassword: true,
+        authMode: true,
+        companyName: true,
+      }
+    })
+
+    if (!project) {
+      logShareDenial({ shareToken: authContext.shareContext?.shareId ?? null, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.LINK_MISSING })
+      return NextResponse.json(
+        { error: shareMessages.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.LINK_MISSING },
+        { status: 403 }
+      )
+    }
+
+    // Verify project access
+    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
+      allowGuest: false,
+      requiredPermission: 'comment',
+    })
+
+    if (!accessCheck.authorized) {
+      return accessCheck.errorResponse || NextResponse.json(
+        { error: shareMessages.unableToProcessRequest || 'Unable to process request' },
+        { status: 400 }
+      )
+    }
+
     // "Internal" means the comment was written in the studio, not on a share page.
     // The share token is the only trustworthy marker: it is signed with a different
     // secret and a different `type` claim than account tokens, so a studio request
@@ -271,39 +311,15 @@ export async function POST(request: NextRequest) {
     })
 
     if (!permissionCheck.valid) {
-      return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.errorStatus || 403 }
-      )
-    }
-
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        id: true,
-        sharePassword: true,
-        authMode: true,
-        companyName: true,
+      const code = permissionCheck.errorStatus === 403
+        ? (permissionCheck.error?.toLowerCase().includes('disabled') ? SHARE_ERROR_CODES.COMMENTS_DISABLED : SHARE_ERROR_CODES.PERMISSION_DENIED)
+        : SHARE_ERROR_CODES.AUTH_REQUIRED
+      if (permissionCheck.errorStatus === 403) {
+        logShareDenial({ shareToken: authContext.shareContext?.shareId ?? null, endpoint: requestEndpoint(request), reason: code })
       }
-    })
-
-    if (!project) {
       return NextResponse.json(
-        { error: shareMessages.accessDenied || 'Access denied' },
-        { status: 403 }
-      )
-    }
-
-    // Verify project access
-    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
-      allowGuest: false,
-      requiredPermission: 'comment',
-    })
-
-    if (!accessCheck.authorized) {
-      return accessCheck.errorResponse || NextResponse.json(
-        { error: shareMessages.unableToProcessRequest || 'Unable to process request' },
-        { status: 400 }
+        { error: permissionCheck.error, code },
+        { status: permissionCheck.errorStatus || 403 }
       )
     }
 
@@ -369,7 +385,6 @@ export async function POST(request: NextRequest) {
         content: contentValidation.sanitizedContent!,
         authorName: contentValidation.sanitizedAuthorName,
         authorEmail: finalAuthorEmail,
-        category: category || null,
         isInternal,
         // 可见范围只有工作室登录者能选（公开/内部）；共享链接端一律公开。
         // 注意别用 isInternal 承载这个开关：它驱动 Apprise 推送和评论队列类型，见上面的守卫注释。

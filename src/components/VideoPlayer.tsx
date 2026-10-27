@@ -179,6 +179,7 @@ interface VideoPlayerProps {
   playerSurfaceColor?: string // Optional exact CSS color for the rendered video letterbox
   playerFrameClassName?: string // Optional non-sizing frame treatment for the player surface
   controlsSurfaceClassName?: string // Optional playback controls surface override
+  projectInfoClassName?: string // Optional project info border/spacing override
   hideApprovalAction?: boolean
   allowComparison?: boolean
   onPreviousVideo?: () => void
@@ -218,6 +219,7 @@ export default function VideoPlayer({
   playerSurfaceColor,
   playerFrameClassName = '',
   controlsSurfaceClassName = 'bg-background',
+  projectInfoClassName = 'mt-2 border-t border-border/70 lg:order-3 xl:mt-0',
   authenticatedEmail = null,
   authenticatedName = null,
   hideApprovalAction = false,
@@ -1593,7 +1595,7 @@ export default function VideoPlayer({
               )}
 
               {!isDrawingMode && (onPreviousVideo || onNextVideo) && (
-                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-player-navigation flex -translate-y-1/2 items-center justify-between px-3 opacity-100 transition-opacity duration-150 sm:px-4 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-player-navigation flex -translate-y-1/2 items-center justify-between px-3 opacity-100 transition-opacity duration-150 sm:px-4 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:[@media(pointer:coarse)]:opacity-100">
                   <button
                     type="button"
                     onClick={(event) => {
@@ -1785,7 +1787,7 @@ export default function VideoPlayer({
         activeVideoName={activeVideoName}
         authenticatedEmail={authenticatedEmail}
         authenticatedName={authenticatedName}
-        className="mt-2 border-t border-border/70 lg:order-3 xl:mt-0"
+        className={projectInfoClassName}
         usePreviewForApprovedPlayback={usePreviewForApprovedPlayback}
         playbackQuality={resolvedPlaybackQuality}
         hideApprovalAction={hideApprovalAction}

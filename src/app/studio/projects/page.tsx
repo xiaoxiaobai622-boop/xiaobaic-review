@@ -80,10 +80,11 @@ export default function AdminPage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const pathname = usePathname()
   const activeTeamId = getActiveTeamId()
   const activeTeam = user?.teams?.find((item) => item.team.id === activeTeamId) || user?.teams?.[0]
+  const hasTeam = (user?.teams?.length ?? 0) > 0
   const teamDisabled = activeTeam?.team.status === 'DISABLED'
 
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null)
@@ -119,6 +120,8 @@ export default function AdminPage() {
   const [formError, setFormError] = useState('')
   // Load saved views from API
   useEffect(() => {
+    // 没有团队时这页会跳去建团队，不必先发一轮注定 403 的请求。
+    if (!hasTeam) return
     let cancelled = false
     ;(async () => {
       try {
@@ -131,7 +134,7 @@ export default function AdminPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [hasTeam])
 
   // Load project folders from API
   const loadFolders = async () => {
@@ -147,8 +150,9 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    if (!hasTeam) return
     void loadFolders()
-  }, [])
+  }, [hasTeam])
 
   // A folder id can outlive its folder (a link opened after it was deleted), and an
   // unknown folder would read as "this folder is empty" with no way back out.
@@ -220,8 +224,13 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    if (authLoading) return
+    if (!hasTeam) {
+      setLoading(false)
+      return
+    }
     loadProjects()
-  }, [])
+  }, [authLoading, hasTeam])
 
   // Options and badges are derived from everything the caller can see under the
   // current filters, then the grid keeps only the open folder's direct contents — so

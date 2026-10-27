@@ -100,3 +100,14 @@
     }
   }
 }
+
+/* 项目详情里的视频卡菜单要露出侧边子菜单，不能裁切；行高亮走同一档过渡。 */
+.surface.anchoredMenu {
+  overflow: visible;
+  max-height: none;
+}
+
+.anchoredMenu [role='menuitem'] {
+  transition: background-color 100ms cubic-bezier(.2, .4, .1, 1),
+    color 100ms cubic-bezier(.2, .4, .1, 1);
+}

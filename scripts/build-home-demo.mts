@@ -196,11 +196,11 @@ async function main() {
   const thumbPrefix = `${main.clip.key.replace(/original-[^/]+\.mp4$/, '')}${video.id}/thumbnail.jpg`
 
   const COMMENTS = [
-    { sec: 3.5, name: '白浪', category: 'EDITING', internal: true, content: '片头字幕起早了，楼群还没进画就压上来，往后挪 12 帧。' },
-    { sec: 11.25, name: '陈屿', category: 'PICTURE', internal: false, resolved: true, content: '这段调色偏品红，霓虹和车灯那一片照 v2 再走一遍。' },
-    { sec: 13.5, name: '白浪', category: 'PICTURE', internal: true, replyTo: 1, content: '收到，按 v2 的品红重出一版，今晚发你确认。' },
-    { sec: 19.8, name: '李声', category: 'AUDIO', internal: true, content: '环境声有一层底噪，这一段车流最明显，麻烦补一轨。' },
-    { sec: 31.3, name: '赵一', category: 'OTHER', internal: false, content: '片尾 logo 停留加到 2 秒，现在刚读完品牌名就切了。' },
+    { sec: 3.5, name: '白浪', internal: true, content: '片头字幕起早了，楼群还没进画就压上来，往后挪 12 帧。' },
+    { sec: 11.25, name: '陈屿', internal: false, resolved: true, content: '这段调色偏品红，霓虹和车灯那一片照 v2 再走一遍。' },
+    { sec: 13.5, name: '白浪', internal: true, replyTo: 1, content: '收到，按 v2 的品红重出一版，今晚发你确认。' },
+    { sec: 19.8, name: '李声', internal: true, content: '环境声有一层底噪，这一段车流最明显，麻烦补一轨。' },
+    { sec: 31.3, name: '赵一', internal: false, content: '片尾 logo 停留加到 2 秒，现在刚读完品牌名就切了。' },
   ]
   await prisma.comment.deleteMany({ where: { videoId: video.id } })
   const made: string[] = []
@@ -208,8 +208,7 @@ async function main() {
     const created = await prisma.comment.create({
       data: {
         projectId: project.id, videoId: video.id, videoVersion: VIDEO_VERSION,
-        timecode: tc(c.sec, meta.fps), content: c.content, authorName: c.name,
-        category: c.category, isInternal: c.internal, resolved: Boolean(c.resolved),
+        timecode: tc(c.sec, meta.fps), content: c.content, authorName: c.name, isInternal: c.internal, resolved: Boolean(c.resolved),
         userId: c.internal ? user.id : null,
         ...(c.replyTo !== undefined ? { parentId: made[c.replyTo] } : {}),
       },

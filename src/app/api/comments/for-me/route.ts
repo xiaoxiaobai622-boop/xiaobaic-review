@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_COMMENT } from '@/lib/db'
-import { requireApiUser } from '@/lib/auth'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { getRequestedTeamId } from '@/lib/team-access'
 import { projectAccessWhere } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -30,8 +30,10 @@ const SELECT = {
  * `since`（ISO 时间）由前端保存的「上次查看时间」传入，只用于算未读数。
  */
 export async function GET(request: NextRequest) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
+  // 没有团队的账号也允许调用：查询本身按项目可见性收敛，结果自然为空列表。
+  // 要团队才能读会把它变成侧栏每 30 秒一次的 403。
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const limited = await rateLimit(request, {
     windowMs: 60 * 1000,

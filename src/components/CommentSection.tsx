@@ -17,7 +17,6 @@ import { apiFetch } from '@/lib/api-client'
 import { timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
 import { formatTimecodeAs } from '@/lib/time-format'
 import { useTimeFormat } from '@/hooks/useTimeFormat'
-import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -25,7 +24,7 @@ type CommentWithReplies = Comment & {
 
 interface CommentSectionProps {
   projectId: string
-  projectSlug?: string
+  projectSlug?: string | null
   comments: CommentWithReplies[]
   focusCommentId?: string | null
   clientName: string
@@ -55,10 +54,6 @@ interface CommentSectionProps {
   showToggleButton?: boolean
   /** `信息` 按钮靠 ProjectInfo 监听 openReviewInfo，项目工作区没有它。 */
   showInfoButton?: boolean
-  /** 标签这条线整体关掉（头部筛选下拉 + 输入框下那排胶囊）；页内批注栏传 false，审片页保持原样。 */
-  showCategoryPicker?: boolean
-  /** 只关输入框下面的那排分类胶囊；头部「全部标签」筛选不受影响。默认跟随 showCategoryPicker。 */
-  showComposerCategoryPicker?: boolean
   /** 批注可见范围选择器（公开/内部）：共享链接客户端页传 false——服务端对共享端一律强制公开。 */
   showVisibilitySelector?: boolean
   /** 「Enter 发送」提示 + 发送钮搬进输入框内、和画笔同一排；页内批注栏传 true，审片页保持原样。 */
@@ -70,7 +65,7 @@ interface CommentSectionProps {
 
 export default function CommentSection({
   projectId,
-  projectSlug: _projectSlug,
+  projectSlug = null,
   comments: initialComments,
   focusCommentId = null,
   isApproved,
@@ -89,8 +84,6 @@ export default function CommentSection({
   onToggleVisibility,
   showToggleButton = false,
   showInfoButton = true,
-  showCategoryPicker = true,
-  showComposerCategoryPicker,
   showVisibilitySelector = true,
   sendInsideComposer = false,
   onMobileExpandedChange,
@@ -105,7 +98,6 @@ export default function CommentSection({
   const [resolvedOverrides, setResolvedOverrides] = useState<Record<string, boolean>>({})
   const [composerTarget, setComposerTarget] = useState<HTMLElement | null>(null)
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'RESOLVED'>('ALL')
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | CommentCategory>('ALL')
   const [commentQuery, setCommentQuery] = useState('')
   const [commentSort, setCommentSort] = useState<CommentSortMode>('timecode')
 
@@ -127,7 +119,6 @@ export default function CommentSection({
   const {
     comments,
     newComment,
-    selectedCategory,
     selectedTimestamp,
     selectedVideoId,
     selectedVideoFps,
@@ -140,7 +131,6 @@ export default function CommentSection({
     selectedTimecodeEnd,
     isSelectingTimecodeEnd,
     handleCommentChange,
-    handleCategoryChange,
     handleSubmitComment,
     handleReply,
     handleCancelReply,
@@ -160,6 +150,7 @@ export default function CommentSection({
     adminUser,
     restrictToLatestVersion,
     shareToken,
+    shareSlug: projectSlug,
     useAdminAuth: isAdminView,
     authenticatedName,
   })
@@ -240,11 +231,10 @@ export default function CommentSection({
     return mergedComments.filter(comment => comment.videoId === selectedVideoId)
   }, [latestVideoVersion, mergedComments, restrictToLatestVersion, selectedVideoId])
 
-  const filteredByStatusAndCategory = useMemo(() => displayComments.filter((comment) => {
+  const filteredByStatus = useMemo(() => displayComments.filter((comment) => {
     const resolved = resolvedOverrides[comment.id] ?? (comment as any).resolved === true
     if (statusFilter === 'OPEN' && resolved) return false
     if (statusFilter === 'RESOLVED' && !resolved) return false
-    if (categoryFilter !== 'ALL' && (comment as any).category !== categoryFilter) return false
     const query = commentQuery.trim().toLowerCase()
     if (query) {
       const haystack = [
@@ -256,7 +246,7 @@ export default function CommentSection({
       if (!haystack.includes(query)) return false
     }
     return true
-  }), [categoryFilter, commentQuery, displayComments, resolvedOverrides, statusFilter])
+  }), [commentQuery, displayComments, resolvedOverrides, statusFilter])
 
   const sortedComments = useMemo(() => {
     const getTimelineSeconds = (comment: Comment) => {
@@ -270,7 +260,7 @@ export default function CommentSection({
       }
     }
 
-    return [...filteredByStatusAndCategory]
+    return [...filteredByStatus]
       .sort((a, b) => {
         if (commentSort === 'newest') {
           const newestDifference = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -298,7 +288,7 @@ export default function CommentSection({
             )),
           }
         : comment)
-  }, [commentSort, filteredByStatusAndCategory, resolvedOverrides, videoById])
+  }, [commentSort, filteredByStatus, resolvedOverrides, videoById])
 
   const latestComment = useMemo(() => sortedComments.reduce<CommentWithReplies | null>((latest, comment) => {
     if (!latest) return comment
@@ -442,34 +432,11 @@ export default function CommentSection({
               </button>
             ))}
           </div>
-          {showCategoryPicker && (
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <select
-                    aria-label="按标签筛选"
-                    value={categoryFilter}
-                    onChange={(event) => setCategoryFilter(event.target.value as 'ALL' | CommentCategory)}
-                    className="h-7 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="ALL">全部标签</option>
-                    {COMMENT_CATEGORIES.map((category) => (
-                      <option key={category.value} value={category.value}>{category.label}</option>
-                    ))}
-                  </select>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  <p>↑↓ 选择 · Enter 确认</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {(statusFilter !== 'ALL' || categoryFilter !== 'ALL' || commentQuery) && (
+          {(statusFilter !== 'ALL'  || commentQuery) && (
             <button
               type="button"
               onClick={() => {
                 setStatusFilter('ALL')
-                setCategoryFilter('ALL')
                 setCommentQuery('')
               }}
               className="h-7 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
@@ -635,9 +602,6 @@ export default function CommentSection({
           onCommentChange={handleCommentChange}
           onSubmit={handleSubmitWithAuth}
           loading={loading}
-          selectedCategory={selectedCategory}
-          onCategoryChange={handleCategoryChange}
-          showCategoryPicker={showComposerCategoryPicker ?? showCategoryPicker}
           visibility={commentVisibility}
           onVisibilityChange={setCommentVisibility}
           showVisibilitySelector={showVisibilitySelector}
@@ -663,6 +627,7 @@ export default function CommentSection({
           attachmentNotice={attachmentNotice}
           onAttachmentErrorChange={handleAttachmentErrorChange}
           shareToken={shareToken}
+          shareSlug={projectSlug}
           pendingAnnotation={pendingAnnotation}
           onStartDrawing={handleStartDrawing}
           showShortcutsButton={showShortcutsButton}

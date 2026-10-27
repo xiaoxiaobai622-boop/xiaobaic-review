@@ -9,6 +9,8 @@ import { getRateLimitSettings } from '@/lib/settings'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { resolveShareMetadata, getShareScopeVideoIds, isShareLinkActive } from '@/lib/share-links'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 
 export const runtime = 'nodejs'
 
@@ -46,7 +48,7 @@ export async function GET(
 
     // Fetch project by token (not by ID - more secure)
     const resolved = await resolveShareMetadata(token)
-    if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active', code: SHARE_ERROR_CODES.LINK_INACTIVE }, { status: 410 })
     const project = resolved.project ? {
       id: resolved.project.id,
       teamId: resolved.project.teamId,
@@ -58,7 +60,8 @@ export async function GET(
     } : null
 
     if (!project) {
-      return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
+      logShareDenial({ shareToken: token, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.LINK_MISSING })
+      return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.LINK_MISSING }, { status: 403 })
     }
 
     // SECURITY: If feedback is hidden, return empty array (don't expose comments)

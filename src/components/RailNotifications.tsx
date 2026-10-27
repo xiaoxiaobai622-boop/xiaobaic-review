@@ -94,14 +94,32 @@ interface PlatformItem {
   readAt: string | null
 }
 
+interface InviteItem {
+  id: string
+  token: string
+  role: string
+  createdAt: string
+  expiresAt: string
+  team: { id: string; name: string }
+}
+
+type NotificationCategory = 'team' | 'platform' | 'personal'
+
 /** 一拨数据一条流：类别退成每行的标记，不再两枚标签各占一屏。 */
 type Entry =
   | { key: string; type: 'reply'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: ReplyItem }
   | { key: string; type: 'announcement'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: PlatformItem }
+  | { key: string; type: 'invite'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: InviteItem }
 
-export default function RailNotifications({ className }: { className?: string }) {
+const CATEGORY_LABEL: Record<NotificationCategory, string> = { team: '团队', platform: '平台', personal: '个人' }
+const INVITE_ROLE_LABEL: Record<string, string> = { OWNER: '创建人', ADMIN: '管理员', MEMBER: '成员' }
+
+export default function RailNotifications({ className, enabled = true }: { className?: string; enabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [category, setCategory] = useState<NotificationCategory>('team')
+  const [invitations, setInvitations] = useState<InviteItem[]>([])
+  const [invitesFailed, setInvitesFailed] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [kinds, setKinds] = useState<Kinds>({ reply: true, announcement: true })
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -146,12 +164,31 @@ export default function RailNotifications({ className }: { className?: string })
     }
   }, [])
 
-  useEffect(() => { setKinds(readKinds()); load(); loadPlatform() }, [load, loadPlatform])
+  const loadInvitations = useCallback(async (): Promise<void> => {
+    try {
+      const response = await apiFetch('/api/team-center', { cache: 'no-store' })
+      if (!response.ok) throw new Error(String(response.status))
+      const data = await response.json()
+      setInvitations(Array.isArray(data.invitations) ? data.invitations : [])
+      setInvitesFailed(false)
+    } catch {
+      setInvitesFailed(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    setKinds(readKinds())
+    if (enabled) { load(); loadPlatform() }
+    // 邀请跟随账号，不依赖当前团队；没有团队的账号也要能看到。
+    void loadInvitations()
+  }, [enabled, load, loadPlatform, loadInvitations])
 
   // 30 秒一次，且只在标签页可见时打（和审阅页那套刷新节奏一致）。
   // 客户端把窗口最小化或收进托盘时页面算「不可见」，而那正是最需要通知的时候，所以桌面端照样打。
   // 一轮各打一个端点＝每端点每分钟 2 次，两个端点都是每分钟 60 次的限流，撞不上。
   useEffect(() => {
+    // 还没有团队的账号停在建团队页，没有项目可提醒；不开轮询，省掉两端点每 30 秒的空请求。
+    if (!enabled) return
     const tick = () => { if (document.visibilityState === 'visible' || desktop) { load(); loadPlatform() } }
     const timer = window.setInterval(tick, REFRESH_INTERVAL_MS)
     document.addEventListener('visibilitychange', tick)
@@ -159,7 +196,7 @@ export default function RailNotifications({ className }: { className?: string })
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', tick)
     }
-  }, [desktop, load, loadPlatform])
+  }, [desktop, enabled, load, loadPlatform])
 
   // 桌面端把每轮新拿到的条目转成系统通知；浏览器里 desktop 是 null，这一整段不跑。
   useEffect(() => {
@@ -218,6 +255,7 @@ export default function RailNotifications({ className }: { className?: string })
     setOpen(true)
     void load()
     void loadPlatform()
+    void loadInvitations()
   }
 
   const entries: Entry[] = [
@@ -241,11 +279,31 @@ export default function RailNotifications({ className }: { className?: string })
       where: '平台消息',
       item,
     })),
+    ...invitations.map((item) => ({
+      key: `i-${item.id}`,
+      type: 'invite' as const,
+      createdAt: item.createdAt,
+      unread: false,
+      headline: `邀请你加入 ${item.team.name}`,
+      body: `角色：${INVITE_ROLE_LABEL[item.role] || '成员'} · 点击查看并处理邀请`,
+      where: item.team.name,
+      item,
+    })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
 
-  const visible = entries.filter((entry) => kinds[entry.type])
-  const unreadCount = visible.filter((entry) => entry.unread).length
-  const shown = filter === 'unread' ? visible.filter((entry) => entry.unread) : visible
+  const categoryOf = (entry: Entry): NotificationCategory => (
+    entry.type === 'reply' ? 'team' : entry.type === 'announcement' ? 'platform' : 'personal'
+  )
+  const visible = entries.filter((entry) => {
+    if (categoryOf(entry) !== category) return false
+    if (entry.type === 'invite') return true
+    return kinds[entry.type]
+  })
+  // 待处理邀请没有「已读」状态，但它确实需要人处理：一起算进窄栏红点和角标。
+  const actionableUnread = entries.filter((entry) => entry.unread && (entry.type === 'reply' || entry.type === 'announcement') && kinds[entry.type]).length
+  const unreadCount = actionableUnread + invitations.length
+  const markableUnread = actionableUnread
+  const shown = category === 'personal' || filter === 'all' ? visible : visible.filter((entry) => entry.unread)
 
   const markAllRead = async () => {
     const newestReply = items[0]?.createdAt
@@ -265,6 +323,11 @@ export default function RailNotifications({ className }: { className?: string })
     if (entry.type === 'reply') {
       close()
       router.push(replyHref(entry.item))
+      return
+    }
+    if (entry.type === 'invite') {
+      close()
+      router.push(`/studio/team/invite/${encodeURIComponent(entry.item.token)}`)
       return
     }
     // 平台消息没有独立路由，就地展开/收起正文。
@@ -334,6 +397,25 @@ export default function RailNotifications({ className }: { className?: string })
             </div>
           )}
 
+          <div role="tablist" aria-label="通知分类" className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1.5">
+            {(['team', 'platform', 'personal'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={category === key}
+                onClick={() => { setCategory(key); setExpanded(null) }}
+                className={cn(
+                  'rounded px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  category === key ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {CATEGORY_LABEL[key]}{key === 'personal' && invitations.length > 0 ? ` ${invitations.length}` : ''}
+              </button>
+            ))}
+          </div>
+
+          {category !== 'personal' && (
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5">
             <div className="flex items-center gap-1">
               <button
@@ -350,29 +432,36 @@ export default function RailNotifications({ className }: { className?: string })
                 aria-pressed={filter === 'unread'}
                 className={cn('rounded px-2 py-0.5 transition-colors', filter === 'unread' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
               >
-                未读{unreadCount > 0 ? ` ${unreadCount}` : ''}
+                未读{visible.filter((entry) => entry.unread).length > 0 ? ` ${visible.filter((entry) => entry.unread).length}` : ''}
               </button>
             </div>
             <button
               type="button"
               onClick={markAllRead}
-              disabled={unreadCount === 0}
+              disabled={markableUnread === 0}
               className="text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:hover:text-muted-foreground"
             >
               全部标记为已读
             </button>
           </div>
+          )}
 
           <div className="min-h-0 flex-1 overflow-y-auto p-1">
-            {shown.length === 0 && !failed && (
+            {shown.length === 0 && !(category === 'personal' ? invitesFailed : failed) && (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
                 <Bell data-empty-bell className="h-12 w-12 text-muted-foreground/30" aria-hidden />
-                <p className="text-sm font-medium text-foreground">暂无更新</p>
-                <p className="text-xs text-muted-foreground">您的账户活动将在此显示。</p>
+                <p className="text-sm font-medium text-foreground">
+                  {category === 'team' ? '暂无团队动态' : category === 'platform' ? '暂无平台消息' : '暂无个人邀请'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {category === 'team' ? '团队里的批注回复会显示在这里。' : category === 'platform' ? '运营公告会显示在这里。' : '其他团队邀请你加入时会显示在这里。'}
+                </p>
               </div>
             )}
-            {shown.length === 0 && failed && (
-              <p className="px-2 py-4 text-sm text-muted-foreground">通知载入失败，30 秒后自动重试。</p>
+            {shown.length === 0 && (category === 'personal' ? invitesFailed : failed) && (
+              <p className="px-2 py-4 text-sm text-muted-foreground">
+                {category === 'personal' ? '邀请读取失败，重新打开通知会再试。' : '通知载入失败，30 秒后自动重试。'}
+              </p>
             )}
             {shown.map((entry) => (
               <button
@@ -391,9 +480,9 @@ export default function RailNotifications({ className }: { className?: string })
                 </span>
                 <span className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                   <span className="shrink-0 rounded bg-muted px-1 py-px text-[11px]">
-                    {entry.type === 'reply' ? '批注回复' : '平台消息'}
+                    {entry.type === 'reply' ? '批注回复' : entry.type === 'announcement' ? '平台消息' : '团队邀请'}
                   </span>
-                  <span className="truncate">{entry.type === 'reply' ? entry.where : ''}</span>
+                  <span className="truncate">{entry.type === 'announcement' ? '' : entry.where}</span>
                 </span>
                 {entry.unread && (
                   <span className="mt-1 inline-flex items-center gap-1 text-xs text-primary">

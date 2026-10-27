@@ -9,10 +9,13 @@ import fs from 'fs'
 import { Readable } from 'stream'
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { logError, logMessage } from '@/lib/logging'
-import { parseBearerToken, verifyAdminAccessToken, verifyShareToken } from '@/lib/auth'
+import { parseBearerToken, verifyAdminAccessToken, verifyShareTokenResult } from '@/lib/auth'
 import { handleReverseShareUploadNotification } from '@/lib/upload-notifications'
 import { canUserAdministerUploadTarget } from '@/lib/s3-upload-auth'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
+import { isShareLinkActive, resolveShareMetadata, shareAllowsUploads } from '@/lib/share-links'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 
 const ABSOLUTE_MAX_UPLOAD_SIZE_BYTES = 1000 * 1024 * 1024 * 1024 // 1000 GB hard safety cap
 const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.avi', '.webm', '.mkv']
@@ -29,6 +32,10 @@ function tusError(status: number, body: string) {
   return { status_code: status, body }
 }
 
+function tusShareError(status: number, code: string, message: string) {
+  return tusError(status, JSON.stringify({ error: message, code }))
+}
+
 const tusServer: Server = new Server({
   path: '/api/uploads',
   datastore: new FileStore({
@@ -42,8 +49,10 @@ const tusServer: Server = new Server({
   async onUploadCreate(req, upload) {
     try {
       const bearer = parseBearerToken(req as any)
+      const accountBearer = parseBearerToken(req as any, 'x-account-token')
+      const accountSession = accountBearer ? await verifyAdminAccessToken(accountBearer) : null
 
-      if (!bearer) throw tusError(401, 'Authentication required')
+      if (!bearer) throw tusShareError(401, SHARE_ERROR_CODES.AUTH_REQUIRED, 'Authentication required')
 
       // Try admin auth first, then fall back to share token auth
       let isAdmin = false
@@ -58,19 +67,38 @@ const tusServer: Server = new Server({
         if (!isAdmin) throw tusError(403, 'Access denied for upload target')
       } else {
         // Try share token auth for client uploads
-        const sharePayload = await verifyShareToken(bearer)
-        if (!sharePayload) throw tusError(403, 'Access denied')
+        const shareResult = await verifyShareTokenResult(bearer)
+        if (!shareResult.payload) {
+          throw tusShareError(401, shareResult.failure.code, shareResult.failure.message)
+        }
+        const sharePayload = shareResult.payload
+        const endpoint = requestEndpoint(req as any)
+        const shareToken = sharePayload.shareId
+        const denied = (code: string, message: string) => {
+          logShareDenial({ shareToken, endpoint, reason: code })
+          return tusShareError(403, code, message)
+        }
+
+        const resolved = await resolveShareMetadata(shareToken)
+        if (!resolved.policy || !resolved.project) {
+          throw tusShareError(401, SHARE_ERROR_CODES.LINK_MISSING, 'Share link no longer exists')
+        }
+        if (!isShareLinkActive(resolved.policy)) {
+          throw tusShareError(410, SHARE_ERROR_CODES.LINK_INACTIVE, 'Share link is no longer active')
+        }
 
         // Share tokens can only upload assets or project uploads (not videos)
         if (!upload.metadata?.assetId && !upload.metadata?.projectUploadId) {
-          throw tusError(403, 'Share tokens can only upload assets')
+          throw denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Share tokens can only upload assets')
         }
 
         if (upload.metadata?.projectUploadId) {
           // Reverse share upload — verify the ProjectUpload record
-          // Uploads require an authenticated account (share recipient or admin override).
-          if (!sharePayload.recipientId && !sharePayload.adminOverride) {
-            throw tusError(403, '请登录后上传素材')
+          // Uploads require an authenticated account (share recipient or a
+          // signed-in visitor). The record itself was created only after that
+          // account check, so its session id is the second half of the proof.
+          if (!sharePayload.recipientId && !sharePayload.adminOverride && !accountSession) {
+            throw tusShareError(401, SHARE_ERROR_CODES.LOGIN_REQUIRED, '请登录后上传素材')
           }
 
           const projectUpload = await prisma.projectUpload.findUnique({
@@ -80,26 +108,21 @@ const tusServer: Server = new Server({
 
           if (!projectUpload) throw tusError(404, 'Upload record not found')
           if (projectUpload.projectId !== sharePayload.projectId) {
-            throw tusError(403, 'Upload does not belong to your project')
+            throw denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Upload does not belong to your project')
           }
           if (projectUpload.uploadedBySessionId !== sharePayload.sessionId) {
-            throw tusError(403, 'Upload does not belong to your session')
+            throw denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Upload does not belong to your session')
           }
 
-          const project = await prisma.project.findUnique({
-            where: { id: sharePayload.projectId },
-            select: { allowReverseShare: true },
-          })
-
-          if (!project?.allowReverseShare) {
-            throw tusError(403, 'File submissions are not enabled for this project')
+          if (!shareAllowsUploads(resolved.policy, resolved.project)) {
+            throw denied(SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, 'File submissions are not enabled for this link')
           }
         } else {
           // Comment attachments still require comment permission and cannot be guests.
           if (!sharePayload.permissions?.includes('comment')) {
-            throw tusError(403, 'Comment permission required')
+            throw denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Comment permission required')
           }
-          if (sharePayload.guest) throw tusError(403, 'Guest access cannot upload files')
+          if (sharePayload.guest) throw denied(SHARE_ERROR_CODES.GUEST_RESTRICTED, 'Guest access cannot upload files')
 
           // Comment attachment upload — verify VideoAsset record
           const asset = await prisma.videoAsset.findUnique({
@@ -112,12 +135,12 @@ const tusServer: Server = new Server({
           })
 
           if (!asset) throw tusError(404, 'Asset record not found')
-          if (asset.uploadedBy !== 'client') throw tusError(403, 'Access denied')
+          if (asset.uploadedBy !== 'client') throw denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Access denied')
           if (asset.video.projectId !== sharePayload.projectId) {
-            throw tusError(403, 'Asset does not belong to your project')
+            throw denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Asset does not belong to your project')
           }
           if (asset.uploadedBySessionId !== sharePayload.sessionId) {
-            throw tusError(403, 'Asset does not belong to your session')
+            throw denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Asset does not belong to your session')
           }
 
           const project = await prisma.project.findUnique({
@@ -126,7 +149,7 @@ const tusServer: Server = new Server({
           })
 
           if (!project?.allowClientAssetUpload) {
-            throw tusError(403, 'File attachments are not enabled for this project')
+            throw denied(SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, 'File attachments are not enabled for this project')
           }
         }
       }

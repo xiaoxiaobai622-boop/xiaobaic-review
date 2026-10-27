@@ -215,7 +215,7 @@ export function relative(iso: number) {
   return `${Math.round(diff / (30 * DAY))} 个月前`
 }
 
-/** Categories mirror src/lib/comment-categories.ts so the labels stay truthful. */
+/** 这份 mock 自己的标签集：lab 里的概念稿数据，不接产品那条线（产品侧的分类已整体删掉）。 */
 export type LabNote = {
   ep: number
   at: number

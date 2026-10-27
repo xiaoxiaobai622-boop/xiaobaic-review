@@ -65,7 +65,7 @@ export default function SharedControls() {
             onCancelReply={() => {}}
             currentVideoRestricted={false}
             commentsDisabled={false}
-            showCategoryPicker={false}
+
             visibility="PUBLIC"
             onVisibilityChange={() => {}}
             sendInsideComposer

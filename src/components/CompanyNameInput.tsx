@@ -31,6 +31,17 @@ export function CompanyNameInput({
   const [search, setSearch] = useState(value)
   const [companies, setCompanies] = useState<ClientCompany[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
+
+  useEffect(() => {
+    if (!showDropdown) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setShowDropdown(false)
+    }
+    document.addEventListener('keydown', handleEscape, true)
+    return () => document.removeEventListener('keydown', handleEscape, true)
+  }, [showDropdown])
   const [loading, setLoading] = useState(false)
   
   const containerRef = useRef<HTMLDivElement>(null)
@@ -135,7 +146,7 @@ export function CompanyNameInput({
       </div>
       
       {showDropdown && (
-        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-150 origin-top">
           {loading ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">{tc('loading')}</div>
           ) : (
@@ -144,7 +155,7 @@ export function CompanyNameInput({
                 <button
                   key={company.id}
                   type="button"
-                  className="w-full px-3 py-2 text-left hover:bg-accent flex items-center justify-between"
+                  className="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-accent"
                   onClick={() => handleSelect(company)}
                 >
                   <div className="flex items-center gap-2">

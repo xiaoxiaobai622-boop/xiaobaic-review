@@ -1,7 +1,7 @@
 'use client'
 
+import OverlayMenu from '@/components/OverlayMenu'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import {
   ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, Home,
@@ -75,39 +75,18 @@ export default function ProjectsFolderTree({
   const [editorError, setEditorError] = useState('')
   const [busy, setBusy] = useState(false)
   const [menu, setMenu] = useState<{ id: string; left: number; top: number } | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const menuTriggerRef = useRef<HTMLElement | null>(null)
 
   const closeMenu = (restoreFocus = true) => {
-    setMenu(null)
+    setMenuOpen(false)
     if (restoreFocus) menuTriggerRef.current?.focus()
+    // Keep the measured position until the exit animation finishes.
+    window.setTimeout(() => setMenu(null), 160)
   }
 
-  useEffect(() => {
-    if (!menu) return
-    const frame = requestAnimationFrame(() => {
-      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"], button')?.focus()
-    })
-    // Esc 挂在菜单元素上等于要求焦点先在菜单里：点一下菜单留白就再也退不出去。
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setMenu(null)
-      menuTriggerRef.current?.focus()
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [menu])
-
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      closeMenu()
-      return
-    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
 
     event.preventDefault()
@@ -171,7 +150,9 @@ export default function ProjectsFolderTree({
     const top = rect.bottom + MENU_HEIGHT <= window.innerHeight - 8
       ? rect.bottom + 6
       : Math.max(8, rect.top - MENU_HEIGHT - 6)
-    setMenu((current) => (current?.id === folderId ? null : { id: folderId, left, top }))
+    if (menuOpen && menu?.id === folderId) { closeMenu(); return }
+    setMenu({ id: folderId, left, top })
+    setMenuOpen(true)
   }
 
   const childrenByParent = useMemo(() => {
@@ -457,51 +438,47 @@ export default function ProjectsFolderTree({
         </li>
       </ul>
 
-      {menu && typeof document !== 'undefined' && (() => {
+      {menu && (() => {
         const folder = folders.find((item) => item.id === menu.id)
         if (!folder) return null
-        return createPortal(
-          <>
-            {/* 点外关闭的捕获面：它铺满整屏，所以既不进 Tab 顺序也不报给读屏
-                （原先那枚 <button aria-label="关闭"> 是个 1440×900 的隐形焦点目标）。
-                键盘退出走上面那条文档级 Esc。 */}
-            <div aria-hidden className="fixed inset-0 z-[80] cursor-default" onClick={() => closeMenu()} />
-            <div
-              ref={menuRef}
-              role="menu"
-              aria-label={`${folder.name} ${t('folderActions')}`}
-              className="fixed z-[90] rounded-[10px] border border-border bg-popover p-1 shadow-lg"
-              style={{ left: menu.left, top: menu.top, width: MENU_WIDTH }}
-              onKeyDown={handleMenuKeyDown}
-            >
+        return (
+          <OverlayMenu
+            open={menuOpen}
+            onOpenChange={(open) => { if (!open) closeMenu(false) }}
+            label={`${folder.name} ${t('folderActions')}`}
+            left={menu.left}
+            top={menu.top}
+            width={MENU_WIDTH}
+            triggerRef={menuTriggerRef}
+            menuRef={menuRef}
+            onKeyDown={handleMenuKeyDown}
+          >
+            <MenuButton
+              label={t('folderNewSub')}
+              icon={FolderPlus}
+              disabled={!canNestInto(folder)}
+              hint={canNestInto(folder) ? undefined : t('folderTooDeep')}
+              onClick={() => { closeMenu(false); setEditor({ mode: 'create', parentId: folder.id }); setDraft(''); setEditorError('') }}
+            />
+            <MenuButton
+              label={t('folderRename')}
+              icon={Pencil}
+              onClick={() => { closeMenu(false); setEditor({ mode: 'rename', id: folder.id }); setDraft(folder.name); setEditorError('') }}
+            />
+            <MenuButton
+              label={t('folderMoveFolder')}
+              icon={MoveRight}
+              onClick={() => { closeMenu(false); setMoveFolder(folder); setMoveParent(folder.parentId || null) }}
+            />
+            <div className="mt-1 pt-1 border-t border-border">
               <MenuButton
-                label={t('folderNewSub')}
-                icon={FolderPlus}
-                disabled={!canNestInto(folder)}
-                hint={canNestInto(folder) ? undefined : t('folderTooDeep')}
-                onClick={() => { setMenu(null); setEditor({ mode: 'create', parentId: folder.id }); setDraft(''); setEditorError('') }}
+                label={t('folderDelete')}
+                icon={Trash2}
+                danger
+                onClick={() => { closeMenu(false); setDeleteTarget(folder) }}
               />
-              <MenuButton
-                label={t('folderRename')}
-                icon={Pencil}
-                onClick={() => { setMenu(null); setEditor({ mode: 'rename', id: folder.id }); setDraft(folder.name); setEditorError('') }}
-              />
-              <MenuButton
-                label={t('folderMoveFolder')}
-                icon={MoveRight}
-                onClick={() => { setMenu(null); setMoveFolder(folder); setMoveParent(folder.parentId || null) }}
-              />
-              <div className="mt-1 pt-1 border-t border-border">
-                <MenuButton
-                  label={t('folderDelete')}
-                  icon={Trash2}
-                  danger
-                  onClick={() => { setMenu(null); setDeleteTarget(folder) }}
-                />
-              </div>
             </div>
-          </>,
-          document.body,
+          </OverlayMenu>
         )
       })()}
 

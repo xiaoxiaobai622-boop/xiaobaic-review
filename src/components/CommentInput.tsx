@@ -11,7 +11,6 @@ import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import CommentAttachmentButton from './CommentAttachmentButton'
 import EmojiPicker from './EmojiPicker'
-import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
 import { cn } from '@/lib/utils'
 import type { DrawingTool } from '@/types/annotations'
 import ReviewPopup from './ReviewPopup'
@@ -23,10 +22,6 @@ interface CommentInputProps {
   onSubmit: () => void
   loading: boolean
 
-  selectedCategory?: CommentCategory | null
-  onCategoryChange?: (category: CommentCategory | null) => void
-  /** 默认渲染；页内批注栏显式关掉，审片页不受影响。 */
-  showCategoryPicker?: boolean
   /** 批注可见范围（对标 frame.io 的 公共/内部）；只在工作室侧渲染，共享端由服务端强制公开。 */
   visibility?: 'PUBLIC' | 'INTERNAL'
   onVisibilityChange?: (visibility: 'PUBLIC' | 'INTERNAL') => void
@@ -64,6 +59,7 @@ interface CommentInputProps {
   attachmentNotice?: string | null
   onAttachmentErrorChange?: (message: string | null) => void
   shareToken?: string | null
+  shareSlug?: string | null
   maxCommentAttachments?: number
 
   // Annotation drawing
@@ -80,9 +76,6 @@ export default function CommentInput({
   onCommentChange,
   onSubmit,
   loading,
-  selectedCategory = null,
-  onCategoryChange,
-  showCategoryPicker = true,
   visibility = 'PUBLIC',
   onVisibilityChange,
   showVisibilitySelector = true,
@@ -107,6 +100,7 @@ export default function CommentInput({
   attachmentNotice = null,
   onAttachmentErrorChange,
   shareToken = null,
+  shareSlug = null,
   maxCommentAttachments,
   pendingAnnotation = false,
   onStartDrawing,
@@ -174,7 +168,7 @@ export default function CommentInput({
 
   if (commentsDisabled) {
     return (
-      <div className="flex-shrink-0 border-t border-border/70 bg-card p-2">
+      <div className={cn('flex-shrink-0 bg-card p-2', !sendInsideComposer && 'border-t border-border/70')}>
         <textarea
           disabled
           aria-label="批注输入框"
@@ -258,7 +252,7 @@ export default function CommentInput({
   }
 
   return (
-    <div className="flex-shrink-0 border-t border-border/70 bg-card px-2 pb-1 pt-[6.5px]">
+    <div className={cn('flex-shrink-0 bg-card px-2 pb-1 pt-[6.5px]', !sendInsideComposer && 'border-t border-border/70')}>
       {/* Restriction Warning */}
       {currentVideoRestricted && restrictionMessage && (
         <div className="mb-3 p-3 bg-warning-visible border-2 border-warning-visible rounded-lg">
@@ -447,32 +441,11 @@ export default function CommentInput({
               ? 'flex min-w-0 items-center justify-between gap-2'
               : 'flex h-8 min-w-0 items-center justify-between gap-2'}>
               <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                {showCategoryPicker && onCategoryChange && !replyingToComment && (
-                  <div className="flex items-center gap-1">
-                    {COMMENT_CATEGORIES.map((category) => {
-                      const selected = selectedCategory === category.value
-                      return (
-                        <button
-                          key={category.value}
-                          type="button"
-                          onClick={() => onCategoryChange(selected ? null : category.value)}
-                          aria-pressed={selected}
-                          className={`inline-flex h-7 min-w-[54px] items-center justify-center whitespace-nowrap rounded-full border px-2 text-center text-xs font-medium transition-[border-color,background-color,color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ${
-                            selected
-                              ? `${category.selectedControlClass} font-semibold`
-                              : 'border-border/70 bg-background/70 text-muted-foreground hover:border-primary/40 hover:bg-accent hover:text-foreground'
-                          }`}
-                        >
-                          {category.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
                 {allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded && (
                   <CommentAttachmentButton
                     videoId={selectedVideoIdProp}
                     shareToken={shareToken}
+                    shareSlug={shareSlug}
                     onAttachmentAdded={onAttachmentAdded}
                     onUploadError={onAttachmentErrorChange}
                     disabled={loading}

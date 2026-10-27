@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PrismaClient } from '@prisma/client'
@@ -291,6 +291,7 @@ async function main() {
     },
   })
   cleanupIds.teamIds.push(team.id)
+  const teamSlug = String(team.slug)
 
   const folders = []
   for (const name of ['一月', 'ces', '二月']) {
@@ -298,11 +299,14 @@ async function main() {
   }
   const statuses = ['IN_REVIEW', 'APPROVED', 'IN_REVIEW', 'SHARE_ONLY', 'IN_REVIEW', 'APPROVED', 'IN_REVIEW', 'IN_REVIEW', 'ARCHIVED']
   const projectIds: string[] = []
+  let projectSlug = ''
   for (const [i, st] of statuses.entries()) {
     const p = await prisma.project.create({
       data: {
         teamId: team.id, createdById: owner.id, projectCode: `C${short}${i}`,
         title: `取证项目${i + 1}号`, slug: `ovp-${short}-${i}`, shareSlug: `ovs-${short}-${i}`,
+        // 0 号项目开成免验证，好让 /share/<slug> 那页能匿名进去量批注区
+        authMode: i === 0 ? 'NONE' : 'PASSWORD',
         status: st as any,
         groupId: i < 6 ? folders[i % 3].id : null,
         companyName: i % 4 === 0 ? `客户甲${i}` : (i % 4 === 1 ? '客户乙' : null),
@@ -310,6 +314,7 @@ async function main() {
       },
     })
     projectIds.push(p.id)
+    if (i === 0) projectSlug = p.slug
   }
 
   // 工作区要有真视频卡才扫得到「视频操作」那一层弹层
@@ -558,6 +563,71 @@ async function main() {
     check((src.match(/renderTimecodePill/g) || []).length === 3,
       '时间码只有一份实现、两处出口（1 定义 + 2 调用），没抄第二份',
       `→ 出现 ${(src.match(/renderTimecodePill/g) || []).length} 次`)
+  }
+
+  // ── 批注分类（胶囊 + 头部「全部标签」）：他 09-30 就删了，这次量还剩几处 ──
+  // 对外团队分享页 /share/[teamSlug] 不需要登录态，正是他截图那一页。
+  await goto(page, `${BASE}/share/${projectSlug}`, 1500)
+  await waitFor(page, 'document.body.innerText.length > 40', 60_000)
+  await sleep(2500)
+  const catFacts = JSON.parse(String(await evalJs(page, `JSON.stringify({
+    path: location.pathname,
+    tagSelect: document.querySelectorAll('select[aria-label="按标签筛选"]').length,
+    chips: [...document.querySelectorAll('button[aria-pressed]')].filter(b => ['画面','声音','字幕','剪辑','其他'].includes(b.textContent?.trim() || '')).map(b => b.textContent?.trim()),
+    mounted: document.body.innerText.includes('写批注') || document.body.innerText.includes('讨论'),
+    body: document.body.innerText.replace(/\\n+/g, ' | ').slice(0, 90),
+  })`)))
+  say('[批注分类] 对外分享页实测', catFacts)
+  // 空跑不算证据：批注区没挂上时下拉和胶囊本来就是 0，那种 PASS 是假的。
+  if (catFacts.mounted) {
+    check(catFacts.tagSelect === 0, `对外分享页头部「全部标签」下拉数量 = ${catFacts.tagSelect}`)
+    check(catFacts.chips.length === 0, `对外分享页输入框下那排分类胶囊 = ${JSON.stringify(catFacts.chips)}`)
+  } else {
+    console.log(`SKIP 对外分享页的批注区没挂上（要先选一条素材才出得来），那两条计数不判：${catFacts.body}`)
+  }
+
+  {
+    // 整条「批注分类」线已经连数据一起删了（迁移 20261027120000_drop_comment_category）。
+    // 这几条是防回潮的闸口：谁再把分类画回来，这里就红。
+    const files = ['src/components/CommentSection.tsx', 'src/components/CommentInput.tsx',
+      'src/components/MessageBubble.tsx', 'src/hooks/useCommentManagement.ts',
+      'src/lib/validation.ts', 'src/lib/comment-sanitization.ts', 'src/app/api/comments/route.ts',
+      'src/app/studio/projects/[id]/page.tsx', 'src/app/studio/projects/[id]/share/page.tsx',
+      'src/app/share/[teamSlug]/SharePageClient.tsx']
+    const all = files.map((f) => readFileSync(f, 'utf8')).join('\n')
+    check(!/COMMENT_CATEGORIES|CommentCategory|showCategoryPicker|selectedCategory|categoryFilter/.test(all),
+      '主代码里再没有批注分类的任何标识符', `→ 命中 ${all.match(/COMMENT_CATEGORIES|CommentCategory|showCategoryPicker|selectedCategory|categoryFilter/g)?.slice(0, 3) ?? '无'}`)
+    check(!existsSync('src/lib/comment-categories.ts'), 'src/lib/comment-categories.ts 已删除')
+    check(!/\bcategory\b/.test(readFileSync('prisma/schema.prisma', 'utf8').split('model Comment ')[1]?.split('\n}')[0] ?? 'x'),
+      'schema 里 Comment 模型不再有 category 列')
+    check(existsSync('prisma/migrations/20261027120000_drop_comment_category/migration.sql'),
+      'drop 列的迁移已入库（生产部署时才会跑到）')
+  }
+
+  // ── 行为测试：删列之后批注的写/读链路真跑一遍（不是只看源码） ──────────
+  {
+    const login = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'X-ViTransfer-Device-ID': deviceId },
+      body: JSON.stringify({ email: owner.email, password: pw }),
+    })
+    const tokens: any = (await login.json().catch(() => null))?.tokens
+    const accessToken = String(tokens?.accessToken ?? '')
+    check(!!accessToken, `Node 侧登录拿到访问令牌 → ${login.status}`)
+    const video = await prisma.video.findFirst({ where: { projectId: projectIds[0] }, select: { id: true } })
+    const marker = `删列后的行为测试批注 ${stamp}`
+    const post = await fetch(`${BASE}/api/comments`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ projectId: projectIds[0], videoId: video?.id, timecode: '00:00:01:00', content: marker, category: 'PICTURE' }),
+    })
+    const postBody: any = await post.json().catch(() => null)
+    const list = await (await fetch(`${BASE}/api/comments?projectId=${projectIds[0]}&videoId=${video?.id}`, { headers: { authorization: `Bearer ${accessToken}` } })).json()
+    const mine = (Array.isArray(list) ? list : list?.comments ?? []).find((c: any) => c.content === marker)
+    say('[行为测试] 批注写读链路', { postStatus: post.status, postErr: postBody?.error ?? null, readBack: !!mine, hasCategoryField: mine ? Object.prototype.hasOwnProperty.call(mine, 'category') : null })
+    check(!!video, '拿得到一条真素材')
+    check(post.status === 201 || post.status === 200, `旧客户端多带一个 category 提交不报错（字段被忽略而不是 500）→ ${post.status} ${postBody?.error ?? ''}`)
+    check(!!mine, '刚写的批注读得回来')
+    check(mine ? !Object.prototype.hasOwnProperty.call(mine, 'category') : false, '读回来的批注对象里不再有 category 字段')
+    if (mine?.id) await fetch(`${BASE}/api/comments/${mine.id}`, { method: 'DELETE', headers: { authorization: `Bearer ${accessToken}` } }).catch(() => null)
   }
 
   console.log(failures.length ? `\n红 ${failures.length} 条：\n- ${failures.join('\n- ')}` : '\n骨架几何全绿')

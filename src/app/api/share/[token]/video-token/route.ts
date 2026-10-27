@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getShareContext } from '@/lib/auth'
+import { getShareAuth } from '@/lib/auth'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { logError } from '@/lib/logging'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { resolveShareMetadata, isShareLinkActive, isVideoInShareScope } from '@/lib/share-links'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,13 +28,22 @@ export async function GET(
     return NextResponse.json({ error: shareMessages?.videoIdRequired || 'videoId is required' }, { status: 400 })
   }
 
-  const shareContext = await getShareContext(request)
+  const shareAuth = await getShareAuth(request)
+  if (shareAuth.failure) {
+    return NextResponse.json({ error: shareAuth.failure.message, code: shareAuth.failure.code }, { status: 401 })
+  }
+  const shareContext = shareAuth.payload
   if (!shareContext) {
-    return NextResponse.json({ error: shareMessages?.unauthorized || 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(
+      { error: shareMessages?.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.AUTH_REQUIRED },
+      { status: 401 },
+    )
   }
 
   const resolved = await resolveShareMetadata(token)
-  if (resolved.policy && !isShareLinkActive(resolved.policy)) return NextResponse.json({ error: 'Share link is no longer active' }, { status: 410 })
+  if (resolved.policy && !isShareLinkActive(resolved.policy)) {
+    return NextResponse.json({ error: 'Share link is no longer active', code: SHARE_ERROR_CODES.LINK_INACTIVE }, { status: 410 })
+  }
   const project = resolved.project ? {
     id: resolved.project.id,
     slug: resolved.project.slug,
@@ -41,7 +52,8 @@ export async function GET(
   } : null
 
   if (!project || shareContext.projectId !== project.id || shareContext.shareId !== token) {
-    return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
+    logShareDenial({ shareToken: shareContext.shareId, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.SCOPE_DENIED })
+    return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.SCOPE_DENIED }, { status: 403 })
   }
 
   const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
@@ -70,7 +82,8 @@ export async function GET(
   }
 
   if (quality === 'original' && !video.approved) {
-    return NextResponse.json({ error: shareMessages?.originalQualityUnavailable || 'Original quality unavailable' }, { status: 403 })
+    logShareDenial({ shareToken: shareContext.shareId, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.PERMISSION_DENIED })
+    return NextResponse.json({ error: shareMessages?.originalQualityUnavailable || 'Original quality unavailable', code: SHARE_ERROR_CODES.PERMISSION_DENIED }, { status: 403 })
   }
 
   const sessionId = shareContext.sessionId || `share:${project.id}:${token}`

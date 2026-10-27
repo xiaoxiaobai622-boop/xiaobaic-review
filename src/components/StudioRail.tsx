@@ -170,7 +170,7 @@ export default function StudioRail() {
     >
       <ProjectsRailItem active={pathname === '/studio/projects'} />
       <RailSearch className={RAIL_ICON_BUTTON} />
-      <RailNotifications className={RAIL_ICON_BUTTON} />
+      <RailNotifications className={RAIL_ICON_BUTTON} enabled={teamGroups.length > 0} />
       <RailItem
         href="/studio/calendar"
         label="项目日历"

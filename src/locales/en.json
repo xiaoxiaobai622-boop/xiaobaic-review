@@ -1263,6 +1263,7 @@
   "passwordRequiredShort": "Password is required",
   "tooManyPasswordAttempts": "Too many failed password attempts. Please try again later.",
   "sessionExpiredOrInvalid": "Session expired or invalid. Please authenticate again.",
+  "sessionExpiredRefresh": "Session expired. Please refresh the page.",
   "authenticationRequired": "Authentication required",
   "guestEntryRequired": "Guest entry required",
   "unableToProcessRequest": "Unable to process request",

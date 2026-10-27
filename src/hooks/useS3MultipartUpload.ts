@@ -2,6 +2,7 @@
 
 import { useRef, useCallback } from 'react'
 import { apiPost } from '@/lib/api-client'
+import { shareApiPost, shareSlugFromToken } from '@/lib/share-token-store'
 
 // Upload N parts in parallel via a shared worker pool. Each finished part
 // frees its slot for the next queued part — no straggler-blocks-batch waste.
@@ -30,6 +31,7 @@ export interface S3UploadTarget {
   bearerToken?: string
   /** Share access is separate from the signed-in account session. */
   shareToken?: string
+  shareSlug?: string
 }
 
 export interface S3UploadCallbacks {
@@ -86,18 +88,30 @@ export function useS3MultipartUpload() {
     return Object.keys(headers).length > 0 ? { headers } : {}
   }, [])
 
+  // Share uploads go through the renewing fetch so a bearer that expires
+  // between presign and complete is replaced and the call is replayed.
+  const postJson = useCallback(async <T,>(
+    url: string,
+    body: unknown,
+    target: S3UploadTarget,
+  ): Promise<T> => {
+    const slug = target.shareSlug || shareSlugFromToken(target.shareToken)
+    if (slug) return shareApiPost<T>(slug, url, body)
+    return apiPost<T>(url, body, getAuthInit(target))
+  }, [getAuthInit])
+
   // Best-effort abort on S3 to free incomplete multipart storage
   const abortOnServer = useCallback(async (uploadId: string, target: S3UploadTarget): Promise<void> => {
     try {
-      await apiPost(
+      await postJson(
         '/api/uploads/s3/abort',
         { uploadId, ...targetIds(target) },
-        getAuthInit(target)
+        target,
       )
     } catch (err) {
       console.warn('[S3 MULTIPART] Failed to abort multipart upload:', err)
     }
-  }, [getAuthInit])
+  }, [postJson])
 
   const abortUpload = useCallback(async (uploadKey: string): Promise<void> => {
     const active = activeUploadsRef.current.get(uploadKey)
@@ -134,10 +148,8 @@ export function useS3MultipartUpload() {
 
       try {
         // ── 1. Request presigned part URLs ─────────────────────────────────────
-        // apiPost injects and refreshes the account token. Share access, when
-        // needed, travels in its own header so both identities reach the API.
-        const authInit = getAuthInit(target)
-
+        // Account uploads use the normal client; share uploads renew and replay
+        // through the visitor bearer.
         // Register before presign so a cancel during the round-trip aborts the signal
         const active: ActiveUpload = {
           abortController,
@@ -146,7 +158,7 @@ export function useS3MultipartUpload() {
         }
         activeUploadsRef.current.set(uploadKey, active)
 
-        const presignRes: PresignResponse = await apiPost(
+        const presignRes: PresignResponse = await postJson(
           '/api/uploads/s3/presign',
           {
             ...targetIds(target),
@@ -154,7 +166,7 @@ export function useS3MultipartUpload() {
             contentType,
             fileSize: file.size,
           },
-          authInit
+          target
         )
 
         active.uploadId = presignRes.uploadId
@@ -321,7 +333,7 @@ export function useS3MultipartUpload() {
         if (signal.aborted) return
 
         // ── 3. Complete the multipart upload ───────────────────────────────────
-        await apiPost(
+        await postJson(
           '/api/uploads/s3/complete',
           {
             uploadId,
@@ -330,7 +342,7 @@ export function useS3MultipartUpload() {
             fileSize: file.size,
             contentType,
           },
-          authInit
+          target
         )
 
         activeUploadsRef.current.delete(uploadKey)
@@ -353,7 +365,7 @@ export function useS3MultipartUpload() {
         onError?.(err instanceof Error ? err : new Error(String(err)))
       }
     },
-    [abortUpload, abortOnServer, getAuthInit]
+    [abortUpload, abortOnServer, postJson]
   )
 
   /** Pause an in-progress upload and stop the parts already in flight. */

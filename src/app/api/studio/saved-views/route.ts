@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
+import { requireApiUser } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { createSavedViewSchema, validateRequest } from '@/lib/validation'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const projectMessages = messages?.projects || {}
 
-  const authResult = await requireApiAdmin(request)
+  // 视图存在 userId 名下，团队里的普通成员也能读写自己的那条；
+  // 用 OWNER/ADMIN 门槛会让成员对页面上的控件拿到 403。
+  const authResult = await requireApiUser(request)
   if (authResult instanceof Response) return authResult
 
   const rateLimitResult = await rateLimit(request, {
@@ -43,7 +45,9 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const projectMessages = messages?.projects || {}
 
-  const authResult = await requireApiAdmin(request)
+  // 视图存在 userId 名下，团队里的普通成员也能读写自己的那条；
+  // 用 OWNER/ADMIN 门槛会让成员对页面上的控件拿到 403。
+  const authResult = await requireApiUser(request)
   if (authResult instanceof Response) return authResult
 
   const rateLimitResult = await rateLimit(request, {

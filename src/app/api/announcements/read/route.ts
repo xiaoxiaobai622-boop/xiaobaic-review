@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiUser } from '@/lib/auth'
+import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -8,8 +8,9 @@ export const dynamic = 'force-dynamic'
 
 /** POST /api/announcements/read — 把一批通知标记为我已读（幂等，重复标不报错）。 */
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
+  // 与 GET 同一条边界：读自己的平台通知不需要团队。
+  const authResult = await getCurrentUserFromRequest(request)
+  if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const limited = await rateLimit(request, {
     windowMs: 60 * 1000,

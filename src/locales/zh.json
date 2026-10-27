@@ -1220,6 +1220,7 @@
     "passwordRequiredShort": "请输入密码",
     "tooManyPasswordAttempts": "密码尝试失败次数过多。请稍后重试。",
     "sessionExpiredOrInvalid": "会话已过期或无效。请再次验证。",
+    "sessionExpiredRefresh": "会话已过期，请刷新",
     "authenticationRequired": "需要验证身份",
     "guestEntryRequired": "需要宾客入场",
     "unableToProcessRequest": "无法处理请求",

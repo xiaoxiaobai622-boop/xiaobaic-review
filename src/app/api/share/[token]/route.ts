@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isSmtpConfigured, getRateLimitSettings, getShareTokenTtlSeconds } from '@/lib/settings'
-import { getCurrentUserFromRequest, getShareContext, signShareToken, parseBearerToken } from '@/lib/auth'
+import { getCurrentUserFromRequest, getShareAuth, signShareToken } from '@/lib/auth'
 import { getPrimaryRecipient, getProjectRecipients } from '@/lib/recipients'
 import { verifyProjectAccess, fetchProjectWithVideos } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
@@ -9,7 +9,9 @@ import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-t
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions, noneAccessSessionId, shareAllowsProjectPhotos } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions, noneAccessSessionId, shareAllowsProjectPhotos, shareAllowsUploads, shareAuthFingerprint, sharePolicyFingerprint } from '@/lib/share-links'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 export const runtime = 'nodejs'
 
 
@@ -44,7 +46,10 @@ export async function GET(
     const shareLink = resolved.link
     const policy = resolved.policy
     if (policy && !isShareLinkActive(policy)) {
-      return NextResponse.json({ error: 'This share link is no longer active' }, { status: 410 })
+      return NextResponse.json({
+        error: 'This share link is no longer active',
+        code: SHARE_ERROR_CODES.LINK_INACTIVE,
+      }, { status: 410 })
     }
     const projectMeta = resolvedProject && policy ? {
       id: resolvedProject.id,
@@ -62,36 +67,37 @@ export async function GET(
       // to prevent project enumeration via status code differences
       return NextResponse.json({
         error: shareMessages?.authenticationRequired || 'Authentication required',
+        code: SHARE_ERROR_CODES.AUTH_REQUIRED,
         authMode: 'PASSWORD',
         guestMode: false,
       }, { status: 401 })
     }
 
-    const shareContext = await getShareContext(request)
-    if (shareLink && shareContext && shareContext.shareId !== token) {
-      return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
-    }
-    const isGuest = !!shareContext?.guest
-
-    // SECURITY: If user sent a bearer token but it failed verification (revoked, expired, invalid),
-    // handle based on current authMode:
-    // - NONE auth: Ignore invalid token, proceed as if no token sent
-    // - PASSWORD/OTP/BOTH: Return 401 to force re-authentication
-    const bearerToken = parseBearerToken(request)
-    if (bearerToken && !shareContext && projectMeta.authMode !== 'NONE') {
+    const shareAuth = await getShareAuth(request)
+    const shareContext = shareAuth.payload
+    if (shareAuth.failure) {
       const currentUser = await getCurrentUserFromRequest(request)
-      const isAdmin = currentUser?.role === 'ADMIN'
-
-      if (!isAdmin) {
-        // Token was sent but invalid/revoked - force re-authentication
+      if (currentUser?.role !== 'ADMIN') {
+        const isAuthGate = shareAuth.failure.code === SHARE_ERROR_CODES.AUTH_REQUIRED
         return NextResponse.json({
-          error: shareMessages?.sessionExpiredOrInvalid || 'Session expired or invalid. Please authenticate again.',
-          requiresPassword: true,
-          authMode: projectMeta.authMode || 'PASSWORD',
-          guestMode: projectMeta.guestMode || false
+          error: shareAuth.failure.message,
+          code: shareAuth.failure.code,
+          ...(isAuthGate ? {
+            requiresPassword: true,
+            authMode: projectMeta.authMode || 'PASSWORD',
+            guestMode: projectMeta.guestMode || false,
+          } : {}),
         }, { status: 401 })
       }
     }
+    if (shareLink && shareContext && shareContext.shareId !== token) {
+      logShareDenial({ shareToken: shareContext.shareId, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.SCOPE_DENIED })
+      return NextResponse.json({
+        error: shareMessages?.accessDenied || 'Access denied',
+        code: SHARE_ERROR_CODES.SCOPE_DENIED,
+      }, { status: 403 })
+    }
+    const isGuest = !!shareContext?.guest
 
     const project = await fetchProjectWithVideos(
       resolvedProject?.slug || token,
@@ -101,7 +107,8 @@ export async function GET(
     )
 
     if (!project) {
-      return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied' }, { status: 403 })
+      logShareDenial({ shareToken: token, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.LINK_MISSING })
+      return NextResponse.json({ error: shareMessages?.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.LINK_MISSING }, { status: 403 })
     }
 
     const scopedIds = scopeVideoIds(policy, project.videos)
@@ -112,6 +119,7 @@ export async function GET(
     if (!accessCheck.authorized) {
       return NextResponse.json({
         error: shareMessages?.authenticationRequired || 'Authentication required',
+        code: accessCheck.shareFailure?.code || SHARE_ERROR_CODES.AUTH_REQUIRED,
         requiresPassword: true,
         // The gate belongs to this share link, not to the project's own default.
         // Using project.authMode here turned a PASSWORD link on a NONE project
@@ -153,6 +161,7 @@ export async function GET(
     if (projectMeta.guestMode && !isAdmin && !hasShareSession && !isGuest) {
       return NextResponse.json({
         error: shareMessages?.guestEntryRequired || 'Guest entry required',
+        code: SHARE_ERROR_CODES.AUTH_REQUIRED,
         requiresPassword: false,
         authMode: projectMeta.authMode,
         guestMode: true
@@ -171,7 +180,10 @@ export async function GET(
     if (shareLink && !isAdmin && !isCatalogRefresh) {
       viewsUsed = await incrementShareLinkView(shareLink.id)
       if (viewsUsed === null) {
-        return NextResponse.json({ error: 'This share link has reached its viewing limit' }, { status: 410 })
+        return NextResponse.json({
+          error: 'This share link has reached its viewing limit',
+          code: SHARE_ERROR_CODES.LINK_INACTIVE,
+        }, { status: 410 })
       }
     }
 
@@ -375,8 +387,8 @@ export async function GET(
       allowAssetDownload: project.allowAssetDownload,
       allowPhotoDownload: photosVisible ? project.allowPhotoDownload : false,
       hasPhotos: photoAlbumCount > 0,
+      allowReverseShare: shareAllowsUploads(policy, resolvedProject),
       allowClientAssetUpload: project.allowClientAssetUpload,
-      allowReverseShare: project.allowReverseShare,
       clientCanApprove: project.clientCanApprove,
       showClientTutorial: project.showClientTutorial ?? true,
 
@@ -407,8 +419,6 @@ export async function GET(
       projectData.allowAssetDownload = false
       projectData.allowPhotoDownload = false
       projectData.allowClientAssetUpload = false
-      // allowReverseShare 故意不覆盖：上传接口按项目这一列判 403，这里把它写成 true
-      // 只会让关掉收录的项目仍然给出一个上传面板。
       projectData.clientCanApprove = false
     }
 
@@ -435,6 +445,8 @@ export async function GET(
         guest: false,
         sessionId,
         authMode: projectMeta.authMode,
+        policyFingerprint: sharePolicyFingerprint(policy, resolvedProject) ?? undefined,
+        authFingerprint: shareAuthFingerprint(policy) ?? undefined,
         ttlSeconds: shareTtlSeconds,
       })
       responseBody.shareToken = shareToken

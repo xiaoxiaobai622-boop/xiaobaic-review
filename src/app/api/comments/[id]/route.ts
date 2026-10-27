@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_COMMENT } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
-import { getCurrentUserFromRequest } from '@/lib/auth'
+import { getCurrentUserFromRequest, getPresentedShareTokenId } from '@/lib/auth'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { cancelCommentNotification } from '@/lib/comment-helpers'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint, shareTokenFromPath } from '@/lib/share-auth'
 export const runtime = 'nodejs'
+
+function logCommentPermissionDenial(request: NextRequest) {
+  logShareDenial({
+    shareToken: getPresentedShareTokenId(request) || shareTokenFromPath(request),
+    endpoint: requestEndpoint(request),
+    reason: SHARE_ERROR_CODES.PERMISSION_DENIED,
+  })
+}
 
 // Prevent static generation for this route
 export const dynamic = 'force-dynamic'
@@ -92,14 +102,20 @@ export async function PATCH(
       project.authMode,
       { allowGuest: false, requiredPermission: 'comment' }
     )
-    if (!access.authorized) return notAvailable()
+    if (!access.authorized) {
+      // A dead bearer has to stay distinguishable from "not yours"; the client
+      // renews the former and keeps the id-hiding answer for the latter.
+      if (access.errorResponse?.status === 401) return access.errorResponse
+      return notAvailable()
+    }
 
     const actor = await getCommentActor(request, project.teamId, comment.userId)
     // Resolving is a workflow status, so any member of the owning team may flip
     // it; deleting stays limited to the author and the team admins.
     if (!actor.isAuthor && !actor.teamRole) {
+      logCommentPermissionDenial(request)
       return NextResponse.json(
-        { error: commentsMessages.onlyTeamMemberCanResolve || 'Only the author or a team member can change the status of this comment' },
+        { error: commentsMessages.onlyTeamMemberCanResolve || 'Only the author or a team member can change the status of this comment', code: SHARE_ERROR_CODES.PERMISSION_DENIED },
         { status: 403 },
       )
     }
@@ -177,13 +193,15 @@ export async function DELETE(
       { allowGuest: false, requiredPermission: 'comment' },
     )
     if (!access.authorized) {
+      if (access.errorResponse?.status === 401) return access.errorResponse
       return notAvailable()
     }
 
     const actor = await getCommentActor(request, existingComment.project.teamId, existingComment.userId)
     if (!actor.isAuthor && !['OWNER', 'ADMIN'].includes(actor.teamRole ?? '')) {
+      logCommentPermissionDenial(request)
       return NextResponse.json(
-        { error: commentsMessages.onlyAuthorOrAdminCanDelete || 'Only the author or a team admin can delete this comment' },
+        { error: commentsMessages.onlyAuthorOrAdminCanDelete || 'Only the author or a team admin can delete this comment', code: SHARE_ERROR_CODES.PERMISSION_DENIED },
         { status: 403 },
       )
     }

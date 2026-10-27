@@ -1227,6 +1227,7 @@
     "passwordRequiredShort": "Passwort ist erforderlich",
     "tooManyPasswordAttempts": "Zu viele fehlgeschlagene Passworteingaben. Bitte versuchen Sie es später erneut.",
     "sessionExpiredOrInvalid": "Sitzung abgelaufen oder ungültig. Bitte authentifizieren Sie sich erneut.",
+    "sessionExpiredRefresh": "Sitzung abgelaufen. Bitte laden Sie die Seite neu.",
     "authenticationRequired": "Authentifizierung erforderlich",
     "guestEntryRequired": "Gastzugang erforderlich",
     "unableToProcessRequest": "Anfrage konnte nicht verarbeitet werden",

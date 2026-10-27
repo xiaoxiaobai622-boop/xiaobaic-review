@@ -15,7 +15,8 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Button } from '@/components/ui/button'
 import { Lock, Check, Mail, KeyRound } from 'lucide-react'
 import BrandLogo from '@/components/BrandLogo'
-import { loadShareToken, saveShareToken } from '@/lib/share-token-store'
+import { loadShareToken, saveShareToken, shareFetch, subscribeShareToken, renewShareToken, notifyShareSessionExpired } from '@/lib/share-token-store'
+import { appAlert } from '@/components/AppDialogProvider'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import PrivacyBanner, { PRIVACY_STORAGE_KEY } from '@/components/PrivacyBanner'
@@ -24,7 +25,6 @@ import ShareExpiryNote from '@/components/ShareExpiryNote'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
-import { apiFetch } from '@/lib/api-client'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 
 interface SharePageClientProps {
@@ -328,6 +328,26 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     }
   }, [storageKey])
 
+  // A renewal happens below React (comment composer, uploads, media tokens).
+  // Mirror the replacement into this page's state so later effects mint with
+  // the same bearer instead of the dead one.
+  useEffect(() => {
+    if (!storageKey) return
+    return subscribeShareToken(storageKey, (next) => {
+      if (next !== shareTokenRef.current) setShareToken(next)
+    })
+  }, [storageKey])
+
+  useEffect(() => {
+    const handleSessionExpired = (event: Event) => {
+      const slug = (event as CustomEvent<{ slug?: string }>).detail?.slug
+      if (slug && slug !== token) return
+      void appAlert(t('sessionExpiredRefresh'))
+    }
+    window.addEventListener('share-session-expired', handleSessionExpired as EventListener)
+    return () => window.removeEventListener('share-session-expired', handleSessionExpired as EventListener)
+  }, [t, token])
+
   useEffect(() => {
     const handleVideoPosition = (event: Event) => {
       const detail = (event as CustomEvent).detail || {}
@@ -365,11 +385,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
     const request = (async () => {
       try {
-        const response = await apiFetch(`/api/share/${token}/comments`, {
+        const response = await shareFetch(token, `/api/share/${token}/comments`, {
           cache: 'no-store',
-          headers: {
-            'X-Share-Token': `Bearer ${shareToken}`
-          }
         })
         if (response.ok) {
           const commentsData = await response.json()
@@ -389,8 +406,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   }, [canComment, token, shareToken])
 
   useEffect(() => {
-    const belongsToProject = (event: CustomEvent) => {
-      const eventProjectId = event.detail?.projectId
+    const belongsToProject = (event: CustomEvent) => {      const eventProjectId = event.detail?.projectId
       return !eventProjectId || !project?.id || eventProjectId === project.id
     }
 
@@ -445,7 +461,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   ) => {
     try {
       const authToken = tokenOverride || shareToken
-      const projectResponse = await fetch(`/api/share/${token}`, {
+      const projectResponse = await shareFetch(token, `/api/share/${token}`, {
         cache: 'no-store',
         // The catalog poll is the only caller that refreshes in place; the server
         // must not charge it against the link's view budget.
@@ -467,10 +483,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         const projectData = scopeProjectToFolder(await projectResponse.json(), urlFolderId)
         const nextCatalogSignature = getVideoCatalogSignature(projectData)
 
-        if (options.onlyIfVideoCatalogChanged && projectVideoCatalogRef.current === nextCatalogSignature) {
-          return
-        }
-
+        // 目录没变也不能丢这轮新签发的访客令牌：过期后服务端会在轮询里重新签一枚，
+        // 先落盘再早退，否则批注/上传会一直拿着过期令牌报 403。
         if (projectData.shareToken) {
           setShareToken(projectData.shareToken)
           saveShareToken(storageKey, projectData.shareToken)
@@ -478,6 +492,11 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           setShareToken(tokenOverride)
           saveShareToken(storageKey, tokenOverride)
         }
+
+        if (options.onlyIfVideoCatalogChanged && projectVideoCatalogRef.current === nextCatalogSignature) {
+          return
+        }
+
         projectVideoCatalogRef.current = nextCatalogSignature
         setProject(projectData)
 
@@ -526,7 +545,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
     async function loadProject() {
       try {
-        const response = await fetch(`/api/share/${token}`, {
+        const response = await shareFetch(token, `/api/share/${token}`, {
           cache: 'no-store',
           headers: { ...(shareToken ? { Authorization: `Bearer ${shareToken}` } : {}), ...getConsentHeader() }
         })
@@ -715,16 +734,21 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   ): Promise<string> => {
     // Read the token at call time: it is rotated whenever the project refreshes,
     // and a mint holding the previous one is rejected long before its TTL ends.
-    const authToken = shareTokenRef.current
+    let authToken = shareTokenRef.current
     if (!authToken) return ''
 
     const expiresAt = bearerExpiresAt(authToken)
     if (expiresAt !== null && expiresAt - Date.now() < SHARE_BEARER_MIN_LIFE_MS) {
-      if (shareTokenRef.current === authToken) {
-        saveShareToken(storageKey, null)
-        setShareToken(null)
+      const next = await renewShareToken(storageKey, authToken)
+      if (!next) {
+        if (shareTokenRef.current === authToken) {
+          saveShareToken(storageKey, null)
+          setShareToken(null)
+        }
+        notifyShareSessionExpired(storageKey)
+        return ''
       }
-      return ''
+      authToken = next
     }
 
     const requestKey = `${authToken}:${videoId}:${quality}`
@@ -733,7 +757,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     if (inFlight) inFlightTokenRequestsRef.current.delete(requestKey)
 
     const requestPromise = (async () => {
-      const response = await fetch(`/api/share/${token}/video-token?videoId=${videoId}&quality=${quality}`, {
+      const response = await shareFetch(token, `/api/share/${token}/video-token?videoId=${videoId}&quality=${quality}`, {
         cache: 'no-store',
         headers: { Authorization: `Bearer ${authToken}` },
         signal,

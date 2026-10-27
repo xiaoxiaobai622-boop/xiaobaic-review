@@ -73,6 +73,17 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
   // Load company contacts for autocomplete
   const [companyContacts, setCompanyContacts] = useState<CompanyContact[]>([])
   const [showContactDropdown, setShowContactDropdown] = useState(false)
+
+  useEffect(() => {
+    if (!showContactDropdown) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setShowContactDropdown(false)
+    }
+    document.addEventListener('keydown', handleEscape, true)
+    return () => document.removeEventListener('keydown', handleEscape, true)
+  }, [showContactDropdown])
   const nameInputRef = useRef<HTMLDivElement>(null)
   // 展开号码用的是编辑面板当前那一行，请求回来时得确认还是同一行。
   const revealTargetRef = useRef<string | null>(null)
@@ -448,12 +459,12 @@ export function RecipientManager({ projectId, companyId, onError, onRecipientsCh
                   
                   {/* Contact autocomplete dropdown */}
                   {showContactDropdown && filteredContacts.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-150 origin-top">
                       {filteredContacts.map((contact) => (
                         <button
                           key={contact.id}
                           type="button"
-                          className="w-full px-3 py-2 text-left hover:bg-accent flex items-center gap-3"
+                          className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-accent"
                           onClick={() => handleSelectContact(contact)}
                         >
                           <User className="w-4 h-4 text-muted-foreground flex-shrink-0" />

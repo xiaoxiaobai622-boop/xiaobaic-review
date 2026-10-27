@@ -42,22 +42,37 @@ export default function TeamMembersPage() {
   /** 席位上限由服务端套餐给（0＝不限）；这里写死过 10，套餐是 5，进度条永远只画半条。 */
   const [seatCap, setSeatCap] = useState<number | null>(null)
 
+  const canManage = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'
   const load = async (id: string) => {
     setError('')
-    const [memberRes, requestRes, inviteRes, overviewRes] = await Promise.all([apiFetch(`/api/teams/${id}/members`, { cache: 'no-store' }), apiFetch(`/api/teams/${id}/join-requests`, { cache: 'no-store' }), apiFetch(`/api/teams/${id}/invitations`, { cache: 'no-store' }), apiFetch(`/api/teams/${id}/overview`, { cache: 'no-store' })] )
+    // 审核申请和邀请列表只对负责人/管理员开放；成员页不请求，免得每次进页都吃一个 403。
+    const [memberRes, requestRes, inviteRes, overviewRes] = await Promise.all([
+      apiFetch(`/api/teams/${id}/members`, { cache: 'no-store' }),
+      canManage ? apiFetch(`/api/teams/${id}/join-requests`, { cache: 'no-store' }) : Promise.resolve(null),
+      canManage ? apiFetch(`/api/teams/${id}/invitations`, { cache: 'no-store' }) : Promise.resolve(null),
+      apiFetch(`/api/teams/${id}/overview`, { cache: 'no-store' }),
+    ])
     if (!memberRes.ok) throw new Error('无法加载成员')
     setMembers((await memberRes.json()).members || [])
-    setRequests(requestRes.ok ? ((await requestRes.json()).requests || []) : [])
-    setInvites(inviteRes.ok ? ((await inviteRes.json()).invites || []) : [])
+    setRequests(requestRes?.ok ? ((await requestRes.json()).requests || []) : [])
+    setInvites(inviteRes?.ok ? ((await inviteRes.json()).invites || []) : [])
     const cap = overviewRes.ok ? Number((await overviewRes.json())?.quota?.maxMembers) : Number.NaN
     setSeatCap(Number.isFinite(cap) ? cap : null)
   }
 
   useEffect(() => {
-    ;(async () => { try { const response = await apiFetch('/api/team-center', { cache: 'no-store' }); const data = await response.json(); const id = data.activeTeamId || data.teams?.[0]?.team.id; if (!id) return; setTeamId(id); await load(id) } catch (reason) { setError(reason instanceof Error ? reason.message : '成员数据加载失败') } finally { setLoading(false) } })()
+    ;(async () => { try { const response = await apiFetch('/api/team-center', { cache: 'no-store' }); const data = await response.json(); const id = data.activeTeamId || data.teams?.[0]?.team.id; if (!id) { setLoading(false); return } setTeamId(id) } catch (reason) { setError(reason instanceof Error ? reason.message : '成员数据加载失败'); setLoading(false) } })()
   }, [])
 
-  const canManage = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'
+  useEffect(() => {
+    if (!teamId) return
+    let cancelled = false
+    ;(async () => {
+      try { await load(teamId) } catch (reason) { setError(reason instanceof Error ? reason.message : '成员数据加载失败') } finally { if (!cancelled) setLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [teamId, canManage])
+
   const activeMembers = members.filter((member) => member.status === 'ACTIVE')
   const selectableMembers = activeMembers.filter((member) => member.role !== 'OWNER')
 

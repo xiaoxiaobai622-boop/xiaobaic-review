@@ -336,18 +336,18 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
             {!compact && <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
           </button>
           {profileOpen && (
-            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-lg border border-border bg-card p-1.5 shadow-lg" role="menu">
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 origin-top rounded-lg border border-border bg-card p-1.5 shadow-lg animate-in fade-in-0 zoom-in-95 duration-150" role="menu">
               <div className="flex items-center gap-2 border-b border-border px-2.5 py-2.5">
                 <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="md" isInternal={isAdmin} />
                 <div className="min-w-0"><p className="truncate text-sm font-medium">{displayName}</p>{secondaryContact && <p className="truncate text-xs text-muted-foreground">{secondaryContact}</p>}</div>
               </div>
-              <Link href={profileHref} role="menuitem" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-muted">
+              <Link href={profileHref} role="menuitem" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted focus-visible:bg-muted">
                 <UserCircle className="h-4 w-4" />{ta('personalCenter')}
               </Link>
               {isAdmin && <Link href="/studio/projects" role="menuitem" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-muted">
                 <ShieldCheck className="h-4 w-4" />{ta('consoleEntry')}
               </Link>}
-              <button type="button" role="menuitem" onClick={logout} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
+              <button type="button" role="menuitem" onClick={logout} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10">
                 <LogOut className="h-4 w-4" />{t('logout')}
               </button>
             </div>

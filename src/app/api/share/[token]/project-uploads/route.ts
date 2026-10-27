@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
-import { verifyProjectAccess } from '@/lib/project-access'
-import { getShareContext, hasWebsiteLoginSession } from '@/lib/auth'
+import { getShareAuth, hasWebsiteLoginSession } from '@/lib/auth'
 import { validateAssetFile, sanitizeDisplayFilename, sanitizeFilename, isSuspiciousFilename } from '@/lib/file-validation'
 import { deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { resolveShareMetadata, isShareLinkActive } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, shareAllowsUploads } from '@/lib/share-links'
 import { checkTeamStorageQuota } from '@/lib/platform-access'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
+import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
+import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
+
+function shareFailure(status: number, code: string, message: string) {
+  return NextResponse.json({ error: message, code }, { status })
+}
 
 export const runtime = 'nodejs'
 
@@ -34,50 +39,47 @@ export async function POST(
     const { token: shareToken } = await params
 
     const resolved = await resolveShareMetadata(shareToken)
-    // The project's own address decides collection from the project setting below,
-    // not from a link type; only an explicit link is refused for not being COLLECT.
-    const deniedByLink = resolved.link !== null && !resolved.policy?.isProjectMaster && resolved.link.type !== 'COLLECT'
-    if ((resolved.policy && !isShareLinkActive(resolved.policy)) || deniedByLink) {
-      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
-    }
     const project = resolved.project ? {
       id: resolved.project.id,
       teamId: resolved.project.teamId,
-      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
-      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
-      allowReverseShare: resolved.policy?.isProjectMaster
-        ? resolved.project.allowReverseShare
-        : Boolean(resolved.policy?.permissions.includes('upload')),
     } : null
 
     if (!project) {
-      return NextResponse.json({ error: shareMessages.projectNotFound || 'Project not found' }, { status: 404 })
+      return shareFailure(404, SHARE_ERROR_CODES.LINK_MISSING, shareMessages.projectNotFound || 'Project not found')
     }
 
-    if (!project.allowReverseShare) {
-      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    const shareAuth = await getShareAuth(request)
+    if (shareAuth.failure) {
+      return shareFailure(401, shareAuth.failure.code, shareMessages.sessionExpiredRefresh || 'Session expired. Please refresh the page.')
+    }
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) {
+      return shareFailure(410, SHARE_ERROR_CODES.LINK_INACTIVE, 'Share link is no longer active')
+    }
+    const shareContext = shareAuth.payload
+    if (shareContext && (shareContext.shareId !== shareToken || shareContext.projectId !== project.id)) {
+      return shareFailure(401, SHARE_ERROR_CODES.TOKEN_SCOPE_MISMATCH, shareMessages.accessDenied || 'Access denied')
+    }
+
+    if (!shareAllowsUploads(resolved.policy, resolved.project)) {
+      logShareDenial({ shareToken, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED })
+      return shareFailure(403, SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, shareMessages.accessDenied || 'Access denied')
+    }
+
+    if (!shareContext) {
+      return shareFailure(401, SHARE_ERROR_CODES.AUTH_REQUIRED, shareMessages.authenticationRequired || 'Authentication required')
     }
 
     // Uploading from a share page requires a real website account. The share
     // token still scopes the upload to this project and owns the upload
     // session; it is not a substitute for account authentication.
     const hasLoginSession = await hasWebsiteLoginSession(request)
-    const shareContext = await getShareContext(request)
-    if (!hasLoginSession || !shareContext || shareContext.projectId !== project.id) {
-      return NextResponse.json({ error: '请先登录后再上传视频' }, { status: 401 })
+    if (!hasLoginSession) {
+      return shareFailure(401, SHARE_ERROR_CODES.LOGIN_REQUIRED, '请先登录后再上传视频')
     }
 
-    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
-      allowGuest: true,
-    })
-
-    if (!accessCheck.authorized) {
-      return accessCheck.errorResponse || NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
-    }
-
-    const sessionId = shareContext.sessionId || accessCheck.shareTokenSessionId
+    const sessionId = shareContext.sessionId
     if (!sessionId) {
-      return NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return shareFailure(401, SHARE_ERROR_CODES.LOGIN_REQUIRED, shareMessages.unauthorized || 'Unauthorized')
     }
 
     const body = await request.json()
@@ -137,7 +139,6 @@ export async function POST(
     let resolvedEmail: string | null = authorEmail || null
 
     if (!resolvedName && !resolvedEmail) {
-      const shareContext = await getShareContext(request)
       if (shareContext?.recipientId) {
         const recipient = await prisma.projectRecipient.findUnique({
           where: { id: shareContext.recipientId },
@@ -198,42 +199,44 @@ export async function DELETE(
     const uploadId = searchParams.get('uploadId') ?? ''
 
     const resolved = await resolveShareMetadata(shareToken)
-    // The project's own address decides collection from the project setting below,
-    // not from a link type; only an explicit link is refused for not being COLLECT.
-    const deniedByLink = resolved.link !== null && !resolved.policy?.isProjectMaster && resolved.link.type !== 'COLLECT'
-    if ((resolved.policy && !isShareLinkActive(resolved.policy)) || deniedByLink) {
-      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
-    }
     const project = resolved.project ? {
       id: resolved.project.id,
-      sharePassword: resolved.policy?.sharePassword ?? resolved.project.sharePassword,
-      authMode: resolved.policy?.authMode ?? resolved.project.authMode,
-      allowReverseShare: resolved.policy?.isProjectMaster
-        ? resolved.project.allowReverseShare
-        : Boolean(resolved.policy?.permissions.includes('upload')),
+      teamId: resolved.project.teamId,
     } : null
 
-    if (!project || !project.allowReverseShare) {
-      return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+    if (!project) {
+      return shareFailure(404, SHARE_ERROR_CODES.LINK_MISSING, shareMessages.projectNotFound || 'Project not found')
+    }
+
+    const shareAuth = await getShareAuth(request)
+    if (shareAuth.failure) {
+      return shareFailure(401, shareAuth.failure.code, shareMessages.sessionExpiredRefresh || 'Session expired. Please refresh the page.')
+    }
+    if (resolved.policy && !isShareLinkActive(resolved.policy)) {
+      return shareFailure(410, SHARE_ERROR_CODES.LINK_INACTIVE, 'Share link is no longer active')
+    }
+    const shareContext = shareAuth.payload
+    if (shareContext && (shareContext.shareId !== shareToken || shareContext.projectId !== project.id)) {
+      return shareFailure(401, SHARE_ERROR_CODES.TOKEN_SCOPE_MISMATCH, shareMessages.accessDenied || 'Access denied')
+    }
+
+    if (!shareAllowsUploads(resolved.policy, resolved.project)) {
+      logShareDenial({ shareToken, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED })
+      return shareFailure(403, SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, shareMessages.accessDenied || 'Access denied')
+    }
+
+    if (!shareContext) {
+      return shareFailure(401, SHARE_ERROR_CODES.AUTH_REQUIRED, shareMessages.authenticationRequired || 'Authentication required')
     }
 
     const hasLoginSession = await hasWebsiteLoginSession(request)
-    const shareContext = await getShareContext(request)
-    if (!hasLoginSession || !shareContext || shareContext.projectId !== project.id) {
-      return NextResponse.json({ error: '请先登录后再操作' }, { status: 401 })
+    if (!hasLoginSession) {
+      return shareFailure(401, SHARE_ERROR_CODES.LOGIN_REQUIRED, '请先登录后再操作')
     }
 
-    const accessCheck = await verifyProjectAccess(request, project.id, project.sharePassword, project.authMode, {
-      allowGuest: true,
-    })
-
-    if (!accessCheck.authorized) {
-      return NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
-    }
-
-    const sessionId = shareContext.sessionId || accessCheck.shareTokenSessionId
+    const sessionId = shareContext.sessionId
     if (!sessionId) {
-      return NextResponse.json({ error: shareMessages.unauthorized || 'Unauthorized' }, { status: 403 })
+      return shareFailure(401, SHARE_ERROR_CODES.LOGIN_REQUIRED, shareMessages.unauthorized || 'Unauthorized')
     }
 
     const upload = await prisma.projectUpload.findFirst({
