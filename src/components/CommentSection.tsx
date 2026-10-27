@@ -537,7 +537,7 @@ export default function CommentSection({
             <div className="text-center py-12">
               <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">
-                {commentQuery.trim() || statusFilter !== 'ALL' || categoryFilter !== 'ALL'
+                {commentQuery.trim() || statusFilter !== 'ALL'
                   ? tu('noMatchingComments')
                   : t('noMessages')}
               </p>
