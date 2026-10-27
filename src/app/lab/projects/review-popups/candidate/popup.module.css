@@ -1,0 +1,152 @@
+.surface {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid hsl(var(--border) / .7);
+  border-radius: 8px;
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  box-shadow: 0 1px 20px rgb(0 0 0 / .08), 0 12px 16px rgb(0 0 0 / .1), 0 6px 12px rgb(0 0 0 / .12);
+  transform-origin: var(--popup-origin);
+  font-size: 13px;
+  line-height: 20px;
+  outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / .4) transparent;
+}
+
+:global(.dark) .surface {
+  border-color: hsl(var(--foreground) / .06);
+  background: color-mix(in srgb, hsl(var(--popover)) 85%, hsl(var(--foreground)));
+  box-shadow: 0 1px 20px rgb(0 0 0 / .16), 0 12px 16px rgb(0 0 0 / .2), 0 6px 12px rgb(0 0 0 / .24);
+}
+
+.surface[data-state] {
+  opacity: 0;
+  transform: scale(.97) translateY(var(--popup-offset));
+  transition: opacity 125ms cubic-bezier(.2, .4, .1, 1), transform 125ms cubic-bezier(.2, .4, .1, 1);
+}
+
+.surface[data-state='open'] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition-duration: 200ms;
+}
+
+@starting-style {
+  .surface[data-state='open'] { opacity: 0; transform: scale(.97) translateY(var(--popup-offset)); }
+}
+
+.surface[data-state='closed'] {
+  pointer-events: none;
+  /* Radix retains exit DOM through animationend; transitions preserve interrupted motion. */
+  animation: popup-retain 125ms linear both;
+}
+
+.trigger[aria-expanded='true'] {
+  background: hsl(var(--foreground) / .1);
+  color: hsl(var(--foreground));
+}
+
+.trigger:active {
+  background: hsl(var(--foreground) / .15);
+}
+
+.trigger:focus-visible,
+.surface button:focus-visible,
+.surface select:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+
+.surface ::selection {
+  background: hsl(var(--primary) / .25);
+}
+
+.heading {
+  padding: 4px 8px 6px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.item {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  color: inherit;
+  text-align: left;
+  font-size: 13px;
+  line-height: 20px;
+  transition: background-color 100ms cubic-bezier(.2, .4, .1, 1);
+}
+
+.item:hover,
+.item:focus-visible {
+  background: hsl(var(--foreground) / .08);
+}
+
+.item[aria-checked='true'] {
+  background: hsl(var(--foreground) / .05);
+}
+
+.item:active {
+  background: hsl(var(--foreground) / .14);
+  transition: none;
+}
+
+.visibilityItem {
+  align-items: flex-start;
+  padding: 9px 8px;
+}
+
+.description {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
+}
+
+.emojiTabs {
+  display: flex;
+  gap: 3px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid hsl(var(--border) / .6);
+}
+
+.emojiTab, .emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  transition: background-color 100ms cubic-bezier(.2, .4, .1, 1);
+}
+
+.emojiTab { color: hsl(var(--muted-foreground)); }
+.emoji { width: 100%; font-size: 22px; }
+.emojiTab:hover, .emoji:hover, .emojiTab[aria-selected='true'] { background: hsl(var(--foreground) / .08); color: hsl(var(--foreground)); }
+.emoji:active { background: hsl(var(--foreground) / .15); transition: none; }
+
+@keyframes popup-retain {
+  from { --popup-presence: 0; }
+  to { --popup-presence: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface[data-state] { animation-duration: .01ms; transition-duration: .01ms; transform: none; }
+  .surface button, .trigger { transition: none; }
+  @starting-style {
+    .surface[data-state='open'] { transform: none; }
+  }
+}

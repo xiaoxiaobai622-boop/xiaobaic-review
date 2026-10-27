@@ -1289,3 +1289,8 @@ a.pointCol:focus-visible {
     transition: none;
   }
 }
+
+/* 顶栏是 sticky 的：锚点跳转要留出它的高度，否则标题落在栏后面。 */
+.anchorSection {
+  scroll-margin-top: 84px;
+}

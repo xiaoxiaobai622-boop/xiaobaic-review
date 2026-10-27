@@ -1,5 +1,6 @@
 'use client'
 
+import { useSlidingIndicator } from '@/hooks/useSlidingIndicator'
 import { useLayoutEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
@@ -65,6 +66,7 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
   const auxiliaryPage = pathname.startsWith('/studio/team/settings') || pathname.startsWith('/studio/team/invite') || pathname.startsWith('/studio/team/join')
   const tabs = auxiliaryPage ? [] : tabsBySection[section.key] ?? []
   const activeTab = searchParams?.get('tab') || tabs[0]?.value
+  const { containerRef: tabsRef, rect: tabIndicator } = useSlidingIndicator(Math.max(0, tabs.findIndex((tab) => tab.value === activeTab)))
 
   useLayoutEffect(() => {
     document.documentElement.classList.add('team-admin-scroll-lock')
@@ -100,9 +102,16 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
 
         <main className="scrollbar-hidden min-w-0 flex-1 px-4 py-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px] lg:bg-popover lg:px-8 lg:py-7">
           {tabs.length > 0 && (
-            <nav aria-label={`${section.label}页签`} className="mb-6 flex gap-6 overflow-x-auto border-b border-border">
+            <nav ref={tabsRef} aria-label={`${section.label}页签`} className="relative mb-6 flex gap-6 overflow-x-auto border-b border-border">
+              {tabIndicator && (
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0 bottom-0 h-0.5 bg-primary transition-[transform,width] duration-[var(--motion-base)] ease-[var(--ease-standard)]"
+                  style={{ transform: `translateX(${tabIndicator.left}px)`, width: tabIndicator.width }}
+                />
+              )}
               {tabs.map((tab) => (
-                <Link key={tab.value} href={tab.href} className={`relative -mb-px whitespace-nowrap px-1 pb-3 text-sm transition-colors ${activeTab === tab.value ? 'font-medium text-primary after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                <Link key={tab.value} href={tab.href} data-segment aria-current={activeTab === tab.value ? 'page' : undefined} className={`relative z-10 -mb-px whitespace-nowrap px-1 pb-3 text-sm transition-colors ${activeTab === tab.value ? 'font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                   {tab.label}
                 </Link>
               ))}

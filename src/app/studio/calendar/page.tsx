@@ -8,6 +8,7 @@ import { Calendar, ChevronLeft, ChevronRight, Copy, RefreshCw, BarChart3, Check,
 import { apiFetch } from '@/lib/api-client'
 import Link from 'next/link'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { useSlidingIndicator } from '@/hooks/useSlidingIndicator'
 
 interface CalendarProject {
   id: string
@@ -31,6 +32,7 @@ export default function CalendarPage() {
   const [projects, setProjects] = useState<CalendarProject[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('calendar')
+  const { containerRef: viewSwitchRef, rect: viewSwitchRect } = useSlidingIndicator(viewMode === 'calendar' ? 0 : 1)
   const [calendarScale, setCalendarScale] = useState<CalendarScale>('month')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [ganttRange, setGanttRange] = useState<GanttRange>('all')
@@ -538,16 +540,24 @@ export default function CalendarPage() {
             </h1>
             <p className="text-muted-foreground mt-1 text-sm sm:text-base">{t('description')}</p>
           </div>
-          <div className="inline-flex items-center rounded-md border bg-card p-0.5">
+          <div ref={viewSwitchRef} className="relative inline-flex items-center rounded-md border bg-card p-0.5">
+            {viewSwitchRect && (
+              <span
+                aria-hidden="true"
+                className="absolute left-0 bottom-0.5 top-0.5 rounded bg-accent transition-[transform,width] duration-[var(--motion-base)] ease-[var(--ease-standard)]"
+                style={{ transform: `translateX(${viewSwitchRect.left}px)`, width: viewSwitchRect.width }}
+              />
+            )}
             <Button
               type="button"
               variant="ghost"
               size="icon"
+              data-segment
               onClick={() => setViewMode('calendar')}
               aria-pressed={viewMode === 'calendar'}
               className={cn(
-                'h-8 w-8 text-muted-foreground hover:bg-accent hover:text-foreground',
-                viewMode === 'calendar' && 'bg-accent text-foreground'
+                'relative z-10 h-8 w-8 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground',
+                viewMode === 'calendar' && 'text-foreground'
               )}
               title={t('calendarView')}
             >
@@ -558,11 +568,12 @@ export default function CalendarPage() {
               type="button"
               variant="ghost"
               size="icon"
+              data-segment
               onClick={() => setViewMode('gantt')}
               aria-pressed={viewMode === 'gantt'}
               className={cn(
-                'h-8 w-8 text-muted-foreground hover:bg-accent hover:text-foreground',
-                viewMode === 'gantt' && 'bg-accent text-foreground'
+                'relative z-10 h-8 w-8 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground',
+                viewMode === 'gantt' && 'text-foreground'
               )}
               title={t('ganttView')}
             >

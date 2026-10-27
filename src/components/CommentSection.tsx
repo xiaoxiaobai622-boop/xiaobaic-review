@@ -144,6 +144,7 @@ export default function CommentSection({
     handleSubmitComment,
     handleReply,
     handleCancelReply,
+    replyFocusRequest,
     handleDeleteComment,
     handleAttachmentAdded,
     handleRemoveAttachment,
@@ -648,6 +649,7 @@ export default function CommentSection({
           onSetTimecodeEnd={handleSetTimecodeEnd}
           replyingToComment={replyingToComment}
           onCancelReply={handleCancelReply}
+          focusRequest={replyFocusRequest}
           currentVideoRestricted={currentVideoRestricted}
           restrictionMessage={restrictionMessage}
           commentsDisabled={commentsDisabled}

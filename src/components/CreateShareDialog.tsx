@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import Image from 'next/image'
 import QRCode from 'qrcode'
 import { Check, Copy, Download, Link2, Loader2, MessageSquare, QrCode, ShieldCheck } from 'lucide-react'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
+import { Switch } from '@/components/ui/switch'
 import { generateSharePasscode } from '@/lib/password-utils'
 
 export type SharePreset = 'REVIEW' | 'DELIVERY' | 'COLLECT'
@@ -30,15 +31,17 @@ function versionName(item: ShareVersionOption): string {
 }
 
 function ToggleRow({ checked, onChange, icon: Icon, title, description }: { checked: boolean; onChange: (value: boolean) => void; icon: any; title: string; description: string }) {
-  return <label className="flex cursor-pointer items-center gap-3 py-3">
+  const id = useId()
+  return <div className="flex items-center gap-3 py-3">
     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Icon className="h-4 w-4" /></span>
-    <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{title}</span><span className="block text-xs leading-5 text-muted-foreground">{description}</span></span>
-    <button type="button" role="switch" aria-checked={checked} onClick={(event) => { event.preventDefault(); onChange(!checked) }} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : 'translate-x-0'}`} /></button>
-  </label>
+    <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer"><span className="block text-sm font-medium">{title}</span><span className="block text-xs leading-5 text-muted-foreground">{description}</span></label>
+    <Switch id={id} checked={checked} onCheckedChange={onChange} aria-label={title} />
+  </div>
 }
 
 export default function CreateShareDialog({ projectId, open, preset, target, onOpenChange, onCreated }: CreateShareDialogProps) {
   const [name, setName] = useState('')
+  const [copied, setCopied] = useState(false)
   const [versionScope, setVersionScope] = useState('all')
   const [allowDownload, setAllowDownload] = useState(true)
   const [allowComment, setAllowComment] = useState(true)
@@ -99,6 +102,12 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
     } catch (reason) { setError(reason instanceof Error ? reason.message : '创建分享失败') } finally { setSubmitting(null) }
   }
 
+  const copy = async (text: string) => {
+    await copyTextToClipboard(text)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+
   const versions = [...(target?.versions ?? [])].sort((a, b) => b.version - a.version)
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
@@ -109,7 +118,8 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
       </DialogHeader>
       {created ? <div className="px-6 py-6">
         <div className="flex flex-col items-center text-center">{created.qrImage ? <Image src={created.qrImage} alt="分享二维码" width={208} height={208} unoptimized className="h-52 w-52 rounded-md border border-border bg-white p-2" /> : <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600"><Check className="h-6 w-6" /></span>}<h3 className="mt-4 font-semibold">{created.qrImage ? '通过扫码分享' : '通过链接分享'}</h3><p className="mt-1 text-sm text-muted-foreground">{created.qrImage ? '扫码即可打开分享页面' : '分享内容已复制到剪贴板'}</p></div>
-        {created.qrImage ? <div className="mt-5 flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2"><Link2 className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-xs">{created.url}</span><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void copyTextToClipboard(created.url)} title="复制链接"><Copy className="h-4 w-4" /></Button></div> : <div className="mt-5 rounded-md border border-border bg-background p-3"><p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{created.copyText}</p><Button className="mt-3 h-9 w-full" onClick={() => void copyTextToClipboard(created.copyText)}><Copy className="mr-2 h-4 w-4" />复制</Button></div>}
+        <p role="status" aria-live="polite" className="mt-2 min-h-4 text-center text-xs text-muted-foreground">{copied ? '已复制到剪贴板' : ''}</p>
+        {created.qrImage ? <div className="mt-1 flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2"><Link2 className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-xs">{created.url}</span><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void copy(created.url)} title="复制链接" aria-label="复制链接"><Copy className="h-4 w-4" /></Button></div> : <div className="mt-1 rounded-md border border-border bg-background p-3"><p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{created.copyText}</p><Button className="mt-3 h-9 w-full" onClick={() => void copy(created.copyText)}><Copy className="mr-2 h-4 w-4" />复制</Button></div>}
         <Button variant="outline" className="mt-4 w-full" onClick={() => onOpenChange(false)}>完成</Button>
       </div> : <>
         <div className="max-h-[calc(100vh-12rem)] overflow-y-auto px-6 py-5">

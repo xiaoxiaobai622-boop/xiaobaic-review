@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Grid2X2, List, SlidersHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { useViewportClamp } from '@/hooks/useViewportClamp'
+import ReviewPopup from '@/components/ReviewPopup'
+import { useSlidingIndicator } from '@/hooks/useSlidingIndicator'
 import type {
   VideoCardSize,
   VideoDisplayPrefs,
@@ -29,17 +30,26 @@ function Segment<T extends string | number>({
   value: T
   onChange: (value: T) => void
 }) {
+  const { containerRef, rect } = useSlidingIndicator(Math.max(0, options.findIndex((option) => option.value === value)))
   return (
-    <div className="inline-flex w-full overflow-hidden rounded-md border border-border bg-muted/30 p-0.5">
+    <div ref={containerRef} className="relative inline-flex w-full overflow-hidden rounded-md border border-border bg-muted/30 p-0.5">
+      {rect && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 bottom-0.5 top-0.5 rounded bg-background transition-[transform,width] duration-[var(--motion-base)] ease-[var(--ease-standard)]"
+          style={{ transform: `translateX(${rect.left}px)`, width: rect.width }}
+        />
+      )}
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
+          data-segment
           onClick={() => onChange(option.value)}
           aria-pressed={option.value === value}
-          className={`h-7 min-w-0 flex-1 rounded px-2 text-[12px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+          className={`relative z-10 h-7 min-w-0 flex-1 rounded px-2 text-[12px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
             option.value === value
-              ? 'bg-background text-foreground'
+              ? 'text-foreground'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -58,31 +68,15 @@ export default function VideoDisplayMenu({
 }: VideoDisplayMenuProps) {
   const t = useTranslations('videoUi')
   const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const popupRef = useRef<HTMLDivElement>(null)
-  useViewportClamp(popupRef, open)
-
-  useEffect(() => {
-    if (!open) return
-    const handlePointerDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open])
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const id = useId()
 
   const update = (patch: Partial<VideoDisplayPrefs>) => onChange({ ...value, ...patch })
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div className="relative">
       <Button
+        ref={triggerRef}
         type="button"
         variant="ghost"
         size="sm"
@@ -90,20 +84,15 @@ export default function VideoDisplayMenu({
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? id : undefined}
         title={t('display')}
       >
         <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
         <span className="hidden sm:inline">{t('display')}</span>
       </Button>
 
-      {open && (
-        <div
-          ref={popupRef}
-          role="dialog"
-          aria-label={t('display')}
-          className="absolute right-0 top-full z-50 mt-1 w-[258px] max-w-[calc(100vw-1rem)] rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-elevation-lg"
-        >
-          <div className="space-y-3">
+      <ReviewPopup id={id} open={open} onOpenChange={setOpen} anchor={triggerRef} label={t('display')} side="bottom" align="end" width={258}>
+          <div className="space-y-3 p-1.5">
             <div>
               <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{t('layout')}</p>
               <div className="inline-flex w-full overflow-hidden rounded-md border border-border bg-muted/30 p-0.5">
@@ -177,8 +166,7 @@ export default function VideoDisplayMenu({
               />
             </div>
           </div>
-        </div>
-      )}
+      </ReviewPopup>
     </div>
   )
 }

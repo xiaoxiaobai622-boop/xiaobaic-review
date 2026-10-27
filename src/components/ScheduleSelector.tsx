@@ -100,7 +100,7 @@ export function ScheduleSelector({
               type="button"
               onClick={() => onScheduleChange(option.value)}
               className={`
-                relative p-4 rounded-lg border-2 text-left transition-all
+                relative p-4 rounded-lg border-2 text-left transition-colors duration-150
                 ${schedule === option.value
                   ? 'border-primary bg-primary/5 shadow-sm'
                   : 'border-border bg-card hover:border-primary/50 hover:bg-accent/50'
@@ -147,7 +147,7 @@ export function ScheduleSelector({
                   type="button"
                   onClick={() => onDayChange(d.value)}
                   className={`
-                    px-2 py-2 rounded-md text-xs font-medium transition-all
+                    px-2 py-2 rounded-md text-xs font-medium transition-colors duration-150
                     ${day === d.value
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'

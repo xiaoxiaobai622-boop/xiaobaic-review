@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { StudioPageSkeleton } from '@/components/StudioPageSkeleton'
 
 export default function AdminIndexPage() {
   const router = useRouter()
@@ -10,5 +11,5 @@ export default function AdminIndexPage() {
     router.replace('/studio/projects')
   }, [router])
 
-  return null
+  return <StudioPageSkeleton label="正在打开项目中心" className="p-6" />
 }

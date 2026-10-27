@@ -7,21 +7,21 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-[var(--motion-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "btn-primary hover:opacity-90 shadow-elevation hover:shadow-elevation-lg active:shadow-elevation",
+        default: "btn-primary hover:opacity-90 shadow-elevation active:shadow-none active:translate-y-px active:transition-none",
         destructive:
-          "btn-destructive hover:opacity-90 shadow-elevation hover:shadow-elevation-lg active:shadow-elevation",
+          "btn-destructive hover:opacity-90 shadow-elevation active:shadow-none active:translate-y-px active:transition-none",
         success:
-          "btn-success hover:opacity-90 shadow-elevation hover:shadow-elevation-lg active:shadow-elevation",
+          "btn-success hover:opacity-90 shadow-elevation active:shadow-none active:translate-y-px active:transition-none",
         outline:
-          "border border-border bg-card hover:bg-accent hover:text-accent-foreground hover:border-primary/50 shadow-elevation-sm hover:shadow-elevation",
+          "border border-border bg-card hover:bg-accent hover:text-accent-foreground hover:border-primary/50 shadow-elevation-sm active:bg-accent active:border-primary/60 active:shadow-none active:translate-y-px active:transition-none",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 shadow-elevation-sm hover:shadow-elevation",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80 shadow-elevation-sm active:bg-secondary/70 active:shadow-none active:translate-y-px active:transition-none",
+        ghost: "hover:bg-accent hover:text-accent-foreground active:bg-accent/80 active:transition-none",
+        link: "text-primary underline-offset-4 hover:underline active:opacity-70 active:transition-none",
       },
       size: {
         xs: "h-7 rounded-md px-2 text-xs",

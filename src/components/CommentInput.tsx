@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
-import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square, Smile, Globe, Users, ChevronDown, Check } from 'lucide-react'
+import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square, Smile, Globe, Users, ChevronDown, Check, Loader2 } from 'lucide-react'
 import { formatTimecodeAs, formatTimeDisplay } from '@/lib/time-format'
 import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
@@ -14,6 +14,8 @@ import EmojiPicker from './EmojiPicker'
 import { COMMENT_CATEGORIES, type CommentCategory } from '@/lib/comment-categories'
 import { cn } from '@/lib/utils'
 import type { DrawingTool } from '@/types/annotations'
+import ReviewPopup from './ReviewPopup'
+import styles from './review-popup.module.css'
 
 interface CommentInputProps {
   newComment: string
@@ -45,6 +47,7 @@ interface CommentInputProps {
   // Reply state
   replyingToComment: Comment | null
   onCancelReply: () => void
+  focusRequest?: number
 
   // Restrictions
   currentVideoRestricted: boolean
@@ -91,6 +94,7 @@ export default function CommentInput({
   onSetTimecodeEnd,
   replyingToComment,
   onCancelReply,
+  focusRequest,
   currentVideoRestricted,
   restrictionMessage,
   commentsDisabled,
@@ -113,15 +117,13 @@ export default function CommentInput({
   const tCommon = useTranslations('common')
   const format = useTimeFormat()
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null)
-  // 表情面板与可见范围下拉的开关；点击输入框外自动收起。
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [visOpen, setVisOpen] = useState(false)
-  const composerRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const emojiBtnRef = useRef<HTMLButtonElement | null>(null)
   const visBtnRef = useRef<HTMLButtonElement | null>(null)
-  const emojiPanelRef = useRef<HTMLDivElement | null>(null)
-  const visPanelRef = useRef<HTMLDivElement | null>(null)
+  const emojiId = useId()
+  const visId = useId()
 
   function toggleEmojiPicker() {
     setEmojiOpen(open => !open)
@@ -133,22 +135,14 @@ export default function CommentInput({
     setEmojiOpen(false)
   }
 
-  // 注意：不要监听 scroll 收起面板——内嵌浏览器的滚动事件非常频繁（容器微调也触发），
-  // 面板会在打开后约 1 秒被误关（实测）。收起只靠点击外部。
   useEffect(() => {
-    function handlePointerDown(event: MouseEvent | PointerEvent) {
-      const target = event.target as Node
-      const insideComposer = composerRef.current?.contains(target)
-      const insideEmojiPanel = emojiPanelRef.current?.contains(target)
-      const insideVisPanel = visPanelRef.current?.contains(target)
-      if (!insideComposer && !insideEmojiPanel && !insideVisPanel) {
-        setEmojiOpen(false)
-        setVisOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [])
+    if (!focusRequest) return
+    const el = textareaRef.current
+    if (!el) return
+    el.focus({ preventScroll: true })
+    const end = el.value.length
+    el.setSelectionRange(end, end)
+  }, [focusRequest])
 
   function insertEmoji(emoji: string) {
     const el = textareaRef.current
@@ -216,6 +210,36 @@ export default function CommentInput({
   const timecodeEndLabel = selectedTimecodeEnd
     ? formatTimecodeAs(selectedTimecodeEnd, selectedVideoFps, selectedVideoDurationSeconds, format)
     : null
+
+  // 只有真打了字才出现：空框上挂一枚可点的 00:00 会让人以为已经定了点。
+  // compact 档住进框内那条工具栏，要和同排的 h-6 图标按钮同高同字号。
+  const showTimecodePill = Boolean(timestampLabel) && !currentVideoRestricted && newComment.trim().length > 0
+  const renderTimecodePill = (compact: boolean) => (
+    <div
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/40 font-medium text-foreground',
+        compact ? 'h-6 shrink-0 px-1.5 text-[10px]' : 'px-2 py-1 text-xs'
+      )}
+    >
+      <button
+        type="button"
+        onClick={timecodeEndLabel ? undefined : onSetTimecodeEnd}
+        className={`inline-flex items-center gap-1 tabular-nums ${
+          timecodeEndLabel || !onSetTimecodeEnd ? 'cursor-default' : 'cursor-pointer hover:text-primary'
+        }`}
+        title={timecodeEndLabel ? t('clearEndTimecode') : t('setOutPoint')}
+      >
+        <Clock className="h-3 w-3" />
+        <span>{timestampLabel}</span>
+        {timecodeEndLabel && (
+          <>
+            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            <span>{timecodeEndLabel}</span>
+          </>
+        )}
+      </button>
+    </div>
+  )
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Allow Ctrl+Space and other Ctrl shortcuts to pass through to VideoPlayer
@@ -302,10 +326,15 @@ export default function CommentInput({
               <Textarea
                 ref={textareaRef}
                 placeholder={t('typeMessage')}
+                aria-label={t('typeMessage')}
                 value={newComment}
                 onChange={(e) => onCommentChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="h-[75px] min-h-[75px] resize-none rounded-md pb-7 text-sm"
+                className={cn(
+                  'h-[75px] min-h-[75px] resize-none rounded-md text-sm',
+                  // 内嵌工具栏压在输入框底部：留白要盖过它，否则长文本最后一行会被图标挡住。
+                  sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2'
+                )}
                 rows={2}
               />
               {onStartDrawing && (
@@ -329,7 +358,7 @@ export default function CommentInput({
                       disabled={loading}
                       className={cn(
                         'inline-flex h-6 w-6 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
-                        activeDrawingTool === tool && 'bg-muted text-foreground hover:bg-muted'
+                        activeDrawingTool === tool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
                       )}
                       title={label}
                       aria-label={label}
@@ -344,27 +373,37 @@ export default function CommentInput({
                 // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
                 // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
                 <div className="pointer-events-none absolute bottom-1 left-[84px] right-2 flex h-7 items-center justify-end gap-1.5">
-                  {onVisibilityChange && !commentsDisabled && (
-                    <button
-                      ref={emojiBtnRef}
-                      type="button"
-                      onClick={toggleEmojiPicker}
-                      className="pointer-events-auto mr-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      aria-label="添加表情符号"
-                      aria-expanded={emojiOpen}
-                      title="添加表情符号"
-                    >
-                      <Smile className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  {/* 表情和时间码钉在工具栏左端（紧跟画笔那三枚），右边那组仍靠右对齐 */}
+                  <div className="mr-auto flex min-w-0 items-center gap-1.5">
+                    {onVisibilityChange && !commentsDisabled && (
+                      <button
+                        ref={emojiBtnRef}
+                        type="button"
+                        onClick={toggleEmojiPicker}
+                        className={cn(styles.trigger, 'pointer-events-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
+                        aria-label="添加表情符号"
+                        aria-expanded={emojiOpen}
+                        aria-haspopup="dialog"
+                        aria-controls={emojiOpen ? emojiId : undefined}
+                        data-review-popup-trigger
+                        title="添加表情符号"
+                      >
+                        <Smile className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {sendInsideComposer && showTimecodePill && renderTimecodePill(true)}
+                  </div>
                   {showVisibilitySelector && onVisibilityChange && (
                     <button
                       ref={visBtnRef}
                       type="button"
                       onClick={toggleVisibilityDropdown}
-                      className="pointer-events-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-accent"
+                      className={cn(styles.trigger, 'pointer-events-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-accent')}
                       aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                       aria-expanded={visOpen}
+                      aria-haspopup="menu"
+                      aria-controls={visOpen ? visId : undefined}
+                      data-review-popup-trigger
                       title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}
                     >
                       {visibility === 'INTERNAL' ? <Users className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
@@ -396,8 +435,10 @@ export default function CommentInput({
                     disabled={!canSubmit}
                     size="icon"
                     className="pointer-events-auto h-6 w-6 shrink-0"
+                    aria-label={loading ? tCommon('sending') : tCommon('send')}
+                    aria-busy={loading}
                   >
-                    <Send className="h-3.5 w-3.5" />
+                    {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
               )}
@@ -443,35 +484,18 @@ export default function CommentInput({
                     ref={emojiBtnRef}
                     type="button"
                     onClick={toggleEmojiPicker}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className={cn(styles.trigger, 'inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
                     aria-label="添加表情符号"
                     aria-expanded={emojiOpen}
+                    aria-haspopup="dialog"
+                    aria-controls={emojiOpen ? emojiId : undefined}
+                    data-review-popup-trigger
                     title="添加表情符号"
                   >
                     <Smile className="h-4 w-4" />
                   </button>
                 )}
-                {timestampLabel && !currentVideoRestricted && newComment.trim().length > 0 && (
-                  <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-foreground">
-                    <button
-                      type="button"
-                      onClick={timecodeEndLabel ? undefined : onSetTimecodeEnd}
-                      className={`inline-flex items-center gap-1 tabular-nums ${
-                        timecodeEndLabel || !onSetTimecodeEnd ? 'cursor-default' : 'cursor-pointer hover:text-primary'
-                      }`}
-                      title={timecodeEndLabel ? t('clearEndTimecode') : t('setOutPoint')}
-                    >
-                      <Clock className="h-3 w-3" />
-                      <span>{timestampLabel}</span>
-                      {timecodeEndLabel && (
-                        <>
-                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                          <span>{timecodeEndLabel}</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
+                {!sendInsideComposer && showTimecodePill && renderTimecodePill(false)}
               </div>
               <div
                 id="review-annotation-properties"
@@ -485,9 +509,12 @@ export default function CommentInput({
                     ref={visBtnRef}
                     type="button"
                     onClick={toggleVisibilityDropdown}
-                    className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent"
+                    className={cn(styles.trigger, 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent')}
                     aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                     aria-expanded={visOpen}
+                    aria-haspopup="menu"
+                    aria-controls={visOpen ? visId : undefined}
+                    data-review-popup-trigger
                     title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}
                   >
                     {visibility === 'INTERNAL' ? <Users className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
@@ -517,54 +544,28 @@ export default function CommentInput({
                 )}
               </div>
 
-              {/* 表情面板与可见范围下拉：absolute 挂在输入区上方（外壳 overflow 已放开）。 */}
-              {emojiOpen && (
-                <div ref={emojiPanelRef} className="absolute bottom-full left-0 z-50 mb-1">
-                  <EmojiPicker
-                    onSelect={insertEmoji}
-                    onClose={() => setEmojiOpen(false)}
-                  />
-                </div>
-              )}
-              {visOpen && (
-                <div
-                  ref={visPanelRef}
-                  className="absolute bottom-full right-0 z-50 mb-1 w-64 rounded-xl border border-border bg-popover p-1 shadow-lg"
-                  role="menu"
-                  aria-label="批注可见范围"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => { onVisibilityChange?.('PUBLIC'); setVisOpen(false) }}
-                    className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted"
-                  >
-                    <Globe className="mt-0.5 h-4 w-4 shrink-0" />
+              <ReviewPopup id={emojiId} open={emojiOpen} onOpenChange={setEmojiOpen} anchor={emojiBtnRef} returnFocus={textareaRef} label="选择表情符号" align="center" width={298}>
+                <EmojiPicker onSelect={insertEmoji} onClose={() => setEmojiOpen(false)} />
+              </ReviewPopup>
+              <ReviewPopup id={visId} open={visOpen} onOpenChange={setVisOpen} anchor={visBtnRef} label="批注可见范围" role="menu" align="end" width={268}>
+                {([
+                  ['PUBLIC', Globe, '公开评论', '所有成员及共享链接查看者均可见'],
+                  ['INTERNAL', Users, '内部评论', '仅限拥有权限的成员查看'],
+                ] as const).map(([value, Icon, label, description]) => (
+                  <button key={value} type="button" role="menuitemradio" aria-checked={visibility === value}
+                    onClick={() => { onVisibilityChange?.(value); setVisOpen(false) }}
+                    className={`${styles.item} ${styles.visibilityItem}`}>
+                    <Icon className="mt-0.5 h-4 w-4 shrink-0" />
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2 text-sm font-medium">
-                        公开评论
-                        {visibility === 'PUBLIC' && <Check className="h-3.5 w-3.5 text-primary" />}
+                      <span className="flex items-center justify-between gap-2 font-medium">
+                        {label}
+                        {visibility === value && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />}
                       </span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">所有成员及共享链接查看者均可见</span>
+                      <span className={styles.description}>{description}</span>
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => { onVisibilityChange?.('INTERNAL'); setVisOpen(false) }}
-                    className="flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted"
-                  >
-                    <Users className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2 text-sm font-medium">
-                        内部评论
-                        {visibility === 'INTERNAL' && <Check className="h-3.5 w-3.5 text-primary" />}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">仅限拥有权限的成员查看</span>
-                    </span>
-                  </button>
-                </div>
-              )}
+                ))}
+              </ReviewPopup>
             </div>
           </div>
           {(attachmentError || attachmentNotice) && (

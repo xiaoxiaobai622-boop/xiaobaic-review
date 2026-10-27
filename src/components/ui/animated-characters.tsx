@@ -121,7 +121,7 @@ export const EyeBall = ({
   return (
     <div
       ref={eyeRef}
-      className="rounded-full flex items-center justify-center transition-all duration-150"
+      className="rounded-full flex items-center justify-center transition-[background-color,color,transform] duration-150"
       style={{
         width: `${size}px`,
         height: isBlinking ? '2px' : `${size}px`,
@@ -306,7 +306,7 @@ export function AnimatedCharacters({
       {/* Purple tall rectangle character - Back layer */}
       <div 
         ref={purpleRef}
-        className="absolute bottom-0 transition-all duration-700 ease-in-out"
+        className="absolute bottom-0 transition-[transform,height,width,border-radius] duration-500 ease-[var(--ease-emphasis)]"
         style={{
           left: '70px',
           width: '180px',
@@ -324,7 +324,7 @@ export function AnimatedCharacters({
       >
         {/* Eyes */}
         <div 
-          className="absolute flex gap-8 transition-all duration-700 ease-in-out"
+          className="absolute flex gap-8 transition-[transform,height,width,border-radius] duration-500 ease-[var(--ease-emphasis)]"
           style={{
             left: isShowingPassword ? '20px' : isLookingAtEachOther ? '55px' : `${45 + purplePos.faceX}px`,
             top: isShowingPassword ? '35px' : isLookingAtEachOther ? '65px' : `${40 + purplePos.faceY}px`,
@@ -356,7 +356,7 @@ export function AnimatedCharacters({
       {/* Black tall rectangle character - Middle layer */}
       <div 
         ref={blackRef}
-        className="absolute bottom-0 transition-all duration-700 ease-in-out"
+        className="absolute bottom-0 transition-[transform,height,width,border-radius] duration-500 ease-[var(--ease-emphasis)]"
         style={{
           left: '240px',
           width: '120px',
@@ -376,7 +376,7 @@ export function AnimatedCharacters({
       >
         {/* Eyes */}
         <div 
-          className="absolute flex gap-6 transition-all duration-700 ease-in-out"
+          className="absolute flex gap-6 transition-[transform,height,width,border-radius] duration-500 ease-[var(--ease-emphasis)]"
           style={{
             left: isShowingPassword ? '10px' : isLookingAtEachOther ? '32px' : `${26 + blackPos.faceX}px`,
             top: isShowingPassword ? '28px' : isLookingAtEachOther ? '12px' : `${32 + blackPos.faceY}px`,
@@ -408,7 +408,7 @@ export function AnimatedCharacters({
       {/* Orange semi-circle character - Front left */}
       <div 
         ref={orangeRef}
-        className="absolute bottom-0 transition-all duration-700 ease-in-out"
+        className="absolute bottom-0 transition-[transform,height,width,border-radius] duration-500 ease-[var(--ease-emphasis)]"
         style={{
           left: '0px',
           width: '240px',
@@ -422,7 +422,7 @@ export function AnimatedCharacters({
       >
         {/* Eyes - just pupils, no white */}
         <div 
-          className="absolute flex gap-8 transition-all duration-200 ease-out"
+          className="absolute flex gap-8 transition-[transform,height,width,border-radius] duration-150 ease-[var(--ease-emphasis)]"
           style={{
             left: isShowingPassword ? '50px' : `${82 + (orangePos.faceX || 0)}px`,
             top: isShowingPassword ? '85px' : `${90 + (orangePos.faceY || 0)}px`,
@@ -436,7 +436,7 @@ export function AnimatedCharacters({
       {/* Yellow tall rectangle character - Front right */}
       <div 
         ref={yellowRef}
-        className="absolute bottom-0 transition-all duration-700 ease-in-out"
+        className="absolute bottom-0 transition-[transform,height,width,border-radius] duration-500 ease-[var(--ease-emphasis)]"
         style={{
           left: '310px',
           width: '140px',
@@ -450,7 +450,7 @@ export function AnimatedCharacters({
       >
         {/* Eyes - just pupils, no white */}
         <div 
-          className="absolute flex gap-6 transition-all duration-200 ease-out"
+          className="absolute flex gap-6 transition-[transform,height,width,border-radius] duration-150 ease-[var(--ease-emphasis)]"
           style={{
             left: isShowingPassword ? '20px' : `${52 + (yellowPos.faceX || 0)}px`,
             top: isShowingPassword ? '35px' : `${40 + (yellowPos.faceY || 0)}px`,
@@ -461,7 +461,7 @@ export function AnimatedCharacters({
         </div>
         {/* Horizontal line for mouth */}
         <div 
-          className="absolute w-20 h-[4px] bg-[#2D2D2D] rounded-full transition-all duration-200 ease-out"
+          className="absolute w-20 h-[4px] bg-[#2D2D2D] rounded-full transition-[transform,width,height,border-radius] duration-150 ease-[var(--ease-emphasis)]"
           style={{
             left: isShowingPassword ? '10px' : `${40 + (yellowPos.faceX || 0)}px`,
             top: isShowingPassword ? '88px' : `${88 + (yellowPos.faceY || 0)}px`,

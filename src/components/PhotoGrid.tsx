@@ -83,7 +83,7 @@ export default function PhotoGrid({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onToggleSelect(photo.id) }}
-              className={`absolute top-1.5 left-1.5 p-1 rounded-md bg-background/70 backdrop-blur-sm transition-opacity ${isSelected ? 'opacity-100 text-primary' : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground'}`}
+              className={`absolute top-1.5 left-1.5 p-1 rounded-md bg-background/70 backdrop-blur-sm transition-opacity ${isSelected ? 'opacity-100 text-primary' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100 text-muted-foreground hover:text-foreground'}`}
               aria-label={t('selectPhoto')}
             >
               {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
@@ -94,7 +94,7 @@ export default function PhotoGrid({
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onDelete(photo) }}
                 disabled={deletingId === photo.id}
-                className="absolute top-1.5 right-1.5 p-1 rounded-md bg-background/70 backdrop-blur-sm opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity disabled:opacity-50"
+                className="absolute top-1.5 right-1.5 p-1 rounded-md bg-background/70 backdrop-blur-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100 text-muted-foreground hover:text-destructive transition-opacity disabled:opacity-50"
                 aria-label={t('deletePhoto')}
               >
                 {deletingId === photo.id

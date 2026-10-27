@@ -202,6 +202,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
   const [focusCommentId, setFocusCommentId] = useState<string | null>(urlFocusCommentId)
   const [isPasswordProtected, setIsPasswordProtected] = useState<boolean | null>(null)
+  // 410/403/404 以前直接 return，导致页面永远停在加载态。
+  const [accessFailure, setAccessFailure] = useState<'expired' | 'denied' | 'missing' | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isGuest, setIsGuest] = useState(false)
   const [authMode, setAuthMode] = useState<string>('PASSWORD')
@@ -573,7 +575,13 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           return
         }
 
+        if (response.status === 410) {
+          setAccessFailure('expired')
+          return
+        }
+
         if (response.status === 403 || response.status === 404) {
+          setAccessFailure(response.status === 403 ? 'denied' : 'missing')
           return
         }
 
@@ -1214,10 +1222,24 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     }
   }
 
+  if (accessFailure) {
+    return (
+      <div className="flex-1 min-h-0 bg-background flex items-center justify-center p-4">
+        <div role="alert" className="w-full max-w-md rounded-lg border border-border bg-card p-6 text-center">
+          <Lock className="mx-auto h-10 w-10 text-muted-foreground" aria-hidden />
+          <p className="mt-3 text-sm text-foreground">
+            {accessFailure === 'expired' ? t('linkInvalid') : accessFailure === 'denied' ? t('accessDenied') : t('projectNotFound')}
+          </p>
+          <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>{tc('retry')}</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (isPasswordProtected === null) {
     return (
       <div className="flex-1 min-h-0 bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">{tc('loading')}</p>
+        <p role="status" className="text-muted-foreground">{tc('loading')}</p>
       </div>
     )
   }
@@ -1357,7 +1379,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
             )}
 
             {error && (
-              <div className="p-3 bg-destructive-visible border border-destructive-visible rounded-lg">
+              <div role="alert" aria-live="assertive" className="p-3 bg-destructive-visible border border-destructive-visible rounded-lg">
                 <p className="text-sm text-destructive">{error}</p>
               </div>
             )}
@@ -1377,7 +1399,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                   size="default"
                   onClick={handleGuestEntry}
                   disabled={loading}
-                  className="w-full bg-warning text-warning-foreground hover:bg-warning/90 shadow-elevation hover:shadow-elevation-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-elevation transition-all duration-200"
+                  className="w-full bg-warning text-warning-foreground hover:bg-warning/90 shadow-elevation active:opacity-80 transition-colors duration-[var(--motion-base)]"
                 >
                   {t('continueAsGuest')}
                 </Button>

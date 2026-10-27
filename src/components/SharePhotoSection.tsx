@@ -189,7 +189,7 @@ export default function SharePhotoSection({ projectId, shareToken, allowPhotoDow
               key={album.id}
               type="button"
               onClick={() => setSelectedAlbum(album)}
-              className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card shadow-elevation-md hover:border-primary/50 hover:shadow-elevation-lg transition-all duration-200 text-left"
+              className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card shadow-elevation-md hover:border-primary/50 transition-colors duration-[var(--motion-base)] text-left"
             >
               <div className="relative w-20 h-12 rounded-md overflow-hidden bg-muted border border-border flex-shrink-0 flex items-center justify-center">
                 {album.coverPhotoId && album.contentToken ? (
@@ -222,8 +222,8 @@ export default function SharePhotoSection({ projectId, shareToken, allowPhotoDow
               className={cn(
                 'group relative rounded-lg overflow-hidden',
                 'bg-card border border-border/50 shadow-elevation-md',
-                'hover:border-primary/50 hover:shadow-elevation-lg',
-                'transition-all duration-200',
+                'hover:border-primary/50',
+                'transition-colors duration-150',
                 'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background'
               )}
             >
@@ -241,7 +241,7 @@ export default function SharePhotoSection({ projectId, shareToken, allowPhotoDow
                     <ImageIcon className="w-8 h-8 sm:w-12 sm:h-12 text-muted-foreground/50" />
                   </div>
                 )}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-[var(--motion-base)]" />
                 <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1">
                   <Images className="w-3 h-3" />
                   <span>{album.photoCount}</span>
@@ -296,7 +296,7 @@ export default function SharePhotoSection({ projectId, shareToken, allowPhotoDow
                     <button
                       onClick={() => setReelExpanded(prev => !prev)}
                       className={cn(
-                        'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all',
+                        'flex items-center gap-1.5 px-3 py-1 rounded-lg transition-colors duration-150',
                         'hover:bg-muted/80 active:scale-95',
                         reelExpanded && 'bg-muted/50'
                       )}
@@ -371,7 +371,7 @@ export default function SharePhotoSection({ projectId, shareToken, allowPhotoDow
                             onClick={() => { setSelectedAlbum(album); setReelExpanded(false) }}
                             className={cn(
                               'shrink-0 rounded-md sm:rounded-lg overflow-hidden snap-start',
-                              'bg-muted border-2 transition-all duration-150',
+                              'bg-muted border-2 transition-colors duration-150',
                               'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:ring-offset-background',
                               'w-[80px] sm:w-[110px] md:w-[130px] lg:w-[150px]',
                               isActive

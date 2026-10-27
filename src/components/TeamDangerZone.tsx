@@ -66,6 +66,7 @@ export default function TeamDangerZone({
         title: '退出失败',
         message: error instanceof Error ? error.message : '退出团队失败，请稍后重试。',
         tone: 'error',
+        blocking: true,
       })
       setBusy(false)
     }

@@ -24,6 +24,7 @@ import {
 import { checkVideoContainer, isVideoCandidate, VIDEO_INPUT_ACCEPT } from '@/lib/video-file-signature'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 import { useS3MultipartUpload } from '@/hooks/useS3MultipartUpload'
+import { pickUploadBatch } from '@/lib/upload-concurrency'
 
 interface PendingUpload {
   id: string
@@ -82,6 +83,9 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
   const s3UploadKeys = useRef<Map<string, string>>(new Map())
   // Prevent infinite loops: auto-recover stale resume metadata at most once per item
   const autoRecoveryAttempted = useRef<Set<string>>(new Set())
+  // 「全部开始」按上限分批：TUS 的 startUpload 会立即返回，只能靠完成/失败后的状态变化续下一批。
+  const batchQueueRef = useRef<string[]>([])
+  const startUploadRef = useRef<typeof startUpload>(null)
 
   // Validate video file format
   const validateVideoFile = async (file: File): Promise<{ valid: boolean; error?: string }> => {
@@ -503,9 +507,25 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
   }
 
   const handleStartAll = () => {
-    const pendingItems = pendingUploads.filter(u => u.status === 'pending' && u.videoName.trim())
-    pendingItems.forEach(item => startUpload(item))
+    batchQueueRef.current = pendingUploads
+      .filter(u => u.status === 'pending' && u.videoName.trim())
+      .map(u => u.id)
   }
+
+  useEffect(() => {
+    startUploadRef.current = startUpload
+  })
+
+  useEffect(() => {
+    if (batchQueueRef.current.length === 0) return
+    const statuses = Object.fromEntries(pendingUploads.map((u) => [u.id, u.status]))
+    const { start, rest } = pickUploadBatch(batchQueueRef.current, statuses)
+    batchQueueRef.current = rest
+    for (const id of start) {
+      const item = pendingUploads.find((u) => u.id === id)
+      if (item?.status === 'pending') void startUploadRef.current?.(item)
+    }
+  }, [pendingUploads])
 
   const handleRetry = (id: string) => {
     const item = pendingUploads.find(u => u.id === id)
@@ -521,6 +541,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
     if (hasActiveUploads) return
 
     // Clean up completed uploads from the list
+    batchQueueRef.current = []
     setPendingUploads([])
     onClose()
   }
@@ -565,13 +586,14 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
 
           {/* Drop zone - only show when no active uploads */}
           {!hasActiveUploads && (
-            <div
+            <button
+              type="button"
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
               className={cn(
-                'border-2 border-dashed rounded-xl p-8 transition-all cursor-pointer text-center',
+                'w-full border-2 border-dashed rounded-xl p-8 transition-colors cursor-pointer text-center',
                 isDragging
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:border-primary/50 hover:bg-accent/30'
@@ -581,7 +603,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
               <p className="text-sm text-muted-foreground">
                 {isDragging ? t('dropVideosHere') : t('dropVideosOrBrowse')}
               </p>
-            </div>
+            </button>
           )}
 
           {/* Uploads list */}
@@ -638,7 +660,7 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
                           <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
                             <div
                               className={cn(
-                                'h-full transition-all',
+                                'h-full transition-[width,background-color]',
                                 upload.status === 'completed' ? 'bg-success' : upload.paused ? 'bg-warning' : 'bg-primary'
                               )}
                               style={{ width: `${upload.progress}%` }}

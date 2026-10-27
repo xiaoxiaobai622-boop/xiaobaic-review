@@ -245,7 +245,7 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
               key={option.value}
               type="button"
               onClick={() => setEmailHeaderStyle(option.value)}
-              className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border text-xs transition-all ${
+              className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border text-xs transition-colors duration-150 ${
                 emailHeaderStyle === option.value
                   ? 'border-primary bg-primary/10 text-primary font-medium'
                   : 'border-border bg-card hover:border-primary/50'

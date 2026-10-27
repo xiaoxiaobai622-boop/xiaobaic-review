@@ -186,9 +186,11 @@ export default function SessionMonitor() {
             </svg>
           </div>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-warning">
-              {t('inactivityWarning')}
-            </h3>
+            <div role="status">
+              <h3 className="text-sm font-semibold text-warning">
+                {t('inactivityWarning')}
+              </h3>
+            </div>
             <p className="text-sm text-warning font-medium mt-1">
               {t('logoutCountdown', { time: `${minutes}:${seconds.toString().padStart(2, '0')}` })}
             </p>

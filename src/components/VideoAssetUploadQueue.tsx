@@ -8,7 +8,7 @@ import { Input } from './ui/input'
 import { Upload, Trash2 } from 'lucide-react'
 import { useAssetUploadQueue } from '@/hooks/useAssetUploadQueue'
 import { VideoAssetUploadItem } from './VideoAssetUploadItem'
-import { validateAssetExtension, detectAssetCategory } from '@/lib/asset-validation'
+import { validateAssetExtension, detectAssetCategory, ACCEPTED_FILE_INPUT } from '@/lib/asset-validation'
 
 interface VideoAssetUploadQueueProps {
   videoId: string
@@ -68,35 +68,23 @@ export function VideoAssetUploadQueue({
   const handleAddToQueue = () => {
     if (selectedFiles.length === 0) return
 
-    let hasErrors = false
     const errors: string[] = []
+    const accepted: File[] = []
 
-    // Validate and add all files to queue with auto-detected category per file
+    // Validate everything before touching the queue so a mixed batch cannot be added twice.
     selectedFiles.forEach(file => {
       const validation = validateAssetFile(file)
       if (!validation.valid) {
-        hasErrors = true
         errors.push(`${file.name}: ${validation.error}`)
       } else {
-        // Auto-detect category for each file individually
-        const fileCategory = detectAssetCategory(file.name)
-        addToQueue(file, fileCategory || '')
+        accepted.push(file)
       }
     })
 
-    if (hasErrors) {
-      setError(errors.join('\n'))
-      return
-    }
-
-    // Reset form
+    accepted.forEach(file => addToQueue(file, detectAssetCategory(file.name) || ''))
     setSelectedFiles([])
-    setError(null)
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    setError(errors.length > 0 ? errors.join('\n') : null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   // Drag and drop handlers
@@ -130,17 +118,17 @@ export function VideoAssetUploadQueue({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`
-          space-y-4 rounded-lg border-2 border-dashed transition-all
+          space-y-4 rounded-lg border-2 border-dashed transition-colors
           ${isDragging
-            ? 'border-primary bg-primary/5 scale-[1.01] p-4'
+            ? 'border-primary bg-primary/5'
             : 'border-transparent'
           }
         `}
       >
         {/* Error Message */}
         {error && (
-          <div className="p-3 bg-destructive/10 border border-destructive rounded-md">
-            <p className="text-sm text-destructive">{error}</p>
+          <div className="p-3 bg-destructive/10 border border-destructive rounded-md" role="alert">
+            <p className="whitespace-pre-line text-sm text-destructive">{error}</p>
           </div>
         )}
 
@@ -153,6 +141,7 @@ export function VideoAssetUploadQueue({
               id={`asset-file-${videoId}`}
               type="file"
               multiple
+              accept={ACCEPTED_FILE_INPUT}
               onChange={(e) => handleFileSelect(e.target.files)}
               className="hidden"
             />
@@ -189,7 +178,7 @@ export function VideoAssetUploadQueue({
       {/* Queue Statistics */}
       {queue.length > 0 && (
         <div className="flex items-center justify-between p-3 rounded-md border bg-muted/50">
-          <div className="flex gap-4 text-sm">
+          <div className="flex gap-4 text-sm" role="status" aria-live="polite">
             {stats.uploading > 0 && (
               <span className="font-medium text-primary">
                 {stats.uploading} {t('uploading')}

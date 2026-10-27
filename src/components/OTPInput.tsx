@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, KeyboardEvent, ClipboardEvent, ChangeEvent } from 'react'
+import { useTranslations } from 'next-intl'
 
 interface OTPInputProps {
   value: string
@@ -10,6 +11,7 @@ interface OTPInputProps {
 }
 
 export function OTPInput({ value, onChange, disabled = false, autoFocus = false }: OTPInputProps) {
+  const t = useTranslations('auth')
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   const handleChange = (index: number, e: ChangeEvent<HTMLInputElement>) => {
@@ -56,12 +58,10 @@ export function OTPInput({ value, onChange, disabled = false, autoFocus = false 
 
   const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault()
-    const pastedData = e.clipboardData.getData('text').trim()
-
-    // Only process if it's 6 digits
-    if (/^\d{6}$/.test(pastedData)) {
-      onChange(pastedData)
-      // Focus last input
+    // 邮件里复制出来的验证码常带空格或连字符，先去掉再判断。
+    const digits = e.clipboardData.getData('text').replace(/[\s-]/g, '')
+    if (/^\d{6}$/.test(digits)) {
+      onChange(digits)
       inputRefs.current[5]?.focus()
     }
   }
@@ -72,7 +72,7 @@ export function OTPInput({ value, onChange, disabled = false, autoFocus = false 
   }
 
   return (
-    <div className="flex gap-2 justify-center">
+    <div role="group" aria-label={t('verificationCode')} className="flex gap-2 justify-center">
       {[0, 1, 2, 3, 4, 5].map((index) => (
         <input
           key={index}
@@ -88,7 +88,7 @@ export function OTPInput({ value, onChange, disabled = false, autoFocus = false 
           disabled={disabled}
           autoFocus={autoFocus && index === 0}
           className="w-12 h-14 text-center text-2xl font-mono font-bold border border-border rounded-md bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label={`Digit ${index + 1}`}
+          aria-label={`${t('verificationCode')} ${index + 1}`}
         />
       ))}
     </div>

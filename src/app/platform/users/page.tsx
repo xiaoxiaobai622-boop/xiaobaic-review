@@ -477,7 +477,10 @@ export default function UsersPage() {
         {/* Users Table */}
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {loading ? (
-            <div className="p-10 text-center text-sm text-muted-foreground">正在加载成员…</div>
+            <div className="space-y-2 p-4" aria-busy="true">
+              <span className="sr-only" role="status" aria-live="polite">正在加载成员…</span>
+              {[0, 1, 2, 3, 4].map((index) => <div key={index} className="skeleton h-10 rounded-md" />)}
+            </div>
           ) : listError ? (
             <div role="alert" className="px-4 py-8">
               <p className="text-sm font-medium text-destructive">{listError}</p>

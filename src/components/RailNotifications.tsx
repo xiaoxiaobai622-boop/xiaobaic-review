@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Settings, X } from 'lucide-react'
+import { Bell, Settings } from 'lucide-react'
+import RailPanel from '@/components/RailPanel'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-client'
 import { getDesktopBridge } from '@/lib/desktop-bridge'
@@ -111,8 +112,6 @@ export default function RailNotifications({ className }: { className?: string })
   const [watermark, setWatermark] = useState<string | null>(null)
   const desktop = getDesktopBridge()
   const desktopSeenRef = useRef<string | null>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
   const router = useRouter()
 
   const load = useCallback(async (): Promise<ReplyItem[]> => {
@@ -208,28 +207,13 @@ export default function RailNotifications({ className }: { className?: string })
     }
   }, [desktop, items, platformItems, kinds])
 
-  useEffect(() => {
-    if (!open) return
-    const handleMouseDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) close()
-    }
-    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
-    document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open])
-
   const close = () => {
     setOpen(false)
     setSettingsOpen(false)
-    triggerRef.current?.focus()
   }
 
-  const toggle = () => {
-    if (open) { close(); return }
+  const handleOpenChange = (next: boolean) => {
+    if (!next) { close(); return }
     // 打开只读、不写水位：清未读是标签行那颗按钮的事，别替用户按它。
     setOpen(true)
     void load()
@@ -288,53 +272,39 @@ export default function RailNotifications({ className }: { className?: string })
   }
 
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        aria-label={unreadCount > 0 ? `${unreadCount} 条未读通知` : '通知'}
-        title={unreadCount > 0 ? `${unreadCount} 条未读通知` : '通知'}
-        className={cn(
-          className,
-          open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
-        )}
-      >
-        <Bell className="h-[20px] w-[20px]" aria-hidden="true" />
-        {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
-      </button>
-
-      {open && (
-        <div
-          data-rail-panel="notifications"
-          role="dialog"
-          aria-label="通知"
-          className="fixed bottom-0 left-14 top-0 z-50 flex w-[288px] flex-col border-r border-border bg-popover lg:left-[56px]"
+    <RailPanel
+      name="notifications"
+      label="通知"
+      closeLabel="关闭通知"
+      open={open}
+      onOpenChange={handleOpenChange}
+      trigger={(
+        <button
+          type="button"
+          aria-label={unreadCount > 0 ? `${unreadCount} 条未读通知` : '通知'}
+          title={unreadCount > 0 ? `${unreadCount} 条未读通知` : '通知'}
+          className={cn(
+            className,
+            'relative',
+            open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
+          )}
         >
-          <div className="flex h-9 shrink-0 items-center justify-between px-3">
-            <p className="text-sm font-medium text-foreground">通知</p>
-            <span className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setSettingsOpen((current) => !current)}
-                aria-label="通知设置"
-                aria-expanded={settingsOpen}
-                className={cn('rounded p-1 transition-colors', settingsOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground')}
-              >
-                <Settings className="h-4 w-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                onClick={close}
-                aria-label="关闭通知"
-                className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <X className="h-4 w-4" aria-hidden />
-              </button>
-            </span>
-          </div>
-
+          <Bell className="h-[20px] w-[20px]" aria-hidden="true" />
+          {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
+        </button>
+      )}
+      actions={(
+        <button
+          type="button"
+          onClick={() => setSettingsOpen((current) => !current)}
+          aria-label="通知设置"
+          aria-expanded={settingsOpen}
+          className={cn('rounded p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', settingsOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground')}
+        >
+          <Settings className="h-4 w-4" aria-hidden />
+        </button>
+      )}
+    >
           {settingsOpen && (
             <div data-notification-settings className="shrink-0 border-b border-border px-3 py-2">
               <p className="text-xs text-muted-foreground">哪几类算进红点与桌面提醒</p>
@@ -434,8 +404,6 @@ export default function RailNotifications({ className }: { className?: string })
               </button>
             ))}
           </div>
-        </div>
-      )}
-    </div>
+    </RailPanel>
   )
 }

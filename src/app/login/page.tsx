@@ -8,21 +8,76 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/ui/password-input'
-import { ArrowLeft, LockKeyhole, Phone } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, Clock, LockKeyhole, Smartphone } from 'lucide-react'
 import { setTokens, clearTokens } from '@/lib/token-store'
 import { setActiveTeamId } from '@/lib/team-store'
 import BrandLogo from '@/components/BrandLogo'
-import { AnimatedCharacters } from '@/components/ui/animated-characters'
+import { AuthSplitLayout } from '@/components/auth/AuthSplitLayout'
 import { getDeviceAuthHeaders } from '@/lib/device-id'
 import { safeReturnUrl } from '@/lib/return-url'
 import { WechatMiniQrLogin } from '@/components/WechatMiniQrLogin'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 
 type FocusedField = 'phone' | 'password' | null
 type LoginMode = 'password' | 'sms'
 type LoginView = 'options' | 'wechat' | 'phone'
+type ConsentAnchor = { x: number; y: number }
 const PHONE_REGEX = /^1[3-9]\d{9}$/
-const BRAND_NAME = '逐帧审阅'
+
+const FIELD_CLASS = 'h-11 rounded-lg border-border bg-popover px-3.5 text-[15px] shadow-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 focus-visible:ring-offset-0'
+
+function WechatGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+      <path d="M9.3 4C5.3 4 2 6.7 2 10c0 1.9 1 3.5 2.7 4.7l-.7 2.1 2.5-1.3c.8.2 1.7.4 2.8.4h.5a5.6 5.6 0 0 1-.2-1.4c0-3.1 3-5.7 6.7-5.7h.4C16 6 13 4 9.3 4Zm-2.4 3.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm4.8 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z" />
+      <path d="M22 14.5c0-2.8-2.8-5-6.2-5s-6.2 2.2-6.2 5 2.8 5 6.2 5c.8 0 1.5-.1 2.2-.3l2 1-.5-1.8C21 17.5 22 16.1 22 14.5Zm-8.2-1.2a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6Zm4 0a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6Z" />
+    </svg>
+  )
+}
+
+function ConsentCheckbox({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean
+  onChange: (value: boolean) => void
+  children: React.ReactNode
+}) {
+  return (
+    <label className="group flex cursor-pointer items-start gap-2.5 text-xs leading-5 text-muted-foreground">
+      <span className="relative mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="peer absolute inset-0 h-4 w-4 cursor-pointer appearance-none rounded-[4px] border border-border bg-popover transition-colors duration-[var(--motion-base)] checked:border-primary checked:bg-primary group-hover:border-foreground/40 checked:group-hover:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+        />
+        <Check className="pointer-events-none relative h-3 w-3 text-primary-foreground opacity-0 transition-opacity duration-[var(--motion-base)] peer-checked:opacity-100" strokeWidth={3} />
+      </span>
+      <span>{children}</span>
+    </label>
+  )
+}
+
+function Notice({ tone, children }: { tone: 'warning' | 'error'; children: React.ReactNode }) {
+  const Icon = tone === 'warning' ? Clock : AlertCircle
+  return (
+    <div
+      role={tone === 'error' ? 'alert' : 'status'}
+      className={cn(
+        'flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[13px] leading-5',
+        tone === 'warning'
+          ? 'border-warning/25 bg-warning-visible text-warning'
+          : 'border-destructive/25 bg-destructive-visible text-destructive',
+      )}
+    >
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <p className="font-medium">{children}</p>
+    </div>
+  )
+}
 
 function LoginForm() {
   const t = useTranslations('auth')
@@ -48,6 +103,7 @@ function LoginForm() {
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [agreed, setAgreed] = useState(false)
   const [consentOpen, setConsentOpen] = useState(false)
+  const [consentAnchor, setConsentAnchor] = useState<ConsentAnchor | null>(null)
   const pendingActionRef = useRef<(() => void) | null>(null)
 
   // 同意条款不做任何记忆：记住上次的勾选＝下次进页面默认替用户同意，正是被点名的「默认勾选」。
@@ -76,13 +132,19 @@ function LoginForm() {
     setCooldown(0)
   }
 
-  function requestConsent(action: () => void) {
+  function requestConsent(action: () => void, anchor?: Element | null) {
     if (agreed) {
       action()
       return
     }
     setError('')
     pendingActionRef.current = action
+    if (anchor) {
+      const rect = anchor.getBoundingClientRect()
+      setConsentAnchor({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+    } else {
+      setConsentAnchor(null)
+    }
     setConsentOpen(true)
   }
 
@@ -99,9 +161,9 @@ function LoginForm() {
     pendingActionRef.current = null
   }
 
-  function openWechat() {
+  function openWechat(anchor?: Element | null) {
     setError('')
-    requestConsent(() => setView('wechat'))
+    requestConsent(() => setView('wechat'), anchor)
   }
 
   function applyTokens(data: { tokens?: { accessToken?: string; refreshToken?: string } }) {
@@ -220,332 +282,309 @@ function LoginForm() {
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
-    requestConsent(() => { void performSubmit() })
+    requestConsent(() => { void performSubmit() }, e.currentTarget.querySelector('button[type="submit"]'))
   }
 
   const terms = (className: string) => t.rich('termsAgreement', {
     terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className={className}>{chunks}</Link>,
     privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className={className}>{chunks}</Link>,
   })
+  const termsLinkClass = 'mx-0.5 font-medium text-foreground underline decoration-border underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary'
+
+  const notices = (sessionExpired || error) && (
+    <div className="space-y-2.5">
+      {sessionExpired && <Notice tone="warning">{t('sessionExpired')}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
+    </div>
+  )
+
+  const backToOptions = (
+    <button
+      type="button"
+      onClick={openOptions}
+      className="-ml-1.5 inline-flex h-8 items-center gap-1.5 rounded-md px-1.5 text-[13px] text-muted-foreground outline-none transition-colors duration-[var(--motion-base)] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-primary/20"
+    >
+      <ArrowLeft className="h-3.5 w-3.5" />
+      {t('otherLoginMethods')}
+    </button>
+  )
 
   return (
-    <div className="grid min-h-dvh flex-1 bg-popover lg:grid-cols-[minmax(0,33fr)_minmax(0,67fr)]">
-      <aside className="relative hidden overflow-hidden border-r border-black/10 bg-[#ececea] dark:border-white/10 dark:bg-[#222329] lg:flex lg:flex-col">
-        <div className="relative z-10 flex flex-1 items-center justify-center px-6 py-12">
-          <div className="h-[240px] w-[270px] xl:h-[300px] xl:w-[338px] 2xl:h-[360px] 2xl:w-[405px] [--s:0.6] xl:[--s:0.75] 2xl:[--s:0.9]">
-            <div className="origin-top-left [transform:scale(var(--s))] dark:drop-shadow-[0_0_1px_rgba(255,255,255,0.35)]">
-              <AnimatedCharacters
-                isTyping={focusedField === 'phone'}
-                showPassword={passwordVisible}
-                passwordLength={password.length}
+    <AuthSplitLayout
+      characters={{ isTyping: focusedField === 'phone', showPassword: passwordVisible, passwordLength: password.length }}
+      headerEnd={view === 'options' ? (
+        <button
+          type="button"
+          onClick={() => router.push('/')}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] text-muted-foreground outline-none transition-colors duration-[var(--motion-base)] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-primary/20"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          {t('backToHome')}
+        </button>
+      ) : null}
+    >
+      <div
+        key={view}
+        className="w-full max-w-[380px] animate-in fade-in slide-in-from-bottom-1 duration-200 ease-out fill-mode-both motion-reduce:animate-none"
+      >
+        {view === 'options' ? (
+          <div>
+            <h1 className="text-[28px] font-semibold leading-[1.15] tracking-[-0.02em] text-foreground">
+              {t('welcomeBack')}
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('signInDescription')}</p>
+
+            {notices && <div className="mt-6">{notices}</div>}
+
+            <Button
+              type="button"
+              className="mt-8 h-11 w-full rounded-lg text-[15px] font-medium [&_svg]:size-[18px]"
+              onClick={(e) => openWechat(e.currentTarget)}
+            >
+              <WechatGlyph />
+              {t('wechatQrButton')}
+            </Button>
+
+            <div className="my-6 flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">{t('otherLoginMethods')}</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => openPhone('password')}
+                className="group flex h-11 items-center justify-center gap-2 rounded-lg border border-border bg-popover text-sm font-medium text-foreground shadow-elevation-sm outline-none transition-[border-color,background-color,box-shadow,transform] duration-[var(--motion-base)] hover:border-foreground/25 hover:bg-accent/50 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 active:translate-y-px active:shadow-none"
+              >
+                <LockKeyhole className="h-4 w-4 text-muted-foreground transition-colors duration-[var(--motion-base)] group-hover:text-foreground" />
+                {t('passwordLogin')}
+              </button>
+              <button
+                type="button"
+                onClick={() => openPhone('sms')}
+                className="group flex h-11 items-center justify-center gap-2 rounded-lg border border-border bg-popover text-sm font-medium text-foreground shadow-elevation-sm outline-none transition-[border-color,background-color,box-shadow,transform] duration-[var(--motion-base)] hover:border-foreground/25 hover:bg-accent/50 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 active:translate-y-px active:shadow-none"
+              >
+                <Smartphone className="h-4 w-4 text-muted-foreground transition-colors duration-[var(--motion-base)] group-hover:text-foreground" />
+                {t('smsLogin')}
+              </button>
+            </div>
+
+            <div className="mt-8">
+              <ConsentCheckbox checked={agreed} onChange={toggleAgreed}>
+                {terms(termsLinkClass)}
+              </ConsentCheckbox>
+            </div>
+          </div>
+        ) : view === 'wechat' ? (
+          <div>
+            {backToOptions}
+            <h1 className="mt-5 text-[28px] font-semibold leading-[1.15] tracking-[-0.02em] text-foreground">{t('wechatQrLogin')}</h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('wechatScanHint')}</p>
+
+            <WechatMiniQrLogin
+              inline
+              returnUrl={returnUrl}
+              className="mt-6 text-center"
+            />
+
+            <p className="mt-5 text-xs leading-5 text-muted-foreground">
+              {t.rich('termsByScanning', {
+                terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className={termsLinkClass}>{chunks}</Link>,
+                privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className={termsLinkClass}>{chunks}</Link>,
+              })}
+            </p>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <Button type="button" variant="outline" className="h-10 rounded-lg" onClick={() => openPhone('password')}>
+                <LockKeyhole className="text-muted-foreground" />
+                {t('passwordLogin')}
+              </Button>
+              <Button type="button" variant="outline" className="h-10 rounded-lg" onClick={() => openPhone('sms')}>
+                <Smartphone className="text-muted-foreground" />
+                {t('smsLogin')}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {backToOptions}
+            <h1 className="mt-5 text-[28px] font-semibold leading-[1.15] tracking-[-0.02em] text-foreground">
+              {t('phoneLogin')}
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('signInDescription')}</p>
+
+            <div
+              role="tablist"
+              aria-label={t('loginMethod')}
+              className="relative mt-6 grid h-10 grid-cols-2 rounded-lg bg-muted p-1"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  'absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-md bg-popover shadow-elevation-sm transition-transform duration-200 ease-out motion-reduce:transition-none',
+                  mode === 'sms' && 'translate-x-full',
+                )}
               />
-            </div>
-          </div>
-        </div>
-        <div className="absolute bottom-6 left-6 z-10 flex flex-col items-center gap-1.5 text-center">
-          <div className="flex items-center gap-3">
-            <BrandLogo height={38} />
-            <p className="text-sm font-semibold text-[#17191f] dark:text-white">{BRAND_NAME}</p>
-          </div>
-          <p className="text-xs text-muted-foreground">{t('brandTagline')}</p>
-        </div>
-      </aside>
-
-      <section className="relative flex min-h-dvh flex-col bg-popover lg:min-h-0">
-        {view === 'options' && (
-          <Button
-            type="button"
-            variant="ghost"
-            className="absolute left-4 top-4 z-10 h-9 px-2 text-muted-foreground sm:left-6 sm:top-6 lg:left-8 lg:top-7"
-            onClick={() => router.push('/')}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />{t('backToHome')}
-          </Button>
-        )}
-
-        <div className="flex flex-1 items-center justify-center px-5 py-8 sm:px-10 lg:px-14">
-          <div className="w-full max-w-[360px]">
-            <div className="mb-8 lg:hidden">
-              <div className="flex items-center gap-3">
-                <BrandLogo height={42} />
-                <div>
-                  <p className="font-semibold text-foreground">{BRAND_NAME}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{t('brandTagline')}</p>
-                </div>
-              </div>
-            </div>
-
-            {view === 'options' ? (
-              <div className="text-center">
-                <h1 className="text-[32px] font-semibold leading-[1.2] tracking-tight text-foreground sm:text-[36px]">
-                  {t('loginWelcome', { brand: BRAND_NAME })}
-                </h1>
-
-                {sessionExpired && (
-                  <div className="mt-5 rounded-md border border-warning/30 bg-warning-visible p-3 text-left">
-                    <p className="text-sm font-medium text-warning">{t('sessionExpired')}</p>
-                  </div>
-                )}
-                {error && (
-                  <div className="mt-5 rounded-md border border-destructive/30 bg-destructive-visible p-3 text-left" aria-live="polite">
-                    <p className="text-sm font-medium text-destructive">{error}</p>
-                  </div>
-                )}
-
-                <Button
+              {(['password', 'sms'] as LoginMode[]).map((option) => (
+                <button
+                  key={option}
                   type="button"
-                  size="lg"
-                  className="mt-8 h-12 w-full rounded-md text-sm font-medium"
-                  onClick={openWechat}
+                  role="tab"
+                  aria-selected={mode === option}
+                  onClick={() => { if (mode !== option) openPhone(option) }}
+                  className={cn(
+                    'relative z-10 rounded-md text-[13px] font-medium outline-none transition-colors duration-[var(--motion-base)] focus-visible:ring-[3px] focus-visible:ring-primary/20',
+                    mode === option ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  )}
                 >
-                  {t('wechatQrButton')}
-                </Button>
+                  {option === 'sms' ? t('smsLogin') : t('passwordLogin')}
+                </button>
+              ))}
+            </div>
 
-                <label className="mt-4 flex items-start justify-center gap-2 text-left text-xs leading-5 text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={agreed}
-                    onChange={(e) => toggleAgreed(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[hsl(var(--primary))]"
+            <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+              {notices}
+
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-[13px] font-medium text-foreground">{t('phone')}</Label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-[15px] tabular-nums text-muted-foreground">
+                    +86
+                  </span>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    inputMode="numeric"
+                    className={cn(FIELD_CLASS, 'pl-[52px] tabular-nums tracking-[0.02em]')}
+                    placeholder={t('phonePlaceholder')}
+                    value={phone}
+                    onChange={(e) => {
+                      const nextPhone = e.target.value.replace(/\D/g, '').slice(0, 11)
+                      setPhone(nextPhone)
+                      if (mode === 'sms') {
+                        setCode('')
+                        setCodeSent(false)
+                        setCooldown(0)
+                      }
+                    }}
+                    onFocus={() => setFocusedField('phone')}
+                    onBlur={() => setFocusedField(null)}
+                    required
+                    name="site-login-phone"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    disabled={loading}
                   />
-                  <span>{terms('mx-0.5 font-medium text-primary underline-offset-2 hover:underline')}</span>
-                </label>
-
-                <div className="my-8 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className="text-xs text-muted-foreground">{t('otherLoginMethods')}</span>
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-
-                <div className="flex items-start justify-center gap-10">
-                  <button
-                    type="button"
-                    onClick={() => openPhone('password')}
-                    className="group flex flex-col items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
-                  >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background/40 text-foreground transition-colors group-hover:bg-accent">
-                      <LockKeyhole className="h-5 w-5" />
-                    </span>
-                    <span className="text-xs text-muted-foreground">{t('passwordLogin')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openPhone('sms')}
-                    className="group flex flex-col items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
-                  >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background/40 text-foreground transition-colors group-hover:bg-accent">
-                      <Phone className="h-5 w-5" />
-                    </span>
-                    <span className="text-xs text-muted-foreground">{t('smsLogin')}</span>
-                  </button>
                 </div>
               </div>
-            ) : view === 'wechat' ? (
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={openOptions}
-                  className="mb-8 inline-flex items-center gap-1.5 rounded px-1 py-1 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  {t('otherLoginMethods')}
-                </button>
-                <h1 className="text-3xl font-semibold tracking-tight text-foreground">{t('wechatQrLogin')}</h1>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('wechatScanHint')}</p>
 
-                <WechatMiniQrLogin
-                  inline
-                  returnUrl={returnUrl}
-                  className="mt-7"
-                />
-
-                <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
-                  {t.rich('termsByScanning', {
-                    terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>,
-                    privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>,
-                  })}
-                </p>
-
-                <div className="mt-6 flex items-center justify-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => openPhone('sms')}>
-                    {t('smsLogin')}
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => openPhone('password')}>
-                    {t('passwordLogin')}
-                  </Button>
+              {mode === 'password' ? (
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <Label htmlFor="password" className="text-[13px] font-medium text-foreground">{t('password')}</Label>
+                    <Link href="/forgot-password" className="text-xs text-muted-foreground transition-colors duration-[var(--motion-base)] hover:text-primary">{t('forgotPassword')}</Link>
+                  </div>
+                  <PasswordInput
+                    id="password"
+                    className={FIELD_CLASS}
+                    placeholder={t('passwordPlaceholder')}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onFocus={() => setFocusedField('password')}
+                    onBlur={() => setFocusedField(null)}
+                    onVisibilityChange={setPasswordVisible}
+                    required
+                    name="site-login-password"
+                    autoComplete="current-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    disabled={loading}
+                  />
                 </div>
-              </div>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={openOptions}
-                  className="mb-6 inline-flex items-center gap-1.5 rounded px-1 py-1 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  {t('otherLoginMethods')}
-                </button>
-                <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                  {mode === 'sms' ? t('smsLogin') : t('passwordLogin')}
-                </h1>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('signInDescription')}</p>
-
-                <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-                  {sessionExpired && (
-                    <div className="rounded-md border border-warning/30 bg-warning-visible p-3">
-                      <p className="text-sm font-medium text-warning">{t('sessionExpired')}</p>
-                    </div>
-                  )}
-
-                  {error && (
-                    <div className="rounded-md border border-destructive/30 bg-destructive-visible p-3" aria-live="polite">
-                      <p className="text-sm font-medium text-destructive">{error}</p>
-                    </div>
-                  )}
-
-                  <div className="space-y-2.5">
-                    <Label htmlFor="phone" className="text-sm font-medium">{t('phone')}</Label>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="login-code" className="text-[13px] font-medium text-foreground">{t('verificationCode')}</Label>
+                  <div className="flex gap-2">
                     <Input
-                      id="phone"
-                      type="tel"
+                      id="login-code"
+                      type="text"
                       inputMode="numeric"
-                      className="h-12 rounded-md bg-transparent px-4"
-                      placeholder={t('phonePlaceholder')}
-                      value={phone}
-                      onChange={(e) => {
-                        const nextPhone = e.target.value.replace(/\D/g, '').slice(0, 11)
-                        setPhone(nextPhone)
-                        if (mode === 'sms') {
-                          setCode('')
-                          setCodeSent(false)
-                          setCooldown(0)
-                        }
-                      }}
-                      onFocus={() => setFocusedField('phone')}
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      className={cn(FIELD_CLASS, 'min-w-0 flex-1 tabular-nums tracking-[0.12em] placeholder:tracking-normal')}
+                      placeholder={t('verificationCodePlaceholder')}
+                      value={code}
+                      onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+                      onFocus={() => setFocusedField(null)}
                       onBlur={() => setFocusedField(null)}
                       required
-                      name="site-login-phone"
-                      autoComplete="off"
+                      name="site-login-code"
                       data-lpignore="true"
                       data-1p-ignore="true"
                       disabled={loading}
                     />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-[108px] shrink-0 rounded-lg bg-popover text-[13px] tabular-nums shadow-none"
+                      disabled={sendingCode || cooldown > 0 || phone.length !== 11}
+                      onClick={handleSendCode}
+                    >
+                      {sendingCode
+                        ? t('sendingCode')
+                        : cooldown > 0
+                          ? `${cooldown}s`
+                          : codeSent
+                            ? t('resendCode')
+                            : t('sendCode')}
+                    </Button>
                   </div>
+                  <p className="text-xs leading-5 text-muted-foreground">{t('unregisteredPhoneHint')}</p>
+                </div>
+              )}
 
-                  {mode === 'password' ? (
-                    <div className="space-y-2.5">
-                      <Label htmlFor="password" className="text-sm font-medium">{t('password')}</Label>
-                      <PasswordInput
-                        id="password"
-                        className="h-12 rounded-md bg-transparent px-4"
-                        placeholder={t('passwordPlaceholder')}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        onFocus={() => setFocusedField('password')}
-                        onBlur={() => setFocusedField(null)}
-                        onVisibilityChange={setPasswordVisible}
-                        required
-                        name="site-login-password"
-                        autoComplete="current-password"
-                        data-lpignore="true"
-                        data-1p-ignore="true"
-                        disabled={loading}
-                      />
-                      <div className="flex justify-end">
-                        <Link href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">{t('forgotPassword')}</Link>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      <Label htmlFor="login-code" className="text-sm font-medium">{t('verificationCode')}</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="login-code"
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={6}
-                          className="h-12 min-w-0 flex-1 rounded-md bg-transparent px-4"
-                          placeholder={t('verificationCodePlaceholder')}
-                          value={code}
-                          onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
-                          onFocus={() => setFocusedField(null)}
-                          onBlur={() => setFocusedField(null)}
-                          required
-                          name="site-login-code"
-                          data-lpignore="true"
-                          data-1p-ignore="true"
-                          disabled={loading}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-12 w-32 shrink-0 rounded-md"
-                          disabled={sendingCode || cooldown > 0 || phone.length !== 11}
-                          onClick={handleSendCode}
-                        >
-                          {sendingCode
-                            ? t('sendingCode')
-                            : cooldown > 0
-                              ? `${cooldown}s`
-                              : codeSent
-                                ? t('resendCode')
-                                : t('sendCode')}
-                        </Button>
-                      </div>
-                      <p className="text-xs leading-5 text-muted-foreground">{t('unregisteredPhoneHint')}</p>
-                    </div>
-                  )}
+              <ConsentCheckbox checked={agreed} onChange={toggleAgreed}>
+                {terms(termsLinkClass)}
+              </ConsentCheckbox>
 
-                  <label className="flex items-start gap-2.5 text-xs leading-5 text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={agreed}
-                      onChange={(e) => toggleAgreed(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[hsl(var(--primary))]"
-                    />
-                    <span>{terms('mx-0.5 font-medium text-primary underline-offset-2 hover:underline')}</span>
-                  </label>
-
-                  <Button
-                    type="submit"
-                    size="lg"
-                    className="h-12 w-full rounded-md"
-                    disabled={loading || (mode === 'sms' && (code.length !== 6 || !codeSent))}
-                  >
-                    {loading ? (mode === 'sms' ? t('verifying') : t('signingIn')) : t('signIn')}
-                  </Button>
-                </form>
-              </>
-            )}
+              <Button
+                type="submit"
+                className="h-11 w-full rounded-lg text-[15px] font-medium"
+                disabled={loading || (mode === 'sms' && (code.length !== 6 || !codeSent))}
+              >
+                {loading ? (mode === 'sms' ? t('verifying') : t('signingIn')) : t('signIn')}
+              </Button>
+            </form>
           </div>
-        </div>
-
-        <footer className="shrink-0 px-5 pb-5 text-center text-[10px] tracking-wide text-muted-foreground lg:pr-8 lg:text-right">
-          © {new Date().getFullYear()} {BRAND_NAME}
-        </footer>
-      </section>
+        )}
+      </div>
 
       <Dialog open={consentOpen} onOpenChange={(open) => { if (!open) cancelConsent() }}>
-        <DialogContent hideClose className="max-w-[420px] gap-0 rounded-lg bg-popover p-6">
+        <DialogContent
+          hideClose
+          className="max-w-[400px] gap-0 rounded-xl bg-popover p-6"
+          style={consentAnchor ? { left: consentAnchor.x, top: consentAnchor.y } : undefined}
+        >
           <DialogHeader className="space-y-0">
-            <DialogTitle className="text-center text-base font-normal leading-7 text-foreground">
+            <DialogTitle className="text-[15px] font-normal leading-7 text-foreground">
               {t.rich('termsConsentPrompt', {
-                terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline underline-offset-2">{chunks}</Link>,
-                privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline underline-offset-2">{chunks}</Link>,
+                terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline underline-offset-[3px]">{chunks}</Link>,
+                privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline underline-offset-[3px]">{chunks}</Link>,
               })}
             </DialogTitle>
           </DialogHeader>
-          <DialogFooter className="mt-6 flex-row justify-center gap-3 sm:justify-center">
-            <Button type="button" variant="outline" className="h-10 min-w-[108px]" onClick={cancelConsent}>{tc('cancel')}</Button>
-            <Button type="button" className="h-10 min-w-[132px]" onClick={confirmConsent}>{t('termsAgree')}</Button>
+          <DialogFooter className="mt-6 flex-row justify-end gap-2.5 sm:justify-end">
+            <Button type="button" variant="outline" className="h-10 min-w-[88px] rounded-lg" onClick={cancelConsent}>{tc('cancel')}</Button>
+            <Button type="button" className="h-10 min-w-[120px] rounded-lg" onClick={confirmConsent}>{t('termsAgree')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AuthSplitLayout>
   )
 }
 

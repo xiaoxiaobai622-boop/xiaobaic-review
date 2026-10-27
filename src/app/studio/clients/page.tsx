@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,6 +37,12 @@ export default function ClientsPage() {
   const tc = useTranslations('common')
   const [companies, setCompanies] = useState<ClientCompany[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  // 已发出/已加载过的关键字；React 严格模式下 effect 会跑两遍，靠它去重。
+  const loadedQueryRef = useRef<string | null>(null)
+  // 翻译函数每次渲染都可能换身份；放进依赖会让首次挂载多打一次列表请求。
+  const tcRef = useRef(tc)
+  useEffect(() => { tcRef.current = tc })
   const [searchQuery, setSearchQuery] = useState('')
   
   // Modal states
@@ -63,34 +69,35 @@ export default function ClientsPage() {
   const [backfillStats, setBackfillStats] = useState<string | null>(null)
   const [backfilling, setBackfilling] = useState(false)
 
-  const loadCompanies = useCallback(async () => {
+  const loadCompanies = useCallback(async (options?: { force?: boolean }) => {
+    if (!options?.force && loadedQueryRef.current === searchQuery) return
+    loadedQueryRef.current = searchQuery
     try {
-      const url = searchQuery 
+      const url = searchQuery
         ? `/api/clients?search=${encodeURIComponent(searchQuery)}`
         : '/api/clients'
       const response = await apiFetch(url)
-      if (response.ok) {
-        const data = await response.json()
-        setCompanies(data.companies || [])
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json()
+      setCompanies(data.companies || [])
+      setLoadError('')
     } catch (err) {
       logError('Failed to load companies:', err)
+      setLoadError(tcRef.current('failedToLoad'))
     } finally {
       setLoading(false)
     }
   }, [searchQuery])
 
   useEffect(() => {
-    loadCompanies()
+    void loadCompanies()
   }, [loadCompanies])
 
   // Debounced search
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadCompanies()
-    }, 300)
+    const timer = setTimeout(() => { void loadCompanies() }, 300)
     return () => clearTimeout(timer)
-  }, [searchQuery, loadCompanies])
+  }, [loadCompanies])
 
   function renderFormError(bannerClassName: string) {
     if (!error) return null
@@ -337,6 +344,7 @@ export default function ClientsPage() {
               onClick={handleBackfill}
               disabled={backfilling}
               title={t('syncTitle')}
+              aria-label={t('syncTitle')}
             >
               {backfilling ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -353,6 +361,7 @@ export default function ClientsPage() {
                 setError('')
                 setShowAddCompanyModal(true)
               }}
+              aria-label={t('addCompany')}
             >
               <Plus className="w-4 h-4 sm:mr-2" />
               <span className="hidden sm:inline">{t('addCompany')}</span>
@@ -388,7 +397,13 @@ export default function ClientsPage() {
         </div>
 
         {/* Companies List */}
-        {companies.length === 0 ? (
+        {loadError && companies.length === 0 ? (
+          <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-6 text-center">
+            <AlertCircle className="mx-auto mb-2 h-6 w-6 text-destructive" />
+            <p className="text-sm text-destructive">{loadError}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => { setLoading(true); void loadCompanies({ force: true }) }}>{tc('retry')}</Button>
+          </div>
+        ) : companies.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="font-medium">{t('noClients')}</p>

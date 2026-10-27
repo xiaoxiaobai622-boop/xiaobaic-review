@@ -6,6 +6,10 @@ import Docket from './Docket'
 import Folders from './Folders'
 import ScreeningRoom from './ScreeningRoom'
 import Timeline from './Timeline'
+import PopupComparison from './review-popups/PopupComparison'
+import SharedControls from './SharedControls'
+import ProjectMenus from './ProjectMenus'
+import UploadSamples from './UploadSamples'
 import './lab.css'
 
 const VARIANTS = [
@@ -21,6 +25,11 @@ function Lab() {
   const [v, setV] = useState(() => VARIANTS.find((x) => x.id === fromUrl)?.id ?? 'timeline')
   const active = VARIANTS.find((x) => x.id === v) ?? VARIANTS[0]
   const Host = active.host
+
+  if (fromUrl === 'popups') return <PopupComparison />
+  if (fromUrl === 'controls') return <SharedControls />
+  if (fromUrl === 'menus') return <ProjectMenus />
+  if (fromUrl === 'uploads') return <UploadSamples />
 
   return (
     <div className="lab-root">

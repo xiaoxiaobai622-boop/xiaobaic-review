@@ -253,7 +253,7 @@ export default function VideoComparisonControls({
             <div className="absolute bottom-1 left-0 right-0 h-1.5 overflow-hidden rounded-full bg-foreground/10 sm:h-2">
               <div className="absolute inset-0 bg-foreground/10" />
               <div
-                className="absolute inset-y-0 left-0 bg-primary transition-all duration-100"
+                className="absolute inset-y-0 left-0 bg-primary transition-[width] duration-100"
                 style={{ width: `${progress}%` }}
               />
             </div>

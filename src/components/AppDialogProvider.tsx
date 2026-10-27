@@ -1,7 +1,7 @@
 "use client"
 
 import { FormEvent, useEffect, useRef, useState } from "react"
-import { AlertCircle, CheckCircle2, CircleHelp, Info, MessageSquareText } from "lucide-react"
+import { AlertCircle, CheckCircle2, CircleHelp, Info, MessageSquareText, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,11 @@ interface DialogBaseOptions {
   confirmLabel?: string
   cancelLabel?: string
   tone?: DialogTone
+}
+
+interface AlertOptions extends DialogBaseOptions {
+  /** Keep the old blocking dialog only for failures that must be acknowledged. */
+  blocking?: boolean
 }
 
 interface PromptOptions extends DialogBaseOptions {
@@ -65,8 +70,13 @@ function normalizeMessage(messageOrOptions: string | DialogBaseOptions): DialogB
   return typeof messageOrOptions === "string" ? { message: messageOrOptions } : messageOrOptions
 }
 
-export function appAlert(messageOrOptions: string | DialogBaseOptions): Promise<void> {
-  return enqueue<void>({ kind: "alert", ...normalizeMessage(messageOrOptions) })
+export function appAlert(messageOrOptions: string | AlertOptions): Promise<void> {
+  const { blocking, ...options } = normalizeMessage(messageOrOptions) as AlertOptions
+  if (!blocking) {
+    appNotice(options)
+    return Promise.resolve()
+  }
+  return enqueue<void>({ kind: "alert", ...options })
 }
 
 export function appConfirm(messageOrOptions: string | DialogBaseOptions): Promise<boolean> {
@@ -80,7 +90,7 @@ export function appPrompt(messageOrOptions: string | PromptOptions, defaultValue
   return enqueue<string | null>({ kind: "prompt", ...options })
 }
 
-function inferTone(request: DialogRequest): DialogTone {
+function inferTone(request: { title?: string; message: string; tone?: DialogTone }): DialogTone {
   if (request.tone) return request.tone
   const text = `${request.title || ""} ${request.message}`.toLowerCase()
   if (/删除|永久|移除|清除|退出|撤销|delete|remove|clear|leave|permanent|löschen|entfern|verwijder/.test(text)) {
@@ -89,6 +99,106 @@ function inferTone(request: DialogRequest): DialogTone {
   if (/失败|错误|无法|error|failed|unable|fehl|mislukt/.test(text)) return "error"
   if (/成功|完成|success|completed|erfolgreich|geslaagd/.test(text)) return "success"
   return "info"
+}
+
+interface NoticeItem extends DialogBaseOptions {
+  id: number
+  tone: DialogTone
+}
+
+let noticeRequestId = 0
+const activeNotices: NoticeItem[] = []
+const noticeListeners = new Set<() => void>()
+
+function emitNoticeChange() {
+  noticeListeners.forEach((listener) => listener())
+}
+
+export function appNotice(messageOrOptions: string | DialogBaseOptions): void {
+  const options = normalizeMessage(messageOrOptions)
+  const tone = inferTone(options)
+  const last = activeNotices[activeNotices.length - 1]
+  if (last && last.message === options.message && last.tone === tone) return
+
+  activeNotices.push({ ...options, id: ++noticeRequestId, tone })
+  if (activeNotices.length > 4) activeNotices.shift()
+  emitNoticeChange()
+}
+
+function dismissNotice(id: number) {
+  const index = activeNotices.findIndex((notice) => notice.id === id)
+  if (index === -1) return
+  activeNotices.splice(index, 1)
+  emitNoticeChange()
+}
+
+function Notice({ notice }: { notice: NoticeItem }) {
+  const t = useTranslations("common")
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden)
+  const remaining = useRef(notice.tone === "error" || notice.tone === "destructive" ? 5000 : 3000)
+  const paused = hovered || focused || hidden
+
+  useEffect(() => {
+    const syncVisibility = () => setHidden(document.hidden)
+    document.addEventListener("visibilitychange", syncVisibility)
+    syncVisibility()
+    return () => document.removeEventListener("visibilitychange", syncVisibility)
+  }, [])
+
+  useEffect(() => {
+    if (paused) return
+    const startedAt = Date.now()
+    const timer = window.setTimeout(() => dismissNotice(notice.id), remaining.current)
+    return () => {
+      window.clearTimeout(timer)
+      remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt))
+    }
+  }, [notice.id, paused])
+
+  const NoticeIcon = notice.tone === "success"
+    ? CheckCircle2
+    : notice.tone === "error" || notice.tone === "destructive"
+      ? AlertCircle
+      : Info
+
+  return (
+    <div
+      role="status"
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
+      }}
+      className="pointer-events-auto flex items-start gap-3 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-elevation-lg"
+    >
+      <div
+        className={cn(
+          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+          notice.tone === "success" && "bg-success-visible text-success",
+          (notice.tone === "error" || notice.tone === "destructive") && "bg-destructive-visible text-destructive",
+          notice.tone === "info" && "bg-primary-visible text-primary"
+        )}
+        aria-hidden="true"
+      >
+        <NoticeIcon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        {notice.title && <p className="text-sm font-medium">{notice.title}</p>}
+        <p className="whitespace-pre-line break-words text-sm text-muted-foreground">{notice.message}</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => dismissNotice(notice.id)}
+        aria-label={t("close")}
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
 }
 
 export function AppDialogProvider({ children }: { children: React.ReactNode }) {
@@ -100,6 +210,16 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
   // Radix 的模态窗关掉时把焦点交还给 Dialog.Trigger，而这一枚窗是队列控的、没有 Trigger 那枚子节点：
   // 它照样 preventDefault 自己那步还原，于是一整串确认走完焦点掉回 <body>。开窗那一刻记下调用者，关窗自己接住。
   const openerRef = useRef<HTMLElement | null>(null)
+  const [noticeItems, setNoticeItems] = useState<NoticeItem[]>([])
+
+  useEffect(() => {
+    const syncNotices = () => setNoticeItems([...activeNotices])
+    noticeListeners.add(syncNotices)
+    syncNotices()
+    return () => {
+      noticeListeners.delete(syncNotices)
+    }
+  }, [])
 
   useEffect(() => {
     const syncRequest = () => setRequest(requestQueue[0] || null)
@@ -257,6 +377,14 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <div
+        aria-live="polite"
+        aria-atomic="false"
+        className="pointer-events-none fixed bottom-4 right-4 z-[45] flex w-[min(92vw,380px)] flex-col gap-2"
+      >
+        {noticeItems.map((notice) => <Notice key={notice.id} notice={notice} />)}
+      </div>
     </>
   )
 }

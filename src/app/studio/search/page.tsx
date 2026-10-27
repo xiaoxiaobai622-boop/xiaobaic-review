@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSlidingIndicator } from '@/hooks/useSlidingIndicator'
 import { useRouter } from 'next/navigation'
 import { Search, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -48,7 +49,6 @@ export default function RailSearchPage() {
   const [truncated, setTruncated] = useState(false)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const inputRef = useRef<HTMLInputElement>(null)
-  const [searched, setSearched] = useState(true)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -58,20 +58,19 @@ export default function RailSearchPage() {
   }, [])
 
   useEffect(() => {
-    if (!query.trim()) { setStatus('idle'); setProjects([]); setAssets([]); setSearched(true); return }
+    if (!query.trim()) { setStatus('idle'); setProjects([]); setAssets([]); return }
     setStatus('loading')
     let cancelled = false
     const timer = window.setTimeout(async () => {
       const params = new URLSearchParams({ q: query, type, sort })
       const response = await apiFetch(`/api/studio/search?${params.toString()}`, { cache: 'no-store' }).catch(() => null)
       if (cancelled) return
-      if (!response?.ok) { setStatus('error'); setSearched(true); return }
+      if (!response?.ok) { setStatus('error'); return }
       const data = await response.json().catch(() => null)
       setProjects(data?.projects || [])
       setAssets(data?.assets || [])
       setTruncated(Boolean(data?.truncated))
       setStatus('ready')
-      setSearched(true)
     }, DEBOUNCE_MS)
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [query, type, sort])
@@ -159,8 +158,8 @@ export default function RailSearchPage() {
               hint="开始输入即搜"
             />
           )}
-          {status !== 'error' && trimmed && status === 'loading' && !searched && (
-            <p className="px-2 py-6 text-sm text-muted-foreground">正在搜索…</p>
+          {trimmed && status === 'loading' && total === 0 && (
+            <p role="status" className="px-2 py-6 text-sm text-muted-foreground">正在搜索…</p>
           )}
           {status === 'ready' && total === 0 && (
             <Empty title="没有匹配的结果" hint="换个关键字，或把类型切回全部" />
@@ -219,17 +218,26 @@ function Segmented({ label, value, onChange, options }: {
   onChange: (value: string) => void
   options: { value: string; text: string }[]
 }) {
+  const { containerRef, rect } = useSlidingIndicator(Math.max(0, options.findIndex((option) => option.value === value)))
   return (
     <span className="flex items-center gap-1.5">
       <span className="text-muted-foreground">{label}</span>
-      <span className="flex items-center gap-1 rounded-md bg-muted p-1">
+      <span ref={containerRef} className="relative flex items-center gap-1 rounded-md bg-muted p-1">
+        {rect && (
+          <span
+            aria-hidden="true"
+            className="absolute left-0 bottom-1 top-1 rounded bg-accent transition-[transform,width] duration-[var(--motion-base)] ease-[var(--ease-standard)]"
+            style={{ transform: `translateX(${rect.left}px)`, width: rect.width }}
+          />
+        )}
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
+            data-segment
             onClick={() => onChange(option.value)}
             aria-pressed={value === option.value}
-            className={`rounded px-2 py-0.5 transition-colors ${value === option.value ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`relative z-10 rounded px-2 py-0.5 transition-colors ${value === option.value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {option.text}
           </button>

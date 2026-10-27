@@ -96,6 +96,7 @@ export default function CommentAttachmentButton({
   const storageProvider = useStorageProvider()
 
   const allDone = items.length > 0 && items.every((i) => i.status === 'completed' || i.status === 'error')
+  const anyFailed = items.some((i) => i.status === 'error')
   const hasFiles = items.length > 0
   const atLimit = items.length >= MAX_FILES
 
@@ -419,19 +420,28 @@ export default function CommentAttachmentButton({
           {/* Drop zone */}
           {!isUploading && !allDone && (
             <div
+              role="button"
+              tabIndex={atLimit ? -1 : 0}
+              aria-disabled={atLimit}
+              aria-label={atLimit ? t('maxFilesReached') : t('dragDropFiles')}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
+              onClick={atLimit ? undefined : handleBrowse}
+              onKeyDown={(event) => {
+                if (atLimit || (event.key !== 'Enter' && event.key !== ' ')) return
+                event.preventDefault()
+                handleBrowse()
+              }}
               className={`
-                flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-all cursor-pointer
+                flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring
                 ${atLimit
                   ? 'border-muted bg-muted/30 cursor-not-allowed opacity-50'
                   : isDragging
-                    ? 'border-primary bg-primary/5 scale-[1.01]'
+                    ? 'border-primary bg-primary/5'
                     : 'border-muted-foreground/25 hover:border-primary/50'
                 }
               `}
-              onClick={atLimit ? undefined : handleBrowse}
             >
               <Upload className="w-8 h-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground text-center">
@@ -455,16 +465,22 @@ export default function CommentAttachmentButton({
 
           {/* Upload progress summary */}
           {isUploading && (
-            <p className="text-sm text-muted-foreground flex items-center gap-2">
+            <p role="status" aria-live="polite" className="text-sm text-muted-foreground flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               {tc('loading')} {uploadProgress.current}/{uploadProgress.total}
             </p>
           )}
 
-          {allDone && (
-            <p className="text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
+          {allDone && !anyFailed && (
+            <p role="status" className="text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />
               {t('allFilesUploaded')}
+            </p>
+          )}
+          {allDone && anyFailed && (
+            <p role="status" className="text-sm text-destructive flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {tc('error')}
             </p>
           )}
 
@@ -520,6 +536,7 @@ export default function CommentAttachmentButton({
                         onClick={() => retryFile(item.id)}
                         className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                         title={tc('retry')}
+                        aria-label={tc('retry')}
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </button>
@@ -531,6 +548,8 @@ export default function CommentAttachmentButton({
                         type="button"
                         onClick={() => removeFile(item.id)}
                         className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                        title={tc('remove')}
+                        aria-label={tc('remove')}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -541,7 +560,7 @@ export default function CommentAttachmentButton({
                   {item.status === 'uploading' && (
                     <div className="mt-1.5 h-1 w-full rounded-full bg-muted overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-primary transition-all duration-300"
+                        className="h-full rounded-full bg-primary transition-[width] duration-300"
                         style={{ width: `${item.progress}%` }}
                       />
                     </div>

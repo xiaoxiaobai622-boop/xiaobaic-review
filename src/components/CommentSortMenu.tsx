@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import ReviewPopup from '@/components/ReviewPopup'
+import styles from '@/components/review-popup.module.css'
 
 export type CommentSortMode = 'timecode' | 'newest' | 'unresolved'
 
@@ -14,23 +16,8 @@ interface CommentSortMenuProps {
 export default function CommentSortMenu({ value, onChange }: CommentSortMenuProps) {
   const t = useTranslations('videoUi')
   const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handlePointerDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open])
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const id = useId()
 
   const labels: Record<CommentSortMode, string> = {
     timecode: t('sortTimecode'),
@@ -39,39 +26,37 @@ export default function CommentSortMenu({ value, onChange }: CommentSortMenuProp
   }
 
   return (
-    <div className="relative shrink-0" ref={rootRef}>
+    <div className="relative shrink-0">
       <button
+        ref={triggerRef}
         type="button"
+        data-review-popup-trigger
         onClick={() => setOpen((current) => !current)}
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? id : undefined}
         aria-label={t('sort')}
-        className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-1.5 text-[11px] text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+        className={`${styles.trigger} inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-1.5 text-[11px] text-foreground hover:bg-accent`}
       >
         {labels[value]}
         <ChevronDown className="h-3 w-3 text-muted-foreground" />
       </button>
-      {open && (
-        <div
-          role="dialog"
-          aria-label={t('sort')}
-          className="absolute right-0 top-full z-50 mt-1 w-36 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-elevation-lg"
-        >
-          {(Object.keys(labels) as CommentSortMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => { onChange(mode); setOpen(false) }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] outline-none hover:bg-accent focus-visible:bg-accent"
-            >
-              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                {value === mode && <Check className="h-3.5 w-3.5 text-primary" />}
-              </span>
-              {labels[mode]}
-            </button>
-          ))}
-        </div>
-      )}
+      <ReviewPopup id={id} open={open} onOpenChange={setOpen} anchor={triggerRef} label={t('sort')} role="menu" side="bottom" align="end" width={168}>
+        <p className={styles.heading}>{t('sort')}</p>
+        {(Object.keys(labels) as CommentSortMode[]).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            role="menuitemradio"
+            aria-checked={value === mode}
+            onClick={() => { onChange(mode); setOpen(false) }}
+            className={styles.item}
+          >
+            <span className="min-w-0 flex-1 truncate">{labels[mode]}</span>
+            {value === mode && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+          </button>
+        ))}
+      </ReviewPopup>
     </div>
   )
 }

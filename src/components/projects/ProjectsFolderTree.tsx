@@ -75,6 +75,55 @@ export default function ProjectsFolderTree({
   const [editorError, setEditorError] = useState('')
   const [busy, setBusy] = useState(false)
   const [menu, setMenu] = useState<{ id: string; left: number; top: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const menuTriggerRef = useRef<HTMLElement | null>(null)
+
+  const closeMenu = (restoreFocus = true) => {
+    setMenu(null)
+    if (restoreFocus) menuTriggerRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!menu) return
+    const frame = requestAnimationFrame(() => {
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"], button')?.focus()
+    })
+    // Esc 挂在菜单元素上等于要求焦点先在菜单里：点一下菜单留白就再也退不出去。
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setMenu(null)
+      menuTriggerRef.current?.focus()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [menu])
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeMenu()
+      return
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
+
+    event.preventDefault()
+    const menuEl = menuRef.current
+    if (!menuEl) return
+    const items = [...menuEl.querySelectorAll<HTMLElement>('[role="menuitem"], button')]
+      .filter((el) => !el.hasAttribute('disabled'))
+    if (items.length === 0) return
+
+    const current = items.indexOf(document.activeElement as HTMLElement)
+    let next = 0
+    if (event.key === 'ArrowDown') next = current < 0 ? 0 : (current + 1) % items.length
+    else if (event.key === 'ArrowUp') next = current <= 0 ? items.length - 1 : current - 1
+    else if (event.key === 'End') next = items.length - 1
+    items[next]?.focus()
+  }
   const [moveFolder, setMoveFolder] = useState<FolderNode | null>(null)
   const [moveParent, setMoveParent] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FolderNode | null>(null)
@@ -116,6 +165,7 @@ export default function ProjectsFolderTree({
   // The sidebar scrolls, so an absolutely-positioned popover would be clipped by
   // it: the menu is portalled to <body> and anchored to the viewport instead.
   const toggleMenu = (folderId: string, trigger: HTMLElement) => {
+    menuTriggerRef.current = trigger
     const rect = trigger.getBoundingClientRect()
     const left = Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8))
     const top = rect.bottom + MENU_HEIGHT <= window.innerHeight - 8
@@ -383,7 +433,7 @@ export default function ProjectsFolderTree({
                       aria-haspopup="menu"
                       aria-expanded={menu?.id === folder.id}
                       onClick={(e) => toggleMenu(folder.id, e.currentTarget)}
-                      className="w-6 h-6 rounded text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center opacity-0 focus:opacity-100 group-hover/row:opacity-100 transition-opacity"
+                      className="w-6 h-6 rounded text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center opacity-0 focus:opacity-100 group-hover/row:opacity-100 transition-opacity [@media(pointer:coarse)]:opacity-100"
                     >
                       <MoreHorizontal className="w-4 h-4" />
                     </button>
@@ -412,8 +462,18 @@ export default function ProjectsFolderTree({
         if (!folder) return null
         return createPortal(
           <>
-            <button type="button" className="fixed inset-0 z-[80] cursor-default" aria-label={tc('close')} onClick={() => setMenu(null)} />
-            <div role="menu" aria-label={`${folder.name} ${t('folderActions')}`} className="fixed z-[90] rounded-[10px] border border-border bg-popover p-1 shadow-lg" style={{ left: menu.left, top: menu.top, width: MENU_WIDTH }}>
+            {/* 点外关闭的捕获面：它铺满整屏，所以既不进 Tab 顺序也不报给读屏
+                （原先那枚 <button aria-label="关闭"> 是个 1440×900 的隐形焦点目标）。
+                键盘退出走上面那条文档级 Esc。 */}
+            <div aria-hidden className="fixed inset-0 z-[80] cursor-default" onClick={() => closeMenu()} />
+            <div
+              ref={menuRef}
+              role="menu"
+              aria-label={`${folder.name} ${t('folderActions')}`}
+              className="fixed z-[90] rounded-[10px] border border-border bg-popover p-1 shadow-lg"
+              style={{ left: menu.left, top: menu.top, width: MENU_WIDTH }}
+              onKeyDown={handleMenuKeyDown}
+            >
               <MenuButton
                 label={t('folderNewSub')}
                 icon={FolderPlus}

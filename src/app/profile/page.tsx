@@ -1,5 +1,6 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Camera, Check, KeyRound, Link2, LogOut, MessageSquare, RefreshCw, UserRound } from 'lucide-react'
 import { AuthProvider, useAuth } from '@/components/AuthProvider'
@@ -395,7 +396,7 @@ function ProfileContent() {
   }
 
   async function unbindFeishu() {
-    if (!confirm(t('feishuUnbindConfirm'))) {
+    if (!await appConfirm(t('feishuUnbindConfirm'))) {
       return
     }
     setFeishuLoading(true)

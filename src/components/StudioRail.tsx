@@ -17,6 +17,7 @@ import { maskPhoneDisplay } from '@/lib/phone-display'
 import { THEME_CHOICES, applyThemeChoice, readThemeFromDom, type ThemeChoice } from '@/lib/theme'
 import { getContactEmail } from '@/lib/user-contact'
 import { useTranslations } from 'next-intl'
+import motion from '@/components/ui/surface-motion.module.css'
 
 /** 图标只有 tooltip 不够：只用键盘时也要看得见落点，整条栏共用这一组类。 */
 const RAIL_ICON_BUTTON = 'flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card'
@@ -68,6 +69,7 @@ export default function StudioRail() {
   const [theme, setTheme] = useState<ThemeChoice>(() => (typeof document !== 'undefined' ? readThemeFromDom() : 'light'))
 
   const userMenuRef = useRef<HTMLDivElement>(null)
+  const userButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const syncTheme = () => setTheme(readThemeFromDom())
@@ -79,13 +81,16 @@ export default function StudioRail() {
 
   useEffect(() => {
     if (!showUserMenu) return
+    userMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
     function handleClickOutside(e: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node) && !userButtonRef.current?.contains(e.target as Node)) {
         setShowUserMenu(false)
       }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setShowUserMenu(false)
+      if (e.key !== 'Escape') return
+      setShowUserMenu(false)
+      userButtonRef.current?.focus()
     }
     document.addEventListener('mousedown', handleClickOutside)
     document.addEventListener('keydown', handleKeyDown)
@@ -94,6 +99,19 @@ export default function StudioRail() {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [showUserMenu])
+
+  const moveMenuFocus = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
+    const items = Array.from(userMenuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
+    if (items.length === 0) return
+    const index = items.indexOf(document.activeElement as HTMLElement)
+    const next = e.key === 'Home' ? 0
+      : e.key === 'End' ? items.length - 1
+      : e.key === 'ArrowDown' ? (index + 1) % items.length
+      : (index - 1 + items.length) % items.length
+    e.preventDefault()
+    items[next].focus()
+  }
 
   if (!user) return null
 
@@ -179,8 +197,9 @@ export default function StudioRail() {
 
       {/* 定宽而不是 w-full：w-full 只有内容盒那 36px，44px 的按钮在里面居不了中（auto 外边距在超宽时归零），
           会整枚贴左、比其他图标右移 4px。给成和控件同宽，交给栏的 items-center 居中。 */}
-      <div ref={userMenuRef} className="relative w-[44px]">
+      <div className="relative w-[44px]">
         <button
+          ref={userButtonRef}
           onClick={() => setShowUserMenu(!showUserMenu)}
           className={`${RAIL_ICON_BUTTON}`}
           aria-label={displayName}
@@ -192,9 +211,12 @@ export default function StudioRail() {
         </button>
         {showUserMenu && (
           <div
+            ref={userMenuRef}
             role="menu"
             aria-label={displayName}
-            className="absolute bottom-0 left-full z-50 ml-2 max-h-[calc(100vh-1.5rem)] w-64 overflow-y-auto rounded-lg border border-border bg-card shadow-elevation-lg"
+            data-state="open"
+            onKeyDown={moveMenuFocus}
+            className={`absolute bottom-0 left-full z-50 ml-2 max-h-[calc(100vh-1.5rem)] w-64 overflow-y-auto rounded-lg border border-border bg-card shadow-elevation-lg ${motion.surface} ${motion.railMenu}`}
           >
             {/* 账号卡：同一枚头像（有照片是照片、没有是名字片），跟窄栏那枚对得上。
                 这一条以前只有两行字，点开像一张裸列表。 */}

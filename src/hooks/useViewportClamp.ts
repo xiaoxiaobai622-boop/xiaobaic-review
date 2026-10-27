@@ -1,9 +1,11 @@
 import { useEffect, type RefObject } from 'react'
+import { clipBounds } from '@/lib/clip-bounds'
 
 /**
  * After `open` becomes true, nudge the referenced element horizontally so it
- * stays within the viewport with `padding`px of breathing room on either side.
- * Useful for absolutely-positioned dropdowns that would otherwise overflow.
+ * stays inside every box that can cut it — the clipping ancestors as well as
+ * the viewport. Useful for absolutely-positioned dropdowns that would
+ * otherwise overflow.
  */
 export function useViewportClamp(
   ref: RefObject<HTMLElement | null>,
@@ -15,10 +17,10 @@ export function useViewportClamp(
     if (!open || !el) return
     el.style.transform = ''
     const rect = el.getBoundingClientRect()
-    if (rect.left < padding) {
-      el.style.transform = `translateX(${padding - rect.left}px)`
-    } else if (rect.right > window.innerWidth - padding) {
-      el.style.transform = `translateX(${window.innerWidth - padding - rect.right}px)`
-    }
+    const bounds = clipBounds(el, padding)
+    let dx = 0
+    if (rect.left < bounds.left) dx = bounds.left - rect.left
+    else if (rect.right > bounds.right) dx = bounds.right - rect.right
+    if (dx) el.style.transform = `translateX(${dx}px)`
   }, [ref, open, padding])
 }

@@ -49,6 +49,13 @@ interface PauseGate {
   resolve: () => void
 }
 
+/** 暂停时主动掐掉在途分片，等恢复后从该分片重传（S3 分片本身不支持断点续传）。 */
+class PauseRequested extends Error {
+  constructor() {
+    super('Upload paused')
+  }
+}
+
 // Every upload endpoint call identifies the object with the same four ids; the
 // presign / abort / complete requests must agree on them.
 function targetIds(target: S3UploadTarget) {
@@ -70,6 +77,7 @@ function targetIds(target: S3UploadTarget) {
 export function useS3MultipartUpload() {
   const activeUploadsRef = useRef<Map<string, ActiveUpload>>(new Map())
   const pauseGatesRef = useRef<Map<string, PauseGate>>(new Map())
+  const pauseAbortersRef = useRef<Map<string, Set<() => void>>>(new Map())
 
   const getAuthInit = useCallback((target: S3UploadTarget): RequestInit => {
     const headers: Record<string, string> = {}
@@ -97,6 +105,7 @@ export function useS3MultipartUpload() {
 
     active.abortController.abort()
     activeUploadsRef.current.delete(uploadKey)
+    pauseAbortersRef.current.delete(uploadKey)
 
     // If paused, resolve the gate so the loop can exit
     const gate = pauseGatesRef.current.get(uploadKey)
@@ -162,6 +171,8 @@ export function useS3MultipartUpload() {
           throw new Error(`Server returned invalid partSize: ${partSize}`)
         }
         const completedParts: Array<{ partNumber: number; etag: string }> = []
+        const pauseAborters = new Set<() => void>()
+        pauseAbortersRef.current.set(uploadKey, pauseAborters)
 
         // Per-part progress tracking. `partProgress[partNumber-1]` holds bytes
         // sent for that part. Sum + clamp gives smooth byte-level progress
@@ -187,6 +198,9 @@ export function useS3MultipartUpload() {
             const xhr = new XMLHttpRequest()
             const onAbort = () => xhr.abort()
             signal.addEventListener('abort', onAbort, { once: true })
+            let pausedAbort = false
+            const onPause = () => { pausedAbort = true; xhr.abort() }
+            pauseAborters.add(onPause)
 
             // Stall watchdog: abort the attempt when progress stops so it retries
             let stalled = false
@@ -200,6 +214,7 @@ export function useS3MultipartUpload() {
             }
             const cleanup = () => {
               signal.removeEventListener('abort', onAbort)
+              pauseAborters.delete(onPause)
               clearTimeout(stallTimer)
             }
 
@@ -238,6 +253,8 @@ export function useS3MultipartUpload() {
               cleanup()
               if (signal.aborted) {
                 reject(new Error('Upload cancelled'))
+              } else if (pausedAbort) {
+                reject(new PauseRequested())
               } else if (stalled) {
                 reject(new Error(`Part ${partIndex + 1} stalled`))
               } else {
@@ -256,7 +273,8 @@ export function useS3MultipartUpload() {
           const chunk = file.slice(start, end)
 
           let lastErr: unknown = null
-          for (let attempt = 1; attempt <= PART_MAX_ATTEMPTS; attempt++) {
+          let attempt = 0
+          while (true) {
             if (signal.aborted) throw new Error('Upload cancelled')
             await waitIfPaused()
             if (signal.aborted) throw new Error('Upload cancelled')
@@ -266,17 +284,18 @@ export function useS3MultipartUpload() {
               // double-count bytes from a failed attempt.
               partProgress[partIndex] = 0
               reportProgress()
-
               const etag = await uploadPartWithProgress(url, chunk, partIndex)
               completedParts.push({ partNumber, etag })
               return
             } catch (err: any) {
-              lastErr = err
               if (signal.aborted) throw err
-              if (attempt < PART_MAX_ATTEMPTS) {
-                const backoff = PART_RETRY_BASE_MS * Math.pow(3, attempt - 1)
-                await new Promise((r) => setTimeout(r, backoff))
-              }
+              // 暂停掐断不算失败次数：等恢复后从这一片重来。
+              if (err instanceof PauseRequested) continue
+              lastErr = err
+              attempt += 1
+              if (attempt >= PART_MAX_ATTEMPTS) break
+              const backoff = PART_RETRY_BASE_MS * Math.pow(3, attempt - 1)
+              await new Promise((r) => setTimeout(r, backoff))
             }
           }
           throw lastErr instanceof Error ? lastErr : new Error(`Part ${partNumber} failed`)
@@ -316,6 +335,7 @@ export function useS3MultipartUpload() {
 
         activeUploadsRef.current.delete(uploadKey)
         pauseGatesRef.current.delete(uploadKey)
+        pauseAbortersRef.current.delete(uploadKey)
         onSuccess?.()
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err)
@@ -336,12 +356,13 @@ export function useS3MultipartUpload() {
     [abortUpload, abortOnServer, getAuthInit]
   )
 
-  /** Pause an in-progress upload. Takes effect between part batches. */
+  /** Pause an in-progress upload and stop the parts already in flight. */
   const pauseUpload = useCallback((uploadKey: string): void => {
     if (pauseGatesRef.current.has(uploadKey)) return
     let resolve!: () => void
     const promise = new Promise<void>((r) => { resolve = r })
     pauseGatesRef.current.set(uploadKey, { promise, resolve })
+    pauseAbortersRef.current.get(uploadKey)?.forEach((abort) => abort())
   }, [])
 
   /** Resume a paused upload. */

@@ -1,0 +1,55 @@
+.comparison, .sample {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: inherit;
+}
+.comparison { min-height: 100dvh; }
+.comparison { padding: 24px; }
+.header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.header h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.header p, .hint { color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 20px; margin-top: 8px; }
+.options { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12px; }
+.options label { display: flex; gap: 6px; align-items: center; }
+.options select { padding: 5px 8px; border: 1px solid hsl(var(--border)); border-radius: 4px; background: hsl(var(--background)); }
+.checkbox { white-space: nowrap; }
+.panes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.pane { min-width: 0; }
+.paneHeading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.paneHeading h2 { font-size: 14px; font-weight: 600; }
+.paneHeading a { font-size: 12px; color: hsl(var(--muted-foreground)); text-underline-offset: 3px; }
+.paneHeading a:hover { color: hsl(var(--foreground)); text-decoration: underline; }
+.pane .sample { border: 1px solid hsl(var(--border)); border-radius: 8px; }
+.hint { margin-top: 16px; }
+.sample { display: flex; flex-direction: column; min-height: 710px; min-width: 0; padding: 0 12px; }
+.reviewHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 4px; }
+.reviewHeader > div:first-child { min-width: 0; }
+.reviewHeader h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.reviewHeader span { display: block; font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 3px; }
+.viewer { display: flex; align-items: center; justify-content: center; height: clamp(140px, 28vh, 230px); background: hsl(var(--muted)); border-radius: 4px; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.timeline { height: 3px; margin-top: 16px; background: hsl(var(--foreground) / .13); border-radius: 2px; }
+.timeline span { display: block; width: 13.2%; height: 100%; background: hsl(var(--primary)); border-radius: inherit; }
+.transport { display: flex; align-items: center; justify-content: space-between; height: 42px; border-bottom: 1px solid hsl(var(--border)); }
+.transport > span { font-size: 11px; color: hsl(var(--muted-foreground)); }
+.comments { flex: 1; min-height: 180px; max-height: 280px; overflow-y: auto; padding: 14px 4px; scrollbar-width: thin; scrollbar-color: hsl(var(--muted-foreground) / .3) transparent; }
+.commentsHeading { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; font-size: 12px; }
+.commentsHeading h2 { font-weight: 600; }
+.commentsHeading > span { color: hsl(var(--muted-foreground)); }
+.comments article { display: flex; gap: 10px; margin-bottom: 18px; font-size: 12px; line-height: 19px; }
+.comments article > div { min-width: 0; }
+.comments article p { overflow-wrap: anywhere; }
+.comments article p:first-child { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.comments article time, .comments article p > span { font-size: 11px; color: hsl(var(--muted-foreground)); }
+.avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: hsl(var(--muted)); color: hsl(var(--foreground)); font-size: 11px; }
+.setting { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 7px 8px; border-radius: 4px; text-align: left; font-size: 13px; line-height: 20px; }
+.setting:hover { background: hsl(var(--foreground) / .08); }
+.setting > span { flex: 1; }
+.setting input { width: 80px; accent-color: hsl(var(--primary)); }
+.divider { height: 1px; margin: 5px 0; background: hsl(var(--border)); }
+.notice { min-height: 42px; padding: 10px 4px; color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 18px; }
+.comparison :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.sample ::selection { background: hsl(var(--primary) / .25); }
+@media (max-width: 800px) {
+  .comparison { padding: 16px; }
+  .header { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .panes { grid-template-columns: 1fr; }
+}

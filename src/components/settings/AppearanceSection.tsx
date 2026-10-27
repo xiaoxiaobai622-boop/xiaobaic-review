@@ -98,7 +98,8 @@ export function AppearanceSection({
                 key={option.value}
                 type="button"
                 onClick={() => setDefaultTheme(option.value)}
-                className={`flex flex-col items-center gap-1 p-2 sm:p-3 rounded-lg border-2 transition-colors ${
+                aria-pressed={isSelected}
+                className={`flex flex-col items-center gap-1 p-2 sm:p-3 rounded-lg border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   isSelected
                     ? 'border-primary bg-primary/10'
                     : 'border-border hover:border-primary/50 hover:bg-muted/50'
@@ -128,7 +129,8 @@ export function AppearanceSection({
                 key={key}
                 type="button"
                 onClick={() => setAccentColor(key)}
-                className={`group relative flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-all ${
+                aria-pressed={isSelected}
+                className={`group relative flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   isSelected
                     ? 'border-foreground'
                     : 'border-transparent hover:border-border'
@@ -186,7 +188,7 @@ function CustomAccentSwatch({
 
   return (
     <label
-      className={`group relative flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-all cursor-pointer ${
+      className={`group relative flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 transition-colors duration-150 cursor-pointer ${
         isCustom ? 'border-foreground' : 'border-transparent hover:border-border'
       }`}
       title={label}

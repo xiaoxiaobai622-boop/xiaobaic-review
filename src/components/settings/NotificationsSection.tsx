@@ -39,12 +39,24 @@ export function NotificationsSection({ show, setShow, collapsible, ...emailProps
             role="tablist"
             aria-label={t('notifications.title')}
             className="inline-flex w-full gap-2"
+            onKeyDown={(event) => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+              event.preventDefault()
+              const tabs: Array<'email' | 'external' | 'browser'> = ['email', 'external', 'browser']
+              const current = tabs.indexOf(activeTab)
+              const next = event.key === 'Home' ? 0
+                : event.key === 'End' ? tabs.length - 1
+                : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+              setActiveTab(tabs[next])
+              event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus()
+            }}
           >
             <button
               type="button"
               role="tab"
               aria-selected={activeTab === 'email'}
               aria-controls="notifications-tabpanel-email"
+              tabIndex={activeTab === 'email' ? 0 : -1}
               className={tabClassName(activeTab === 'email')}
               onClick={() => setActiveTab('email')}
             >
@@ -55,6 +67,7 @@ export function NotificationsSection({ show, setShow, collapsible, ...emailProps
               role="tab"
               aria-selected={activeTab === 'external'}
               aria-controls="notifications-tabpanel-external"
+              tabIndex={activeTab === 'external' ? 0 : -1}
               className={tabClassName(activeTab === 'external')}
               onClick={() => setActiveTab('external')}
             >
@@ -65,6 +78,7 @@ export function NotificationsSection({ show, setShow, collapsible, ...emailProps
               role="tab"
               aria-selected={activeTab === 'browser'}
               aria-controls="notifications-tabpanel-browser"
+              tabIndex={activeTab === 'browser' ? 0 : -1}
               className={tabClassName(activeTab === 'browser')}
               onClick={() => setActiveTab('browser')}
             >

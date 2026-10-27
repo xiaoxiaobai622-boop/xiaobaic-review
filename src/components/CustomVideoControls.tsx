@@ -462,7 +462,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
     <div className="hidden sm:flex h-[26px] items-center gap-1">
       <button
         onClick={() => onFrameStep('backward')}
-        className="flex items-center justify-center text-foreground opacity-80 transition-opacity hover:opacity-100"
+        className="flex items-center justify-center rounded text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100"
         aria-label={t('previousFrame')}
         title={`${t('previousFrame')} (Ctrl+J)`}
       >
@@ -471,7 +471,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
 
       <button
         onClick={onPlayPause}
-        className="mx-1 flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
+        className="mx-1 flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-foreground/15 active:transition-none"
         aria-label={isPlaying ? t('pauseVideo') : t('playVideo')}
         title={isPlaying ? `${t('pauseVideo')} (Ctrl+Space)` : `${t('playVideo')} (Ctrl+Space)`}
       >
@@ -484,7 +484,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
 
       <button
         onClick={() => onFrameStep('forward')}
-        className="flex items-center justify-center text-foreground opacity-80 transition-opacity hover:opacity-100"
+        className="flex items-center justify-center rounded text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100"
         aria-label={t('nextFrame')}
         title={`${t('nextFrame')} (Ctrl+L)`}
       >

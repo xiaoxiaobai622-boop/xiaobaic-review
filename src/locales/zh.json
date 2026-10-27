@@ -812,6 +812,7 @@
     "inReview": "审阅中",
     "feedbackComplete": "意见汇总完毕",
     "removeReviewStatus": "移除状态",
+    "removeReviewStatusConfirm": "移除这个视频的审阅状态？移除后不会自动改回「待审阅」。",
     "updatingReviewStatus": "正在更新状态",
     "failedToUpdateReviewStatus": "更新审阅状态失败，请重试",
     "approveVideo": "审核通过",
@@ -2672,6 +2673,7 @@
     "teamCenter": "前往团队中心",
     "roleOwner": "创建人",
     "roleAdmin": "管理员",
-    "roleMember": "成员"
+    "roleMember": "成员",
+    "current": "当前"
   }
 }

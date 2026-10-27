@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Database, FolderKanban, HardDrive } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { StudioPageSkeleton } from '@/components/StudioPageSkeleton'
 import { apiFetch } from '@/lib/api-client'
 import { useSearchParams } from 'next/navigation'
 
@@ -33,7 +34,7 @@ export default function TeamStoragePage() {
     } finally { setLoading(false) }
   }
   useEffect(() => { void load() }, [])
-  if (loading) return <div className="py-12 text-sm text-muted-foreground">正在加载容量管理...</div>
+  if (loading) return <StudioPageSkeleton label="正在加载容量管理..." />
   if (error && !data) return <Card><CardContent className="py-16 text-center" role="alert"><p className="text-sm font-medium text-destructive">{error}</p><p className="mt-1 text-sm text-muted-foreground">容量数据仍在服务器上，恢复连接后重试即可。</p><Button variant="outline" className="mt-4" onClick={() => void load()}>重试</Button></CardContent></Card>
   if (!data) return <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">暂无团队容量数据。</CardContent></Card>
   const bin = Number(data.usage.recycleBinBytes); const used = Number(data.usage.usedBytes) + bin; const total = data.quota.maxStorageGB * 1024 ** 3; const percent = total ? Math.min(100, used / total * 100) : 0

@@ -10,7 +10,7 @@ import ThumbnailReel from '@/components/ThumbnailReel'
 import ReviewBetaBanner from '@/components/ReviewBetaBanner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Check, Share2 } from 'lucide-react'
+import { ArrowLeft, Check, LoaderCircle, Share2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -918,8 +918,34 @@ export default function AdminSharePage() {
   // Show loading state
   if (loading) {
     return (
-      <div data-review-surface className="fixed inset-0 bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">{tc('loading')}</p>
+      <div data-review-surface className="fixed inset-0 flex flex-col bg-background" aria-busy="true">
+        <span className="sr-only" role="status" aria-live="polite">{tc('loading')}</span>
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-3">
+          <div className="skeleton h-8 w-8 rounded-md" />
+          <div className="skeleton h-4 w-48 rounded" />
+          <div className="ml-auto flex gap-2">
+            <div className="skeleton h-8 w-24 rounded-md" />
+            <div className="skeleton h-8 w-8 rounded-md" />
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 gap-3 p-3">
+          <div className="flex min-w-0 flex-1 flex-col rounded-md bg-muted/80 p-3">
+            <div className="skeleton flex-1 rounded-md bg-black/90" />
+            <div className="mt-3 flex items-center gap-3">
+              <div className="skeleton h-9 w-9 rounded-full" />
+              <div className="skeleton h-1.5 flex-1 rounded-full" />
+              <div className="skeleton h-4 w-16 rounded" />
+            </div>
+          </div>
+          <div className="hidden w-80 shrink-0 rounded-md border border-border bg-card p-3 lg:block">
+            <div className="skeleton h-5 w-32 rounded" />
+            <div className="mt-4 space-y-3">
+              {[0, 1, 2, 3].map((index) => (
+                <div key={index} className="skeleton h-16 rounded-md" />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -1076,15 +1102,32 @@ export default function AdminSharePage() {
       {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
         {readyVideos.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center p-4">
-            <Card className="bg-card">
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  {tokensLoading ? t('loadingVideo') : t('noVideosReadyForReview')}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          tokensLoading ? (
+            <div className="flex min-h-0 flex-1 flex-col rounded-[6px] bg-muted/80 p-3" role="status" aria-live="polite" aria-busy="true">
+              <div className="relative flex-1 overflow-hidden rounded-md bg-black/90">
+                <div className="skeleton absolute inset-0 opacity-15" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-black/55 px-4 py-2 text-sm text-white shadow-lg">
+                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    {t('loadingVideo')}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <div className="skeleton h-9 w-9 rounded-full" />
+                <div className="skeleton h-1.5 flex-1 rounded-full" />
+                <div className="skeleton h-4 w-16 rounded" />
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center p-4">
+              <Card className="bg-card">
+                <CardContent className="py-12 text-center">
+                  <p className="text-muted-foreground">{t('noVideosReadyForReview')}</p>
+                </CardContent>
+              </Card>
+            </div>
+          )
         ) : (
           <>
             {/* Video Player - natural height on mobile, fills space on desktop */}

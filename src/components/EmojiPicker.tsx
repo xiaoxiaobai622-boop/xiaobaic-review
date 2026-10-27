@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
+import { useEffect, useId, useState } from 'react'
+import { Clock, Smile, Leaf, Utensils, Gamepad2, Lightbulb } from 'lucide-react'
+import styles from './review-popup.module.css'
 
 /** 最近使用的表情存这里，上限 16 个。 */
 const RECENT_KEY = 'comment_emoji_recent'
@@ -85,6 +86,8 @@ export default function EmojiPicker({
 }) {
   const [tab, setTab] = useState('recent')
   const [recent, setRecent] = useState<string[]>([])
+  const id = useId()
+  const icons = [Clock, Smile, Leaf, Utensils, Gamepad2, Lightbulb]
 
   useEffect(() => {
     try {
@@ -107,44 +110,48 @@ export default function EmojiPicker({
   const list = tab === 'recent' ? (recent.length > 0 ? recent : GROUPS[1].emojis.slice(0, 32)) : activeGroup?.emojis ?? []
 
   return (
-    <div
-      className={cn(
-        'w-72 rounded-xl border border-border bg-popover p-2 shadow-lg',
-        className
-      )}
-      role="dialog"
-      aria-label="选择表情符号"
-    >
-      <div className="mb-1.5 flex items-center gap-0.5 border-b border-border/60 pb-1.5">
-        {GROUPS.map(group => (
-          <button
-            key={group.key}
-            type="button"
-            title={group.label}
-            onClick={() => setTab(group.key)}
-            className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-md text-base transition-colors hover:bg-muted',
-              tab === group.key && 'bg-muted'
-            )}
-          >
-            {group.icon}
-          </button>
-        ))}
+    <div className={className}>
+      <div className={styles.emojiTabs} role="tablist" aria-label="表情分类" onKeyDown={event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        event.stopPropagation()
+        const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+        const at = tabs.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (at + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+        setTab(GROUPS[next].key)
+        tabs[next].focus()
+      }}>
+        {GROUPS.map((group, index) => {
+          const Icon = icons[index]
+          return (
+            <button key={group.key} type="button" title={group.label} aria-label={group.label}
+              id={`${id}-${group.key}`} role="tab" aria-selected={tab === group.key}
+              aria-controls={`${id}-panel`} tabIndex={tab === group.key ? 0 : -1}
+              onClick={() => setTab(group.key)} className={styles.emojiTab}>
+              <Icon size={16} aria-hidden />
+            </button>
+          )
+        })}
       </div>
-      <div className="grid max-h-52 grid-cols-8 gap-0.5 overflow-y-auto">
-        {list.map((emoji, index) => (
-          <button
-            key={`${emoji}-${index}`}
-            type="button"
-            onClick={() => pick(emoji)}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-xl transition-colors hover:bg-muted"
-          >
-            {emoji}
-          </button>
-        ))}
-        {list.length === 0 && (
-          <p className="col-span-8 py-6 text-center text-xs text-muted-foreground">暂无常用表情</p>
-        )}
+      <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${tab}`}>
+        <p className={styles.heading}>{activeGroup?.label}</p>
+        <div className="grid max-h-52 grid-cols-8 gap-0.5 overflow-y-auto" onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+          event.preventDefault()
+          event.stopPropagation()
+          const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'))
+          const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
+          const step = event.key === 'ArrowDown' ? 8 : event.key === 'ArrowUp' ? -8 : event.key === 'ArrowRight' ? 1 : -1
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : Math.max(0, Math.min(buttons.length - 1, at + step))
+          buttons[next]?.focus()
+        }}>
+          {list.map((emoji, index) => (
+            <button key={`${emoji}-${index}`} type="button" aria-label={emoji} onClick={() => pick(emoji)} className={styles.emoji}>
+              {emoji}
+            </button>
+          ))}
+          {list.length === 0 && <p className="col-span-8 py-6 text-center text-xs text-muted-foreground">暂无常用表情</p>}
+        </div>
       </div>
     </div>
   )

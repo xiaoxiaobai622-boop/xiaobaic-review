@@ -1,0 +1,102 @@
+.surface[data-state] {
+  opacity: 0;
+  scale: .97;
+  translate: var(--surface-x, 0px) var(--surface-y, 8px);
+  transition: opacity 125ms cubic-bezier(.2, .4, .1, 1),
+    scale 125ms cubic-bezier(.2, .4, .1, 1),
+    translate 125ms cubic-bezier(.2, .4, .1, 1);
+}
+
+.surface[data-state='open'],
+.surface[data-state='delayed-open'],
+.surface[data-state='instant-open'] {
+  opacity: 1;
+  scale: 1;
+  translate: 0 0;
+  transition-duration: 200ms;
+}
+
+@starting-style {
+  .surface[data-state='open'],
+  .surface[data-state='delayed-open'],
+  .surface[data-state='instant-open'] {
+    opacity: 0;
+    scale: .97;
+    translate: var(--surface-x, 0px) var(--surface-y, 8px);
+  }
+}
+
+.surface[data-state='closed'] {
+  pointer-events: none !important;
+  /* Radix retains the exit DOM while transitions continue from their interrupted values. */
+  animation: surface-retain 125ms linear both;
+}
+
+@keyframes surface-retain {
+  from { --surface-presence: 0; }
+  to { --surface-presence: 1; }
+}
+
+.dialog {
+  /* Scaling around zero keeps the existing percentage translation centered. */
+  transform-origin: 0 0;
+}
+
+.overlay[data-state] {
+  scale: none;
+  translate: none;
+}
+
+.anchored {
+  --surface-x: 0px;
+  --surface-y: 0px;
+  max-width: calc(100vw - 16px);
+  overflow-wrap: anywhere;
+}
+
+.anchored[data-side='top'] { --surface-y: 8px; }
+.anchored[data-side='bottom'] { --surface-y: -8px; }
+.anchored[data-side='left'] { --surface-x: 8px; }
+.anchored[data-side='right'] { --surface-x: -8px; }
+
+.select {
+  max-height: min(24rem, var(--radix-select-content-available-height, 24rem));
+  transform-origin: var(--radix-select-content-transform-origin);
+}
+
+.tooltip {
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+}
+
+.railPanel {
+  --surface-x: -8px;
+  --surface-y: 0px;
+}
+
+.surface.railPanel[data-state] {
+  scale: none;
+}
+
+.railMenu {
+  --surface-x: -8px;
+  --surface-y: 0px;
+  transform-origin: left bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface[data-state] {
+    animation-duration: .01ms;
+    transition-duration: .01ms;
+    scale: none;
+    translate: none;
+  }
+
+  @starting-style {
+    .surface[data-state='open'],
+    .surface[data-state='delayed-open'],
+    .surface[data-state='instant-open'] {
+      scale: none;
+      translate: none;
+    }
+  }
+}

@@ -81,6 +81,7 @@ export default function ReverseShareUploadPanel({
   const [isUploading, setIsUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [allDone, setAllDone] = useState(false)
+  const [limitNotice, setLimitNotice] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const tusUploadsRef = useRef<Map<string, tus.Upload>>(new Map())
   const s3AbortKeysRef = useRef<Map<string, string>>(new Map())
@@ -115,13 +116,16 @@ export default function ReverseShareUploadPanel({
 
   const addFiles = useCallback((files: FileList | File[]) => {
     setAllDone(false)
+    const currentCount = allDone ? 0 : items.length
+    const remaining = MAX_FILES - currentCount
+    setLimitNotice(remaining <= 0 || files.length > remaining)
     setItems((prev) => {
       const currentItems = allDone ? [] : prev
-      const remaining = MAX_FILES - currentItems.length
-      if (remaining <= 0) return currentItems
+      const room = MAX_FILES - currentItems.length
+      if (room <= 0) return currentItems
       return [
         ...currentItems,
-        ...Array.from(files).slice(0, remaining).map((file) => {
+        ...Array.from(files).slice(0, room).map((file) => {
           const ext = getFileExtension(file.name)
           const error = !ext || !ALLOWED_EXTENSIONS.has(ext) ? `${t('unsupportedFileType')} (${ext || '-'})` : null
           return {
@@ -134,9 +138,10 @@ export default function ReverseShareUploadPanel({
         }),
       ]
     })
-  }, [MAX_FILES, allDone, t])
+  }, [MAX_FILES, allDone, items.length, t])
 
   const removeFile = useCallback((id: string) => {
+    setLimitNotice(false)
     if (storageProvider === 's3') {
       const s3Key = s3AbortKeysRef.current.get(id)
       if (s3Key) {
@@ -407,6 +412,11 @@ export default function ReverseShareUploadPanel({
 
   const fileList = hasFiles ? (
     <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+      {limitNotice && (
+        <p role="status" className="rounded-lg bg-warning-visible px-3 py-2 text-xs text-warning">
+          {t('maxFilesReached')}
+        </p>
+      )}
       {items.map((item) => (
         <div key={item.id} className="rounded-lg bg-muted/55 px-3 py-2.5 text-sm">
           <div className="flex items-center gap-2.5">
@@ -434,6 +444,7 @@ export default function ReverseShareUploadPanel({
                 onClick={() => retryFile(item.id)}
                 className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                 title={tc('retry')}
+                aria-label={tc('retry')}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>
@@ -549,7 +560,7 @@ export default function ReverseShareUploadPanel({
               onDrop={handleDrop}
               onClick={atLimit ? undefined : requestFilePicker}
               className={`
-                flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-all cursor-pointer
+                flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-colors cursor-pointer
                 ${atLimit
                   ? 'border-muted bg-muted/30 cursor-not-allowed opacity-50'
                   : isDragging
@@ -620,7 +631,7 @@ export default function ReverseShareUploadPanel({
 
                   {item.status === 'uploading' && (
                     <div className="mt-1.5 h-1 w-full rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${item.progress}%` }} />
+                      <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${item.progress}%` }} />
                     </div>
                   )}
                 </div>

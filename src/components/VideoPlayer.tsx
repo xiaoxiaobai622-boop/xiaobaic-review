@@ -969,6 +969,7 @@ export default function VideoPlayer({
       const video = videoRef.current
 
       const target = e.target as HTMLElement | null
+      if (target?.closest('[data-review-popup], [data-review-popup-trigger]')) return
       const isEditableTarget = Boolean(
         target &&
         (target.tagName === 'INPUT' ||

@@ -160,13 +160,20 @@ export function VideoAssetUploadItem({
           <div className="space-y-1">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">
-                {upload.status === 'paused' ? t('paused') : t('uploading')}
+                {upload.status === 'paused' ? t('paused') : upload.status === 'queued' ? t('queued') : t('uploading')}
               </span>
               <span className="font-medium">{upload.progress}%</span>
             </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="relative h-2 w-full overflow-hidden rounded-full bg-secondary"
+              role="progressbar"
+              aria-label={upload.file.name}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={upload.progress}
+            >
               <div
-                className={`h-full transition-all ${
+                className={`h-full transition-[width,background-color] ${
                   upload.status === 'paused'
                     ? 'bg-warning'
                     : 'bg-primary'
@@ -214,6 +221,7 @@ export function VideoAssetUploadItem({
             size="icon"
             onClick={onPause}
             title={t('pauseUpload')}
+            aria-label={t('pauseUpload')}
             className="h-8 w-8"
           >
             <Pause className="h-4 w-4" />
@@ -227,6 +235,7 @@ export function VideoAssetUploadItem({
             size="icon"
             onClick={onResume}
             title={t('resumeUpload')}
+            aria-label={t('resumeUpload')}
             className="h-8 w-8"
           >
             <Play className="h-4 w-4" />
@@ -240,6 +249,7 @@ export function VideoAssetUploadItem({
             size="icon"
             onClick={onRetry}
             title={t('retryUpload')}
+            aria-label={t('retryUpload')}
             className="h-8 w-8"
           >
             <RotateCw className="h-4 w-4" />
@@ -253,6 +263,7 @@ export function VideoAssetUploadItem({
             size="icon"
             onClick={onCancel}
             title={t('cancelUpload')}
+            aria-label={t('cancelUpload')}
             className="h-8 w-8 text-destructive hover:text-destructive"
           >
             <X className="h-4 w-4" />
@@ -266,6 +277,7 @@ export function VideoAssetUploadItem({
             size="icon"
             onClick={onRemove}
             title={t('removeFromList')}
+            aria-label={t('removeFromList')}
             className="h-8 w-8"
           >
             <X className="h-4 w-4" />

@@ -816,6 +816,7 @@
     "inReview": "In Prüfung",
     "feedbackComplete": "Feedback vollständig",
     "removeReviewStatus": "Status entfernen",
+    "removeReviewStatusConfirm": "Prüfstatus dieses Videos entfernen? Er wird nicht automatisch auf „In Prüfung“ zurückgesetzt.",
     "updatingReviewStatus": "Status wird aktualisiert",
     "failedToUpdateReviewStatus": "Prüfstatus konnte nicht aktualisiert werden. Bitte erneut versuchen.",
     "approveVideo": "Video freigeben",
@@ -2672,6 +2673,7 @@
     "teamCenter": "Zum Teamcenter",
     "roleOwner": "Ersteller",
     "roleAdmin": "Administrator",
-    "roleMember": "Mitglied"
+    "roleMember": "Mitglied",
+    "current": "Aktuell"
   }
 }

@@ -459,7 +459,7 @@ export default function HomeClient() {
           </a>
         </section>
 
-        <section id="platform" className={`${styles.platformIntro} ${styles.wrapText} ${styles.reveal}`} aria-label="平台能力">
+        <section id="platform" className={`${styles.anchorSection} ${styles.platformIntro} ${styles.wrapText} ${styles.reveal}`} aria-label="平台能力">
           <p className={styles.eyebrow}>平台能力</p>
           <h2 className={styles.duoHead}>
             <span className={styles.muted}>无论拍什么，</span><br />
@@ -477,7 +477,7 @@ export default function HomeClient() {
         </div>
       </div>
 
-      <section id="review" className={styles.chapter} aria-label="逐帧批注">
+      <section id="review" className={`${styles.anchorSection} ${styles.chapter}`} aria-label="逐帧批注">
         <div className={styles.panel}>
           <div className={`${styles.panelInner} ${styles.reveal}`}>
             <div className={styles.intro}>
@@ -615,7 +615,7 @@ export default function HomeClient() {
         </div>
       </section>
 
-      <section id="collect" className={styles.chapter} aria-label="素材收录">
+      <section id="collect" className={`${styles.anchorSection} ${styles.chapter}`} aria-label="素材收录">
         <div className={styles.panel}>
           <div className={`${styles.panelInner} ${styles.reveal} ${styles.revealSide}`}>
             <div className={styles.intro}>
@@ -685,7 +685,7 @@ export default function HomeClient() {
         </div>
       </section>
 
-      <section id="cta" className={styles.ctaBand} aria-label="开始使用">
+      <section id="cta" className={`${styles.anchorSection} ${styles.ctaBand}`} aria-label="开始使用">
         <div className={`${styles.ctaInner} ${styles.reveal}`}>
           <div className={styles.ctaArcs} aria-hidden="true">
             <GlassArcs variant="dome" />

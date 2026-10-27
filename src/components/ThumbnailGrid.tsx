@@ -214,7 +214,7 @@ export default function ThumbnailGrid({
                 <button
                   key={name}
                   onClick={() => onVideoSelect(name)}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/70 bg-card shadow-elevation-md hover:border-primary/50 hover:shadow-elevation-lg transition-all duration-200 text-left"
+                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/70 bg-card shadow-elevation-md hover:border-primary/50 transition-colors duration-[var(--motion-base)] text-left"
                 >
                   <div className="relative w-20 h-12 rounded-md overflow-hidden bg-black border border-border flex-shrink-0">
                     {thumbnailUrl ? (
@@ -275,8 +275,8 @@ export default function ThumbnailGrid({
                 className={cn(
                   'group relative overflow-hidden rounded-md text-left',
                   'bg-card border border-border/70 shadow-elevation-md',
-                  'hover:border-primary/50 hover:shadow-elevation-lg',
-                  'transition-all duration-200',
+                  'hover:border-primary/50',
+                  'transition-colors duration-150',
                   'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background'
                 )}
               >
@@ -310,7 +310,7 @@ export default function ThumbnailGrid({
                   )}
 
                   {/* Hover overlay */}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-[var(--motion-base)]" />
 
                   {/* Assets indicator */}
                   {hasAssets && (

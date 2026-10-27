@@ -1,10 +1,12 @@
 'use client'
 
+import { appConfirm } from '@/components/AppDialogProvider'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { StudioPageSkeleton } from '@/components/StudioPageSkeleton'
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { useAuth } from '@/components/AuthProvider'
 
@@ -68,6 +70,7 @@ export default function TeamSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [savedSnapshot, setSavedSnapshot] = useState('')
 
   const canEdit = Boolean(user && (user.teamRole === 'OWNER' || user.teamRole === 'ADMIN'))
 
@@ -78,7 +81,9 @@ export default function TeamSettingsPage() {
       const response = await apiFetch('/api/team-settings')
       if (!response.ok) throw new Error('无法加载视频设置')
       const data = await response.json()
-      setSettings({ ...DEFAULTS, ...data.settings })
+      const next = { ...DEFAULTS, ...data.settings }
+      setSettings(next)
+      setSavedSnapshot(JSON.stringify(next))
       setLoaded(true)
     } catch (err) {
       // Leaving the form on DEFAULTS and allowing a save here would overwrite the
@@ -104,6 +109,35 @@ export default function TeamSettingsPage() {
     void load()
   }, [canEdit, load])
 
+  const dirty = loaded && JSON.stringify(settings) !== savedSnapshot
+
+  // 未保存时离开页面要拦一下：刷新/关页用 beforeunload，站内跳转用捕获阶段拦链接。
+  useEffect(() => {
+    if (!dirty) return
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const anchor = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>('a[href]')
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return
+      const url = new URL(anchor.href, window.location.href)
+      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return
+      event.preventDefault()
+      event.stopPropagation()
+      void appConfirm('有未保存的设置，离开后会丢失。确定离开吗？').then((leave) => {
+        if (leave) router.push(`${url.pathname}${url.search}`)
+      })
+    }
+    window.addEventListener('beforeunload', beforeUnload)
+    document.addEventListener('click', onClick, true)
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnload)
+      document.removeEventListener('click', onClick, true)
+    }
+  }, [dirty, router])
+
   const update = <K extends keyof TeamSettingsData>(key: K, value: TeamSettingsData[K]) => {
     setSettings((current) => ({ ...current, [key]: value }))
   }
@@ -114,6 +148,7 @@ export default function TeamSettingsPage() {
     setSuccess('')
     try {
       await apiPatch('/api/team-settings', settings)
+      setSavedSnapshot(JSON.stringify(settings))
       setSuccess('视频设置已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
@@ -123,7 +158,7 @@ export default function TeamSettingsPage() {
   }
 
   if (loading) {
-    return <div className="p-6 text-sm text-muted-foreground" role="status" aria-live="polite">正在加载视频设置…</div>
+    return <StudioPageSkeleton label="正在加载视频设置…" className="p-6" />
   }
 
   if (!canEdit) {
@@ -152,9 +187,12 @@ export default function TeamSettingsPage() {
           <h1 className="text-2xl font-semibold">视频设置</h1>
           <p className="mt-1 text-sm text-muted-foreground">这些默认值只影响当前团队新建的项目。</p>
         </div>
-        <Button type="button" onClick={save} disabled={saving}>
-          {saving ? '保存中…' : '保存设置'}
-        </Button>
+        <div className="flex items-center gap-3">
+          {dirty && <span role="status" className="text-sm text-warning">有未保存的修改</span>}
+          <Button type="button" onClick={save} disabled={saving}>
+            {saving ? '保存中…' : '保存设置'}
+          </Button>
+        </div>
       </div>
 
       {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}

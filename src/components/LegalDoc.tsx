@@ -25,7 +25,7 @@ export function LegalDoc({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
+      <div className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
         <p className="text-xs font-semibold text-[#245fe7]">Legal</p>
         <h1 className="mt-3 text-3xl font-bold sm:text-4xl">{title}</h1>
         <p className="mt-3 text-sm text-[#6f7580]">更新日期：{updatedAt}</p>
@@ -43,7 +43,7 @@ export function LegalDoc({
             </section>
           ))}
         </div>
-      </main>
+      </div>
 
       <footer className="border-t border-[#dfe2e7] bg-white">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-5 text-xs text-[#8b919b]">

@@ -1,53 +1,38 @@
 'use client'
 
-import { useEffect, useCallback, useRef } from 'react'
-import { ACCENT_COLORS, AccentColorKey } from '@/components/settings/AppearanceSection'
-import { hexToHslTriplet, isCustomAccentColor } from '@/lib/accent'
+import { useEffect, useCallback } from 'react'
 import { applyThemeChoice, readStoredTheme, resolveDefaultTheme } from '@/lib/theme'
 
 /**
- * Applies the admin's appearance defaults: the accent color CSS variables, and
- * the site-wide theme when the visitor has not picked one themselves.
- * Settings are cached in localStorage so later loads settle without waiting on the API.
- * The pre-paint half of the theme lives in the root layout, which ships
- * THEME_BOOTSTRAP_SCRIPT before this component can even hydrate.
+ * Applies the site-wide default theme when the visitor has not picked one.
+ * Brand colors are owned by globals.css for every theme (light and dark are
+ * fixed to Frame.io violet), so this no longer writes --primary/--ring/...
  */
 export function AccentColorProvider() {
-  const accentObserverRef = useRef<MutationObserver | null>(null)
-
   const applyAppearanceSettings = useCallback(async () => {
     try {
       const response = await fetch('/api/settings/theme')
       if (response.ok) {
         const data = await response.json()
-        const colorKey = data.accentColor || 'blue'
         const defaultTheme = data.defaultTheme || 'auto'
 
-        localStorage.setItem('adminAccentColor', colorKey)
         localStorage.setItem('adminDefaultTheme', defaultTheme)
-
-        applyColorVariables(colorKey)
 
         if (!readStoredTheme()) {
           applyThemeChoice(resolveDefaultTheme(defaultTheme))
         }
-      } else {
-        // API failed, use cached value
-        const cachedColor = localStorage.getItem('adminAccentColor')
-        if (cachedColor) {
-          applyColorVariables(cachedColor)
-        }
       }
     } catch {
-      // On error, try cached value
-      const cachedColor = localStorage.getItem('adminAccentColor')
-      if (cachedColor) {
-        applyColorVariables(cachedColor)
-      }
+      // Keep the pre-paint theme from THEME_BOOTSTRAP_SCRIPT.
     }
   }, [])
 
   useEffect(() => {
+    // Clear inline brand overrides left by earlier builds; the stylesheet wins now.
+    for (const name of ['--primary', '--ring', '--accent-foreground', '--primary-visible']) {
+      document.documentElement.style.removeProperty(name)
+    }
+
     applyAppearanceSettings()
 
     // While no explicit choice is stored, the OS preference keeps driving the app.
@@ -61,52 +46,8 @@ export function AccentColorProvider() {
     mediaQuery.addEventListener('change', handleSystemChange)
     return () => {
       mediaQuery.removeEventListener('change', handleSystemChange)
-      accentObserverRef.current?.disconnect()
     }
   }, [applyAppearanceSettings])
-
-  const applyColorVariables = (colorKey: string) => {
-    const preset = ACCENT_COLORS[colorKey as AccentColorKey]
-    // A custom pick is painted verbatim in light and dark alike — the admin chose
-    // that exact colour, so nothing re-tunes it behind their back. The settings
-    // page reports the white-label contrast instead.
-    const customTriplet = isCustomAccentColor(colorKey) ? hexToHslTriplet(colorKey) : null
-    if (!preset && !customTriplet) return
-
-    const root = document.documentElement
-
-    const write = () => {
-      // Mint and violet paint their primary from globals.css; an inline style
-      // would outrank those rules, so hand the properties back to the stylesheet
-      // while either one is on.
-      if (root.dataset.theme === 'mint' || root.dataset.theme === 'frame') {
-        for (const name of ['--primary', '--ring', '--accent-foreground', '--primary-visible']) {
-          root.style.removeProperty(name)
-        }
-        return
-      }
-
-      const isDark = root.classList.contains('dark')
-      const hslValue = customTriplet ?? (isDark ? preset?.dark : preset?.light)
-      if (!hslValue) return
-      root.style.setProperty('--primary', hslValue)
-      root.style.setProperty('--ring', hslValue)
-      root.style.setProperty('--accent-foreground', hslValue)
-      // --primary-visible 故意不内联写：那层强调底洗归样式表，每套主题自己定值。
-      // 以前这里按强调色现算一枚 20%/95% 压上去，主题里挑好的数永远看不见（深色那枚 #32374c 就是这么没的）。
-    }
-
-    write()
-
-    // Re-applies when the theme flips between light/dark, and when a data-theme
-    // paint (mint, violet) turns on or off (which is only an attribute change,
-    // not a class change). One observer at a time: this runs again whenever the
-    // accent changes, and the replacement closes over the new paint.
-    accentObserverRef.current?.disconnect()
-    const observer = new MutationObserver(write)
-    observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme'] })
-    accentObserverRef.current = observer
-  }
 
   return null
 }

@@ -10,6 +10,7 @@ import TeamDangerZone from '@/components/TeamDangerZone'
 import { useAuth } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { StudioPageSkeleton } from '@/components/StudioPageSkeleton'
 import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
 import { maskPhoneDisplay } from '@/lib/phone-display'
@@ -215,7 +216,7 @@ export default function TeamPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : '创建团队失败') }
   }
 
-  if (loading) return <div className="py-12 text-sm text-muted-foreground">正在加载团队管理...</div>
+  if (loading) return <StudioPageSkeleton label="正在加载团队管理..." />
 
   return <div className="space-y-6">
     <div className="flex items-center justify-between gap-3">{tab === 'overview' ? <div><h1 className="text-2xl font-semibold tracking-normal">团队概览</h1><p className="mt-1 text-sm text-muted-foreground">{team?.name || '选择一个团队'}</p></div> : <span aria-hidden="true" />}<Button variant="outline" onClick={createTeam}><Plus className="h-4 w-4" />新建团队</Button></div>

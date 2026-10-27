@@ -354,7 +354,7 @@ export default function PhotoAlbumsBlock({ projectId, sortMode = 'date', onCount
             <span className="text-xs text-destructive truncate max-w-[50%]">{upload.error}</span>
           ) : (
             <div className="w-24 h-1.5 rounded-full bg-muted overflow-hidden flex-shrink-0">
-              <div className="h-full bg-primary transition-all" style={{ width: `${upload.progress}%` }} />
+              <div className="h-full bg-primary transition-[width]" style={{ width: `${upload.progress}%` }} />
             </div>
           )}
           <Button

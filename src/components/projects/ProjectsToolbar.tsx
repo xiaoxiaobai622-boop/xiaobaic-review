@@ -44,7 +44,7 @@ export default function ProjectsToolbar({
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <FilterDropdown
-          width="w-[260px]"
+          width={260}
           groups={[
             {
               key: 'status',

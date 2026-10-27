@@ -1,6 +1,6 @@
 'use client'
 
-import { appAlert } from '@/components/AppDialogProvider'
+import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
 import { useEffect, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
@@ -48,7 +48,7 @@ export function VideoReviewStatusControl({
 
   return (
     <Select
-      value={indeterminate ? MIXED_STATUS : value || EMPTY_STATUS}
+      value={indeterminate ? MIXED_STATUS : value || undefined}
       onValueChange={nextValue => onValueChange(nextValue === EMPTY_STATUS ? null : nextValue as VideoReviewStatus)}
       disabled={disabled || loading}
     >
@@ -57,7 +57,7 @@ export function VideoReviewStatusControl({
         aria-label={t('setReviewStatus')}
         title={loading ? t('updatingReviewStatus') : t('setReviewStatus')}
         className={cn(
-          'h-8 w-auto min-w-[132px] shrink-0 gap-2 border-border/80 bg-card px-2.5 py-0 text-xs font-medium shadow-none hover:bg-accent focus:ring-1 focus:ring-ring focus:ring-offset-1',
+          'h-8 w-auto min-w-[132px] shrink-0 gap-2 border-border/80 bg-card px-2.5 py-0 text-xs font-medium shadow-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
           className
         )}
       >
@@ -131,6 +131,7 @@ export default function VideoReviewStatusSelect({
   const updateStatus = async (nextStatus: VideoReviewStatus | null) => {
     if (!video || loading) return
     if (nextStatus === displayStatus) return
+    if (nextStatus === null && !(await appConfirm(t('removeReviewStatusConfirm')))) return
 
     const previousStatus = displayStatus
     setDisplayStatus(nextStatus)

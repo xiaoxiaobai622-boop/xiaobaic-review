@@ -815,6 +815,7 @@
     "inReview": "In beoordeling",
     "feedbackComplete": "Feedback afgerond",
     "removeReviewStatus": "Status verwijderen",
+    "removeReviewStatusConfirm": "De beoordelingsstatus van deze video verwijderen? Deze wordt niet automatisch teruggezet naar 'In beoordeling'.",
     "updatingReviewStatus": "Status bijwerken",
     "failedToUpdateReviewStatus": "Beoordelingsstatus bijwerken mislukt. Probeer het opnieuw.",
     "approveVideo": "Video Goedkeuren",
@@ -2672,6 +2673,7 @@
     "teamCenter": "Naar teamcentrum",
     "roleOwner": "Maker",
     "roleAdmin": "Beheerder",
-    "roleMember": "Lid"
+    "roleMember": "Lid",
+    "current": "Huidig"
   }
 }

@@ -261,7 +261,7 @@ export default function ThumbnailReel({
                       }}
                       className={cn(
                         'shrink-0 rounded-md sm:rounded-lg overflow-hidden snap-start',
-                        'bg-muted border-2 transition-all duration-150',
+                        'bg-muted border-2 transition-colors duration-150',
                         'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:ring-offset-background',
                         'w-[80px] sm:w-[110px] md:w-[130px] lg:w-[150px]',
                         isActive

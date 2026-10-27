@@ -91,7 +91,7 @@ export default function AdminHeader() {
                     key={link.href}
                     href={link.href}
                     title={link.title || link.label || undefined}
-                    className={`flex min-h-11 items-center gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                    className={`flex min-h-11 items-center gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors duration-150 whitespace-nowrap ${
                       isActive
                         ? 'bg-primary text-primary-foreground shadow-elevation'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'

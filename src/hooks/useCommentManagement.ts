@@ -56,6 +56,7 @@ export function useCommentManagement({
   const [loading, setLoading] = useState(false)
   const [hasAutoFilledTimestamp, setHasAutoFilledTimestamp] = useState(false)
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null)
+  const [replyFocusRequest, setReplyFocusRequest] = useState(0)
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
@@ -559,6 +560,7 @@ export function useCommentManagement({
   const handleReply = (commentId: string, videoId: string) => {
     setReplyingToCommentId(commentId)
     setSelectedVideoId(videoId)
+    setReplyFocusRequest((value) => value + 1)
   }
 
   const handleCancelReply = () => {
@@ -695,6 +697,7 @@ export function useCommentManagement({
     handleSubmitComment,
     handleReply,
     handleCancelReply,
+    replyFocusRequest,
     handleClearTimestamp,
     handleDeleteComment,
     handleAttachmentAdded,

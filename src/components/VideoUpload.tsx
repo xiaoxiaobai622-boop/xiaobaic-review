@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -40,6 +40,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
   const tc = useTranslations('common')
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputId = useId()
   const uploadRef = useRef<tus.Upload | null>(null)
   const autoStartedFileRef = useRef<string | null>(null)
   const videoIdRef = useRef<string | null>(null)
@@ -403,7 +404,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
       if (isVideoCandidate(droppedFile)) {
         setFile(droppedFile)
       } else {
-        setError(t('dropVideoHere'))
+        setError(t('invalidVideoShort'))
       }
     }
   }
@@ -441,7 +442,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
               <span className="font-medium">{progress}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-secondary">
-              <div className={cn('h-full transition-all', paused ? 'bg-warning' : 'bg-primary')} style={{ width: `${progress}%` }} />
+              <div className={cn('h-full transition-[width,background-color]', paused ? 'bg-warning' : 'bg-primary')} style={{ width: `${progress}%` }} />
             </div>
             <div className="flex items-center justify-between gap-2 pt-1">
               <span className="text-xs text-muted-foreground">{uploadSpeed > 0 ? `${uploadSpeed} MB/s` : ''}</span>
@@ -467,9 +468,9 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        space-y-4 rounded-lg border-2 border-dashed transition-all
+        space-y-4 rounded-lg border-2 border-dashed transition-colors
         ${isDragging
-          ? 'border-primary bg-primary/5 scale-[1.01] p-4'
+          ? 'border-primary bg-primary/5'
           : 'border-transparent'
         }
       `}
@@ -483,11 +484,11 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
 
       {/* File Selection */}
       <div className="space-y-2">
-        <Label htmlFor="file">{t('videoFile')}</Label>
+        <Label htmlFor={fileInputId}>{t('videoFile')}</Label>
         <div className="flex items-center gap-2">
           <Input
             ref={fileInputRef}
-            id="file"
+            id={fileInputId}
             type="file"
             accept={VIDEO_INPUT_ACCEPT}
             onChange={(e) => setFile(e.target.files?.[0] || null)}
@@ -523,7 +524,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
           </div>
           <div className="relative h-4 w-full overflow-hidden rounded-full bg-secondary">
             <div
-              className={`h-full transition-all ${paused ? 'bg-warning' : 'bg-primary'}`}
+              className={`h-full transition-[width,background-color] ${paused ? 'bg-warning' : 'bg-primary'}`}
               style={{
                 width: `${progress}%`,
                 backgroundImage: paused ? 'none' : 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px)',
@@ -542,6 +543,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
           )}
           {/* Pause/Resume and Cancel buttons */}
           <div className="flex gap-2">
+            {storageProvider !== 's3' && (
             <Button
               type="button"
               variant="outline"
@@ -561,6 +563,7 @@ export default function VideoUpload({ projectId, videoName, onUploadComplete, in
                 </>
               )}
             </Button>
+            )}
             <Button
               type="button"
               variant="destructive"

@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Funnel } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslations } from 'next-intl'
-import { useViewportClamp } from '@/hooks/useViewportClamp'
+import ReviewPopup from '@/components/ReviewPopup'
 
 interface FilterOption {
   value: string
@@ -27,51 +27,37 @@ interface FilterDropdownProps {
   groups: FilterGroup[]
   triggerLabel?: string
   triggerIcon?: React.ReactNode
-  width?: string
+  width?: number
 }
 
-export default function FilterDropdown({ groups, triggerLabel, triggerIcon, width }: FilterDropdownProps) {
+export default function FilterDropdown({ groups, triggerLabel, triggerIcon, width = 220 }: FilterDropdownProps) {
   const t = useTranslations('common')
   const [isOpen, setIsOpen] = useState(false)
   const [searchByGroup, setSearchByGroup] = useState<Record<string, string>>({})
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const popupRef = useRef<HTMLDivElement>(null)
-  useViewportClamp(popupRef, isOpen)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const id = useId()
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-
-    if (!isOpen) return
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [isOpen])
-
+  const hasAnyOption = groups.some(g => g.options.length > 0)
   const isFiltering = groups.some(g => {
     // Check if filtering is active (not all options selected)
     return g.options.length > 0 && g.selected.size > 0 && g.selected.size < g.options.length
   })
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative">
       <Button
+        ref={triggerRef}
         variant="outline"
         size="sm"
         onClick={() => setIsOpen(!isOpen)}
+        disabled={!hasAnyOption}
         className={cn(
           isFiltering && 'text-primary border-primary'
         )}
         title={triggerLabel || t('filter')}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? id : undefined}
       >
         {triggerIcon || <Funnel className={cn('w-4 h-4', isFiltering && 'fill-primary')} />}
         <span className="hidden sm:inline ml-2">{triggerLabel || t('filter')}</span>
@@ -82,14 +68,17 @@ export default function FilterDropdown({ groups, triggerLabel, triggerIcon, widt
         )}
       </Button>
 
-      {isOpen && (
-        <div
-          ref={popupRef}
-          className={cn(
-            'absolute right-0 top-full mt-1 z-50 max-w-[calc(100vw-1rem)] max-h-[70vh] overflow-y-auto bg-card border border-border rounded-lg shadow-lg p-2',
-            width || 'w-[220px]'
-          )}
-        >
+      <ReviewPopup
+        id={id}
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        anchor={triggerRef}
+        label={triggerLabel || t('filter')}
+        side="bottom"
+        align="end"
+        width={width}
+      >
+        <div className="p-1">
           {groups.map((group, index) => {
             const allSelected = group.options.length > 0 && group.selected.size === group.options.length
             const search = (searchByGroup[group.key] || '').toLowerCase().trim()
@@ -134,11 +123,12 @@ export default function FilterDropdown({ groups, triggerLabel, triggerIcon, widt
                     value={searchByGroup[group.key] || ''}
                     onChange={(e) => setSearchByGroup(prev => ({ ...prev, [group.key]: e.target.value }))}
                     placeholder={group.searchPlaceholder || t('search')}
+                    aria-label={group.searchPlaceholder || t('search')}
                     className="h-7 text-xs my-1"
                   />
                 )}
 
-                <label className="flex items-center gap-2 px-2 py-1 hover:bg-muted rounded cursor-pointer">
+                <label className="flex items-center gap-2 rounded px-2 py-1 cursor-pointer hover:bg-accent focus-within:bg-accent">
                   <input
                     type="checkbox"
                     checked={allSelected}
@@ -151,7 +141,7 @@ export default function FilterDropdown({ groups, triggerLabel, triggerIcon, widt
                 {visibleOptions.map((option) => (
                   <label
                     key={option.value}
-                    className="flex items-center gap-2 px-2 py-1 hover:bg-muted rounded cursor-pointer"
+                    className="flex items-center gap-2 rounded px-2 py-1 cursor-pointer hover:bg-accent focus-within:bg-accent"
                   >
                     <input
                       type="checkbox"
@@ -164,7 +154,7 @@ export default function FilterDropdown({ groups, triggerLabel, triggerIcon, widt
                 ))}
 
                 {group.searchable && search && visibleOptions.length === 0 && (
-                  <div className="px-2 py-1 text-xs text-muted-foreground italic">
+                  <div className="px-2 py-1 text-xs italic text-muted-foreground">
                     {t('noResults')}
                   </div>
                 )}
@@ -172,7 +162,7 @@ export default function FilterDropdown({ groups, triggerLabel, triggerIcon, widt
             )
           })}
         </div>
-      )}
+      </ReviewPopup>
     </div>
   )
 }

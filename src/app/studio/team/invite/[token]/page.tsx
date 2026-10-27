@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Building2, Check, Loader2, X } from 'lucide-react'
+import { Building2, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiFetch, apiPost } from '@/lib/api-client'
@@ -71,9 +71,14 @@ export default function InviteAcceptPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        正在加载邀请
+      <div className="flex min-h-[60vh] items-center justify-center p-6" aria-busy="true">
+        <span className="sr-only" role="status" aria-live="polite">正在加载邀请</span>
+        <div className="w-full max-w-md space-y-3 rounded-xl border border-border bg-card p-6">
+          <div className="skeleton h-8 w-48 rounded-md" />
+          <div className="skeleton h-4 w-64 rounded" />
+          <div className="skeleton h-10 w-full rounded-lg" />
+          <div className="skeleton h-10 w-full rounded-lg" />
+        </div>
       </div>
     )
   }

@@ -193,6 +193,7 @@ interface PushPreview {
 
 export function FeishuPushButton({ projectId, videoId, className = '', size = 'default', variant = 'outline' }: FeishuPushButtonProps) {
   const idPrefix = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<PushPreview | null>(null)
@@ -433,6 +434,7 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
   return (
     <>
       <Button
+        ref={triggerRef}
         variant={variant}
         size={size}
         className={className}
@@ -443,7 +445,9 @@ export function FeishuPushButton({ projectId, videoId, className = '', size = 'd
       </Button>
 
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="flex w-[calc(100%-1rem)] max-w-[760px] max-h-[calc(100vh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[90vh]">
+        <DialogContent
+          onCloseAutoFocus={event => { event.preventDefault(); triggerRef.current?.focus({ preventScroll: true }) }}
+          className="flex w-[calc(100%-1rem)] max-w-[760px] max-h-[calc(100vh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[90vh]">
           <DialogHeader className="shrink-0 border-b px-5 py-5 pr-12 sm:px-6">
             <DialogTitle className="text-xl">
               {videoId ? '推送本集批注到飞书' : '发送批注通知到飞书'}

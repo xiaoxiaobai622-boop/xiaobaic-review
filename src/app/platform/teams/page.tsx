@@ -138,7 +138,10 @@ export default function PlatformTeamsPage() {
       {error && <div className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}
 
       {loading ? (
-        <div className="rounded-lg border border-border bg-card p-10 text-center text-sm text-muted-foreground">正在加载团队...</div>
+        <div className="space-y-2 rounded-lg border border-border bg-card p-4" aria-busy="true">
+          <span className="sr-only" role="status" aria-live="polite">正在加载团队...</span>
+          {[0, 1, 2, 3, 4].map((index) => <div key={index} className="skeleton h-10 rounded-md" />)}
+        </div>
       ) : loadFailed ? (
         <div role="alert" className="rounded-lg border border-border bg-card p-10 text-center text-sm text-muted-foreground">
           <p className="font-medium text-destructive">团队列表读取失败</p>

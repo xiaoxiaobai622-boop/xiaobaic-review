@@ -13,6 +13,7 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import { formatDate } from '@/lib/utils'
 import { clientKeyFor, clientLabelFor, NO_CLIENT_KEY, type ProjectListItem } from '@/lib/projects-filter'
 import { PROJECT_DND_MIME, folderOptions, folderPathLabels, type FolderNode } from '@/lib/project-folders'
+import ReviewPopup from '@/components/ReviewPopup'
 
 const GROUP_STORAGE_KEY = 'admin_projects_group'
 const PINNED_STORAGE_KEY = 'admin_projects_pinned'
@@ -187,6 +188,7 @@ function FolderPickList({
           <button
             key={option.id}
             type="button"
+            role="menuitem"
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left"
             style={{ paddingLeft: 10 + option.depth * 14 }}
             onClick={() => onSelect(option.id)}
@@ -200,6 +202,7 @@ function FolderPickList({
         {options.length > 0 && (
           <button
             type="button"
+            role="menuitem"
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left text-muted-foreground"
             onClick={() => onSelect(null)}
           >
@@ -248,11 +251,12 @@ function ProjectCard({
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const approvedVideos = project.videos.filter((v) => v.reviewStatus === 'APPROVED').length
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   return (
     <div
       data-card-root
-      className={`relative rounded-xl border bg-card shadow-sm transition-[color,background-color,border-color,opacity,transform] duration-150 ${selected ? 'border-primary ring-2 ring-primary-visible' : 'border-border hover:border-primary/60'} ${dragging ? 'opacity-40 scale-[0.9]' : ''}`}
+      className={`relative rounded-xl border bg-card shadow-sm transition-[color,background-color,border-color,opacity,transform] duration-150 active:bg-accent/20 ${selected ? 'border-primary ring-2 ring-primary-visible' : 'border-border hover:border-primary/60'} ${dragging ? 'opacity-40 scale-[0.9]' : ''}`}
     >
       {isAdmin && batchMode && (
         <button
@@ -268,57 +272,64 @@ function ProjectCard({
         <>
           <button
             type="button"
+            ref={menuTriggerRef}
             aria-label={t('projectActions')}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             data-card-menu
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMenu(menuOpen ? null : project.id) }}
-            className="absolute bottom-3 right-2 z-10 w-6 h-6 rounded-md text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground focus:opacity-100 group-hover/card:opacity-100 transition-opacity"
+            className="absolute bottom-3 right-2 z-10 w-6 h-6 rounded-md text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground focus:opacity-100 group-hover/card:opacity-100 transition-opacity [@media(pointer:coarse)]:opacity-100"
           >
             <MoreHorizontal className="w-4 h-4 mx-auto" />
           </button>
-          {menuOpen && (
-            <div
-              data-card-menu
-              className="absolute bottom-10 right-2 z-20 min-w-[190px] max-w-[280px] rounded-[10px] border border-border bg-popover p-1 shadow-lg"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button type="button" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onTogglePin(project.id)}>
-                {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-                {pinned ? t('menuUnpin') : t('menuPin')}
-              </button>
-              <button type="button" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onCopyLink(project)}>
-                <Link2 className="w-3.5 h-3.5" />
-                {t('menuCopyLink')}
-              </button>
-              <div className="mt-1 pt-1 border-t border-border">
-                <FolderPickList
-                  options={folderOptions}
-                  currentFolderId={project.groupId || null}
-                  onSelect={(folderId) => onMove(project, folderId)}
-                />
-              </div>
-              {project.status !== 'APPROVED' && (
-                <button type="button" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'APPROVED')}>
-                  <Check className="w-3.5 h-3.5" />
-                  {t('menuApprove')}
-                </button>
-              )}
-              {project.status === 'ARCHIVED' ? (
-                <button type="button" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'IN_REVIEW')}>
-                  <ArchiveRestore className="w-3.5 h-3.5" />
-                  {t('menuRestore')}
-                </button>
-              ) : (
-                <button type="button" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'ARCHIVED')}>
-                  <Archive className="w-3.5 h-3.5" />
-                  {t('menuArchive')}
-                </button>
-              )}
-              <button type="button" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-destructive text-left" onClick={() => onDeleteRequest(project)}>
-                <Trash2 className="w-3.5 h-3.5" />
-                {tc('delete')}
-              </button>
+          <ReviewPopup
+            id={`project-menu-${project.id}`}
+            open={menuOpen}
+            onOpenChange={(open) => onToggleMenu(open ? project.id : null)}
+            anchor={menuTriggerRef}
+            label={t('projectActions')}
+            role="menu"
+            side="bottom"
+            align="end"
+            width={230}
+          >
+            <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onTogglePin(project.id)}>
+              {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+              {pinned ? t('menuUnpin') : t('menuPin')}
+            </button>
+            <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onCopyLink(project)}>
+              <Link2 className="w-3.5 h-3.5" />
+              {t('menuCopyLink')}
+            </button>
+            <div className="mt-1 pt-1 border-t border-border">
+              <FolderPickList
+                options={folderOptions}
+                currentFolderId={project.groupId || null}
+                onSelect={(folderId) => onMove(project, folderId)}
+              />
             </div>
-          )}
+            {project.status !== 'APPROVED' && (
+              <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'APPROVED')}>
+                <Check className="w-3.5 h-3.5" />
+                {t('menuApprove')}
+              </button>
+            )}
+            {project.status === 'ARCHIVED' ? (
+              <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'IN_REVIEW')}>
+                <ArchiveRestore className="w-3.5 h-3.5" />
+                {t('menuRestore')}
+              </button>
+            ) : (
+              <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'ARCHIVED')}>
+                <Archive className="w-3.5 h-3.5" />
+                {t('menuArchive')}
+              </button>
+            )}
+            <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-destructive text-left" onClick={() => onDeleteRequest(project)}>
+              <Trash2 className="w-3.5 h-3.5" />
+              {tc('delete')}
+            </button>
+          </ReviewPopup>
         </>
       )}
       <Link
@@ -388,6 +399,8 @@ export default function ProjectsDashboard({
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [batchFolderMenu, setBatchFolderMenu] = useState(false)
+  const batchFolderTriggerRef = useRef<HTMLButtonElement>(null)
+  const batchBarRef = useRef<HTMLDivElement>(null)
   const [archOpen, setArchOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -418,7 +431,7 @@ export default function ProjectsDashboard({
     if (!menuOpen && !batchFolderMenu) return
     const handler = (e: MouseEvent) => {
       const el = e.target as HTMLElement | null
-      if (el?.closest('[data-card-menu]') || el?.closest('[data-batch-menu]')) return
+      if (el?.closest('[data-card-menu]') || el?.closest('[data-batch-menu]') || el?.closest('[data-review-popup]')) return
       setMenuOpen(null)
       setBatchFolderMenu(false)
     }
@@ -839,14 +852,14 @@ export default function ProjectsDashboard({
 
       {/* Copied hint */}
       {copiedId && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background text-[13px] px-4 py-2 rounded-full shadow-lg">
+        <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background text-[13px] px-4 py-2 rounded-full shadow-lg">
           {t('linkCopied')}
         </div>
       )}
 
       {/* Batch action bar */}
       {batchMode && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-[calc(100vw-2rem)] bg-foreground text-background rounded-2xl px-4 py-2.5 shadow-xl text-[13px]">
+        <div ref={batchBarRef} tabIndex={-1} className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-2 sm:gap-3 max-w-[calc(100vw-2rem)] bg-foreground text-background rounded-2xl px-4 py-2.5 shadow-xl text-[13px] outline-none">
           <span className="font-bold text-[14px] tabular-nums">{selected.size}</span>
           <span>{t('selectedCount')}</span>
           <span className="w-px h-4 bg-background/30" aria-hidden />
@@ -857,23 +870,35 @@ export default function ProjectsDashboard({
           )}
           <div className="relative" data-batch-menu>
             <button
+              ref={batchFolderTriggerRef}
               type="button"
               disabled={busy || !selected.size}
               onClick={() => setBatchFolderMenu((open) => !open)}
+              aria-haspopup="menu"
               aria-expanded={batchFolderMenu}
+              aria-controls={batchFolderMenu ? 'batch-folder-menu' : undefined}
               className="px-3 py-1.5 rounded-lg bg-background/15 hover:bg-background/25 disabled:opacity-40 font-medium inline-flex items-center gap-1"
             >
               <FolderInput className="w-3.5 h-3.5" />
               {t('folderMoveTo')}
             </button>
-            {batchFolderMenu && (
-              <div className="absolute bottom-full left-0 mb-2 w-[220px] rounded-[10px] border border-border bg-popover text-foreground p-1 shadow-lg">
-                <FolderPickList
-                  options={folderOpts}
-                  onSelect={(folderId) => moveProjects([...selected], folderId, true)}
-                />
-              </div>
-            )}
+            <ReviewPopup
+              id="batch-folder-menu"
+              open={batchFolderMenu}
+              onOpenChange={setBatchFolderMenu}
+              anchor={batchFolderTriggerRef}
+              label={t('folderMoveTo')}
+              role="menu"
+              side="top"
+              align="start"
+              width={220}
+              returnFocus={batchBarRef}
+            >
+              <FolderPickList
+                options={folderOpts}
+                onSelect={(folderId) => { setBatchFolderMenu(false); moveProjects([...selected], folderId, true) }}
+              />
+            </ReviewPopup>
           </div>
           <span className="w-px h-4 bg-background/30" aria-hidden />
           <button type="button" onClick={selectAllActive} className="px-3 py-1.5 rounded-lg text-background/70 hover:text-background">{t('selectAllProjects')}</button>
