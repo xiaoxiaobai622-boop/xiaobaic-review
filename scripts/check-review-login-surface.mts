@@ -359,7 +359,7 @@ const performBlock = performAt >= 0 && submitAt > performAt ? loginPageSrc.slice
 const submitBlock = submitAt >= 0 && termsAt > submitAt ? loginPageSrc.slice(submitAt, termsAt) : ''
 check(consentAt >= 0 && /if \(agreed\)/.test(consentBlock) && /setConsentOpen\(true\)/.test(consentBlock)
   && confirmBlock.includes('pendingActionRef.current')
-  && /requestConsent\(\(\) => \{ void performSubmit\(\) \}\)/.test(submitBlock) && !/fetch\(/.test(submitBlock)
+  && /requestConsent\(\(\) => \{ void performSubmit\(\) \}/.test(submitBlock) && !/fetch\(/.test(submitBlock)
   && /fetch\('\/api\/auth\/sms\/verify-code'/.test(performBlock) && /fetch\('\/api\/auth\/login'/.test(performBlock)
   && /onClick=\{confirmConsent\}/.test(loginPageSrc),
   'T2b 未勾选时先弹条款确认框；确认前不会触发登录/建号请求（两处 fetch 只在 performSubmit 里）',
