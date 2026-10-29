@@ -156,7 +156,10 @@ export default function ThumbnailReel({
   return (
     <div className="relative z-20 shrink-0">
       {/* Compact Control Bar - Always visible */}
-      <div className="h-12 border-b border-border/70 bg-card px-3 sm:px-4">
+      <div
+        className="h-12 rounded-[8px] px-3 sm:px-4"
+        style={{ backgroundColor: 'hsl(var(--review-chrome, var(--card)))' }}
+      >
         <div className="flex h-full items-center gap-1.5 sm:gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {leadingAction}

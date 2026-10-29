@@ -308,42 +308,74 @@
    */
   [data-review-surface] {
     --review-tint-layer: 1; /* 没有消费者，只是让这层在 DOM 里量得到、在仓库里 grep 得到 */
+    --review-canvas: var(--background);
+    --review-gutter: var(--background);
   }
 
-  /*
-   * 审片页深色（只在 `.dark` 下生效，浅色／mint／frame 不受影响）。
-   * 全站深色是 Frame.io 那套蓝紫灰（底 #000、卡片 #1f2432），在审片页上的问题是：
-   * 页面底纯黑、评论栏与播放器面都是同一档蓝灰，层次平，整体偏冷。这里换成中性深灰梯度，
-   * 四档按亮度拉开（L 为 HSL 亮度）：
-   *   页面底 7%  <  卡片／评论栏／播放器面 11.5%  <  浮起的控件面 17%  <  悬浮／选中 21%
-   * 色相与饱和度一律归零，品牌紫（primary / ring）和四种状态色不动，所以按钮、时间码黄标、
-   * 已解决等语义色照旧。文字 96% 白、次级文字 68%，对比度压在深灰上比原来的 69% 蓝灰略高。
-   * 同样受「Radix Portal 挂在 body、不吃这里的值」那条限制：设置审阅状态下拉仍是全站深色。
-   */
   .dark [data-review-surface] {
-    --background: 0 0% 7%; /* #121212 */
-    --foreground: 0 0% 96%;
+    --background: 0 0% 0%;
+    --review-chrome: 230 25% 9.41176%;
+    --review-canvas: 0 0% 0%;
+    --review-gutter: 0 0% 0%;
+    --review-selected: 228 16.12903% 24.31373%;
+    --foreground: 240 6.25% 87.45098%;
 
-    --card: 0 0% 11.5%; /* #1d1d1d */
-    --card-foreground: 0 0% 96%;
+    --card: 230 25% 9.41176%;
+    --card-foreground: var(--foreground);
 
-    --popover: 0 0% 9.5%;
-    --popover-foreground: 0 0% 96%;
+    --popover: 228.57143 21.64948% 19.01961%;
+    --popover-foreground: var(--foreground);
 
-    --secondary: 0 0% 17%; /* #2b2b2b */
-    --secondary-foreground: 0 0% 96%;
+    --secondary: 227.36842 23.45679% 15.88235%;
+    --secondary-foreground: var(--foreground);
 
-    --muted: 0 0% 17%;
-    --muted-foreground: 0 0% 78%; /* #c7c7c7，对比度 7.5:1 达 AAA 标准 */
+    --muted: var(--secondary);
+    --muted-foreground: 231 9.43396% 58.43137%;
 
-    --accent: 0 0% 21%; /* #363636 */
+    --accent: var(--popover);
     --accent-foreground: 0 0% 100%;
 
-    --border: 0 0% 32%; /* #525252，对比度 2.5:1，边框清晰可见 */
-    --input: 0 0% 32%;
-
-    /* 选中／高亮底：保留一点品牌紫，但把饱和度收到不抢眼 */
+    --border: 227.36842 23.45679% 15.88235%;
+    --input: var(--border);
     --primary-visible: 243 22% 24%;
+  }
+
+  .dark [data-review-surface] :is(button.border:where(:not([aria-pressed])), select.border, input.border, textarea.border),
+  .dark [data-review-surface] [data-comment-section] div.inline-flex.border {
+    --tw-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.04);
+    border-color: transparent;
+    background-color: hsl(var(--secondary));
+    box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+  }
+
+  .dark [data-review-surface] :is(button.border:where(:not([aria-pressed])), select.border):hover {
+    background-color: hsl(var(--accent));
+  }
+
+  .dark [data-review-surface] button.border[data-review-popup-trigger][aria-expanded='true'] {
+    background-color: hsl(var(--review-selected));
+  }
+
+  .dark [data-review-surface] button.border[data-review-popup-trigger]:active {
+    background-color: hsl(var(--foreground) / 0.15);
+  }
+
+  .dark [data-review-surface] :is(button.border:where(:not([aria-pressed])), select.border, input.border, textarea.border):focus-visible {
+    border-color: hsl(var(--ring));
+  }
+
+  .dark [data-review-surface] textarea.border {
+    background-color: hsl(var(--card));
+  }
+
+  .dark [data-review-surface] [data-comment-section] div.inline-flex.border > .shadow-sm {
+    background-color: hsl(var(--review-selected));
+  }
+
+  .dark [data-review-surface] [data-review-popup] {
+    border-color: rgb(255 255 255 / 0.04);
+    background: hsl(var(--popover));
+    box-shadow: 0 1px 16px rgb(0 0 0 / 0.12), 0 8px 12px rgb(0 0 0 / 0.16), 0 4px 8px rgb(0 0 0 / 0.2);
   }
 }
 

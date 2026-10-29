@@ -1074,10 +1074,10 @@ export default function AdminSharePage() {
                 projectId={project.id}
                 video={activeVideoState?.selectedVideo || null}
                 onUpdated={refreshProject}
-                className="h-8"
+                className="h-8 dark:bg-[#2b2f41]"
               />
             )}
-            <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => void copyShareLink()}>
+            <Button type="button" variant="outline" size="sm" className="h-8 dark:bg-[#2b2f41]" onClick={() => void copyShareLink()}>
               {shareCopied ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
               <span className="hidden sm:inline">{shareCopied ? tu('copied') : tu('share')}</span>
             </Button>
@@ -1131,7 +1131,7 @@ export default function AdminSharePage() {
         ) : (
           <>
             {/* Video Player - natural height on mobile, fills space on desktop */}
-            <div className={`flex min-w-0 flex-col rounded-[6px] bg-muted/80 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 lg:pb-[11.5px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] lg:h-full lg:min-h-0 lg:flex-1 lg:p-[2px] lg:pb-[2px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={readyVideos}
                 projectId={project.id}
@@ -1164,18 +1164,18 @@ export default function AdminSharePage() {
                 timestampDisplayMode={timestampDisplayMode}
                 onCommentFocus={(commentId) => setFocusCommentId(commentId)}
                 fillContainer={true}
-                playerSurfaceClassName="bg-card"
-                playerSurfaceColor="hsl(var(--card))"
-                playerFrameClassName="ring-1 ring-inset ring-border/70"
-                controlsSurfaceClassName="bg-card border-t border-border/40"
+                playerSurfaceClassName="bg-[hsl(var(--review-canvas))]"
+                playerSurfaceColor="hsl(var(--review-canvas))"
+                controlsSurfaceClassName="bg-card dark:bg-[hsl(var(--review-canvas))]"
+                projectInfoClassName="mt-2 lg:order-3 xl:mt-0"
               />
-              <div id="review-comment-composer" className="lg:mt-auto" />
+              <div id="review-comment-composer" className="pt-[2px] lg:mt-auto" />
             </div>
 
             {/* Comments Section - max one screen height on mobile, side panel on desktop */}
             {showCommentPanel && (
-              <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden bg-card lg:max-h-full lg:w-[360px] lg:flex-none">
-                <div aria-hidden="true" className="hidden h-3 shrink-0 bg-muted/80 lg:block" />
+              <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden rounded-[8px] bg-card lg:max-h-full lg:w-[360px] lg:flex-none">
+                <div aria-hidden="true" className="hidden h-[2px] shrink-0 bg-[hsl(var(--review-gutter))] lg:block" />
                 <CommentSection
                   projectId={project.id}
                   projectSlug={project.slug}

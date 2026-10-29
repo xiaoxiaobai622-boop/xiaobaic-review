@@ -383,7 +383,11 @@ export default function CommentSection({
   }
 
   return (
-    <Card className="flex h-full flex-col overflow-hidden rounded-none border-0 bg-card lg:max-h-full" data-comment-section>
+    <Card
+      className="flex h-full flex-col overflow-hidden rounded-none border-0 lg:max-h-full"
+      style={{ backgroundColor: 'hsl(var(--review-chrome, var(--card)))' }}
+      data-comment-section
+    >
       {/* Desktop: Show header at top, Mobile: Hide header (will show below input) */}
       <CardHeader className={cn("flex-shrink-0 border-b border-border/70 px-4 py-3", mobileCollapsible && "hidden lg:block")}>
         <div className="flex items-center justify-between gap-2">
@@ -507,7 +511,8 @@ export default function CommentSection({
               setIsMobileCollapsed(newCollapsed)
               onMobileExpandedChange?.(!newCollapsed)
             }}
-            className="order-2 lg:hidden w-full p-3 flex items-center justify-between bg-card border-b border-border/70"
+            className="order-2 lg:hidden w-full p-3 flex items-center justify-between border-b border-border/70"
+            style={{ backgroundColor: 'hsl(var(--review-chrome, var(--card)))' }}
           >
             <span className="text-sm font-medium flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
@@ -528,7 +533,7 @@ export default function CommentSection({
         {/* Messages Area - Threaded Conversations */}
         <div
           className={cn(
-            "min-h-0 flex-1 space-y-0 overflow-y-auto bg-card p-0",
+            "min-h-0 flex-1 space-y-0 overflow-y-auto p-0",
             mobileCollapsible && "order-3 lg:order-2",
             mobileCollapsible && isMobileCollapsed && "hidden lg:block"
           )}
@@ -596,7 +601,7 @@ export default function CommentSection({
 
         {/* Input Area - Desktop and non-collapsible mobile */}
         {/* overflow-visible：表情面板/可见范围下拉要从输入区向上冒出来，裁剪壳会把它们剪没。 */}
-        {composerTarget && createPortal(<div className="flex-shrink-0 rounded-[6px]">
+        {composerTarget && createPortal(<div className="flex-shrink-0 rounded-[8px]">
           <CommentInput
           newComment={newComment}
           onCommentChange={handleCommentChange}

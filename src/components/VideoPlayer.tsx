@@ -1551,7 +1551,7 @@ export default function VideoPlayer({
             */}
             <div
               ref={videoWrapperRef}
-              className={`group relative mb-[76px] w-full max-h-[56vh] overflow-visible rounded-md aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
+              className={`group relative mb-[76px] w-full max-h-[56vh] overflow-visible rounded-[8px] aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
                 fillContainer ? 'lg:max-h-none lg:min-h-0 lg:flex-1' : ''
               }`}
               style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}

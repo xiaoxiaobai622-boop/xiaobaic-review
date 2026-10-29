@@ -168,7 +168,7 @@ export default function CommentInput({
 
   if (commentsDisabled) {
     return (
-      <div className={cn('flex-shrink-0 bg-card p-2', !sendInsideComposer && 'border-t border-border/70')}>
+      <div className={cn('flex-shrink-0 rounded-[8px] bg-card p-2', !sendInsideComposer && 'border-t border-border/70')}>
         <textarea
           disabled
           aria-label="批注输入框"
@@ -252,7 +252,7 @@ export default function CommentInput({
   }
 
   return (
-    <div className={cn('flex-shrink-0 bg-card px-2 pb-1 pt-[6.5px]', !sendInsideComposer && 'border-t border-border/70')}>
+    <div className={cn('flex-shrink-0 rounded-[8px] bg-card px-2 pb-1 pt-[6.5px]', !sendInsideComposer && 'border-t border-border/70')}>
       {/* Restriction Warning */}
       {currentVideoRestricted && restrictionMessage && (
         <div className="mb-3 p-3 bg-warning-visible border-2 border-warning-visible rounded-lg">

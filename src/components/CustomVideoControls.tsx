@@ -1005,7 +1005,7 @@ function CustomVideoControls({
   const isTimelineActive = isDragging || hoveredTime !== null
 
   return (
-    <div className={`absolute left-0 right-0 top-full z-30 min-h-0 text-foreground ${surfaceClassName}`} style={{ borderRadius: '0 0 6px 6px' }}>
+    <div className={`absolute left-0 right-0 top-full z-30 min-h-0 text-foreground ${surfaceClassName}`} style={{ borderRadius: '0 0 8px 8px' }}>
       {/* 6px progress rail + 32px annotation lane, matching the reference behavior. */}
       <div className="mb-0">
         <div

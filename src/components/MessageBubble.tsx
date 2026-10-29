@@ -108,7 +108,7 @@ function MessageBubble({
     <div className="w-full" id={`comment-${comment.id}`}>
       <div
         className={`relative border-b border-border/60 px-4 py-3 transition-colors ${
-          (comment as any).resolved ? 'bg-success/8 hover:bg-success/12' : 'bg-card hover:bg-muted/30'
+          (comment as any).resolved ? 'bg-success/8 hover:bg-success/12' : 'bg-[hsl(var(--review-chrome,var(--card)))] hover:bg-muted/30'
         } ${comment.timecode && onSeekToTimecode ? 'cursor-pointer focus-within:bg-muted/30' : ''}`}
         onClick={comment.timecode && onSeekToTimecode ? handleFeedbackClick : undefined}
         onKeyDown={comment.timecode && onSeekToTimecode ? handleFeedbackKeyDown : undefined}

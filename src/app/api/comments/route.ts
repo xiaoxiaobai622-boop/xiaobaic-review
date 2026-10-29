@@ -14,6 +14,7 @@ import {
 } from '@/lib/wechat-content-security'
 import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
 import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
+import { getShareScopeVideoIds, isShareLinkActive, resolveShareMetadata } from '@/lib/share-links'
 import {
 
   validateCommentPermissions,
@@ -81,7 +82,36 @@ export async function GET(request: NextRequest) {
     }
 
     const { isAdmin, isAuthenticated } = accessCheck
-    const viewerUserId = (await getAuthContext(request)).user?.id
+    const authContext = await getAuthContext(request)
+    const viewerUserId = authContext.user?.id
+
+    // A share bearer is scoped to the link, not to the project. The sibling
+    // /api/share/[token]/comments route already applies this rule; without it
+    // here a single-video link can list every video's comments by project id.
+    let scopedVideoIds: Set<string> | null = null
+    if (!isAdmin && authContext.shareContext) {
+      const resolvedShare = await resolveShareMetadata(authContext.shareContext.shareId)
+      if (!resolvedShare.policy || !resolvedShare.project) {
+        return NextResponse.json(
+          { error: shareMessages.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.LINK_MISSING },
+          { status: 403 }
+        )
+      }
+      if (!isShareLinkActive(resolvedShare.policy)) {
+        return NextResponse.json(
+          { error: shareMessages.linkInvalid || 'This share link is no longer active', code: SHARE_ERROR_CODES.LINK_INACTIVE },
+          { status: 410 }
+        )
+      }
+      if (!accessCheck.permissions?.includes('comment')) {
+        logShareDenial({ shareToken: authContext.shareContext.shareId, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.PERMISSION_DENIED })
+        return NextResponse.json(
+          { error: 'Insufficient permissions', code: SHARE_ERROR_CODES.PERMISSION_DENIED, requiredPermission: 'comment' },
+          { status: 403 }
+        )
+      }
+      scopedVideoIds = await getShareScopeVideoIds(resolvedShare.policy, project.id)
+    }
 
     const primaryRecipient = await getPrimaryRecipient(projectId)
     // Priority: companyName → primary recipient → 'Client'
@@ -105,6 +135,7 @@ export async function GET(request: NextRequest) {
         projectId,
         parentId: null, // Only get top-level comments
         ...LIVE_COMMENT,
+        ...(scopedVideoIds ? { videoId: { in: Array.from(scopedVideoIds) } } : {}),
       },
       include: {
         user: {
@@ -371,6 +402,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // A scoped share bearer may only write into the videos its link covers.
+    // The project ownership check above is necessary but not sufficient.
+    let scopedVideoIds: Set<string> | null = null
+    if (!isAdmin && authContext.shareContext) {
+      const resolvedShare = await resolveShareMetadata(authContext.shareContext.shareId)
+      if (!resolvedShare.policy || !resolvedShare.project) {
+        return NextResponse.json(
+          { error: shareMessages.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.LINK_MISSING },
+          { status: 403 }
+        )
+      }
+      if (!isShareLinkActive(resolvedShare.policy)) {
+        return NextResponse.json(
+          { error: shareMessages.linkInvalid || 'This share link is no longer active', code: SHARE_ERROR_CODES.LINK_INACTIVE },
+          { status: 410 }
+        )
+      }
+      scopedVideoIds = await getShareScopeVideoIds(resolvedShare.policy, project.id)
+      if (scopedVideoIds && !scopedVideoIds.has(videoId)) {
+        logShareDenial({ shareToken: authContext.shareContext.shareId, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.SCOPE_DENIED })
+        return NextResponse.json(
+          { error: shareMessages.accessDenied || 'Access denied', code: SHARE_ERROR_CODES.SCOPE_DENIED },
+          { status: 403 }
+        )
+      }
+    }
+
     // If version is omitted, infer from current video record
     const finalVideoVersion = videoVersion || video.version
 
@@ -462,8 +520,13 @@ export async function POST(request: NextRequest) {
     })
 
     const allComments = await fetchProjectComments(projectId)
+    // The POST response is another read path. A scoped bearer must not receive
+    // the whole project's comments just because it wrote one in its own scope.
+    const responseComments = scopedVideoIds
+      ? allComments.filter((comment: any) => scopedVideoIds!.has(comment.videoId))
+      : allComments
 
-    const sanitizedComments = allComments.map((comment: any) =>
+    const sanitizedComments = responseComments.map((comment: any) =>
       sanitizeComment(comment, isAdmin, isAuthenticated, fallbackName, authContext.user?.id, project.companyName)
     )
 
