@@ -178,8 +178,9 @@ check(bySlug.includes('select: {') && !bySlug.includes('_count') && !joinPage.in
   `→ 路由 _count ${bySlug.includes('_count') ? '还在' : '已去'}，页面引用 ${joinPage.includes('team._count') ? '还在' : '已去'}`)
 check(joinPage.includes('手机号') && joinPage.includes('审批') && joinPage.indexOf('手机号') < joinPage.indexOf('提交申请'),
   'S2 申请加入页把资格与流程写在提交按钮之前（现状是 401/403 才告诉人办不了）')
-check(teamPage.includes('这条链接本身不给任何人权限'),
-  'S3 团队设置里那条「团队加入链接」说清了对方的代价（登录＋绑手机＋负责人审批）')
+check(!teamPage.includes('团队加入链接') && joinPage.includes('绑定过手机号') && joinPage.includes('审批'),
+  'S3 团队设置不再挂「团队加入链接」，代价说明留在申请加入页（登录＋绑手机＋负责人审批）',
+  `→ 团队页还挂着链接块:${teamPage.includes('团队加入链接')}，加入页有代价说明:${joinPage.includes('绑定过手机号') && joinPage.includes('审批')}`)
 check(!teamPage.includes('5 名成员') && teamPage.includes('team.quota')
     && read('app/api/teams/[id]/route.ts').includes('getTeamQuota'),
   'S4 团队页那句额度不再写死数字，改成从真实 quota 读（运营后台能逐团改额度，写死必变假话）',
