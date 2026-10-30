@@ -157,7 +157,7 @@ export default function ThumbnailReel({
     <div className="relative z-20 shrink-0">
       {/* Compact Control Bar - Always visible */}
       <div
-        className="h-12 rounded-[8px] px-3 sm:px-4"
+        className="h-[39px] rounded-[8px] px-3 sm:h-[50px] sm:px-[12px]"
         style={{ backgroundColor: 'hsl(var(--review-chrome, var(--card)))' }}
       >
         <div className="flex h-full items-center gap-1.5 sm:gap-2">
@@ -168,7 +168,7 @@ export default function ThumbnailReel({
                 variant="ghost"
                 size="icon"
                 onClick={onBackToGrid}
-                className="h-8 w-8 shrink-0"
+                className="h-8 w-8 shrink-0 sm:h-[24px] sm:w-[24px] sm:rounded-[6px]"
                 title={backButtonLabel || tShare('backToOverview')}
                 aria-label={backButtonLabel || tShare('backToOverview')}
               >
@@ -178,7 +178,7 @@ export default function ThumbnailReel({
             <button
               type="button"
               onClick={handleToggleExpanded}
-              className="min-w-0 truncate text-left text-sm font-semibold text-foreground hover:text-primary"
+              className="min-w-0 truncate text-left text-sm font-semibold text-foreground hover:text-primary sm:text-[13px] sm:font-medium"
               title={activeVideoName}
             >
               {activeVideoName}
@@ -191,17 +191,17 @@ export default function ThumbnailReel({
                   setSelectedVersionId(event.target.value)
                   window.dispatchEvent(new CustomEvent('selectReviewVersion', { detail: { videoId: event.target.value } }))
                 }}
-                className="h-7 min-w-[46px] max-w-[72px] shrink-0 rounded-[4px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-7 min-w-[46px] max-w-[72px] shrink-0 rounded-[4px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[24px] sm:rounded-[6px] sm:text-[12px]"
               >
                 {playableVideos.map((video: any) => (
                   <option key={video.id} value={video.id}>{video.versionLabel || `v${video.version}`}</option>
                 ))}
               </select>
             )}
-            <div className="hidden items-center gap-0.5 sm:flex">
-              <Button variant="ghost" size="icon" onClick={handlePrevVideo} disabled={activeIndex <= 0} className="h-7 w-7" title={tShare('previousVideo')}><ChevronLeft className="h-4 w-4" /></Button>
-              <span className="min-w-9 text-center text-xs text-muted-foreground tabular-nums">{activeIndex + 1}/{totalVideos}</span>
-              <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-7 w-7" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
+            <div className="hidden items-center gap-0.5 sm:flex sm:gap-0 sm:rounded-[6px] sm:bg-[hsl(var(--secondary))]">
+              <Button variant="ghost" size="icon" onClick={handlePrevVideo} disabled={activeIndex <= 0} className="h-7 w-7 sm:h-[24px] sm:w-[24px] sm:rounded-[6px]" title={tShare('previousVideo')}><ChevronLeft className="h-4 w-4" /></Button>
+              <span className="min-w-9 text-center text-xs text-muted-foreground tabular-nums sm:min-w-[26px] sm:text-[12px] sm:text-foreground">{activeIndex + 1}/{totalVideos}</span>
+              <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-7 w-7 sm:h-[24px] sm:w-[24px] sm:rounded-[6px]" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
             </div>
           </div>
 
@@ -210,7 +210,7 @@ export default function ThumbnailReel({
               <Button
                 variant="outline"
                 size="sm"
-                className="flex h-8 gap-1.5 px-2 sm:px-3"
+                className="flex h-8 gap-1.5 px-2 sm:h-[24px] sm:rounded-[6px] sm:px-2 sm:text-[12px]"
                 onClick={() => window.dispatchEvent(new CustomEvent('openReviewComparison'))}
               >
                 <GitCompareArrows className="h-4 w-4" />

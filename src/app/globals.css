@@ -364,18 +364,32 @@
     border-color: hsl(var(--ring));
   }
 
+  /* 审阅状态下拉选完后焦点会回到它身上：不画聚焦描边/外发光，避免选一次留一圈紫光。 */
+  .dark [data-review-surface] [data-tutorial='approve-btn']:focus,
+  .dark [data-review-surface] [data-tutorial='approve-btn']:focus-visible {
+    border-color: transparent !important;
+    outline: none !important;
+  }
+
   .dark [data-review-surface] textarea.border {
     background-color: hsl(var(--card));
   }
 
+  .dark [data-review-surface] [data-comment-section] div.inline-flex.border {
+    box-shadow: none;
+    background-color: hsl(232 18.99% 15.49%);
+  }
+
   .dark [data-review-surface] [data-comment-section] div.inline-flex.border > .shadow-sm {
     background-color: hsl(var(--review-selected));
+    color: #fff;
   }
 
   .dark [data-review-surface] [data-review-popup] {
     border-color: rgb(255 255 255 / 0.04);
     background: hsl(var(--popover));
     box-shadow: 0 1px 16px rgb(0 0 0 / 0.12), 0 8px 12px rgb(0 0 0 / 0.16), 0 4px 8px rgb(0 0 0 / 0.2);
+    --muted-foreground: 232 12.2% 64.7%;
   }
 }
 

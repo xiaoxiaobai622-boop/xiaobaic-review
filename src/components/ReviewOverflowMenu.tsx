@@ -16,7 +16,7 @@ export default function ReviewOverflowMenu({ children }: { children: ReactNode }
   return (
     <div className="relative">
       <Button type="button" ref={triggerRef} variant="ghost" size="icon" data-review-popup-trigger
-        className={`${styles.trigger} h-8 w-8 text-muted-foreground hover:text-foreground`}
+        className={`${styles.trigger} h-8 w-8 text-muted-foreground hover:text-foreground sm:h-[24px] sm:w-[24px] sm:rounded-[6px]`}
         onClick={() => setOpen(current => !current)} aria-haspopup="dialog" aria-expanded={open}
         aria-controls={open ? id : undefined} title={t('more')} aria-label={t('more')}>
         <MoreHorizontal className="h-4 w-4" />

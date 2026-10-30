@@ -1,6 +1,6 @@
 'use client'
 
-import { Aperture, Leaf, Moon, Sun } from 'lucide-react'
+import { Aperture, ChevronDown, Leaf, Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
@@ -10,7 +10,7 @@ interface ThemeToggleProps {
   className?: string
 }
 
-export default function ThemeToggle({ className, compact = false }: ThemeToggleProps & { compact?: boolean }) {
+export default function ThemeToggle({ className, compact = false, row = false }: ThemeToggleProps & { compact?: boolean; row?: boolean }) {
   const t = useTranslations('controls')
   const [theme, setTheme] = useState<ThemeChoice>('light')
   const [mounted, setMounted] = useState(false)
@@ -27,6 +27,41 @@ export default function ThemeToggle({ className, compact = false }: ThemeToggleP
     return () => observer.disconnect()
   }, [])
 
+  const Icon = theme === 'mint' ? Leaf : theme === 'frame' ? Aperture : theme === 'dark' ? Moon : Sun
+  const labels: Record<ThemeChoice, string> = {
+    light: t('themeLight'),
+    mint: t('themeMint'),
+    frame: t('themeFrame'),
+    dark: t('themeDark'),
+  }
+
+  if (row) {
+    return (
+      <label className={cn(
+        'relative flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-xs font-medium text-foreground transition-colors hover:bg-foreground/10 focus-within:bg-foreground/10',
+        className
+      )} title={labels[theme]}>
+        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-left">{labels[theme]}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <select
+          value={theme}
+          onChange={(event) => {
+            const next = event.target.value as ThemeChoice
+            localStorage.setItem('theme', next)
+            applyThemeChoice(next)
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          aria-label={t('toggleTheme')}
+        >
+          {(['light', 'mint', 'frame', 'dark'] as ThemeChoice[]).map((choice) => (
+            <option key={choice} value={choice}>{labels[choice]}</option>
+          ))}
+        </select>
+      </label>
+    )
+  }
+
   if (!mounted) {
     return (
       <button
@@ -36,14 +71,6 @@ export default function ThemeToggle({ className, compact = false }: ThemeToggleP
         <div className="h-[18px] w-[18px]" />
       </button>
     )
-  }
-
-  const Icon = theme === 'mint' ? Leaf : theme === 'frame' ? Aperture : theme === 'dark' ? Moon : Sun
-  const labels: Record<ThemeChoice, string> = {
-    light: t('themeLight'),
-    mint: t('themeMint'),
-    frame: t('themeFrame'),
-    dark: t('themeDark'),
   }
 
   if (compact) {

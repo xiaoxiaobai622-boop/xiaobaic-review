@@ -314,24 +314,43 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
   const profileHref = currentUser?.id
     ? `/profile?returnUrl=${encodeURIComponent(typeof window === 'undefined' ? '/' : currentReturnUrl())}`
     : '/profile'
-  const secondaryContact = maskPhoneDisplay(currentUser?.phone) || getContactEmail(currentUser?.email)
+  const secondaryContact = getContactEmail(currentUser?.email)
+  const maskedPhone = maskPhoneDisplay(currentUser?.phone)
+  const profileTitle = maskedPhone || displayName
+  const profileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!profileOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!profileRef.current?.contains(event.target as Node)) setProfileOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProfileOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [profileOpen])
 
   return (
     <>
       {authenticated ? (
-        <div className="relative flex items-center gap-1.5">
+        <div ref={profileRef} className="relative flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setProfileOpen(value => !value)}
             className={cn(
               'flex items-center gap-1.5 rounded-md text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-              compact ? 'h-9 w-9 justify-center border border-border bg-background p-0' : 'min-h-8 px-1.5'
+              compact ? 'h-[32px] w-[32px] justify-center border border-border bg-background p-0 sm:h-[24px] sm:w-[24px] sm:rounded-[6px]' : 'min-h-8 px-1.5'
             )}
             aria-label={displayName}
             aria-expanded={profileOpen}
             aria-haspopup="menu"
           >
-            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" title={displayName} isInternal={isAdmin} />
+            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" className="sm:h-[24px] sm:w-[24px] sm:text-[10px]" title={displayName} isInternal={isAdmin} />
             {!compact && <span className="max-w-28 truncate">{displayName}</span>}
             {!compact && <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
           </button>
@@ -339,7 +358,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
             <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 origin-top rounded-lg border border-border bg-card p-1.5 shadow-lg animate-in fade-in-0 zoom-in-95 duration-150" role="menu">
               <div className="flex items-center gap-2 border-b border-border px-2.5 py-2.5">
                 <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="md" isInternal={isAdmin} />
-                <div className="min-w-0"><p className="truncate text-sm font-medium">{displayName}</p>{secondaryContact && <p className="truncate text-xs text-muted-foreground">{secondaryContact}</p>}</div>
+                <div className="min-w-0"><p className="truncate text-sm font-medium">{profileTitle}</p>{secondaryContact && <p className="truncate text-xs text-muted-foreground">{secondaryContact}</p>}</div>
               </div>
               <Link href={profileHref} role="menuitem" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted focus-visible:bg-muted">
                 <UserCircle className="h-4 w-4" />{ta('personalCenter')}

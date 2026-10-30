@@ -1074,11 +1074,11 @@ export default function AdminSharePage() {
                 projectId={project.id}
                 video={activeVideoState?.selectedVideo || null}
                 onUpdated={refreshProject}
-                className="h-8 dark:bg-[#2b2f41]"
+                className="h-8 sm:h-[24px]"
               />
             )}
-            <Button type="button" variant="outline" size="sm" className="h-8 dark:bg-[#2b2f41]" onClick={() => void copyShareLink()}>
-              {shareCopied ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
+            <Button type="button" variant="default" size="sm" className="h-8 sm:h-[24px] sm:rounded-[6px] sm:px-2 sm:text-[12px]" onClick={() => void copyShareLink()}>
+              {shareCopied ? <Check className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Share2 className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />}
               <span className="hidden sm:inline">{shareCopied ? tu('copied') : tu('share')}</span>
             </Button>
             <ReviewOverflowMenu>
@@ -1092,8 +1092,8 @@ export default function AdminSharePage() {
                 </div>
               )}
               <div className="my-1 border-t border-border" />
-              <LanguageToggle className="h-8 w-full justify-between border-0 bg-transparent px-2 shadow-none" />
-              <ThemeToggle className="h-8 w-full justify-between border-0 bg-transparent px-2 shadow-none" />
+              <LanguageToggle row />
+              <ThemeToggle row />
             </ReviewOverflowMenu>
           </div>
         }

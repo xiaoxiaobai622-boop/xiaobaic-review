@@ -45,6 +45,22 @@ export function VideoReviewStatusControl({
 }: VideoReviewStatusControlProps) {
   const t = useTranslations('videos')
   const currentOption = VIDEO_REVIEW_STATUS_OPTIONS.find(option => option.value === value)
+  const triggerLabel = (
+    <span className="flex min-w-0 items-center gap-2">
+      <span
+        aria-hidden="true"
+        className={cn(
+          'h-2.5 w-2.5 shrink-0 rounded-full sm:h-2 sm:w-2',
+          !currentOption && 'border-2 border-muted-foreground/55 bg-transparent'
+        )}
+        style={currentOption ? { backgroundColor: currentOption.dotColor } : undefined}
+      />
+      <span className="truncate">
+        {currentOption ? t(currentOption.labelKey) : t('setReviewStatus')}
+      </span>
+      {loading && <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
+    </span>
+  )
 
   return (
     <Select
@@ -57,25 +73,12 @@ export function VideoReviewStatusControl({
         aria-label={t('setReviewStatus')}
         title={loading ? t('updatingReviewStatus') : t('setReviewStatus')}
         className={cn(
-          'h-8 w-auto min-w-[132px] shrink-0 gap-2 border-border/80 bg-card px-2.5 py-0 text-xs font-medium shadow-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+          'h-8 w-auto min-w-[132px] shrink-0 gap-2 border-border/80 bg-card px-2.5 py-0 text-xs font-medium shadow-none transition-colors hover:bg-accent focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-[24px] sm:min-w-[104px] sm:rounded-[6px] sm:gap-1.5 sm:px-2 sm:text-[12px]',
           className
         )}
       >
-        <SelectValue>
-          <span className="flex min-w-0 items-center gap-2">
-            <span
-              aria-hidden="true"
-              className={cn(
-                'h-2.5 w-2.5 shrink-0 rounded-full',
-                !currentOption && 'border-2 border-muted-foreground/55 bg-transparent'
-              )}
-              style={currentOption ? { backgroundColor: currentOption.dotColor } : undefined}
-            />
-            <span className="truncate">
-              {currentOption ? t(currentOption.labelKey) : t('setReviewStatus')}
-            </span>
-            {loading && <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
-          </span>
+        <SelectValue placeholder={triggerLabel}>
+          {triggerLabel}
         </SelectValue>
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[184px]">

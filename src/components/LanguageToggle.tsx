@@ -1,6 +1,6 @@
 'use client'
 
-import { Languages } from 'lucide-react'
+import { ChevronDown, Languages } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -12,9 +12,10 @@ interface LocaleOption {
 interface LanguageToggleProps {
   onChange?: (locale: string) => void
   className?: string
+  row?: boolean
 }
 
-export default function LanguageToggle({ onChange, className }: LanguageToggleProps) {
+export default function LanguageToggle({ onChange, className, row = false }: LanguageToggleProps) {
   const [locale, setLocale] = useState<string>('en')
   const [availableLocales, setAvailableLocales] = useState<LocaleOption[]>([])
   const [mounted, setMounted] = useState(false)
@@ -76,6 +77,31 @@ export default function LanguageToggle({ onChange, className }: LanguageTogglePr
   // Don't render if only one locale available
   if (!mounted || availableLocales.length <= 1) {
     return null
+  }
+
+  if (row) {
+    return (
+      <label className={cn(
+        'relative flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-xs font-medium text-foreground transition-colors hover:bg-foreground/10 focus-within:bg-foreground/10',
+        className
+      )}>
+        <Languages className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-left">{availableLocales.find(option => option.code === locale)?.name}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <select
+          value={locale}
+          onChange={(event) => changeLanguage(event.target.value)}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          aria-label={availableLocales.find(option => option.code === locale)?.name || 'Language'}
+        >
+          {availableLocales.map(option => (
+            <option key={option.code} value={option.code}>
+              {option.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
   }
 
   return (
