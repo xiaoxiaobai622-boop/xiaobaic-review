@@ -10,6 +10,7 @@ import {
 import { useEffect, useId, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import LightMist from '@/components/LightMist'
+import BeianPolice from '@/components/BeianPolice'
 import { HOME_HERO_VIDEO_URL } from '@/lib/public-media'
 import styles from './home.module.css'
 
@@ -730,8 +731,9 @@ export default function HomeClient() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              桂ICP备2026022852号
+              桂ICP备2026022852号-1
             </a>
+            <BeianPolice className={styles.footerPolice} />
           </div>
         </div>
       </footer>

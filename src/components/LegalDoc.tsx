@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import BeianPolice from '@/components/BeianPolice'
 
 type LegalSection = {
   heading: string
@@ -48,9 +49,12 @@ export function LegalDoc({
       <footer className="border-t border-[#dfe2e7] bg-white">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-5 text-xs text-[#8b919b]">
           <span>逐帧审阅</span>
-          <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">
-            桂ICP备2026022852号
-          </a>
+          <div className="flex items-center gap-4">
+            <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">
+              桂ICP备2026022852号-1
+            </a>
+            <BeianPolice />
+          </div>
         </div>
       </footer>
     </div>

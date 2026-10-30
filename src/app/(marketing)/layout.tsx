@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { BRAND } from '@/lib/marketing/brand'
 import { BrandLd } from '@/components/marketing/BrandLd'
+import BeianPolice from '@/components/BeianPolice'
 
 /**
  * 营销路由的 metadata 基座：绝对 URL 只在 `(marketing)` 内取（根 layout 每请求都跑，
@@ -55,8 +56,9 @@ export default function MarketingLayout({ children }: Readonly<{ children: React
             <Link href="/privacy" className="hover:text-[#171a20]">隐私政策</Link>
             <Link href="/terms" className="hover:text-[#171a20]">服务条款</Link>
             <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer" className="hover:text-[#171a20]">
-              桂ICP备2026022852号
+              桂ICP备2026022852号-1
             </a>
+            <BeianPolice className="hover:text-[#171a20]" />
           </nav>
         </div>
       </footer>

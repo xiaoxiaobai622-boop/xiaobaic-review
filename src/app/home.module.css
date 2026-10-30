@@ -1077,6 +1077,17 @@ a.pointCol:focus-visible {
   color: rgba(255, 255, 255, 0.84);
 }
 
+.footerPolice {
+  color: rgba(236, 236, 255, 0.54);
+  font-size: 12px;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.footerPolice:hover {
+  color: rgba(255, 255, 255, 0.84);
+}
+
 /* ── 进入动效：首屏一次编排，章节两种交替（不做同款齐步） ─── */
 
 .heroCopy > * {
@@ -1258,6 +1269,10 @@ a.pointCol:focus-visible {
   }
 
   .footerIcp {
+    margin-left: 0;
+  }
+
+  .footerPolice {
     margin-left: 0;
   }
 }
