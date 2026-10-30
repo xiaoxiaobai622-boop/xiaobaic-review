@@ -108,6 +108,14 @@ export default function InviteAcceptPage() {
           <div>
             <p className="text-sm text-muted-foreground">邀请你加入</p>
             <p className="mt-1 text-xl font-semibold">{invite.team.name}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              角色：{invite.role === 'OWNER' ? '负责人' : invite.role === 'ADMIN' ? '管理员' : '成员'}
+            </p>
+            {invite.expiresAt && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                有效期至：{new Date(invite.expiresAt).toLocaleDateString('zh-CN')}
+              </p>
+            )}
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex gap-2">

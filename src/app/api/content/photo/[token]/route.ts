@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { downloadFile } from '@/lib/storage'
 import { contentDispositionAttachment } from '@/lib/download-names'
+import { canDownloadMedia } from '@/lib/download-permission'
 import { isInvalidFileType, sanitizeContentType } from '@/lib/file-validation'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyAlbumAccessToken, trackPhotoDownload } from '@/lib/photo-access'
@@ -75,6 +76,16 @@ export async function GET(
       !photo.uploadCompletedAt
     ) {
       return NextResponse.json({ error: photoMessages.photoNotFound || 'Photo not found' }, { status: 404 })
+    }
+
+    if (isDownload && !canDownloadMedia({
+      isAdmin: verifiedToken.isAdmin,
+      permissions: verifiedToken.permissions,
+    })) {
+      return NextResponse.json(
+        { error: photoMessages.downloadsNotAllowed || 'Photo downloads are not allowed for this project' },
+        { status: 403 }
+      )
     }
 
     if (isDownload && !verifiedToken.isAdmin && (verifiedToken.isGuest || !photo.album.project.allowPhotoDownload)) {

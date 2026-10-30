@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-client'
 import { getDesktopBridge } from '@/lib/desktop-bridge'
 import { formatDateTime } from '@/lib/utils'
+import { buildReviewPath } from '@/lib/deep-link'
 
 interface ReplyItem {
   id: string
@@ -17,6 +18,8 @@ interface ReplyItem {
   authorName: string
   parentContent: string
   videoName: string
+  /** Version the reply was left on; required to open the same frame again. */
+  videoVersion?: number | null
   projectTitle: string
   projectId: string
 }
@@ -79,11 +82,15 @@ function relativeTime(value: string): string {
   return formatDateTime(value)
 }
 
-/** 审阅链接的形态和飞书卡片用的深链一致：认素材名、带时间码，另外把要定位的那条回复带过去。 */
+/** 审阅链接的形态和飞书卡片用的深链一致：素材名、版本、秒数时间码和要定位的那条回复。 */
 function replyHref(item: ReplyItem): string {
-  const params = new URLSearchParams({ video: item.videoName, comment: item.id })
-  if (item.timecode) params.set('t', item.timecode)
-  return `/studio/projects/${item.projectId}/share?${params.toString()}`
+  return buildReviewPath({
+    projectId: item.projectId,
+    videoName: item.videoName,
+    version: item.videoVersion ?? undefined,
+    timecode: item.timecode || undefined,
+    commentId: item.id,
+  })
 }
 
 interface PlatformItem {

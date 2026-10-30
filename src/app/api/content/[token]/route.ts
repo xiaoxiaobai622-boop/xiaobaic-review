@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { createReadStream, existsSync, statSync } from 'fs'
 import { getFilePath, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
 import { contentDispositionAttachment } from '@/lib/download-names'
+import { canDownloadMedia } from '@/lib/download-permission'
 import { sanitizeContentType } from '@/lib/file-validation'
 import { s3GetPresignedDownloadUrl, s3GetPresignedStreamUrl, s3FileExists, s3DownloadFile } from '@/lib/s3-storage'
 import { rateLimit } from '@/lib/rate-limit'
@@ -537,6 +538,16 @@ export async function GET(
   return NextResponse.json({ error: shareMessages.assetNotFound || 'Asset not found' }, { status: 404 })
       }
 
+      // Client-uploaded comment attachments keep their download affordance;
+      // every other asset also needs the link's own download permission.
+      if (!canDownloadMedia({
+        isAdmin: isAdminRequest,
+        isClientUploadedAsset: asset.uploadedBy === 'client',
+        permissions: verifiedToken.permissions,
+      })) {
+        return NextResponse.json({ error: shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed' }, { status: 403 })
+      }
+
       // Check permissions (skip for admins and client-uploaded comment attachments)
       if (!isAdminRequest && asset.uploadedBy !== 'client') {
         if (!video.project.allowAssetDownload) {
@@ -553,6 +564,13 @@ export async function GET(
       // Rejected uploads store 'INVALID - <mime>', which is not a legal header value
       contentType = sanitizeContentType(asset.fileType)
     } else {
+      if (isDownload && !canDownloadMedia({
+        isAdmin: isAdminRequest,
+        permissions: verifiedToken.permissions,
+      })) {
+        return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+      }
+
       if (verifiedToken.quality === 'thumbnail') {
         filePath = video.thumbnailPath
       } else if (isDownload && isAdminRequest && originalPath) {

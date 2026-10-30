@@ -73,7 +73,7 @@ export async function GET(
     })
 
     const sessionId = accessCheck.shareTokenSessionId || `guest:${Date.now()}`
-    const contentToken = await generateAlbumAccessToken(albumId, projectId, request, sessionId, accessCheck.isGuest === true)
+    const contentToken = await generateAlbumAccessToken(albumId, projectId, request, sessionId, accessCheck.isGuest === true, shareContext?.permissions ?? [])
 
     return NextResponse.json({
       contentToken,

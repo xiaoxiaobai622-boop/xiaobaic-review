@@ -30,6 +30,9 @@ const CHECKS: Array<{ file: string; args?: string[] }> = [
   { file: 'scripts/check-comment-visibility.mts' },
   { file: 'scripts/check-share-video-scope.mts' },
   { file: 'scripts/check-share-renewal-rotation.mts' },
+  { file: 'scripts/check-download-permissions.mts' },
+  { file: 'scripts/check-invite-role.mts' },
+  { file: 'scripts/check-review-deep-link.mts' },
   { file: 'scripts/check-team-numeric-id.mts', args: ['--static'] },
   { file: 'scripts/check-platform-team-identity.mts' },
 ]

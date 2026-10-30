@@ -13,7 +13,7 @@ import { logError, logMessage } from '@/lib/logging'
 interface NotificationContext {
   comment: Comment
   project: { id: string; title: string; slug: string }
-  video: { name: string; versionLabel: string; fps?: number | null } | null
+  video: { name: string; version?: number | null; versionLabel: string; fps?: number | null } | null
   isReply: boolean
   attachmentNames?: string[]
 }
@@ -118,6 +118,7 @@ export async function sendImmediateNotification(context: NotificationContext, ta
         projectTitle: project.title,
         videoName,
         versionLabel,
+        version: video?.version,
         authorName: comment.authorName || (comment.isInternal ? 'Admin' : 'Client'),
         commentContent: comment.content,
         timecode: comment.timecode,
@@ -167,6 +168,7 @@ export async function sendImmediateNotification(context: NotificationContext, ta
       projectId: project.id,
       videoName,
       versionLabel,
+      version: video?.version,
       commentContent: comment.content,
       timecode: comment.timecode,
       fps: video?.fps,

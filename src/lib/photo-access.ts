@@ -15,6 +15,13 @@ export interface AlbumAccessToken {
   createdAt: number
   isAdmin: boolean
   isGuest?: boolean
+  // Photo download is a link permission; the album token must carry it so the
+  // content route can tell a view-only link from a download-enabled one.
+  permissions?: string[]
+}
+
+function permissionsFingerprint(permissions: string[]): string {
+  return permissions.length ? [...permissions].sort().join('+') : 'none'
 }
 
 /**
@@ -27,11 +34,12 @@ export async function generateAlbumAccessToken(
   projectId: string,
   request: NextRequest,
   sessionId: string,
-  isGuest = false
+  isGuest = false,
+  permissions: string[] = []
 ): Promise<string> {
   const redis = getRedis()
 
-  const cacheKey = `album_token_cache:${sessionId}:${isGuest ? 'guest' : 'full'}:${albumId}`
+  const cacheKey = `album_token_cache:${sessionId}:${isGuest ? 'guest' : 'full'}:${albumId}:${permissionsFingerprint(permissions)}`
   const cachedToken = await redis.get(cacheKey)
 
   if (cachedToken && await redis.get(`album_access:${cachedToken}`)) {
@@ -49,6 +57,7 @@ export async function generateAlbumAccessToken(
     createdAt: Date.now(),
     isAdmin: sessionId.startsWith('admin:'),
     isGuest,
+    permissions,
   }
 
   const ttlSeconds = await getClientSessionTimeoutSeconds()

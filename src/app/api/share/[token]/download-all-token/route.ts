@@ -5,7 +5,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
-import { resolveShareMetadata, getShareScopeVideoIds, isShareLinkActive } from '@/lib/share-links'
+import { resolveShareMetadata, getShareScopeVideoIds, isShareLinkActive, linkPermissions } from '@/lib/share-links'
 
 export const runtime = 'nodejs'
 
@@ -111,7 +111,7 @@ export async function POST(
           'original',
           request,
           sessionId,
-          { shareId: slug }
+          { shareId: slug, permissions: linkPermissions(resolved.policy) }
         )
         return `/api/content/${accessToken}?download=true`
       })

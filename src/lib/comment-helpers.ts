@@ -6,7 +6,8 @@ import { validateCommentLength, containsSuspiciousPatterns, sanitizeCommentHtml 
 import { sendImmediateNotification, queueNotification } from '@/lib/notifications'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
 import { getAppDomain } from '@/lib/url'
-import { formatTimecodeDisplay, timecodeToSeekSeconds } from '@/lib/timecode'
+import { formatTimecodeDisplay } from '@/lib/timecode'
+import { buildReviewPath } from '@/lib/deep-link'
 import { htmlToText } from 'html-to-text'
 import { logError, logMessage } from '@/lib/logging'
 
@@ -209,23 +210,15 @@ export async function handleCommentNotifications(params: {
           // use configured value as-is
         }
 
-        const params = new URLSearchParams()
-        if (video?.name) params.set('video', video.name)
         const version = comment?.videoVersion ?? video?.version
-        if (typeof version === 'number') params.set('version', String(version))
-
-        try {
-          const fps = typeof video?.fps === 'number' && isFinite(video.fps) && video.fps > 0 ? video.fps : 24
-          const seconds = parseFloat(timecodeToSeekSeconds(String(comment?.timecode || ''), fps).toFixed(6))
-          if (isFinite(seconds) && seconds >= 0) params.set('t', String(seconds))
-        } catch {
-          // Ignore invalid timecode
-        }
-
-        if (comment?.id) params.set('comment', String(comment.id))
-
-        const qs = params.toString()
-        const returnUrl = `/studio/projects/${project.id}/share${qs ? `?${qs}` : ''}`
+        const returnUrl = buildReviewPath({
+          projectId: project.id,
+          videoName: video?.name,
+          version: typeof version === 'number' ? version : undefined,
+          timecode: comment?.timecode,
+          fps: video?.fps,
+          commentId: comment?.id,
+        })
         return `${baseUrl}/login?returnUrl=${encodeURIComponent(returnUrl)}`
       })()
       const authorName = (comment?.authorName || comment?.name || '').toString().trim() || 'Client'

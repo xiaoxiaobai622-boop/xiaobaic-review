@@ -41,14 +41,19 @@ type CachedTokenEntry = CachedValue<VideoAccessToken>
 const tokenVerificationCache = new Map<string, CachedTokenEntry>()
 const TOKEN_REV_VERSION_KEY = 'video_token_rev_version'
 
+function permissionsFingerprint(permissions?: string[]): string {
+  return permissions?.length ? [...permissions].sort().join('+') : 'none'
+}
+
 export async function getCachedVideoAccessToken(
   videoId: string,
   projectId: string,
   quality: string,
-  sessionId: string
+  sessionId: string,
+  permissions?: string[]
 ): Promise<string | null> {
   const redis = getRedis()
-  const cacheKey = `video_token_cache:${sessionId}:${videoId}:${quality}`
+  const cacheKey = `video_token_cache:${sessionId}:${videoId}:${quality}:${permissionsFingerprint(permissions)}`
   const cachedToken = await redis.get(cacheKey)
 
   if (!cachedToken) return null
@@ -69,6 +74,9 @@ interface VideoAccessToken {
   // reach the bytes, not only the page, and the project id is too coarse: a
   // project can carry several live links.
   shareId?: string
+  // Download is authorized by the link, so the permission must travel with the
+  // token that can turn into a download. Playback does not consult this list.
+  permissions?: string[]
 }
 
 /**
@@ -81,12 +89,12 @@ export async function generateVideoAccessToken(
   quality: string,
   request: NextRequest,
   sessionId: string,
-  options?: { skipCacheCheck?: boolean; shareId?: string },
+  options?: { skipCacheCheck?: boolean; shareId?: string; permissions?: string[] },
 ): Promise<string> {
   const redis = getRedis()
 
   if (!options?.skipCacheCheck) {
-    const cachedToken = await getCachedVideoAccessToken(videoId, projectId, quality, sessionId)
+    const cachedToken = await getCachedVideoAccessToken(videoId, projectId, quality, sessionId, options?.permissions)
     if (cachedToken) {
       return cachedToken
     }
@@ -104,6 +112,7 @@ export async function generateVideoAccessToken(
     createdAt: Date.now(),
     isAdmin: sessionId.startsWith('admin:'),
     shareId: options?.shareId,
+    permissions: options?.permissions,
   }
 
   const ttlSeconds = await getClientSessionTimeoutSeconds()
@@ -114,7 +123,11 @@ export async function generateVideoAccessToken(
     JSON.stringify(tokenData)
   )
 
-  await redis.setex(`video_token_cache:${sessionId}:${videoId}:${quality}`, ttlSeconds, token)
+  await redis.setex(
+    `video_token_cache:${sessionId}:${videoId}:${quality}:${permissionsFingerprint(options?.permissions)}`,
+    ttlSeconds,
+    token
+  )
 
   return token
 }

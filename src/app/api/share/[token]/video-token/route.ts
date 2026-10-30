@@ -5,7 +5,7 @@ import { verifyProjectAccess } from '@/lib/project-access'
 import { logError } from '@/lib/logging'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
-import { resolveShareMetadata, isShareLinkActive, isVideoInShareScope } from '@/lib/share-links'
+import { resolveShareMetadata, isShareLinkActive, isVideoInShareScope, linkPermissions } from '@/lib/share-links'
 import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
 import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 
@@ -95,7 +95,7 @@ export async function GET(
       quality,
       request,
       sessionId,
-      { shareId: token }
+      { shareId: token, permissions: linkPermissions(resolved.policy) }
     )
 
     return NextResponse.json({ token: tokenValue })

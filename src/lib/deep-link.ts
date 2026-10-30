@@ -19,10 +19,29 @@ export interface DeepLinkParams {
   /** Display name used by the share page to select the video group. */
   videoName?: string
   /** Optional version number used to select the exact uploaded version. */
-  version?: number
+  version?: number | null
   timecode?: string // In seconds or timecode format
   /** Frames per second of the linked video; required to keep frame precision. */
-  fps?: number
+  fps?: number | null
+  /** Comment to focus once the review page has opened. */
+  commentId?: string
+}
+
+/** Relative review-page URL shared by email, Feishu and in-app notifications. */
+export function buildReviewPath(params: DeepLinkParams): string {
+  const query = new URLSearchParams()
+  const video = params.videoName || params.videoId
+  if (video) query.set('video', video)
+  if (params.version !== undefined && params.version !== null) {
+    query.set('version', String(params.version))
+  }
+  if (params.timecode) {
+    const seconds = secondsForDeepLink(String(params.timecode), params.fps)
+    if (Number.isFinite(seconds)) query.set('t', String(parseFloat(seconds.toFixed(6))))
+  }
+  if (params.commentId) query.set('comment', params.commentId)
+  const qs = query.toString()
+  return `/studio/projects/${params.projectId}/share${qs ? `?${qs}` : ''}`
 }
 
 /**
@@ -30,26 +49,7 @@ export interface DeepLinkParams {
  */
 export function buildDeepLink(params: DeepLinkParams): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || 'https://vidx.cn'
-
-  if (params.videoId) {
-    // The review page resolves `video` against videosByName, so use the name
-    // when available instead of an internal database id.
-    const videoQuery = encodeURIComponent(params.videoName || params.videoId)
-    let url = `${base}/studio/projects/${params.projectId}/share?video=${videoQuery}`
-
-    if (params.version !== undefined) {
-      url += `&version=${encodeURIComponent(String(params.version))}`
-    }
-
-    if (params.timecode) {
-      url += `&t=${encodeURIComponent(String(secondsForDeepLink(params.timecode, params.fps)))}`
-    }
-
-    return url
-  }
-
-  // Project overview link
-  return `${base}/studio/projects/${params.projectId}/share`
+  return `${base}${buildReviewPath(params)}`
 }
 
 /**
@@ -57,7 +57,7 @@ export function buildDeepLink(params: DeepLinkParams): string {
  * exact frame. Without a known fps the frame component cannot be interpreted,
  * so the value degrades to whole seconds instead of guessing a rate.
  */
-function secondsForDeepLink(timecode: string, fps?: number): number {
+function secondsForDeepLink(timecode: string, fps?: number | null): number {
   const normalized = typeof fps === 'number' && Number.isFinite(fps) && fps > 0 ? fps : undefined
   if (normalized && /^[\d:;]+$/.test(timecode) && timecode.includes(':')) {
     return timecodeToSeekSeconds(timecode, normalized)

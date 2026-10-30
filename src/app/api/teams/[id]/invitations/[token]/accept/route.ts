@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
 import { requireTeamWritable } from '@/lib/team-writeable'
+import { resolveAcceptedRole, type TeamRoleName } from '@/lib/team-role'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -50,11 +51,18 @@ export async function POST(
     }
   }
 
+  // A disabled membership is a clean slate, so it comes back at the invited
+  // role. An active one keeps whichever role is higher: accepting a member
+  // invite must not silently demote an existing admin or owner.
+  const nextRole = existing?.status === 'ACTIVE'
+    ? resolveAcceptedRole(existing.role as TeamRoleName, invite.role as TeamRoleName)
+    : invite.role
+
   await prisma.$transaction([
     existing
       ? prisma.teamMember.update({
           where: { id: existing.id },
-          data: { status: 'ACTIVE', role: invite.role },
+          data: { status: 'ACTIVE', role: nextRole },
         })
       : prisma.teamMember.create({
           data: {

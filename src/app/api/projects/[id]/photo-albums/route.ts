@@ -98,7 +98,7 @@ export async function GET(
         photoCount: album._count.photos,
         coverPhotoId: coverId,
         contentToken: coverId
-          ? await generateAlbumAccessToken(album.id, projectId, request, sessionId, accessCheck.isGuest === true)
+          ? await generateAlbumAccessToken(album.id, projectId, request, sessionId, accessCheck.isGuest === true, shareContext?.permissions ?? [])
           : null,
         createdAt: album.createdAt,
       }
