@@ -262,6 +262,34 @@ export default function VideoPlayer({
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const controlsHostRef = useRef<HTMLDivElement>(null)
+  const [controlsHeight, setControlsHeight] = useState(0)
+
+  // 播放器下面那段留给控制条的空白：只减当前空白的一半，不按固定值扣，
+  // 否则控制条更高的窗口里会把缝直接吃掉。
+  useEffect(() => {
+    let observer: ResizeObserver | undefined
+    let frame = 0
+    let tries = 0
+    const attach = () => {
+      const target = controlsHostRef.current?.firstElementChild as HTMLElement | null
+      if (!target) {
+        if (tries++ < 240) frame = requestAnimationFrame(attach)
+        return
+      }
+      const sync = () => setControlsHeight(target.getBoundingClientRect().height)
+      if (typeof ResizeObserver !== 'undefined') {
+        observer = new ResizeObserver(sync)
+        observer.observe(target)
+      }
+      sync()
+    }
+    attach()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+    }
+  }, [])
   const videoWrapperRef = useRef<HTMLDivElement>(null)
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const hasInitiallySeenRef = useRef(false) // Track if initial seek already happened
@@ -1551,10 +1579,13 @@ export default function VideoPlayer({
             */}
             <div
               ref={videoWrapperRef}
-              className={`group relative mb-[76px] w-full max-h-[56vh] overflow-visible rounded-[8px] aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
+              className={`group relative mb-[76px] w-full max-h-[56vh] lg:mb-[var(--review-surface-mb,76px)] overflow-visible rounded-[8px] aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
                 fillContainer ? 'lg:max-h-none lg:min-h-0 lg:flex-1' : ''
               }`}
-              style={playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined}
+              style={{
+                ...(playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined),
+                ...(controlsHeight ? { '--review-surface-mb': `calc(38px + ${controlsHeight}px / 2)` } : undefined),
+              } as React.CSSProperties}
             >
               <video
                 key={selectedVideo?.id}
@@ -1706,6 +1737,7 @@ export default function VideoPlayer({
 
                 {/* Custom Video Controls with Integrated Timeline */}
                 <div
+                  ref={controlsHostRef}
                   className="relative z-player-controls"
                 >
                   <CustomVideoControls

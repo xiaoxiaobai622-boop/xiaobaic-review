@@ -224,7 +224,7 @@ export default function StudioRail() {
               <RailAvatar name={displayName} src={user.avatarUrl} size={36} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-foreground">{displayName}</span>
-                <span className="mt-0.5 block truncate text-xs text-muted-foreground">{roleLabel}</span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">{roleLabel}{user.phone ? ` · ${maskPhoneDisplay(user.phone)}` : ''}</span>
               </span>
             </div>
             <div className="border-b border-border px-3 py-2.5">

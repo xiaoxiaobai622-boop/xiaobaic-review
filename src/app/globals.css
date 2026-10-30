@@ -393,6 +393,36 @@
   }
 }
 
+/* 「发表评论…」占位文字的扫光：逐字照搬对标站
+   （两条窄高光带、200% 背景、4s 线性循环，background-clip:text）。 */
+@keyframes comment-placeholder-shimmer {
+  from { background-position: 100% center }
+  to { background-position: -100% center }
+}
+
+.comment-placeholder-shimmer {
+  color: hsl(var(--muted-foreground));
+  -webkit-text-fill-color: transparent;
+  background-image: linear-gradient(90deg,
+    hsl(var(--muted-foreground)) 0%,
+    color-mix(in srgb, hsl(var(--muted-foreground)) 30%, white) 12.5%,
+    hsl(var(--muted-foreground)) 25%,
+    hsl(var(--muted-foreground)) 50%,
+    color-mix(in srgb, hsl(var(--muted-foreground)) 30%, white) 62.5%,
+    hsl(var(--muted-foreground)) 75%,
+    hsl(var(--muted-foreground)) 100%);
+  background-size: 200% auto;
+  background-repeat: repeat;
+  background-position: 100% center;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: comment-placeholder-shimmer 4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comment-placeholder-shimmer { animation: none; background-image: none; -webkit-text-fill-color: currentColor }
+}
+
 /*
  * Control ladder — the 15px root above already took spacing and type down;
  * these pull the remaining controls onto 32 / 34 / 36 / 39px instead of

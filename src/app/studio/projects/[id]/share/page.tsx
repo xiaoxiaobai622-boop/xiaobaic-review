@@ -16,7 +16,6 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
-import ReviewOverflowMenu from '@/components/ReviewOverflowMenu'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import { useTranslations } from 'next-intl'
@@ -1081,23 +1080,29 @@ export default function AdminSharePage() {
               {shareCopied ? <Check className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Share2 className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />}
               <span className="hidden sm:inline">{shareCopied ? tu('copied') : tu('share')}</span>
             </Button>
-            <ReviewOverflowMenu>
-              {activeVideoState?.selectedVideo && isAdmin && (
-                <div className="px-1 pb-1">
-                  <FeishuPushButton
-                    projectId={project.id}
-                    videoId={activeVideoState.selectedVideo.id}
-                    size="sm"
-                  />
-                </div>
-              )}
-              <div className="my-1 border-t border-border" />
-              <LanguageToggle row />
-              <ThemeToggle row />
-            </ReviewOverflowMenu>
           </div>
         }
-        trailingAction={<ReviewLoginActions compact />}
+        trailingAction={
+          <ReviewLoginActions
+            compact
+            menuExtra={
+              <>
+                {activeVideoState?.selectedVideo && isAdmin && (
+                  <div className="px-1 pb-1">
+                    <FeishuPushButton
+                      projectId={project.id}
+                      videoId={activeVideoState.selectedVideo.id}
+                      size="sm"
+                    />
+                  </div>
+                )}
+                <div className="my-1 border-t border-border" />
+                <LanguageToggle row />
+                <ThemeToggle row />
+              </>
+            }
+          />
+        }
       />
       {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">

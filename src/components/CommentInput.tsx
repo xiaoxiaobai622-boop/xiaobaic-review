@@ -319,7 +319,6 @@ export default function CommentInput({
             <div className="relative">
               <Textarea
                 ref={textareaRef}
-                placeholder={t('typeMessage')}
                 aria-label={t('typeMessage')}
                 value={newComment}
                 onChange={(e) => onCommentChange(e.target.value)}
@@ -331,6 +330,11 @@ export default function CommentInput({
                 )}
                 rows={2}
               />
+              {newComment.length === 0 && (
+                <span aria-hidden="true" className="comment-placeholder-shimmer pointer-events-none absolute left-3 top-2 select-none text-sm">
+                  {t('typeMessage')}
+                </span>
+              )}
               {onStartDrawing && (
                 <div
                   className="absolute bottom-1 left-2 flex h-7 items-center gap-0.5 bg-transparent"

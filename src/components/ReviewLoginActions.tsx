@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, LogIn, LogOut, Phone, Settings, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -31,6 +31,7 @@ interface ReviewLoginActionsProps {
   compact?: boolean
   openSignal?: number
   onOpenChange?: (open: boolean) => void
+  menuExtra?: ReactNode
 }
 
 const PHONE_REGEX = /^1[3-9]\d{9}$/
@@ -55,7 +56,7 @@ function notifyReviewAuth(authenticated: boolean, name: string | null = null, em
   }))
 }
 
-export default function ReviewLoginActions({ onIdentityChange, compact = false, openSignal = 0, onOpenChange }: ReviewLoginActionsProps) {
+export default function ReviewLoginActions({ onIdentityChange, compact = false, openSignal = 0, onOpenChange, menuExtra }: ReviewLoginActionsProps) {
   const t = useTranslations('share')
   const ta = useTranslations('auth')
   const [session, setSession] = useState<WechatSession | null>(null)
@@ -314,9 +315,8 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
   const profileHref = currentUser?.id
     ? `/profile?returnUrl=${encodeURIComponent(typeof window === 'undefined' ? '/' : currentReturnUrl())}`
     : '/profile'
-  const secondaryContact = getContactEmail(currentUser?.email)
   const maskedPhone = maskPhoneDisplay(currentUser?.phone)
-  const profileTitle = maskedPhone || displayName
+  const profileTitle = displayName
   const profileRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -344,22 +344,23 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
             onClick={() => setProfileOpen(value => !value)}
             className={cn(
               'flex items-center gap-1.5 rounded-md text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-              compact ? 'h-[32px] w-[32px] justify-center border border-border bg-background p-0 sm:h-[24px] sm:w-[24px] sm:rounded-[6px]' : 'min-h-8 px-1.5'
+              compact ? 'h-[32px] w-[32px] justify-center p-0 sm:h-[24px] sm:w-[24px]' : 'min-h-8 px-1.5'
             )}
             aria-label={displayName}
             aria-expanded={profileOpen}
             aria-haspopup="menu"
           >
-            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" className="sm:h-[24px] sm:w-[24px] sm:text-[10px]" title={displayName} isInternal={isAdmin} />
+            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" className="rounded-[6px] sm:h-[24px] sm:w-[24px] sm:text-[10px]" title={displayName} isInternal={isAdmin} />
             {!compact && <span className="max-w-28 truncate">{displayName}</span>}
             {!compact && <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
           </button>
           {profileOpen && (
-            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 origin-top rounded-lg border border-border bg-card p-1.5 shadow-lg animate-in fade-in-0 zoom-in-95 duration-150" role="menu">
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-60 origin-top rounded-lg border border-border bg-card p-1.5 shadow-lg animate-in fade-in-0 zoom-in-95 duration-150" role="menu">
               <div className="flex items-center gap-2 border-b border-border px-2.5 py-2.5">
-                <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="md" isInternal={isAdmin} />
-                <div className="min-w-0"><p className="truncate text-sm font-medium">{profileTitle}</p>{secondaryContact && <p className="truncate text-xs text-muted-foreground">{secondaryContact}</p>}</div>
+                <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="md" className="rounded-[6px]" isInternal={isAdmin} />
+                <div className="min-w-0"><p className="truncate text-sm font-medium">{profileTitle}</p>{maskedPhone && maskedPhone !== profileTitle && <p className="truncate text-xs text-muted-foreground">{maskedPhone}</p>}</div>
               </div>
+              {menuExtra && <div className="border-b border-border p-1 pb-1.5">{menuExtra}</div>}
               <Link href={profileHref} role="menuitem" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted focus-visible:bg-muted">
                 <UserCircle className="h-4 w-4" />{ta('personalCenter')}
               </Link>
