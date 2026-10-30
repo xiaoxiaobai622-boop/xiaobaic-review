@@ -4,7 +4,7 @@ import { useSlidingIndicator } from '@/hooks/useSlidingIndicator'
 import { useLayoutEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Building2, FolderKanban, GitBranch, HardDrive, LayoutDashboard, Settings2, Users, type LucideIcon } from 'lucide-react'
+import { Building2, FolderKanban, GitBranch, HardDrive, LayoutDashboard, Users, type LucideIcon } from 'lucide-react'
 
 type TeamAdminSection = {
   key: string
@@ -20,7 +20,6 @@ const sections: TeamAdminSection[] = [
   { key: 'storage', label: '容量管理', href: '/studio/team/storage', icon: HardDrive },
   { key: 'projects', label: '项目管理', href: '/studio/team/projects', icon: FolderKanban },
   { key: 'workflow', label: '流程管理', href: '/studio/team/workflow', icon: GitBranch },
-  { key: 'video-settings', label: '视频设置', href: '/studio/team/settings', icon: Settings2 },
 ]
 
 const overviewTabs = [
@@ -63,7 +62,7 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
   const section = pathname === '/studio/team'
     ? sections[0]
     : sections.slice(1).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) || sections[0]
-  const auxiliaryPage = pathname.startsWith('/studio/team/settings') || pathname.startsWith('/studio/team/invite') || pathname.startsWith('/studio/team/join')
+  const auxiliaryPage = pathname.startsWith('/studio/team/invite') || pathname.startsWith('/studio/team/join')
   const tabs = auxiliaryPage ? [] : tabsBySection[section.key] ?? []
   const activeTab = searchParams?.get('tab') || tabs[0]?.value
   const { containerRef: tabsRef, rect: tabIndicator } = useSlidingIndicator(Math.max(0, tabs.findIndex((tab) => tab.value === activeTab)))
