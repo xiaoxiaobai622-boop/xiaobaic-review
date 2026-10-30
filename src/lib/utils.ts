@@ -161,84 +161,45 @@ export function getClientIpAddress(request: NextRequest): string {
   return 'unknown'
 }
 
-// In-memory color registry (persists during page session)
-const colorRegistry = {
-  sender: new Map<string, string>(),
-  receiver: new Map<string, string>()
-}
-
-// Earth tones for sender (admins/studio) - 20 colors
-const SENDER_COLORS = [
-  'border-amber-700',
-  'border-orange-800',
-  'border-stone-600',
-  'border-yellow-700',
-  'border-lime-700',
-  'border-green-700',
-  'border-emerald-800',
-  'border-teal-800',
-  'border-slate-600',
-  'border-zinc-600',
-  'border-amber-800',
-  'border-yellow-800',
-  'border-lime-800',
-  'border-green-800',
-  'border-teal-700',
-  'border-cyan-800',
-  'border-stone-700',
-  'border-slate-700',
-  'border-neutral-600',
-  'border-orange-900',
-]
-
-// Vibrant high-contrast colors for receiver (clients) - 20 colors
-const RECEIVER_COLORS = [
-  'border-red-500',
-  'border-orange-500',
-  'border-amber-500',
-  'border-yellow-400',
-  'border-lime-500',
-  'border-green-500',
-  'border-emerald-500',
-  'border-teal-500',
-  'border-cyan-500',
-  'border-sky-500',
-  'border-blue-500',
-  'border-indigo-500',
-  'border-violet-500',
-  'border-purple-500',
-  'border-fuchsia-500',
-  'border-pink-500',
-  'border-rose-500',
+// 头像配色：按名字稳定散列到一组饱和色，实底 + 白字（对标站同一人永远同色）。
+// 不含灰/石/中性档——默认头像也必须带颜色。
+const AVATAR_COLORS = [
   'border-red-600',
   'border-orange-600',
-  'border-yellow-500',
-]
+  'border-amber-700',
+  'border-lime-700',
+  'border-green-700',
+  'border-emerald-700',
+  'border-teal-700',
+  'border-cyan-700',
+  'border-sky-700',
+  'border-blue-700',
+  'border-indigo-600',
+  'border-violet-600',
+  'border-fuchsia-700',
+  'border-pink-700',
+] as const
 
-export function getUserColor(name: string | null | undefined, isSender: boolean = false): { border: string } {
-  if (!name) {
-    // Default gray for anonymous
-    return { border: 'border-gray-500' }
-  }
+export const AVATAR_HEX: Record<string, string> = {
+  'border-red-600': '#dc2626',
+  'border-orange-600': '#c2410c',
+  'border-amber-700': '#b45309',
+  'border-lime-700': '#4d7c0f',
+  'border-green-700': '#15803d',
+  'border-emerald-700': '#047857',
+  'border-teal-700': '#0f766e',
+  'border-cyan-700': '#0e7490',
+  'border-sky-700': '#0369a1',
+  'border-blue-700': '#1d4ed8',
+  'border-indigo-600': '#4f46e5',
+  'border-violet-600': '#7c3aed',
+  'border-fuchsia-700': '#a21caf',
+  'border-pink-700': '#be185d',
+}
 
-  const normalizedName = name.trim().toLowerCase()
-  const palette = isSender ? 'sender' : 'receiver'
-
-  if (colorRegistry[palette].has(normalizedName)) {
-    return { border: colorRegistry[palette].get(normalizedName)! }
-  }
-
-  const colors = isSender ? SENDER_COLORS : RECEIVER_COLORS
-  const assignedColors = new Set(colorRegistry[palette].values())
-  const availableColors = colors.filter(color => !assignedColors.has(color))
-
-  // All colors assigned - fall back to hash-based selection (collision possible but rare)
-  const candidates = availableColors.length > 0 ? availableColors : colors
-  const selectedColor = candidates[Math.abs(hashString(normalizedName)) % candidates.length]
-
-  colorRegistry[palette].set(normalizedName, selectedColor)
-
-  return { border: selectedColor }
+export function getUserColor(name: string | null | undefined, _isSender: boolean = false): { border: string } {
+  const key = (name || '?').trim().toLowerCase() || '?'
+  return { border: AVATAR_COLORS[Math.abs(hashString(key)) % AVATAR_COLORS.length] }
 }
 
 /**
