@@ -3,10 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { useSearchParams, usePathname, useRouter } from 'next/navigation'
-import VideoPlayer from '@/components/VideoPlayer'
-import CommentSection from '@/components/CommentSection'
 import ThumbnailGrid from '@/components/ThumbnailGrid'
-import ThumbnailReel from '@/components/ThumbnailReel'
 import ReviewBetaBanner from '@/components/ReviewBetaBanner'
 import { OTPInput } from '@/components/OTPInput'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,6 +19,10 @@ import LanguageToggle from '@/components/LanguageToggle'
 import PrivacyBanner, { PRIVACY_STORAGE_KEY } from '@/components/PrivacyBanner'
 import ReverseShareUploadPanel from '@/components/ReverseShareUploadPanel'
 import ShareExpiryNote from '@/components/ShareExpiryNote'
+import ReviewWorkspace from '@/components/review/ReviewWorkspace'
+import { getReviewCapabilities, type ReviewCapabilities } from '@/lib/review-capabilities'
+import { attemptRefresh } from '@/lib/api-client'
+import { getAccessToken } from '@/lib/token-store'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
@@ -227,6 +228,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const [initialSeekTime, setInitialSeekTime] = useState<number | null>(null)
   const [initialVideoIndex, setInitialVideoIndex] = useState<number>(0)
   const [shareToken, setShareToken] = useState<string | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const refetchForIdentityRef = useRef<() => void>(() => {})
   const [hideComments, setHideComments] = useState(false)
   const [viewState, setViewState] = useState<'grid' | 'player'>('grid')
   const [thumbnailsByName, setThumbnailsByName] = useState<Map<string, string>>(new Map())
@@ -266,6 +269,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       setReviewAuthenticated(detail?.authenticated === true)
       if (detail?.authenticated && detail.name) setAuthenticatedName(detail.name)
       setAccountEmail(detail?.authenticated ? detail.email ?? null : null)
+      // 登录态确定后重取项目：分享接口要靠账号 Bearer 才能算出 viewer 能力。
+      if (detail?.authenticated) refetchForIdentityRef.current()
     }
     window.addEventListener('review-auth-changed', handleReviewAuthChange)
     return () => window.removeEventListener('review-auth-changed', handleReviewAuthChange)
@@ -279,6 +284,20 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const handleLoginOpenChange = useCallback((open: boolean) => {
     if (open) setLoginOpenSignal(0)
   }, [])
+
+  useEffect(() => {
+    refetchForIdentityRef.current = () => {
+      void fetchProjectData()
+    }
+  })
+
+  // 登录态落定后重取一次项目：分享接口需要账号 Bearer 才能返回 viewer 能力。
+  useEffect(() => {
+    if (!reviewAuthenticated) return
+    void fetchProjectData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewAuthenticated])
+
 
   useEffect(() => {
     const requestedView = searchParams?.get('view')
@@ -385,8 +404,13 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
     const request = (async () => {
       try {
+        const accountToken = getAccessToken()
         const response = await shareFetch(token, `/api/share/${token}/comments`, {
           cache: 'no-store',
+          headers: {
+            ...(shareToken ? { 'X-Share-Token': `Bearer ${shareToken}` } : {}),
+            ...(accountToken ? { Authorization: `Bearer ${accountToken}` } : {}),
+          },
         })
         if (response.ok) {
           const commentsData = await response.json()
@@ -461,12 +485,19 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   ) => {
     try {
       const authToken = tokenOverride || shareToken
+      // 有登录刷新令牌时先换出 access token，再取项目：分享接口要靠账号 Bearer
+      // 才能按“同一个人”算能力，否则第一次请求会以访客身份算完且不再更新。
+      if (!getAccessToken()) await attemptRefresh().catch(() => false)
+      const accountToken = getAccessToken()
       const projectResponse = await shareFetch(token, `/api/share/${token}`, {
         cache: 'no-store',
         // The catalog poll is the only caller that refreshes in place; the server
         // must not charge it against the link's view budget.
         headers: {
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          // 访客令牌走自己的头；Authorization 留给账号 Bearer，服务端才能按
+          // 「同一个人」算能力（分享权限仍由 X-Share-Token 那枚令牌限定）。
+          ...(authToken ? { 'X-Share-Token': `Bearer ${authToken}` } : {}),
+          ...(accountToken ? { Authorization: `Bearer ${accountToken}` } : {}),
           ...(options.onlyIfVideoCatalogChanged ? { 'x-share-refresh': 'catalog' } : {}),
           ...getConsentHeader(),
         },
@@ -1498,9 +1529,9 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   if (viewState === 'grid') {
     return (
       <>
-      <div className="fixed inset-0 bg-background flex flex-col overflow-hidden">
+      <div data-review-surface className="fixed inset-0 bg-background flex flex-col overflow-hidden">
         <ReviewBetaBanner />
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 z-20 flex-shrink-0">
           <div className="flex items-center gap-2" data-tutorial="grid-actions">
             <ShareExpiryNote expiresAt={project.shareExpiresAt ?? null} viewsRemaining={project.shareViewsRemaining ?? null} />
           </div>
@@ -1519,10 +1550,20 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 authorEmail={accountEmail}
               />
             )}
-            <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} onOpenChange={handleLoginOpenChange} />
+            <ReviewLoginActions
+              onIdentityChange={handleWechatIdentity}
+              compact
+              openSignal={loginOpenSignal}
+              onOpenChange={handleLoginOpenChange}
+              menuExtra={
+                <>
+                  <div className="my-1 border-t border-border" />
+                  <LanguageToggle row />
+                  <ThemeToggle row />
+                </>
+              }
+            />
             <ShareViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
-            <LanguageToggle />
-            <ThemeToggle />
           </div>
         </div>
 
@@ -1563,124 +1604,96 @@ export default function SharePageClient({ token }: SharePageClientProps) {
 
   const timestampDisplayMode = project.timestampDisplay === 'AUTO' ? 'AUTO' : 'TIMECODE'
 
+  // 服务端下发的 viewer 能力；旧接口没有该字段时按访客口径兜底（不低于当前行为）。
+  const capabilities: ReviewCapabilities = project.viewer?.capabilities ?? getReviewCapabilities({
+    viewer: null,
+    project: { hideFeedback: Boolean(project.hideFeedback), clientCanApprove: Boolean(project.clientCanApprove) },
+    link: { permissions: sharePermissions, visibleVersionCount: readyVideos.length, isExternalViewer: true },
+  })
+
+  const copyCurrentShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setLinkCopied(true)
+      window.setTimeout(() => setLinkCopied(false), 1600)
+    } catch {
+      // 复制失败就不报「已复制」。
+    }
+  }
+
   return (
-    <div className="flex min-h-screen flex-col bg-background lg:fixed lg:inset-0 lg:overflow-hidden">
-      {/* Thumbnail Reel */}
-        <ThumbnailReel
-          videosByName={project.videosByName}
-          thumbnailsByName={thumbnailsByName}
-          activeVideoName={activeVideoName}
-          onVideoSelect={handleVideoSelect}
-          onBackToGrid={handleBackToGrid}
-          showBackButton={true}
-          showCommentToggle={showCommentPanel}
-          isCommentPanelVisible={!hideComments}
-          onToggleCommentPanel={() => setHideComments(!hideComments)}
-          comments={comments}
-          showComparisonAction={false}
-          trailingAction={
-            <div className="flex items-center gap-1">
-              {/* From `sm` up, because on a phone this row's truncating element is
-                  the video name — the deadline must not be what shortens it. */}
-              <ShareExpiryNote expiresAt={project.shareExpiresAt ?? null} viewsRemaining={project.shareViewsRemaining ?? null} className="mr-1 hidden sm:block" />
-              <ReviewLoginActions onIdentityChange={handleWechatIdentity} compact openSignal={loginOpenSignal} onOpenChange={handleLoginOpenChange} />
-            </div>
-          }
-        />
-
-      {/* Main Content Area */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
-        {readyVideos.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center p-4">
-            <Card className="bg-card border-border">
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  {tokensLoading ? t('loadingVideo') : t('noVideosReady')}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <>
-            {/* Video Player */}
-            <div data-tutorial="video-player" className={`flex min-w-0 flex-col bg-muted/30 lg:h-full lg:min-h-0 lg:flex-1 lg:p-3 lg:pb-[11.5px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
-              <VideoPlayer
-                videos={readyVideos}
-                projectId={project.id}
-                projectStatus={project.status}
-                defaultQuality={defaultQuality}
-                projectTitle={project.title}
-                projectDescription={isGuest ? null : project.description}
-                clientName={isGuest ? null : displayClientName}
-                isPasswordProtected={isPasswordProtected || false}
-                watermarkEnabled={project.watermarkEnabled}
-                activeVideoName={activeVideoName}
-                onApprove={isGuest ? undefined : fetchProjectData}
-                authenticatedEmail={authenticatedEmail}
-                authenticatedName={authenticatedName}
-                initialSeekTime={initialSeekTime}
-                initialVideoIndex={initialVideoIndex}
-                followLatestVersion={urlVersion === null}
-                isAdmin={false}
-                isGuest={isGuest}
-                allowAssetDownload={canDownloadOriginal}
-                clientCanApprove={project.clientCanApprove}
-                shareToken={shareToken}
-                onStreamAuthExpired={recoverStreamAuth}
-                hideDownloadButton={!canDownloadOriginal}
-                onDownloadToken={requestOriginalDownload}
-                allowComparison={false}
-                comments={showCommentPanel ? filteredComments : []}
-                timestampDisplayMode={timestampDisplayMode}
-                onCommentFocus={(commentId) => setFocusCommentId(commentId)}
-                usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
-                fillContainer={true}
-                controlsSurfaceClassName="bg-card"
-              />
-              <div id="review-comment-composer" className="lg:mt-auto" />
-            </div>
-
-            {showCommentPanel && (
-              <div data-tutorial="comments" className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden bg-card lg:max-h-full lg:w-[360px] lg:flex-none lg:border-l lg:border-border/70">
-                <CommentSection
-                  projectId={commentProjectId}
-                  projectSlug={token}
-                  comments={filteredComments}
-                  focusCommentId={focusCommentId}
-                  clientName={displayClientName}
-                  clientEmail={project.clientEmail}
-                  isApproved={project.status === 'APPROVED'}
-                  restrictToLatestVersion={project.restrictCommentsToLatestVersion}
-                  videos={readyVideos}
-                  isAdminView={false}
-                  smtpConfigured={project.smtpConfigured}
-                  isPasswordProtected={isPasswordProtected || false}
-                  recipients={project.recipients || []}
-                  shareToken={shareToken}
-                  showShortcutsButton={true}
-                  showVisibilitySelector={false}
-                  sendInsideComposer={true}
-                  timestampDisplayMode={timestampDisplayMode}
-                  mobileCollapsible={true}
-                  initialMobileCollapsed={true}
-                  authenticatedEmail={authenticatedEmail}
-                  authenticatedName={authenticatedName}
-                  allowClientAssetUpload={project.allowClientAssetUpload || false}
-                  maxCommentAttachments={project.settings?.maxCommentAttachments ?? 10}
-                  onToggleVisibility={() => setHideComments(!hideComments)}
-                  showToggleButton={false}
-                  isReviewAuthenticated={reviewAuthenticated}
-                  onRequireLogin={requireReviewLogin}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
+    <>
+      <ReviewWorkspace
+        project={{
+          id: commentProjectId || project.id,
+          title: project.title,
+          description: project.description,
+          status: project.status,
+          hasSharePassword: isPasswordProtected || false,
+          watermarkEnabled: project.watermarkEnabled,
+          allowAssetDownload: project.allowAssetDownload,
+          clientCanApprove: project.clientCanApprove,
+          settings: project.settings,
+        }}
+        videos={readyVideos}
+        videosByName={project.videosByName}
+        thumbnailsByName={thumbnailsByName}
+        activeVideoName={activeVideoName}
+        comments={filteredComments}
+        capabilities={capabilities}
+        source="share"
+        shareToken={shareToken}
+        projectSlug={token}
+        isGuest={isGuest}
+        defaultQuality={defaultQuality}
+        clientName={displayClientName}
+        clientEmail={project.clientEmail}
+        recipients={project.recipients || []}
+        allowClientAssetUpload={project.allowClientAssetUpload || false}
+        isPasswordProtected={isPasswordProtected || false}
+        identity={{
+          name: authenticatedName,
+          email: authenticatedEmail,
+          isReviewAuthenticated: reviewAuthenticated,
+          onRequireLogin: requireReviewLogin,
+          onIdentityChange: handleWechatIdentity,
+          openSignal: loginOpenSignal,
+          onOpenChange: handleLoginOpenChange,
+        }}
+        actions={{
+          onVideoSelect: handleVideoSelect,
+          onBackToGrid: handleBackToGrid,
+          onApprove: isGuest ? undefined : () => fetchProjectData(),
+          onRefresh: () => fetchProjectData(),
+          onStreamAuthExpired: recoverStreamAuth,
+          onShareLink: copyCurrentShareLink,
+          shareCopied: linkCopied,
+          onDownloadToken: requestOriginalDownload,
+          onCommentFocus: setFocusCommentId,
+          onToggleComments: () => setHideComments((value) => !value),
+        }}
+        hideComments={!showCommentPanel || hideComments}
+        slots={{
+          toolbarMeta: (
+            <ShareExpiryNote
+              expiresAt={project.shareExpiresAt ?? null}
+              viewsRemaining={project.shareViewsRemaining ?? null}
+              className="mr-1 hidden sm:block"
+            />
+          ),
+        }}
+        initialSeekTime={initialSeekTime}
+        initialVideoIndex={initialVideoIndex}
+        followLatestVersion={urlVersion === null}
+        focusCommentId={focusCommentId}
+        restrictCommentsToLatestVersion={project.restrictCommentsToLatestVersion}
+        smtpConfigured={project.smtpConfigured}
+        timestampDisplayMode={timestampDisplayMode}
+        usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
+      />
       {project.settings?.privacyDisclosureEnabled && (
         <PrivacyBanner customText={project.settings.privacyDisclosureText} slug={token} shareToken={shareToken} />
       )}
-    </div>
+    </>
   )
 }

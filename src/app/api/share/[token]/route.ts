@@ -10,6 +10,7 @@ import { trackSharePageAccess, readAnalyticsConsent } from '@/lib/share-access-t
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { getReviewCapabilities, type ReviewViewerInput } from '@/lib/review-capabilities'
 import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions, noneAccessSessionId, shareAllowsProjectPhotos, shareAllowsUploads, shareAuthFingerprint, sharePolicyFingerprint } from '@/lib/share-links'
 import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
 import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
@@ -132,6 +133,41 @@ export async function GET(
     }
 
     const { isAdmin } = accessCheck
+
+    // Capability layer: one rule set shared with the studio review page. The link
+    // only narrows data/permissions; it never grants internal management.
+    const capabilityUser = await getCurrentUserFromRequest(request)
+    const capabilityProject = await prisma.project.findUnique({
+      where: { id: projectMeta.id },
+      select: { teamId: true, createdById: true, hideFeedback: true, clientCanApprove: true },
+    })
+    const capabilityMembership = capabilityUser && capabilityProject
+      ? await prisma.teamMember.findFirst({
+          where: { teamId: capabilityProject.teamId, userId: capabilityUser.id, status: 'ACTIVE' },
+          select: { role: true },
+        })
+      : null
+    const capabilityViewer: ReviewViewerInput | null = capabilityUser && capabilityProject
+      ? {
+          hasTeamAccess: accessCheck.isAdmin,
+          teamRole: capabilityMembership?.role === 'OWNER' || capabilityMembership?.role === 'ADMIN' || capabilityMembership?.role === 'MEMBER'
+            ? capabilityMembership.role
+            : null,
+          isProjectCreator: capabilityProject.createdById === capabilityUser.id,
+        }
+      : null
+    const capabilities = getReviewCapabilities({
+      viewer: capabilityViewer,
+      project: {
+        hideFeedback: Boolean(capabilityProject?.hideFeedback),
+        clientCanApprove: Boolean(capabilityProject?.clientCanApprove),
+      },
+      link: {
+        permissions: linkPermissions(policy),
+        visibleVersionCount: project.videos.length,
+        isExternalViewer: Boolean(shareContext),
+      },
+    })
 
     // Track share page access for projects with no authentication (authMode = NONE)
     // Only track as NONE if guest mode is disabled; otherwise let guest endpoint track as GUEST
@@ -425,6 +461,7 @@ export async function GET(
     }
 
     const responseBody: any = projectData
+    responseBody.viewer = { role: capabilities.role, capabilities }
 
     // Issue a short-lived viewer token whenever this request has none. Team
     // accounts reach this route with only a session cookie, and verifyProjectAccess

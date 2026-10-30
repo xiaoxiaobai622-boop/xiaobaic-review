@@ -212,7 +212,7 @@ export default function CommentInput({
     <div
       className={cn(
         'inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/40 font-medium text-foreground',
-        compact ? 'h-6 shrink-0 px-1.5 text-[10px]' : 'px-2 py-1 text-xs'
+        compact ? 'h-[28px] shrink-0 px-2 text-[11px]' : 'px-2 py-1 text-xs'
       )}
     >
       <button
@@ -337,7 +337,7 @@ export default function CommentInput({
               )}
               {onStartDrawing && (
                 <div
-                  className="absolute bottom-1 left-2 flex h-7 items-center gap-0.5 bg-transparent"
+                  className="absolute bottom-1 left-2 flex h-[28px] items-center gap-0.5 bg-transparent"
                   role="toolbar"
                   aria-label="画面批注工具"
                 >
@@ -355,7 +355,7 @@ export default function CommentInput({
                       }}
                       disabled={loading}
                       className={cn(
-                        'inline-flex h-6 w-6 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+                        'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
                         activeDrawingTool === tool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
                       )}
                       title={label}
@@ -367,10 +367,14 @@ export default function CommentInput({
                   ))}
                 </div>
               )}
+              <div
+                id="review-annotation-properties"
+                className="pointer-events-none absolute inset-x-1 top-1 z-10 flex justify-center overflow-x-auto [&>*]:pointer-events-auto"
+              />
               {sendInsideComposer && (
                 // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
                 // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
-                <div className="pointer-events-none absolute bottom-1 left-[84px] right-2 flex h-7 items-center justify-end gap-1.5">
+                <div className="pointer-events-none absolute bottom-1 left-[100px] right-2 flex h-[28px] items-center justify-end gap-1.5">
                   {/* 表情和时间码钉在工具栏左端（紧跟画笔那三枚），右边那组仍靠右对齐 */}
                   <div className="mr-auto flex min-w-0 items-center gap-1.5">
                     {onVisibilityChange && !commentsDisabled && (
@@ -378,7 +382,7 @@ export default function CommentInput({
                         ref={emojiBtnRef}
                         type="button"
                         onClick={toggleEmojiPicker}
-                        className={cn(styles.trigger, 'pointer-events-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
+                        className={cn(styles.trigger, 'pointer-events-auto inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
                         aria-label="添加表情符号"
                         aria-expanded={emojiOpen}
                         aria-haspopup="dialog"
@@ -396,7 +400,7 @@ export default function CommentInput({
                       ref={visBtnRef}
                       type="button"
                       onClick={toggleVisibilityDropdown}
-                      className={cn(styles.trigger, 'pointer-events-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-accent')}
+                      className={cn(styles.trigger, 'pointer-events-auto inline-flex h-[28px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-accent')}
                       aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                       aria-expanded={visOpen}
                       aria-haspopup="menu"
@@ -421,7 +425,7 @@ export default function CommentInput({
                       variant="outline"
                       size="sm"
                       onClick={onShowShortcuts}
-                      className="pointer-events-auto hidden h-6 px-1.5 text-[10px] lg:inline-flex"
+                      className="pointer-events-auto hidden h-[28px] px-2 text-[11px] lg:inline-flex"
                     >
                       <Keyboard className="h-3.5 w-3.5 lg:mr-1" />
                       <span>{t('shortcuts')}</span>
@@ -432,7 +436,7 @@ export default function CommentInput({
                     variant="default"
                     disabled={!canSubmit}
                     size="icon"
-                    className="pointer-events-auto h-6 w-6 shrink-0"
+                    className="pointer-events-auto h-[28px] w-[28px] shrink-0"
                     aria-label={loading ? tCommon('sending') : tCommon('send')}
                     aria-busy={loading}
                   >
@@ -461,7 +465,7 @@ export default function CommentInput({
                     ref={emojiBtnRef}
                     type="button"
                     onClick={toggleEmojiPicker}
-                    className={cn(styles.trigger, 'inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
+                    className={cn(styles.trigger, 'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
                     aria-label="添加表情符号"
                     aria-expanded={emojiOpen}
                     aria-haspopup="dialog"
@@ -474,19 +478,13 @@ export default function CommentInput({
                 )}
                 {!sendInsideComposer && showTimecodePill && renderTimecodePill(false)}
               </div>
-              <div
-                id="review-annotation-properties"
-                className={sendInsideComposer
-                  ? 'flex min-w-0 flex-1 items-center justify-center overflow-x-auto'
-                  : 'flex h-7 min-w-0 flex-1 items-center justify-center overflow-x-auto px-1'}
-              />
               <div className="flex shrink-0 items-center gap-1.5">
                 {!sendInsideComposer && showVisibilitySelector && onVisibilityChange && (
                   <button
                     ref={visBtnRef}
                     type="button"
                     onClick={toggleVisibilityDropdown}
-                    className={cn(styles.trigger, 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-accent')}
+                    className={cn(styles.trigger, 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-accent')}
                     aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                     aria-expanded={visOpen}
                     aria-haspopup="menu"
@@ -503,7 +501,7 @@ export default function CommentInput({
                   <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
                 )}
                 {!sendInsideComposer && showShortcutsButton && onShowShortcuts && (
-                  <Button type="button" variant="outline" size="sm" onClick={onShowShortcuts} className="hidden h-8 lg:inline-flex">
+                  <Button type="button" variant="outline" size="sm" onClick={onShowShortcuts} className="hidden h-[28px] px-2 text-[11px] lg:inline-flex">
                     <Keyboard className="h-4 w-4 lg:mr-2" />
                     <span className="hidden lg:inline">{t('shortcuts')}</span>
                   </Button>
@@ -514,7 +512,7 @@ export default function CommentInput({
                     variant="default"
                     disabled={!canSubmit}
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="h-[28px] w-[28px] shrink-0"
                   >
                     <Send className="w-4 h-4" />
                   </Button>

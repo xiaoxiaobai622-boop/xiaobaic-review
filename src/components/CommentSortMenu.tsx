@@ -36,7 +36,7 @@ export default function CommentSortMenu({ value, onChange }: CommentSortMenuProp
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={t('sort')}
-        className={`${styles.trigger} inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-1.5 text-[11px] text-foreground hover:bg-accent`}
+        className={`${styles.trigger} inline-flex h-[28px] items-center gap-1 rounded-md border border-border bg-background px-2 text-[12px] text-foreground hover:bg-accent`}
       >
         {labels[value]}
         <ChevronDown className="h-3 w-3 text-muted-foreground" />

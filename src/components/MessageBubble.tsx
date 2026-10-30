@@ -159,7 +159,7 @@ function MessageBubble({
                   event.stopPropagation()
                   onToggleResolved(!(comment as any).resolved)
                 }}
-                className={`absolute right-4 top-3.5 flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
+                className={`absolute right-4 top-3.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border transition-colors ${
                   (comment as any).resolved
                     ? 'border-success bg-success text-success-foreground'
                     : 'border-muted-foreground/50 bg-card text-transparent hover:border-primary'
@@ -176,7 +176,7 @@ function MessageBubble({
                 <button
                   type="button"
                   onClick={handleTimestampClick}
-                  className="inline-flex items-center rounded bg-warning px-1.5 py-0.5 text-[11px] font-semibold text-warning-foreground transition-opacity hover:opacity-90"
+                  className="inline-flex h-[22px] items-center rounded bg-warning px-2 text-[11px] font-semibold text-warning-foreground transition-opacity hover:opacity-90"
                   title={t('seekToTimecode')}
                 >
                   <span className="font-sans tabular-nums">
@@ -184,7 +184,7 @@ function MessageBubble({
                   </span>
                 </button>
                 {hasAnnotation && (
-                  <span className="inline-flex items-center rounded-md bg-blue-500/10 px-1.5 py-0.5 text-blue-600 dark:text-blue-400" title={t('hasAnnotation')}>
+                  <span className="inline-flex h-[22px] items-center rounded-md bg-blue-500/10 px-2 text-blue-600 dark:text-blue-400" title={t('hasAnnotation')}>
                     <Brush className="w-3.5 h-3.5" />
                   </span>
                 )}

@@ -26,7 +26,7 @@ export default function VideoReviewStatusBadge({ video, className }: VideoReview
   return (
     <span
       className={cn(
-        'inline-flex h-5 max-w-full items-center gap-1.5 rounded border px-1.5 text-[10px] font-medium leading-none shadow-elevation-sm',
+        'inline-flex h-[22px] max-w-full items-center gap-1.5 rounded border px-2 text-[10px] font-medium leading-none shadow-elevation-sm',
         option.badgeClassName,
         className
       )}

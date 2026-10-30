@@ -50,7 +50,7 @@ export function VideoReviewStatusControl({
       <span
         aria-hidden="true"
         className={cn(
-          'h-2.5 w-2.5 shrink-0 rounded-full sm:h-2 sm:w-2',
+          'h-2.5 w-2.5 shrink-0 rounded-full sm:h-[10px] sm:w-[10px]',
           !currentOption && 'border-2 border-muted-foreground/55 bg-transparent'
         )}
         style={currentOption ? { backgroundColor: currentOption.dotColor } : undefined}
@@ -73,7 +73,7 @@ export function VideoReviewStatusControl({
         aria-label={t('setReviewStatus')}
         title={loading ? t('updatingReviewStatus') : t('setReviewStatus')}
         className={cn(
-          'h-8 w-auto min-w-[132px] shrink-0 gap-2 border-border/80 bg-card px-2.5 py-0 text-xs font-medium shadow-none transition-colors hover:bg-accent focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-[24px] sm:min-w-[104px] sm:rounded-[6px] sm:gap-1.5 sm:px-2 sm:text-[12px]',
+          'h-8 w-auto min-w-[132px] shrink-0 gap-2 border-0 bg-secondary px-2.5 py-0 text-xs font-medium text-foreground shadow-none transition-colors hover:bg-accent focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-[32px] sm:min-w-[132px] sm:rounded-[8px] sm:gap-2 sm:px-2.5 sm:text-[13px]',
           className
         )}
       >

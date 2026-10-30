@@ -16,6 +16,8 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
+import ReviewWorkspace from '@/components/review/ReviewWorkspace'
+import { getReviewCapabilities, viewerFromAdminUser } from '@/lib/review-capabilities'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import { useTranslations } from 'next-intl'
@@ -982,6 +984,11 @@ export default function AdminSharePage() {
   const showCommentPanel = !project.hideFeedback
   const timestampDisplayMode = project.timestampDisplay === 'AUTO' ? 'AUTO' : 'TIMECODE'
   const canManageApproval = canUserManageApproval(adminUser, project)
+  const capabilities = getReviewCapabilities({
+    viewer: viewerFromAdminUser(adminUser, project),
+    project: { hideFeedback: project.hideFeedback, clientCanApprove: project.clientCanApprove },
+    link: null,
+  })
   const isAdmin = adminUser?.role === 'ADMIN' || adminUser?.role === 'SUPER_ADMIN'
   const orderedVideoNames = Object.keys(project.videosByName).sort((a, b) =>
     a.localeCompare(b, undefined, { numeric: true })
@@ -1000,7 +1007,7 @@ export default function AdminSharePage() {
       <div data-review-surface className="fixed inset-0 bg-background flex flex-col overflow-hidden">
         <ReviewBetaBanner />
         {/* Grid view toolbar */}
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm z-20 flex-shrink-0">
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 z-20 flex-shrink-0">
           {/* Left: back to project */}
           {canManageApproval && (
             <Button
@@ -1018,9 +1025,16 @@ export default function AdminSharePage() {
           {/* Right: view toggle + theme */}
           <div className="flex items-center gap-2 ml-auto">
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
-            <LanguageToggle />
-            <ThemeToggle />
-            <ReviewLoginActions compact />
+            <ReviewLoginActions
+              compact
+              menuExtra={
+                <>
+                  <div className="my-1 border-t border-border" />
+                  <LanguageToggle row />
+                  <ThemeToggle row />
+                </>
+              }
+            />
           </div>
         </div>
 
@@ -1050,166 +1064,78 @@ export default function AdminSharePage() {
   }
 
   return (
-    <div data-review-surface className="min-h-screen lg:fixed lg:inset-0 bg-background flex flex-col lg:overflow-hidden">
-      {/* Thumbnail Reel - always visible, collapsible */}
-      <ThumbnailReel
-        videosByName={project.videosByName}
-        thumbnailsByName={thumbnailsByName}
-        activeVideoName={activeVideoName}
-        onVideoSelect={handleVideoSelect}
-        onBackToGrid={handleReturnToSource}
-        showBackButton={true}
-        backButtonLabel={tc('back')}
-        showLanguageToggle={false}
-        showThemeToggle={false}
-        showComparisonAction={canManageApproval}
-        showCommentToggle={!project.hideFeedback}
-        isCommentPanelVisible={!hideComments}
-        onToggleCommentPanel={() => setHideComments(!hideComments)}
-        beforeToolbarAction={
-          <div className="flex items-center gap-2">
-            {canManageApproval && (
-              <VideoReviewStatusSelect
-                projectId={project.id}
-                video={activeVideoState?.selectedVideo || null}
-                onUpdated={refreshProject}
-                className="h-8 sm:h-[24px]"
-              />
-            )}
-            <Button type="button" variant="default" size="sm" className="h-8 sm:h-[24px] sm:rounded-[6px] sm:px-2 sm:text-[12px]" onClick={() => void copyShareLink()}>
-              {shareCopied ? <Check className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Share2 className="mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4" />}
-              <span className="hidden sm:inline">{shareCopied ? tu('copied') : tu('share')}</span>
-            </Button>
+    <ReviewWorkspace
+      project={{
+        id: project.id,
+        title: project.title,
+        description: project.description,
+        status: project.status,
+        hasSharePassword: project.hasSharePassword,
+        watermarkEnabled: project.watermarkEnabled,
+        allowAssetDownload: project.allowAssetDownload,
+        clientCanApprove: project.clientCanApprove,
+        settings: project.settings,
+      }}
+      videos={readyVideos}
+      videosByName={project.videosByName}
+      thumbnailsByName={thumbnailsByName}
+      activeVideoName={activeVideoName}
+      comments={filteredComments}
+      capabilities={capabilities}
+      source="admin"
+      shareToken={null}
+      defaultQuality={defaultQuality}
+      clientName={clientDisplayName}
+      isPasswordProtected={project.hasSharePassword}
+      actions={{
+        onVideoSelect: handleVideoSelect,
+        onBackToGrid: handleReturnToSource,
+        onVideoStateChange: setActiveVideoState,
+        onStreamAuthExpired: recoverStreamAuth,
+        onApprove: refreshProject,
+        onRefresh: refreshProject,
+        onShareLink: copyShareLink,
+        shareCopied,
+        onCommentFocus: setFocusCommentId,
+      }}
+      slots={{
+        menuExtra: activeVideoState?.selectedVideo && isAdmin ? (
+          <div className="px-1 pb-1">
+            <FeishuPushButton
+              projectId={project.id}
+              videoId={activeVideoState.selectedVideo.id}
+              size="sm"
+            />
           </div>
-        }
-        trailingAction={
-          <ReviewLoginActions
-            compact
-            menuExtra={
-              <>
-                {activeVideoState?.selectedVideo && isAdmin && (
-                  <div className="px-1 pb-1">
-                    <FeishuPushButton
-                      projectId={project.id}
-                      videoId={activeVideoState.selectedVideo.id}
-                      size="sm"
-                    />
-                  </div>
-                )}
-                <div className="my-1 border-t border-border" />
-                <LanguageToggle row />
-                <ThemeToggle row />
-              </>
-            }
-          />
-        }
-      />
-      {/* Main Content Area - scrollable on mobile, fixed on desktop (xl breakpoint for better vertical video support) */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
-        {readyVideos.length === 0 ? (
-          tokensLoading ? (
-            <div className="flex min-h-0 flex-1 flex-col rounded-[6px] bg-muted/80 p-3" role="status" aria-live="polite" aria-busy="true">
-              <div className="relative flex-1 overflow-hidden rounded-md bg-black/90">
-                <div className="skeleton absolute inset-0 opacity-15" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-black/55 px-4 py-2 text-sm text-white shadow-lg">
-                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    {t('loadingVideo')}
-                  </span>
-                </div>
-              </div>
-              <div className="mt-3 flex items-center gap-3">
-                <div className="skeleton h-9 w-9 rounded-full" />
-                <div className="skeleton h-1.5 flex-1 rounded-full" />
-                <div className="skeleton h-4 w-16 rounded" />
+        ) : undefined,
+        emptyState: tokensLoading ? (
+          <div className="flex min-h-0 flex-1 flex-col rounded-[6px] bg-muted/80 p-3" role="status" aria-live="polite" aria-busy="true">
+            <div className="relative flex-1 overflow-hidden rounded-md bg-black/90">
+              <div className="skeleton absolute inset-0 opacity-15" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="inline-flex items-center gap-2 rounded-full bg-black/55 px-4 py-2 text-sm text-white shadow-lg">
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  {t('loadingVideo')}
+                </span>
               </div>
             </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center p-4">
-              <Card className="bg-card">
-                <CardContent className="py-12 text-center">
-                  <p className="text-muted-foreground">{t('noVideosReadyForReview')}</p>
-                </CardContent>
-              </Card>
+            <div className="mt-3 flex items-center gap-3">
+              <div className="skeleton h-9 w-9 rounded-full" />
+              <div className="skeleton h-1.5 flex-1 rounded-full" />
+              <div className="skeleton h-4 w-16 rounded" />
             </div>
-          )
-        ) : (
-          <>
-            {/* Video Player - natural height on mobile, fills space on desktop */}
-            <div className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] lg:h-full lg:min-h-0 lg:flex-1 lg:p-[2px] lg:pb-[2px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
-              <VideoPlayer
-                videos={readyVideos}
-                projectId={project.id}
-                projectStatus={project.status}
-                defaultQuality={defaultQuality}
-                projectTitle={project.title}
-                projectDescription={project.description}
-                clientName={clientDisplayName}
-                isPasswordProtected={project.hasSharePassword}
-                watermarkEnabled={project.watermarkEnabled}
-                activeVideoName={activeVideoName}
-                initialSeekTime={initialSeekTime}
-                initialVideoIndex={initialVideoIndex}
-                followLatestVersion={urlVersion === null}
-                isAdmin={canManageApproval}
-                isGuest={false}
-                allowAssetDownload={project.allowAssetDownload}
-                shareToken={null}
-                onApprove={canManageApproval ? refreshProject : undefined}
-                onVideoStateChange={setActiveVideoState}
-                onStreamAuthExpired={recoverStreamAuth}
-                hideDownloadButton={true}
-                hideApprovalAction={true}
-                allowComparison={canManageApproval}
-                onPreviousVideo={previousVideoName ? () => handleVideoSelect(previousVideoName) : undefined}
-                onNextVideo={nextVideoName ? () => handleVideoSelect(nextVideoName) : undefined}
-                hasPreviousVideo={Boolean(previousVideoName)}
-                hasNextVideo={Boolean(nextVideoName)}
-                comments={!project.hideFeedback ? filteredComments : []}
-                timestampDisplayMode={timestampDisplayMode}
-                onCommentFocus={(commentId) => setFocusCommentId(commentId)}
-                fillContainer={true}
-                playerSurfaceClassName="bg-[hsl(var(--review-canvas))]"
-                playerSurfaceColor="hsl(var(--review-canvas))"
-                controlsSurfaceClassName="bg-card dark:bg-[hsl(var(--review-canvas))]"
-                projectInfoClassName="mt-2 lg:order-3 xl:mt-0"
-              />
-              <div id="review-comment-composer" className="pt-[2px] lg:mt-auto" />
-            </div>
-
-            {/* Comments Section - max one screen height on mobile, side panel on desktop */}
-            {showCommentPanel && (
-              <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden rounded-[8px] bg-card lg:max-h-full lg:w-[360px] lg:flex-none">
-                <div aria-hidden="true" className="hidden h-[2px] shrink-0 bg-[hsl(var(--review-gutter))] lg:block" />
-                <CommentSection
-                  projectId={project.id}
-                  projectSlug={project.slug}
-                  comments={filteredComments}
-                  focusCommentId={focusCommentId}
-                  clientName={clientDisplayName}
-                  clientEmail={project.recipients?.[0]?.email}
-                  isApproved={project.status === 'APPROVED'}
-                  restrictToLatestVersion={project.restrictCommentsToLatestVersion}
-                  videos={readyVideos}
-                  isAdminView={true}
-                  smtpConfigured={project.smtpConfigured}
-                  isPasswordProtected={project.hasSharePassword}
-                  adminUser={adminUser}
-                  recipients={project.recipients || []}
-                  shareToken={null}
-                  showShortcutsButton={true}
-                  sendInsideComposer={true}
-                  timestampDisplayMode={timestampDisplayMode}
-                  mobileCollapsible={true}
-                  initialMobileCollapsed={true}
-                  onToggleVisibility={() => setHideComments(!hideComments)}
-                  showToggleButton={false}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+          </div>
+        ) : undefined,
+      }}
+      initialSeekTime={initialSeekTime}
+      initialVideoIndex={initialVideoIndex}
+      followLatestVersion={urlVersion === null}
+      focusCommentId={focusCommentId}
+      restrictCommentsToLatestVersion={project.restrictCommentsToLatestVersion}
+      smtpConfigured={project.smtpConfigured}
+      hidePlayerDownload
+      timestampDisplayMode={timestampDisplayMode}
+      usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
+    />
   )
 }

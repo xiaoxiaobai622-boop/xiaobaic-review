@@ -459,10 +459,10 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
   const t = useTranslations('controls')
 
   return (
-    <div className="hidden sm:flex h-[26px] items-center gap-1">
+    <div className="hidden sm:flex h-[32px] items-center gap-1">
       <button
         onClick={() => onFrameStep('backward')}
-        className="flex items-center justify-center rounded text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100"
+        className="flex h-8 w-8 items-center justify-center rounded-md text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100 sm:h-[32px] sm:w-[32px]"
         aria-label={t('previousFrame')}
         title={`${t('previousFrame')} (Ctrl+J)`}
       >
@@ -471,7 +471,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
 
       <button
         onClick={onPlayPause}
-        className="mx-1 flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-foreground/15 active:transition-none"
+        className="mx-1 flex h-[32px] w-[32px] items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-foreground/15 active:transition-none"
         aria-label={isPlaying ? t('pauseVideo') : t('playVideo')}
         title={isPlaying ? `${t('pauseVideo')} (Ctrl+Space)` : `${t('playVideo')} (Ctrl+Space)`}
       >
@@ -484,7 +484,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
 
       <button
         onClick={() => onFrameStep('forward')}
-        className="flex items-center justify-center rounded text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100"
+        className="flex h-8 w-8 items-center justify-center rounded-md text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100 sm:h-[32px] sm:w-[32px]"
         aria-label={t('nextFrame')}
         title={`${t('nextFrame')} (Ctrl+L)`}
       >
@@ -532,7 +532,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
       >
         <button
           onClick={onToggleMute}
-          className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation"
+          className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:w-[32px]"
           aria-label={isMuted ? t('unmute') : t('mute')}
           title={isMuted ? t('unmute') : t('mute')}
         >
@@ -565,7 +565,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
 
       <button
         onClick={onToggleLoop}
-        className={`p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation ${isLooping ? 'bg-foreground/10' : ''}`}
+        className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:w-[32px] ${isLooping ? 'bg-foreground/10' : ''}`}
         aria-label={t('loop')}
         aria-pressed={isLooping}
         title={t('loop')}
@@ -575,7 +575,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
 
       <button
         onClick={onToggleFullscreen}
-        className="p-2 sm:p-2.5 hover:bg-foreground/10 active:bg-foreground/20 rounded-lg transition-colors touch-manipulation"
+        className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:w-[32px]"
         aria-label={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
         title={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
       >
@@ -1148,7 +1148,7 @@ function CustomVideoControls({
           {isSelectingRange && pendingRangeStart !== null && (
             <button
               type="button"
-              className="pointer-events-auto flex h-8 items-center justify-center rounded bg-muted px-2.5"
+              className="pointer-events-auto flex h-[28px] items-center justify-center rounded-md bg-muted px-2.5"
               onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))}
             >
               <span className="text-[12px] font-normal text-foreground">取消批注</span>

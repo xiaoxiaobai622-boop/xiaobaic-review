@@ -33,7 +33,7 @@ export default function TimeFormatSwitch({ currentTime, duration, fps }: { curre
         aria-controls={open ? id : undefined}
         aria-label={t('timeFormatAria', { format: label })}
         title={t('timeFormatAria', { format: label })}
-        className={`${styles.trigger} mx-1 flex items-center rounded px-1.5 py-0.5 text-[13px] tabular-nums text-foreground transition-colors hover:bg-muted`}
+        className={`${styles.trigger} mx-1 flex h-[28px] items-center rounded-md px-2 text-[13px] tabular-nums text-foreground transition-colors hover:bg-muted`}
       >
         <span>{formatTimeDisplay(currentTime, fps, duration, format)}</span>
         <span className="text-muted-foreground">&nbsp;/&nbsp;{formatTimeDisplay(duration, fps, duration, format)}</span>

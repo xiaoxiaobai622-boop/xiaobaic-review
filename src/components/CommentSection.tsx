@@ -403,7 +403,7 @@ export default function CommentSection({
               variant="ghost"
               size="sm"
               onClick={() => window.dispatchEvent(new CustomEvent('openReviewInfo'))}
-              className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+              className="h-[28px] gap-1.5 px-2 text-muted-foreground hover:text-foreground"
               title="视频信息"
             >
               <Info className="h-4 w-4" />
@@ -416,7 +416,7 @@ export default function CommentSection({
             <Filter className="h-3 w-3" />
             筛选
           </span>
-          <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5">
+          <div className="inline-flex h-[28px] items-center rounded-md border border-border bg-muted/30 p-0.5">
             {([
               ['ALL', '全部'],
               ['OPEN', '未解决'],
@@ -426,7 +426,7 @@ export default function CommentSection({
                 key={value}
                 type="button"
                 onClick={() => setStatusFilter(value)}
-                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                className={`h-[24px] rounded px-2 text-[11px] font-medium transition-colors ${
                   statusFilter === value
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
@@ -443,7 +443,7 @@ export default function CommentSection({
                 setStatusFilter('ALL')
                 setCommentQuery('')
               }}
-              className="h-7 rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              className="h-[28px] rounded-md border border-border/70 bg-background px-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
             >
               清除
             </button>
@@ -451,13 +451,13 @@ export default function CommentSection({
         </div>
         <div className="mt-2 flex items-center gap-1.5">
           <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
             <input
               value={commentQuery}
               onChange={(event) => setCommentQuery(event.target.value)}
               placeholder={tu('searchComments')}
               aria-label={tu('searchComments')}
-              className="h-7 w-full rounded-md border border-border bg-background pl-7 pr-6 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-[28px] w-full rounded-md border border-border bg-background pl-7 pr-6 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             {commentQuery && (
               <button

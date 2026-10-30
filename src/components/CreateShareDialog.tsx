@@ -43,7 +43,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
   const [name, setName] = useState('')
   const [copied, setCopied] = useState(false)
   const [versionScope, setVersionScope] = useState('all')
-  const [allowDownload, setAllowDownload] = useState(true)
+  const [allowDownload, setAllowDownload] = useState(false)
   const [allowComment, setAllowComment] = useState(true)
   const [passwordEnabled, setPasswordEnabled] = useState(false)
   const [password, setPassword] = useState('')
@@ -61,7 +61,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
     const collect = preset === 'COLLECT'
     setName(`${target.name}${collect ? '收录' : delivery ? '交付' : '审阅'}`.slice(0, 100))
     setVersionScope('all')
-    setAllowDownload(!collect)
+    setAllowDownload(preset === 'DELIVERY')
     setAllowComment(!delivery && !collect)
     setPasswordEnabled(false)
     setPassword('')

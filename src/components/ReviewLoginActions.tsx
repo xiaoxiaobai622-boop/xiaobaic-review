@@ -344,13 +344,13 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
             onClick={() => setProfileOpen(value => !value)}
             className={cn(
               'flex items-center gap-1.5 rounded-md text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-              compact ? 'h-[32px] w-[32px] justify-center p-0 sm:h-[24px] sm:w-[24px]' : 'min-h-8 px-1.5'
+              compact ? 'h-[32px] w-[32px] justify-center p-0 sm:h-[32px] sm:w-[32px] sm:rounded-[8px]' : 'min-h-8 px-1.5'
             )}
             aria-label={displayName}
             aria-expanded={profileOpen}
             aria-haspopup="menu"
           >
-            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" className="rounded-[6px] sm:h-[24px] sm:w-[24px] sm:text-[10px]" title={displayName} isInternal={isAdmin} />
+            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" className="rounded-[8px] sm:h-[32px] sm:w-[32px] sm:text-[13px]" title={displayName} isInternal={isAdmin} />
             {!compact && <span className="max-w-28 truncate">{displayName}</span>}
             {!compact && <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
           </button>
@@ -374,7 +374,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
           )}
         </div>
       ) : (
-        <Button variant="default" size="sm" onClick={() => updateOpen(true)} className={compact ? 'h-9 px-3' : undefined}>
+        <Button variant="default" size="sm" onClick={() => updateOpen(true)} className={compact ? 'h-[32px] rounded-[8px] px-3 text-[13px]' : undefined}>
           <LogIn className="mr-1.5 h-4 w-4" />
           {t('login')}
         </Button>

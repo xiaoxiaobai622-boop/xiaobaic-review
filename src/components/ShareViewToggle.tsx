@@ -32,11 +32,11 @@ export default function ShareViewToggle({
   }
 
   return (
-    <div className="flex items-center h-9 rounded-lg border border-border overflow-hidden" data-tutorial="view-toggle">
+    <div className="flex h-[32px] items-center overflow-hidden rounded-[8px] border border-border" data-tutorial="view-toggle">
       <button
         type="button"
         onClick={() => change('grid')}
-        className={cn('h-full px-2.5 flex items-center transition-colors', viewMode === 'grid' ? 'bg-accent text-foreground' : 'bg-card text-muted-foreground hover:text-foreground')}
+        className={cn('h-full px-3 flex items-center transition-colors', viewMode === 'grid' ? 'bg-accent text-foreground' : 'bg-card text-muted-foreground hover:text-foreground')}
         title={t('gridView')}
         aria-label={t('gridView')}
       >
@@ -45,7 +45,7 @@ export default function ShareViewToggle({
       <button
         type="button"
         onClick={() => change('list')}
-        className={cn('h-full px-2.5 flex items-center transition-colors', viewMode === 'list' ? 'bg-accent text-foreground' : 'bg-card text-muted-foreground hover:text-foreground')}
+        className={cn('h-full px-3 flex items-center transition-colors', viewMode === 'list' ? 'bg-accent text-foreground' : 'bg-card text-muted-foreground hover:text-foreground')}
         title={t('listView')}
         aria-label={t('listView')}
       >

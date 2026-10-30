@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { CheckCircle2, Film, Files, Download, Loader2, ChevronRight, Images, MessageSquare } from 'lucide-react'
+import { Film, Files, Download, Loader2, ChevronRight, MessageSquare } from 'lucide-react'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import type { ShareViewMode } from './ShareViewToggle'
@@ -71,14 +71,11 @@ export default function ThumbnailGrid({
   thumbnailsLoading,
   onVideoSelect,
   projectTitle,
-  projectDescription,
-  clientName,
   allowAssetDownload = false,
   onDownloadAll,
   downloadingAll = false,
   downloadAllLabel,
   viewMode = 'grid',
-  albumCount = 0,
   comments = [],
 }: ThumbnailGridProps) {
   const t = useTranslations('share')
@@ -119,11 +116,6 @@ export default function ThumbnailGrid({
           className="absolute -top-10 inset-x-0 bottom-0 pointer-events-none"
           style={{ background: 'radial-gradient(ellipse 55% 70% at 50% 0%, hsl(var(--primary) / 0.08), transparent 70%)' }}
         />
-        {clientName && (
-          <p className="relative text-xs font-semibold text-primary uppercase tracking-[0.22em] mb-3">
-            {clientName}
-          </p>
-        )}
         {projectTitle && (
           <h1 className="relative text-3xl sm:text-4xl font-semibold tracking-tight text-foreground max-w-3xl mx-auto mb-4">
             {projectTitle}
@@ -133,35 +125,6 @@ export default function ThumbnailGrid({
           className="relative w-14 h-0.5 mx-auto mb-4 rounded-full"
           style={{ background: 'linear-gradient(90deg, transparent, hsl(var(--primary)), transparent)' }}
         />
-        {projectDescription && (
-          <p className="relative text-sm sm:text-base text-muted-foreground max-w-xl mx-auto mb-5 leading-relaxed">
-            {projectDescription}
-          </p>
-        )}
-        <div className="relative flex items-center justify-center gap-3.5 flex-wrap text-[13px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <Film className="w-3.5 h-3.5 opacity-70" />
-            {t('metaVideos', { count: videoCount })}
-          </span>
-          {albumCount > 0 && (
-            <>
-              <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground/50" />
-              <span className="inline-flex items-center gap-1.5">
-                <Images className="w-3.5 h-3.5 opacity-70" />
-                {t('metaAlbums', { count: albumCount })}
-              </span>
-            </>
-          )}
-          {approvedCount > 0 && (
-            <>
-              <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground/50" />
-              <span className="inline-flex items-center gap-1.5 text-success">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {t('metaApproved', { approved: approvedCount, total: videoCount })}
-              </span>
-            </>
-          )}
-        </div>
       </div>
 
       <div data-tutorial="video-grid">
@@ -257,7 +220,7 @@ export default function ThumbnailGrid({
             })}
           </div>
         ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(168px,190px))]">
+        <div className="grid grid-cols-2 justify-center gap-3 sm:grid-cols-[repeat(auto-fill,minmax(168px,190px))]">
           {videoNames.map((name) => {
             const videos = videosByName[name]
             const hasAssets = allowAssetDownload && videos.some((v: any) => v.hasAssets === true)
@@ -327,12 +290,12 @@ export default function ThumbnailGrid({
 
                   {/* Duration and annotation badges */}
                   <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
-                    <div className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm">
+                    <div className="inline-flex h-[22px] items-center gap-1 rounded bg-white/90 px-2 text-[10px] font-medium tabular-nums text-black shadow-sm">
                       <Film className="h-2.5 w-2.5" />
                       {durationLabel}
                     </div>
                     <div
-                      className="inline-flex items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-black shadow-sm"
+                      className="inline-flex h-[22px] items-center gap-1 rounded bg-white/90 px-2 text-[10px] font-medium tabular-nums text-black shadow-sm"
                       title={t('feedbackCount', { count: feedbackCount })}
                       aria-label={t('feedbackCount', { count: feedbackCount })}
                     >
