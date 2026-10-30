@@ -7,6 +7,7 @@ import { getPrimaryRecipient } from '@/lib/recipients'
 import { maskPhone } from '@/lib/phone-field'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { sanitizeComment } from '@/lib/comment-sanitization'
+import { filterCommentsForViewer } from '@/lib/comment-visibility'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import {
   checkWechatText,
@@ -176,20 +177,10 @@ export async function GET(request: NextRequest) {
     })
 
     // Sanitize the response data
-    // 内部可见（visibility=INTERNAL）的批注只给团队成员看。这里不能用 isAuthenticated 当判据：
-    // `verifyProjectAccess` 对 authMode NONE 的路人和带分享 token 的观众也回 true
-    // （`project-access.ts:310`、`:370`），拿它过滤等于这条从不生效。成员的那一枚信号是
-    // `isAdmin`（同文件 `:280` 只在"登录且属于该项目团队"时为真），写侧用的也是同一个口径
-    // （本文件 POST 里 `!authContext.shareContext`）。回复与父批注同表同字段，一起过滤。
-    const isTeamMember = isAdmin || Boolean(viewerUserId)
-    const visibleComments = isTeamMember
-      ? allComments
-      : allComments
-          .filter((comment: any) => comment.visibility !== 'INTERNAL')
-          .map((comment: any) => ({
-            ...comment,
-            replies: (comment.replies ?? []).filter((reply: any) => reply.visibility !== 'INTERNAL'),
-          }))
+    // 内部可见（visibility=INTERNAL）的批注只给团队成员看。不能用 isAuthenticated 或
+    // “登录了”当判据：verifyProjectAccess 对 authMode NONE 的路人和带分享 token 的观众
+    // 也回 true；isAdmin 才表示“登录且属于该项目团队”。回复与父批注一起过滤。
+    const visibleComments = filterCommentsForViewer(allComments, isAdmin)
 
     const sanitizedComments = visibleComments.map((comment: any) =>
       sanitizeComment(
@@ -333,7 +324,7 @@ export async function POST(request: NextRequest) {
     // can never be mistaken for a share request. The client must not get to choose
     // this — it drives the client->team Apprise push and the ADMIN_REPLY/CLIENT_COMMENT
     // queue type, so a self-declared `true` silenced every client comment forever.
-    const isInternal = !authContext.shareContext
+    const isInternal = accessCheck.isAdmin
 
     const permissionCheck = await validateCommentPermissions({
       projectId,
@@ -446,7 +437,7 @@ export async function POST(request: NextRequest) {
         isInternal,
         // 可见范围只有工作室登录者能选（公开/内部）；共享链接端一律公开。
         // 注意别用 isInternal 承载这个开关：它驱动 Apprise 推送和评论队列类型，见上面的守卫注释。
-        visibility: !authContext.shareContext && visibility === 'INTERNAL' ? 'INTERNAL' : 'PUBLIC',
+        visibility: accessCheck.isAdmin && visibility === 'INTERNAL' ? 'INTERNAL' : 'PUBLIC',
         parentId: parentId || null,
         userId: authContext.user?.id || null,
         annotations: annotations || undefined,

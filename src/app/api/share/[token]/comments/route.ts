@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { sanitizeComment } from '@/lib/comment-sanitization'
+import { filterCommentsForViewer } from '@/lib/comment-visibility'
 import { getRateLimitSettings } from '@/lib/settings'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -153,8 +154,10 @@ export async function GET(
       orderBy: { createdAt: 'asc' }
     })
 
-    // Sanitize comments - never expose PII to non-admins
-    const sanitizedComments = comments.map((comment: any) => sanitizeComment(
+    // Sanitize comments - never expose PII to non-admins. Internal notes are
+    // team-only on this route too; a share visitor must not read them.
+    const visibleComments = filterCommentsForViewer(comments, isAdmin)
+    const sanitizedComments = visibleComments.map((comment: any) => sanitizeComment(
       comment,
       isAdmin,
       isAuthenticated,

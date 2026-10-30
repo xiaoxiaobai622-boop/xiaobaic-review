@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { enforceShareVideoScope } from '@/lib/share-scope'
 import { validateAssetFile, sanitizeFilename, sanitizeDisplayFilename, isSuspiciousFilename } from '@/lib/file-validation'
 import { initStorage, deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -76,6 +77,9 @@ export async function POST(
         { status: 401 }
       )
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     const uploaderSessionId = accessCheck.shareTokenSessionId
     if (!uploaderSessionId) {
@@ -223,6 +227,9 @@ export async function GET(
       )
     }
 
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
+
     const uploaderSessionId = accessCheck.shareTokenSessionId
     if (!uploaderSessionId) {
       return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 })
@@ -314,6 +321,9 @@ export async function DELETE(
         { status: 401 }
       )
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     const uploaderSessionId = accessCheck.shareTokenSessionId
     if (!uploaderSessionId) {

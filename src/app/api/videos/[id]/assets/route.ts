@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest, requireApiAdmin } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
+import { enforceShareVideoScope } from '@/lib/share-scope'
 import { validateAssetFile, sanitizeDisplayFilename, isInvalidFileType } from '@/lib/file-validation'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -73,6 +74,9 @@ export async function GET(
     if (!accessCheck.authorized) {
   return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     // For non-admins, check if asset downloads are allowed
     if (!accessCheck.isAdmin && !project.allowAssetDownload) {

@@ -192,15 +192,20 @@ export async function invalidateSessionsByEmail(email: string): Promise<number> 
   }
 }
 
-async function revokeShareSessions(sessionIds: string[]): Promise<number> {
+/** Retire one viewer session, e.g. after its bearer has been rotated. */
+export async function revokeShareSession(sessionId: string, ttlSeconds: number = 7 * 24 * 60 * 60): Promise<void> {
+  if (!sessionId) return
+  await revokeShareSessions([sessionId], ttlSeconds)
+}
+
+async function revokeShareSessions(sessionIds: string[], ttlSeconds: number = 7 * 24 * 60 * 60): Promise<number> {
   if (sessionIds.length === 0) return 0
 
   const redis = getRedis()
-  const ttl = 7 * 24 * 60 * 60 // 7 days in seconds
   const pipeline = redis.pipeline()
 
   for (const sessionId of sessionIds) {
-    pipeline.setex(`revoked:share_session:${sessionId}`, ttl, '1')
+    pipeline.setex(`revoked:share_session:${sessionId}`, ttlSeconds, '1')
   }
 
   await pipeline.exec()

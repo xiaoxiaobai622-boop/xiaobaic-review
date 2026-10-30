@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { enforceShareVideoScope } from '@/lib/share-scope'
 import { generateVideoAccessToken } from '@/lib/video-access'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -64,6 +65,9 @@ export async function POST(
     if (!accessCheck.authorized) {
       return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     // Client-uploaded comment attachments bypass the project download setting and the approval gate.
     if (!accessCheck.isAdmin && !isClientAsset) {

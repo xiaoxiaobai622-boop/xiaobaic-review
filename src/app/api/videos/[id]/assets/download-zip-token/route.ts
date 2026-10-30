@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { enforceShareVideoScope } from '@/lib/share-scope'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
@@ -80,6 +81,9 @@ export async function POST(
     if (!accessCheck.authorized) {
       return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     if (!accessCheck.isAdmin) {
       if (!project.allowAssetDownload) {

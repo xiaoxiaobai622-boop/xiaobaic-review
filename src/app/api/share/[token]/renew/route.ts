@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'node:crypto'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { getRateLimitSettings, getShareTokenTtlSeconds } from '@/lib/settings'
@@ -8,6 +9,7 @@ import {
   verifyShareTokenForRenewal,
   type ShareTokenFailure,
 } from '@/lib/auth'
+import { revokeShareSession } from '@/lib/session-invalidation'
 import {
   isShareLinkActive,
   linkPermissions,
@@ -106,12 +108,20 @@ export async function POST(
 
   const ttlSeconds = await getShareTokenTtlSeconds()
   const permissions = payload.guest ? ['view'] : linkPermissions(resolved.policy)
+
+  // Rotation is single-use: the dead bearer may mint exactly one replacement,
+  // and the old session stops working immediately. A lost response requires a
+  // fresh page visit rather than leaving a permanent renewal credential.
+  // Keep the retirement marker longer than the ordinary invalidation window:
+  // a dead bearer must not become renewable again while the link is alive.
+  if (payload.sessionId) await revokeShareSession(payload.sessionId, 365 * 24 * 60 * 60)
+
   const shareToken = signShareToken({
     shareId: token,
     projectId: resolved.project.id,
     permissions,
     guest: Boolean(payload.guest),
-    sessionId: payload.sessionId,
+    sessionId: crypto.randomBytes(16).toString('base64url'),
     recipientId: payload.recipientId,
     authMode: resolved.policy.authMode,
     adminOverride: payload.adminOverride,

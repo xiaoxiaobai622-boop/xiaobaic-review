@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { downloadFile } from '@/lib/storage'
 import { contentDispositionAttachment, zipSafeName } from '@/lib/download-names'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { enforceShareVideoScope } from '@/lib/share-scope'
 import { rateLimit } from '@/lib/rate-limit'
 import { ZipArchive } from 'archiver'
 import { Readable } from 'stream'
@@ -69,6 +70,9 @@ export async function POST(
     if (!accessCheck.authorized) {
   return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     // For non-admins, verify asset download settings and video approval
     if (!accessCheck.isAdmin) {

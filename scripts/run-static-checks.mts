@@ -27,6 +27,9 @@ const CHECKS: Array<{ file: string; args?: string[] }> = [
   { file: 'scripts/check-zod-schemas.mts' },
   { file: 'scripts/check-review-login-surface.mts' },
   { file: 'scripts/check-share-scope.mts' },
+  { file: 'scripts/check-comment-visibility.mts' },
+  { file: 'scripts/check-share-video-scope.mts' },
+  { file: 'scripts/check-share-renewal-rotation.mts' },
   { file: 'scripts/check-team-numeric-id.mts', args: ['--static'] },
   { file: 'scripts/check-platform-team-identity.mts' },
 ]

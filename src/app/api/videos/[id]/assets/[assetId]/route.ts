@@ -8,6 +8,7 @@ import { contentDispositionAttachment } from '@/lib/download-names'
 import { sanitizeContentType } from '@/lib/file-validation'
 import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { enforceShareVideoScope } from '@/lib/share-scope'
 import { createReadStream } from 'fs'
 import fs from 'fs'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -70,6 +71,9 @@ export async function GET(
     if (!accessCheck.authorized) {
   return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     // For non-admins, verify asset download settings and video approval
     if (!accessCheck.isAdmin) {

@@ -4,6 +4,7 @@ import { getFilePath, getVideoContentType, isS3Mode, createWebReadableStream } f
 import { contentDispositionAttachment } from '@/lib/download-names'
 import { s3GetPresignedDownloadUrl, s3FileExists } from '@/lib/s3-storage'
 import { verifyProjectAccess } from '@/lib/project-access'
+import { enforceShareVideoScope } from '@/lib/share-scope'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import fs, { createReadStream } from 'fs'
@@ -52,6 +53,9 @@ export async function GET(
     if (!accessCheck.authorized) {
       return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
     }
+
+    const scopeDenied = await enforceShareVideoScope(request, video.project.id, id, accessCheck.isAdmin)
+    if (scopeDenied) return scopeDenied
 
     if (!accessCheck.isAdmin) {
       if (!video.project.allowAssetDownload) {
