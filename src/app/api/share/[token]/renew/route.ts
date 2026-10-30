@@ -10,6 +10,7 @@ import {
   type ShareTokenFailure,
 } from '@/lib/auth'
 import { revokeShareSession } from '@/lib/session-invalidation'
+import { revokeToken } from '@/lib/token-revocation'
 import {
   isShareLinkActive,
   linkPermissions,
@@ -109,12 +110,15 @@ export async function POST(
   const ttlSeconds = await getShareTokenTtlSeconds()
   const permissions = payload.guest ? ['view'] : linkPermissions(resolved.policy)
 
-  // Rotation is single-use: the dead bearer may mint exactly one replacement,
-  // and the old session stops working immediately. A lost response requires a
-  // fresh page visit rather than leaving a permanent renewal credential.
-  // Keep the retirement marker longer than the ordinary invalidation window:
-  // a dead bearer must not become renewable again while the link is alive.
-  if (payload.sessionId) await revokeShareSession(payload.sessionId, 365 * 24 * 60 * 60)
+  // Rotation is single-use: the dead bearer may mint exactly one replacement.
+  // Blacklist that bearer itself. NONE links use a deterministic session shared
+  // by every token for this link + address; revoking it would make every later
+  // no-token token 401. Only per-token (non-NONE) sessions are retired.
+  const retirementTtl = 365 * 24 * 60 * 60
+  await revokeToken(bearer, retirementTtl)
+  if (payload.sessionId && !payload.sessionId.startsWith('none:')) {
+    await revokeShareSession(payload.sessionId, retirementTtl)
+  }
 
   const shareToken = signShareToken({
     shareId: token,

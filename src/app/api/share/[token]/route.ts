@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { isSmtpConfigured, getRateLimitSettings, getShareTokenTtlSeconds } from '@/lib/settings'
 import { getCurrentUserFromRequest, getShareAuth, signShareToken } from '@/lib/auth'
@@ -12,6 +13,7 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeVideoIds, linkPermissions, noneAccessSessionId, shareAllowsProjectPhotos, shareAllowsUploads, shareAuthFingerprint, sharePolicyFingerprint } from '@/lib/share-links'
 import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
 import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
+import { isShareSessionRevoked } from '@/lib/session-invalidation'
 export const runtime = 'nodejs'
 
 
@@ -435,7 +437,13 @@ export async function GET(
       let sessionId = accessCheck.shareTokenSessionId || `share:${project.id}:${token}`
 
       if (projectMeta.authMode === 'NONE') {
-        sessionId = noneAccessSessionId(projectMeta.id, token, getClientIpAddress(request))
+        const noneSessionId = noneAccessSessionId(projectMeta.id, token, getClientIpAddress(request))
+        // A pre-fix renewal may have revoked this deterministic session. Reusing
+        // it would hand out a token that every route rejects; fall back to a
+        // random viewer session while keeping access tracking on the dedupe id.
+        sessionId = await isShareSessionRevoked(noneSessionId)
+          ? crypto.randomBytes(16).toString('base64url')
+          : noneSessionId
       }
 
       const shareToken = signShareToken({

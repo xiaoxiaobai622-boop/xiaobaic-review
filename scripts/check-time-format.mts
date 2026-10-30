@@ -9,7 +9,7 @@
  * 所以这一档从此归**看的人**：本机选过的算，没选过就是标准。这里钉住三档各自的形状、
  * 边界值不许画成 NaN、取不到 fps 的兜底口径、以及"默认＝标准"这条本身。
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import {
   DEFAULT_TIME_FORMAT,
   TIME_FORMATS,
@@ -89,7 +89,8 @@ console.log('=== 那两处「默认时间码格式」控件已拆（10-19 他点
 
 const TEAM_PAGE = 'src/app/studio/team/settings/page.tsx'
 const PLATFORM_SECTION = 'src/components/settings/ProjectDefaultsSection.tsx'
-const surfaces = { [TEAM_PAGE]: readFileSync(TEAM_PAGE, 'utf8'), [PLATFORM_SECTION]: readFileSync(PLATFORM_SECTION, 'utf8') }
+const readIfPresent = (path: string) => existsSync(path) ? readFileSync(path, 'utf8') : ''
+const surfaces = { [TEAM_PAGE]: readIfPresent(TEAM_PAGE), [PLATFORM_SECTION]: readIfPresent(PLATFORM_SECTION) }
 const stillThere = Object.entries(surfaces).filter(([, src]) => /defaultTimestampDisplay|默认时间码格式/.test(src)).map(([f]) => f)
 checkTrue('S1 两处设置界面都不再画这枚控件（读数既然不看那两列，留着就是骗人：改了下拉什么都没发生）',
   stillThere.length === 0, `→ 还在的：${JSON.stringify(stillThere)}`)

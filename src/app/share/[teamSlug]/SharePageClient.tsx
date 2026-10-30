@@ -15,7 +15,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Button } from '@/components/ui/button'
 import { Lock, Check, Mail, KeyRound } from 'lucide-react'
 import BrandLogo from '@/components/BrandLogo'
-import { loadShareToken, saveShareToken, shareFetch, subscribeShareToken, renewShareToken, notifyShareSessionExpired } from '@/lib/share-token-store'
+import { loadShareToken, saveShareToken, shareFetch, subscribeShareToken, renewShareToken, notifyShareSessionExpired, readShareTokenRaw } from '@/lib/share-token-store'
 import { appAlert } from '@/components/AppDialogProvider'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
@@ -472,8 +472,14 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         },
       })
 
-      // Recover from stale/expired stored share token
+      // Recover from stale/expired stored share token. A response for a
+      // superseded token must not clear the replacement that already won.
       if (projectResponse.status === 401 && authToken) {
+        const storedToken = readShareTokenRaw(storageKey)
+        if (storedToken && storedToken !== authToken) {
+          setShareToken(storedToken)
+          return
+        }
         saveShareToken(storageKey, null)
         setShareToken(null)
         return
@@ -553,6 +559,11 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         if (!isMounted) return
 
         if (response.status === 401) {
+          const storedToken = readShareTokenRaw(storageKey)
+          if (storedToken && storedToken !== shareToken) {
+            setShareToken(storedToken)
+            return
+          }
           saveShareToken(storageKey, null)
 
           if (shareToken) {

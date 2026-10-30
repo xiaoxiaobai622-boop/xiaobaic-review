@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StudioPageSkeleton } from '@/components/StudioPageSkeleton'
 import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
+import { copyTextToClipboard } from '@/lib/clipboard'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
 import { maskPhoneDisplay } from '@/lib/phone-display'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
@@ -71,6 +72,7 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
   useEffect(() => setName(team.name), [team.name])
 
   const save = async () => {
@@ -87,6 +89,13 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
     await navigator.clipboard.writeText(team.id)
     setCopiedId(true)
     window.setTimeout(() => setCopiedId(false), 1600)
+  }
+
+  const copyLink = async () => {
+    const ok = await copyTextToClipboard(`${window.location.origin}/studio/team/join?q=${team.slug}`)
+    if (!ok) return
+    setCopiedLink(true)
+    window.setTimeout(() => setCopiedLink(false), 1600)
   }
 
   return <div className="space-y-5">
@@ -115,6 +124,17 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
           <span className="w-20 shrink-0 text-sm text-muted-foreground">团队 ID</span>
           <code className="min-w-0 flex-1 truncate font-mono text-sm">{team.id}</code>
           <Button type="button" variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={() => void copyTeamId()}>{copiedId ? '已复制' : '复制'}</Button>
+        </div>
+        <p className="ml-24 text-xs text-muted-foreground">用于接口与运营后台定位。发客户的地址请用「分享审阅链接」里的短码——这串号打不开分享页。</p>
+        <div className="flex items-start gap-4 pt-3">
+          <span className="w-20 shrink-0 pt-1 text-sm text-muted-foreground">团队加入链接</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-3 py-2 text-xs">{window.location.origin}/studio/team/join?q={team.slug}</code>
+              <Button type="button" variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={() => void copyLink()}>{copiedLink ? '已复制' : '复制链接'}</Button>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">拿到链接的人要有自己的账号并绑定手机号，提交后仍需在「席位成员 → 成员审批」里通过；这条链接本身不给任何人权限。</p>
+          </div>
         </div>
       </div>
     </CardContent></Card>
