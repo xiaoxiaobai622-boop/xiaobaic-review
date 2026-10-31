@@ -1083,6 +1083,7 @@ export default function AdminSharePage() {
       comments={filteredComments}
       capabilities={capabilities}
       source="admin"
+      adminUser={adminUser}
       shareToken={null}
       defaultQuality={defaultQuality}
       clientName={clientDisplayName}

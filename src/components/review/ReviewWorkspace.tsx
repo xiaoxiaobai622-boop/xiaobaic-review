@@ -47,6 +47,8 @@ export interface ReviewWorkspaceProps {
   defaultQuality?: '720p' | '1080p' | '2160p'
   clientName?: string
   clientEmail?: string | null
+  /** 后台入口当前登录账号；批注署名与乐观更新要用，分享入口为 null。 */
+  adminUser?: any
   recipients?: Array<{ id: string; name: string | null; email: string | null }>
   allowClientAssetUpload?: boolean
   isPasswordProtected?: boolean
@@ -102,7 +104,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const {
     project, videos, videosByName, thumbnailsByName, activeVideoName, comments,
     capabilities, source, shareToken = null, projectSlug = null, isGuest = false, defaultQuality = '720p',
-    clientName = '', clientEmail = null, recipients = [], allowClientAssetUpload = false,
+    clientName = '', clientEmail = null, adminUser = null, recipients = [], allowClientAssetUpload = false,
     isPasswordProtected = false, identity, actions, hideComments = false, slots,
     initialSeekTime, initialVideoIndex, followLatestVersion = true, focusCommentId = null, restrictCommentsToLatestVersion = false, smtpConfigured = false, hidePlayerDownload = false,
     usePreviewForApprovedPlayback = false, timestampDisplayMode,
@@ -252,6 +254,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                   restrictToLatestVersion={restrictCommentsToLatestVersion}
                   videos={videos}
                   isAdminView={source === 'admin'}
+                  adminUser={adminUser}
                   smtpConfigured={smtpConfigured}
                   isPasswordProtected={isPasswordProtected}
                   recipients={recipients}
