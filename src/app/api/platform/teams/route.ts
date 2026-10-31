@@ -1,37 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { requirePlatformAuth } from '@/lib/auth'
+import { getPlatformTeamsList, type PlatformTeamSort, type SortOrder } from '@/lib/platform-team-360'
+import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const SORTS = new Set<PlatformTeamSort>(['storageUsage', 'lastActive', 'createdAt', 'status'])
 
 export async function GET(request: NextRequest) {
   const user = await requirePlatformAuth(request)
   if (user instanceof Response) return user
 
-  const teams = await prisma.team.findMany({
-    orderBy: { createdAt: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      shareKey: true,
-      status: true,
-      createdAt: true,
-      subscriptionPlan: true,
-      subscriptionStartedAt: true,
-      subscriptionExpiresAt: true,
-      createdBy: { select: { id: true, name: true, email: true } },
-      // 成员数只算在队的（TeamMemberStatus 还有 DISABLED 这一档）：额度检查与团队详情的用量走
-      // getTeamUsage，数的就是 status=ACTIVE，这两处要是对不上，运营会拿一个偏大的数去比一个 5 人的额度。
-      _count: { select: { members: { where: { status: 'ACTIVE' } }, projects: true } },
-      members: {
-        where: { role: 'OWNER', status: 'ACTIVE' },
-        take: 1,
-        select: { user: { select: { id: true, name: true, email: true } } },
-      },
-    },
-  })
+  const started = Date.now()
+  const rawSort = request.nextUrl.searchParams.get('sort') || 'createdAt'
+  const rawOrder = request.nextUrl.searchParams.get('order') || 'asc'
+  const sort = SORTS.has(rawSort as PlatformTeamSort) ? rawSort as PlatformTeamSort : 'createdAt'
+  const order: SortOrder = rawOrder === 'desc' ? 'desc' : 'asc'
 
-  return NextResponse.json({ teams })
+  try {
+    const teams = await getPlatformTeamsList({ sort, order })
+    const response = NextResponse.json({
+      teams,
+      meta: { sort, order, durationMs: Date.now() - started },
+    })
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+    return response
+  } catch (error) {
+    logError('[PLATFORM] Failed to list teams with usage:', error)
+    return NextResponse.json({ error: '无法读取团队用量，请稍后重试' }, { status: 500 })
+  }
 }

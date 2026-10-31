@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePlatformAuth } from '@/lib/auth'
 import { getTeamQuota, getTeamUsage, BETA_QUOTA } from '@/lib/platform-access'
+import { logPlatformAudit } from '@/lib/platform-audit'
+import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,6 +46,7 @@ export async function PATCH(
   }
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
 
+  const before = await prisma.teamQuota.findUnique({ where: { teamId: id } })
   const quota = await prisma.teamQuota.upsert({
     where: { teamId: id },
     // A partial edit must not mint the rest of the row from schema defaults (20 GB etc.);
@@ -53,6 +56,25 @@ export async function PATCH(
     create: { teamId: id, ...BETA_QUOTA, ...data, source: 'MANUAL' },
     update: { ...data, source: 'MANUAL', sourceOrderId: null },
   })
+
+  await logPlatformAudit({
+    request,
+    actorId: user.id,
+    action: 'TEAM_QUOTA_CHANGE',
+    teamId: id,
+    targetType: 'TeamQuota',
+    targetId: quota.id,
+    details: {
+      before: before ? {
+        maxMembers: before.maxMembers,
+        maxProjects: before.maxProjects,
+        maxVideos: before.maxVideos,
+        maxStorageGB: before.maxStorageGB,
+        source: before.source,
+      } : null,
+      after: data,
+    },
+  }).catch(error => logError('[PLATFORM] Failed to audit team quota change:', error))
 
   // GET 那侧的 `recorded` 是说「这一行真的存在」：保存之后当然存在，界面采纳响应时才有真话可说。
   return NextResponse.json({ quota: { ...quota, recorded: true } })

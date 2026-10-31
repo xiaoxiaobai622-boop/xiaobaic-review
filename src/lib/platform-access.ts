@@ -69,33 +69,39 @@ export async function getTeamUsage(teamId: string) {
  * source — without it Postgres picks arbitrarily and the per-source split flips
  * between two identical requests.
  */
-type TeamStorageUsageRow = { projectId: string; source: string; inBin: boolean; bytes: bigint }
+type TeamStorageUsageRow = {
+  teamId: string
+  projectId: string
+  source: string
+  inBin: boolean
+  bytes: bigint
+}
 
-function teamStorageUsageRows(teamId: string | null) {
+function teamStorageUsageRows(teamIds: string[] | null) {
   return prisma.$queryRaw<TeamStorageUsageRow[]>`
     WITH named AS (
-      SELECT v."projectId" AS "projectId", v."originalStoragePath" AS path, v."originalFileSize" AS bytes,
+      SELECT p."teamId" AS "teamId", v."projectId" AS "projectId", v."originalStoragePath" AS path, v."originalFileSize" AS bytes,
              (v."deletedAt" IS NOT NULL) AS "inBin", 'video' AS source, 1 AS rank
       FROM "Video" v JOIN "Project" p ON p.id = v."projectId"
-      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND v."originalFileSize" > 0
+      WHERE (${teamIds}::text[] IS NULL OR p."teamId" = ANY(${teamIds}::text[])) AND v."originalFileSize" > 0
       UNION ALL
-      SELECT v."projectId", a."storagePath", a."fileSize", (v."deletedAt" IS NOT NULL), 'asset', 2
+      SELECT p."teamId", v."projectId", a."storagePath", a."fileSize", (v."deletedAt" IS NOT NULL), 'asset', 2
       FROM "VideoAsset" a JOIN "Video" v ON v.id = a."videoId" JOIN "Project" p ON p.id = v."projectId"
-      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND a."uploadCompletedAt" IS NOT NULL AND a."fileSize" > 0
+      WHERE (${teamIds}::text[] IS NULL OR p."teamId" = ANY(${teamIds}::text[])) AND a."uploadCompletedAt" IS NOT NULL AND a."fileSize" > 0
       UNION ALL
-      SELECT u."projectId", u."storagePath", u."fileSize", false, 'upload', 3
+      SELECT p."teamId", u."projectId", u."storagePath", u."fileSize", false, 'upload', 3
       FROM "ProjectUpload" u JOIN "Project" p ON p.id = u."projectId"
-      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND u."uploadCompletedAt" IS NOT NULL AND u."fileSize" > 0
+      WHERE (${teamIds}::text[] IS NULL OR p."teamId" = ANY(${teamIds}::text[])) AND u."uploadCompletedAt" IS NOT NULL AND u."fileSize" > 0
       UNION ALL
-      SELECT al."projectId", ph."storagePath", ph."fileSize", false, 'photo', 4
+      SELECT p."teamId", al."projectId", ph."storagePath", ph."fileSize", false, 'photo', 4
       FROM "Photo" ph JOIN "PhotoAlbum" al ON al.id = ph."albumId" JOIN "Project" p ON p.id = al."projectId"
-      WHERE (${teamId}::text IS NULL OR p."teamId" = ${teamId}) AND ph."uploadCompletedAt" IS NOT NULL AND ph."fileSize" > 0
+      WHERE (${teamIds}::text[] IS NULL OR p."teamId" = ANY(${teamIds}::text[])) AND ph."uploadCompletedAt" IS NOT NULL AND ph."fileSize" > 0
     ), deduped AS (
-      SELECT DISTINCT ON (path) "projectId", bytes, "inBin", source
-      FROM named ORDER BY path, "inBin" ASC, bytes DESC, rank ASC
+      SELECT DISTINCT ON ("teamId", path) "teamId", "projectId", bytes, "inBin", source
+      FROM named ORDER BY "teamId", path, "inBin" ASC, bytes DESC, rank ASC
     )
-    SELECT "projectId", source, "inBin", sum(bytes)::bigint AS bytes
-    FROM deduped GROUP BY "projectId", source, "inBin"
+    SELECT "teamId", "projectId", source, "inBin", sum(bytes)::bigint AS bytes
+    FROM deduped GROUP BY "teamId", "projectId", source, "inBin"
   `
 }
 
@@ -111,15 +117,20 @@ export type TeamStorageBreakdown = {
 
 const ZERO = BigInt(0)
 
-function summarizeStorageRows(rows: TeamStorageUsageRow[]): TeamStorageBreakdown {
-  const breakdown: TeamStorageBreakdown = {
+function emptyStorageBreakdown(): TeamStorageBreakdown {
+  return {
     liveBytes: ZERO,
     recycleBinBytes: ZERO,
     totalBytes: ZERO,
     bySource: { video: ZERO, asset: ZERO, upload: ZERO, photo: ZERO },
     byProject: new Map(),
   }
+}
+
+function summarizeStorageRows(rows: TeamStorageUsageRow[]): Map<string, TeamStorageBreakdown> {
+  const byTeam = new Map<string, TeamStorageBreakdown>()
   for (const row of rows) {
+    const breakdown = byTeam.get(row.teamId) ?? emptyStorageBreakdown()
     const bytes = row.bytes ?? ZERO
     const project = breakdown.byProject.get(row.projectId) ?? { liveBytes: ZERO, recycleBinBytes: ZERO }
     if (row.inBin) {
@@ -133,13 +144,22 @@ function summarizeStorageRows(rows: TeamStorageUsageRow[]): TeamStorageBreakdown
       breakdown.bySource[row.source] += bytes
     }
     breakdown.byProject.set(row.projectId, project)
+    byTeam.set(row.teamId, breakdown)
   }
-  breakdown.totalBytes = breakdown.liveBytes + breakdown.recycleBinBytes
-  return breakdown
+  for (const breakdown of byTeam.values()) {
+    breakdown.totalBytes = breakdown.liveBytes + breakdown.recycleBinBytes
+  }
+  return byTeam
 }
 
 export async function getTeamStorageBreakdown(teamId: string): Promise<TeamStorageBreakdown> {
-  return summarizeStorageRows(await teamStorageUsageRows(teamId))
+  return (await getTeamStorageSummaries([teamId])).get(teamId) ?? emptyStorageBreakdown()
+}
+
+/** One query for a page of teams; the console list must not fan out per row. */
+export async function getTeamStorageSummaries(teamIds: string[]): Promise<Map<string, TeamStorageBreakdown>> {
+  if (teamIds.length === 0) return new Map()
+  return summarizeStorageRows(await teamStorageUsageRows(teamIds))
 }
 
 /**
@@ -147,16 +167,26 @@ export async function getTeamStorageBreakdown(teamId: string): Promise<TeamStora
  * total can never contradict the sum of what each team is charged for.
  */
 export async function getPlatformStorageTotals(): Promise<PlatformStorageTotals> {
-  const breakdown = summarizeStorageRows(await teamStorageUsageRows(null))
+  const breakdowns = summarizeStorageRows(await teamStorageUsageRows(null))
+  const totals = emptyStorageBreakdown()
+  for (const breakdown of breakdowns.values()) {
+    totals.liveBytes += breakdown.liveBytes
+    totals.recycleBinBytes += breakdown.recycleBinBytes
+    totals.totalBytes += breakdown.totalBytes
+    totals.bySource.video += breakdown.bySource.video
+    totals.bySource.asset += breakdown.bySource.asset
+    totals.bySource.upload += breakdown.bySource.upload
+    totals.bySource.photo += breakdown.bySource.photo
+  }
   return {
-    liveBytes: Number(breakdown.liveBytes),
-    recycleBinBytes: Number(breakdown.recycleBinBytes),
-    totalBytes: Number(breakdown.totalBytes),
+    liveBytes: Number(totals.liveBytes),
+    recycleBinBytes: Number(totals.recycleBinBytes),
+    totalBytes: Number(totals.totalBytes),
     bySource: {
-      video: Number(breakdown.bySource.video),
-      asset: Number(breakdown.bySource.asset),
-      upload: Number(breakdown.bySource.upload),
-      photo: Number(breakdown.bySource.photo),
+      video: Number(totals.bySource.video),
+      asset: Number(totals.bySource.asset),
+      upload: Number(totals.bySource.upload),
+      photo: Number(totals.bySource.photo),
     },
   }
 }

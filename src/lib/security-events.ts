@@ -60,12 +60,15 @@ type SecurityEventType =
   // Personal Data Access Events
   | 'PERSONAL_DATA_REVEALED'
 
+  // Platform console actions (link reveal, team status/quota edits)
+  | 'PLATFORM_ADMIN_ACTION'
+
 type SecurityEventSeverity = 'INFO' | 'WARNING' | 'CRITICAL'
 
 interface SecurityEventMetadata {
   label: string
   description: string
-  category: 'Admin Auth' | 'Passkey Auth' | 'Device Auth' | 'Share Auth' | 'Video Access' | 'Security'
+  category: 'Admin Auth' | 'Passkey Auth' | 'Device Auth' | 'Share Auth' | 'Video Access' | 'Security' | 'Platform'
   severity: SecurityEventSeverity
 }
 
@@ -343,6 +346,12 @@ const SECURITY_EVENT_METADATA: Record<SecurityEventType, SecurityEventMetadata> 
     description: 'A masked phone number was expanded to its full value. The number itself is not stored in the event, only who revealed whose and from where.',
     category: 'Security',
     severity: 'WARNING',
+  },
+  PLATFORM_ADMIN_ACTION: {
+    label: 'Platform Admin Action',
+    description: 'A platform administrator revealed a share link or changed a team status/quota. The details record the action and target, never the full link token.',
+    category: 'Platform',
+    severity: 'INFO',
   },
 }
 

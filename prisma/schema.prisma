@@ -24,6 +24,8 @@ model User {
   role                UserRole           @default(ADMIN)
   isPlatformAdmin     Boolean            @default(false)
   projectAccessScope  ProjectAccessScope @default(ALL_PROJECTS)
+  // Preferred interface/content locale. Null follows the platform-wide language setting.
+  locale              String?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
@@ -45,8 +47,12 @@ model User {
   ordersFulfilled             Order[]              @relation("OrderFulfiller")
   orderEventsAsActor          OrderEvent[]         @relation("OrderEventActor")
   platformAnnouncements       PlatformAnnouncement[] @relation("PlatformAnnouncementTarget")
+  platformAnnouncementsCreated PlatformAnnouncement[] @relation("PlatformAnnouncementCreator")
   platformAnnouncementReads   PlatformAnnouncementRead[] @relation("PlatformAnnouncementReads")
+  announcementEvents          AnnouncementEvent[]        @relation("AnnouncementEvents")
   platformFeedback            PlatformFeedback[]         @relation("PlatformFeedback")
+
+  @@index([locale])
 }
 
 // WeChat identities are separate from admin users. The unionId index allows a
@@ -244,12 +250,16 @@ model TeamMember {
   bio            String?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
+  // Server-side heartbeat only. Null means this member has never been seen by
+  // the heartbeat collector; it must not be backfilled with updatedAt.
+  lastActiveAt DateTime?
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([teamId, userId])
   @@index([userId])
+  @@index([teamId, lastActiveAt])
 }
 
 model TeamInvite {
@@ -416,6 +426,7 @@ model Project {
   @@index([clientCompanyId])
   @@index([groupId])
   @@index([teamId])
+  @@index([teamId, createdAt])
 }
 
 enum ProjectStatus {
@@ -530,6 +541,7 @@ model Video {
   @@index([projectId, name])
   @@index([folderId])
   @@index([projectId, deletedAt])
+  @@index([projectId, createdAt])
 }
 
 /**
@@ -757,6 +769,7 @@ model Comment {
   @@index([videoId])
   @@index([parentId])
   @@index([userId])
+  @@index([projectId, createdAt])
 }
 
 model NotificationQueue {
@@ -1379,14 +1392,46 @@ model PlatformAnnouncement {
   id        String   @id @default(cuid())
   title     String
   content   String
-  // null = 全员广播；有值 = 定向发给该用户
+  // Legacy direct-message target. New announcements use AnnouncementAudienceRule.
+  // null = broadcast (legacy); non-null = targeted at that one user.
   userId    String?
   user      User?    @relation("PlatformAnnouncementTarget", fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  reads     PlatformAnnouncementRead[]
+
+  locale       String   @default("zh")
+  type         String   @default("MESSAGE")
+  status       String   @default("ACTIVE")
+  primaryMode  String   @default("INBOX")
+  priority     Int      @default(0)
+  startAt      DateTime?
+  endAt        DateTime?
+  ackRequired  Boolean  @default(false)
+  ctaLabel     String?
+  ctaUrl       String?
+  imageUrl     String?
+  createdBy    String?
+  creator      User?    @relation("PlatformAnnouncementCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  publishedAt  DateTime?
+  audienceCount    Int?
+  audienceResolvedAt DateTime?
+  version      Int      @default(1)
+  copiedFromId String?
+  copiedFrom   PlatformAnnouncement?  @relation("AnnouncementVersions", fields: [copiedFromId], references: [id], onDelete: SetNull)
+  copies       PlatformAnnouncement[] @relation("AnnouncementVersions")
+  isTest       Boolean  @default(false)
+  archivedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+  reads        PlatformAnnouncementRead[]
+  rules        AnnouncementAudienceRule[]
+  events       AnnouncementEvent[]
+  auditLogs    AnnouncementAuditLog[]
 
   @@index([userId])
   @@index([createdAt])
+  @@index([status, startAt, endAt])
+  @@index([primaryMode, status])
+  @@index([type, createdAt])
+  @@index([copiedFromId])
 }
 
 model PlatformAnnouncementRead {
@@ -1395,9 +1440,76 @@ model PlatformAnnouncementRead {
   announcement   PlatformAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
   userId         String
   user           User                 @relation("PlatformAnnouncementReads", fields: [userId], references: [id], onDelete: Cascade)
-  readAt         DateTime             @default(now())
+  // Nullable: a row may exist for an impression/dismissal before the body was read.
+  readAt         DateTime?
+  acknowledgedAt DateTime?
+  dismissedAt    DateTime?
+  lastShownAt    DateTime?
+  shownCount     Int                  @default(0)
+  impressionCount Int                 @default(0)
+  lastShownSessionId String?
+  updatedAt      DateTime             @default(now()) @updatedAt
 
   @@unique([announcementId, userId])
+  @@index([userId, lastShownAt])
+}
+
+model AnnouncementAudienceRule {
+  id             String               @id @default(cuid())
+  announcementId String
+  announcement   PlatformAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  kind           String               // ALL / TEAM / USER / ROLE / PLAN / FEATURE / LOCALE / ACTIVE_STATUS
+  value          String?
+  mode           String               @default("INCLUDE") // INCLUDE / EXCLUDE
+  createdAt      DateTime             @default(now())
+
+  @@index([announcementId])
+  @@index([kind, value])
+}
+
+model AnnouncementEvent {
+  id             String               @id @default(cuid())
+  announcementId String
+  announcement   PlatformAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                 @relation("AnnouncementEvents", fields: [userId], references: [id], onDelete: Cascade)
+  type           String               // IMPRESSION / READ / ACK / CLICK / DISMISS
+  mode           String               // INBOX / BANNER / MODAL / TOAST
+  beijingDay     String               // YYYY-MM-DD in Asia/Shanghai
+  // Bounds growth: impressions/clicks once per user+mode+day; read/ack/dismiss once ever.
+  dedupeKey      String               @unique
+  occurredAt     DateTime             @default(now())
+
+  @@index([announcementId, type, occurredAt])
+  @@index([announcementId, beijingDay])
+  @@index([userId, occurredAt])
+  @@index([occurredAt])
+}
+
+model AnnouncementAuditLog {
+  id             String               @id @default(cuid())
+  announcementId String?
+  announcement   PlatformAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: SetNull)
+  actorUserId    String
+  actorLabel     String
+  action         String               // CREATE / UPDATE / PUBLISH / PAUSE / RESUME / ARCHIVE / COPY / TEST_SEND / KILL_SWITCH / CONTROL_UPDATE
+  detail         Json?
+  createdAt      DateTime             @default(now())
+
+  @@index([announcementId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+model AnnouncementControl {
+  id                    String   @id @default("global")
+  bannerModalPaused     Boolean  @default(false)
+  modalMaxPerDay        Int      @default(1)
+  modalCooldownMinutes  Int      @default(1440)
+  modalMaxShowsPerUser  Int      @default(3)
+  toastMaxPriority      Int      @default(20)
+  updatedBy             String?
+  updatedByLabel        String?
+  updatedAt             DateTime @default(now()) @updatedAt
 }
 
 model PlatformFeedback {

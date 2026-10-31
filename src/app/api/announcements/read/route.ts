@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { recordRead } from '@/lib/announcements/state'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-/** POST /api/announcements/read — 把一批通知标记为我已读（幂等，重复标不报错）。 */
+/** POST /api/announcements/read — legacy read endpoint, now backed by READ receipts. */
 export async function POST(request: NextRequest) {
-  // 与 GET 同一条边界：读自己的平台通知不需要团队。
   const authResult = await getCurrentUserFromRequest(request)
   if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -16,7 +15,7 @@ export async function POST(request: NextRequest) {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: '请求过于频繁，请稍后再试',
-  }, 'platform-announcements-read')
+  }, 'platform-announcements-read', authResult.id)
   if (limited) return limited
 
   const body = await request.json().catch(() => null)
@@ -25,17 +24,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'ids required' }, { status: 400 })
   }
 
-  // 只标记确实存在、且（定向的）确实是发给我的，避免伪造 id 塞脏数据。
-  const valid = await prisma.platformAnnouncement.findMany({
-    where: { id: { in: ids as string[] }, OR: [{ userId: null }, { userId: authResult.id }] },
-    select: { id: true },
-  })
-  if (valid.length === 0) return NextResponse.json({ ok: true, marked: 0 })
+  const result = await recordRead(authResult.id, ids as string[], 'INBOX')
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error, code: result.code }, { status: result.status })
+  }
 
-  await prisma.platformAnnouncementRead.createMany({
-    data: valid.map((a) => ({ announcementId: a.id, userId: authResult.id })),
-    skipDuplicates: true,
-  })
-
-  return NextResponse.json({ ok: true, marked: valid.length })
+  return NextResponse.json({ ok: true, marked: result.marked ?? 0 })
 }

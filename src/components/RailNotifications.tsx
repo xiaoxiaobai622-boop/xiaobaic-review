@@ -6,9 +6,20 @@ import { Bell, Settings } from 'lucide-react'
 import RailPanel from '@/components/RailPanel'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api-client'
+import { appNotice } from '@/components/AppDialogProvider'
 import { getDesktopBridge } from '@/lib/desktop-bridge'
 import { formatDateTime } from '@/lib/utils'
 import { buildReviewPath } from '@/lib/deep-link'
+import {
+  acknowledgeAnnouncement,
+  loadMoreAnnouncementHistory,
+  markAnnouncementsRead,
+  recordAnnouncementClick,
+  useAnnouncementFeed,
+  type FeedAnnouncement,
+} from '@/lib/announcement-feed-store'
+import { TYPE_LABELS } from '@/lib/announcements/constants'
+import { isExternalUrl } from '@/lib/announcements/url'
 
 interface ReplyItem {
   id: string
@@ -93,13 +104,7 @@ function replyHref(item: ReplyItem): string {
   })
 }
 
-interface PlatformItem {
-  id: string
-  title: string
-  content: string
-  createdAt: string
-  readAt: string | null
-}
+const EMPTY_FEED_ITEMS: FeedAnnouncement[] = []
 
 interface InviteItem {
   id: string
@@ -115,7 +120,7 @@ type NotificationCategory = 'team' | 'platform' | 'personal'
 /** 一拨数据一条流：类别退成每行的标记，不再两枚标签各占一屏。 */
 type Entry =
   | { key: string; type: 'reply'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: ReplyItem }
-  | { key: string; type: 'announcement'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: PlatformItem }
+  | { key: string; type: 'announcement'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: FeedAnnouncement }
   | { key: string; type: 'invite'; createdAt: string; unread: boolean; headline: string; body: string; where: string; item: InviteItem }
 
 const CATEGORY_LABEL: Record<NotificationCategory, string> = { team: '团队', platform: '平台', personal: '个人' }
@@ -132,7 +137,11 @@ export default function RailNotifications({ className, enabled = true }: { class
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [items, setItems] = useState<ReplyItem[]>([])
   const [failed, setFailed] = useState(false)
-  const [platformItems, setPlatformItems] = useState<PlatformItem[]>([])
+  const feedState = useAnnouncementFeed()
+  const platformItems = feedState.data?.items ?? EMPTY_FEED_ITEMS
+  const platformFailed = feedState.error && !feedState.data
+  const historyHasMore = feedState.data?.historyHasMore ?? false
+  const historyLoading = feedState.historyLoading
   // 「哪几条算这次新看到的」按水位算；水位没写过＝这台浏览器第一次看，全算未读。
   const [watermark, setWatermark] = useState<string | null>(null)
   const desktop = getDesktopBridge()
@@ -158,19 +167,6 @@ export default function RailNotifications({ className, enabled = true }: { class
     }
   }, [])
 
-  const loadPlatform = useCallback(async (): Promise<PlatformItem[]> => {
-    try {
-      const response = await apiFetch('/api/announcements', { cache: 'no-store' })
-      if (!response.ok) throw new Error(String(response.status))
-      const data = await response.json()
-      const loaded = (data.items || []) as PlatformItem[]
-      setPlatformItems(loaded)
-      return loaded
-    } catch {
-      return []
-    }
-  }, [])
-
   const loadInvitations = useCallback(async (): Promise<void> => {
     try {
       const response = await apiFetch('/api/team-center', { cache: 'no-store' })
@@ -185,25 +181,23 @@ export default function RailNotifications({ className, enabled = true }: { class
 
   useEffect(() => {
     setKinds(readKinds())
-    if (enabled) { load(); loadPlatform() }
+    if (enabled) load()
     // 邀请跟随账号，不依赖当前团队；没有团队的账号也要能看到。
     void loadInvitations()
-  }, [enabled, load, loadPlatform, loadInvitations])
+  }, [enabled, load, loadInvitations])
 
   // 30 秒一次，且只在标签页可见时打（和审阅页那套刷新节奏一致）。
-  // 客户端把窗口最小化或收进托盘时页面算「不可见」，而那正是最需要通知的时候，所以桌面端照样打。
-  // 一轮各打一个端点＝每端点每分钟 2 次，两个端点都是每分钟 60 次的限流，撞不上。
+  // 平台公告由 announcement-feed-store 统一轮询，窄栏只吃它的数据，不再多打一条公告接口。
   useEffect(() => {
-    // 还没有团队的账号停在建团队页，没有项目可提醒；不开轮询，省掉两端点每 30 秒的空请求。
     if (!enabled) return
-    const tick = () => { if (document.visibilityState === 'visible' || desktop) { load(); loadPlatform() } }
+    const tick = () => { if (document.visibilityState === 'visible' || desktop) load() }
     const timer = window.setInterval(tick, REFRESH_INTERVAL_MS)
     document.addEventListener('visibilitychange', tick)
     return () => {
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', tick)
     }
-  }, [desktop, enabled, load, loadPlatform])
+  }, [desktop, enabled, load])
 
   // 桌面端把每轮新拿到的条目转成系统通知；浏览器里 desktop 是 null，这一整段不跑。
   useEffect(() => {
@@ -219,7 +213,9 @@ export default function RailNotifications({ className, enabled = true }: { class
       return
     }
     const newReplies = kinds.reply ? items.filter((item) => item.createdAt > seen) : []
-    const newMessages = kinds.announcement ? platformItems.filter((item) => item.createdAt > seen) : []
+    const newMessages = kinds.announcement
+      ? platformItems.filter((item) => item.active && !item.isTest && item.createdAt > seen)
+      : []
     if (newReplies.length > 0) {
       const newest = newReplies[0]
       desktop.notify(
@@ -261,16 +257,24 @@ export default function RailNotifications({ className, enabled = true }: { class
     // 打开只读、不写水位：清未读是标签行那颗按钮的事，别替用户按它。
     setOpen(true)
     void load()
-    void loadPlatform()
     void loadInvitations()
   }
+
+  // Two deliberately separate unread sources: replies use the local watermark
+  // (there is no server read row for comments), platform announcements use the
+  // server readAt. Keeping the helpers named prevents one from silently
+  // controlling the other's row marker or “全部标记为已读”.
+  const replyIsUnread = (item: ReplyItem) => !watermark || new Date(item.createdAt) > new Date(watermark)
+  const platformIsUnread = (item: FeedAnnouncement) => !item.readAt
+  const replyUnreadCount = items.filter(replyIsUnread).length
+  const platformUnreadCount = platformItems.filter(platformIsUnread).length
 
   const entries: Entry[] = [
     ...items.map((item) => ({
       key: `r-${item.id}`,
       type: 'reply' as const,
       createdAt: item.createdAt,
-      unread: !watermark || new Date(item.createdAt) > new Date(watermark),
+      unread: replyIsUnread(item),
       headline: `${item.authorName} 回复了你`,
       body: item.content,
       where: `${item.projectTitle} › ${item.videoName}${item.timecode ? ` · ${item.timecode}` : ''}`,
@@ -280,7 +284,7 @@ export default function RailNotifications({ className, enabled = true }: { class
       key: `a-${item.id}`,
       type: 'announcement' as const,
       createdAt: item.createdAt,
-      unread: !item.readAt,
+      unread: platformIsUnread(item),
       headline: item.title,
       body: item.content,
       where: '平台消息',
@@ -309,20 +313,36 @@ export default function RailNotifications({ className, enabled = true }: { class
   // 待处理邀请没有「已读」状态，但它确实需要人处理：一起算进窄栏红点和角标。
   const actionableUnread = entries.filter((entry) => entry.unread && (entry.type === 'reply' || entry.type === 'announcement') && kinds[entry.type]).length
   const unreadCount = actionableUnread + invitations.length
-  const markableUnread = actionableUnread
+  // “全部标记为已读” only touches the current category: platform writes server
+  // readAt; team advances the local reply watermark.
+  const markableUnread = category === 'team'
+    ? (kinds.reply ? replyUnreadCount : 0)
+    : category === 'platform'
+      ? (kinds.announcement ? platformUnreadCount : 0)
+      : 0
   const shown = category === 'personal' || filter === 'all' ? visible : visible.filter((entry) => entry.unread)
+  const panelFailed = category === 'personal' ? invitesFailed : category === 'platform' ? platformFailed : failed
+
+  // Opening the platform inbox writes READ for the items the person can see;
+  // expanding an individual row repeats the same idempotent write.
+  useEffect(() => {
+    if (!open || category !== 'platform') return
+    const unreadIds = platformItems.filter((item) => !item.readAt).map((item) => item.id)
+    if (unreadIds.length > 0) void markAnnouncementsRead(unreadIds)
+  }, [category, open, platformItems])
 
   const markAllRead = async () => {
-    const newestReply = items[0]?.createdAt
-    if (newestReply) writeSeenAt(newestReply)
-    setWatermark(newestReply || new Date().toISOString())
-    if (platformItems.some((item) => !item.readAt)) {
-      await apiFetch('/api/announcements/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: platformItems.map((item) => item.id) }),
-      }).catch(() => null)
-      setPlatformItems((current) => current.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })))
+    if (category === 'team') {
+      const newestReply = items[0]?.createdAt
+      if (newestReply) writeSeenAt(newestReply)
+      setWatermark(newestReply || new Date().toISOString())
+      return
+    }
+    if (category !== 'platform') return
+    const unreadIds = platformItems.filter(platformIsUnread).map((item) => item.id)
+    if (unreadIds.length > 0) {
+      const ok = await markAnnouncementsRead(unreadIds)
+      if (!ok) appNotice({ tone: 'error', message: '公告已读状态写入失败，请稍后重试' })
     }
   }
 
@@ -337,8 +357,24 @@ export default function RailNotifications({ className, enabled = true }: { class
       router.push(`/studio/team/invite/${encodeURIComponent(entry.item.token)}`)
       return
     }
-    // 平台消息没有独立路由，就地展开/收起正文。
+    // 平台消息/公告没有独立路由，就地展开/收起正文；展开即写 READ。
+    const opening = expanded !== entry.key
     setExpanded((current) => (current === entry.key ? null : entry.key))
+    if (opening && !entry.item.readAt) {
+      void markAnnouncementsRead([entry.item.id]).then((ok) => {
+        if (!ok) appNotice({ tone: 'error', message: '已读状态写入失败，请稍后重试' })
+      })
+    }
+  }
+
+  const acknowledgeItem = async (item: FeedAnnouncement) => {
+    const result = await acknowledgeAnnouncement(item.id, item.primaryMode)
+    if (!result.ok) appNotice({ tone: 'error', message: result.error || '确认失败，请稍后重试' })
+  }
+
+  const loadMoreHistory = async () => {
+    const result = await loadMoreAnnouncementHistory()
+    if (!result.ok && result.error) appNotice({ tone: 'error', message: result.error })
   }
 
   return (
@@ -437,9 +473,10 @@ export default function RailNotifications({ className, enabled = true }: { class
                 type="button"
                 onClick={() => setFilter('unread')}
                 aria-pressed={filter === 'unread'}
+                title={category === 'platform' ? '按服务端 readAt 统计' : '按本机通知水位统计'}
                 className={cn('rounded px-2 py-0.5 transition-colors', filter === 'unread' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
               >
-                未读{visible.filter((entry) => entry.unread).length > 0 ? ` ${visible.filter((entry) => entry.unread).length}` : ''}
+                {category === 'platform' ? '未读（服务端）' : '未读（本机）'}{visible.filter((entry) => entry.unread).length > 0 ? ` ${visible.filter((entry) => entry.unread).length}` : ''}
               </button>
             </div>
             <button
@@ -452,53 +489,111 @@ export default function RailNotifications({ className, enabled = true }: { class
             </button>
           </div>
           )}
+          {category === 'platform' ? (
+            <p className="shrink-0 border-b border-border px-3 py-1 text-[10px] text-muted-foreground">
+              平台公告的已读/未读按服务端 readAt；铃铛红点水位只用于批注回复。
+            </p>
+          ) : null}
 
           <div className="min-h-0 flex-1 overflow-y-auto p-1">
-            {shown.length === 0 && !(category === 'personal' ? invitesFailed : failed) && (
+            {shown.length === 0 && !panelFailed && (
               <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
                 <Bell data-empty-bell className="h-12 w-12 text-muted-foreground/30" aria-hidden />
                 <p className="text-sm font-medium text-foreground">
                   {category === 'team' ? '暂无团队动态' : category === 'platform' ? '暂无平台消息' : '暂无个人邀请'}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {category === 'team' ? '团队里的批注回复会显示在这里。' : category === 'platform' ? '运营公告会显示在这里。' : '其他团队邀请你加入时会显示在这里。'}
+                  {category === 'team' ? '团队里的批注回复会显示在这里。' : category === 'platform' ? '平台公告与消息会显示在这里。' : '其他团队邀请你加入时会显示在这里。'}
                 </p>
               </div>
             )}
-            {shown.length === 0 && (category === 'personal' ? invitesFailed : failed) && (
+            {shown.length === 0 && panelFailed && (
               <p className="px-2 py-4 text-sm text-muted-foreground">
-                {category === 'personal' ? '邀请读取失败，重新打开通知会再试。' : '通知载入失败，30 秒后自动重试。'}
+                {category === 'personal'
+                  ? '邀请读取失败，重新打开通知会再试。'
+                  : category === 'platform'
+                    ? '公告读取失败，恢复后会自动重试；收件箱不会阻塞工作台。'
+                    : '通知载入失败，30 秒后自动重试。'}
               </p>
             )}
             {shown.map((entry) => (
-              <button
-                key={entry.key}
-                type="button"
-                data-notification-row
-                onClick={() => openEntry(entry)}
-                className="w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:bg-accent"
-              >
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="min-w-0 truncate text-sm font-medium text-foreground">{entry.headline}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(entry.createdAt)}</span>
-                </span>
-                <span className={`mt-0.5 text-sm text-foreground ${expanded === entry.key ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
-                  {entry.body}
-                </span>
-                <span className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                  <span className="shrink-0 rounded bg-muted px-1 py-px text-[11px]">
-                    {entry.type === 'reply' ? '批注回复' : entry.type === 'announcement' ? '平台消息' : '团队邀请'}
+              <div key={entry.key} data-notification-row className="rounded-md transition-colors hover:bg-accent">
+                <button
+                  type="button"
+                  onClick={() => openEntry(entry)}
+                  aria-expanded={entry.type === 'announcement' ? expanded === entry.key : undefined}
+                  className="w-full rounded-md px-2 py-2 text-left focus-visible:bg-accent"
+                >
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 truncate text-sm font-medium text-foreground">{entry.headline}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(entry.createdAt)}</span>
                   </span>
-                  <span className="truncate">{entry.type === 'announcement' ? '' : entry.where}</span>
-                </span>
-                {entry.unread && (
-                  <span className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
-                    未读
+                  <span className={`mt-0.5 text-sm text-foreground ${expanded === entry.key ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                    {entry.body}
                   </span>
-                )}
-              </button>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="shrink-0 rounded bg-muted px-1 py-px text-[11px]">
+                      {entry.type === 'reply'
+                        ? '批注回复'
+                        : entry.type === 'announcement'
+                          ? TYPE_LABELS[entry.item.type as keyof typeof TYPE_LABELS] || '平台消息'
+                          : '团队邀请'}
+                    </span>
+                    {entry.type === 'announcement' && entry.item.ackRequired && !entry.item.acknowledgedAt ? (
+                      <span className="shrink-0 rounded bg-destructive-visible px-1 py-px text-[11px] text-destructive">需确认</span>
+                    ) : null}
+                    <span className="truncate">{entry.type === 'announcement' ? '' : entry.where}</span>
+                  </span>
+                  {entry.unread && (
+                    <span className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
+                      未读
+                    </span>
+                  )}
+                </button>
+
+                {expanded === entry.key && entry.type === 'announcement' ? (
+                  <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
+                    {entry.item.ctaLabel && entry.item.ctaUrl ? (
+                      <a
+                        href={entry.item.ctaUrl}
+                        target={isExternalUrl(entry.item.ctaUrl) ? '_blank' : undefined}
+                        rel={isExternalUrl(entry.item.ctaUrl) ? 'noopener noreferrer' : undefined}
+                        onClick={() => { void recordAnnouncementClick(entry.item.id, 'INBOX') }}
+                        className="inline-flex items-center rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {entry.item.ctaLabel}
+                      </a>
+                    ) : null}
+                    {entry.item.ackRequired ? (
+                      entry.item.acknowledgedAt ? (
+                        <span className="text-xs text-success">已确认知晓</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { void acknowledgeItem(entry.item) }}
+                          className="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          我已知晓
+                        </button>
+                      )
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ))}
+            {category === 'platform' && historyHasMore ? (
+              <div className="px-2 py-2">
+                <button
+                  type="button"
+                  onClick={() => { void loadMoreHistory() }}
+                  disabled={historyLoading}
+                  className="w-full rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+                >
+                  {historyLoading ? '加载历史公告…' : '加载更多历史'}
+                </button>
+              </div>
+            ) : null}
           </div>
     </RailPanel>
   )

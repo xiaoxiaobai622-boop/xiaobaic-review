@@ -3,6 +3,7 @@
 import { AuthProvider } from '@/components/AuthProvider'
 import StudioRail from '@/components/StudioRail'
 import SessionMonitor from '@/components/SessionMonitor'
+import AnnouncementHost from '@/components/announcements/AnnouncementHost'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 
@@ -52,6 +53,7 @@ export default function AdminLayout({
         <main id="main-content" tabIndex={-1} className={`flex-1 min-h-0 min-w-0 flex flex-col outline-none ${isProjectWorkspace ? 'lg:overflow-hidden' : ''}`}>
           {children}
         </main>
+        <AnnouncementHost />
         <SessionMonitor />
         {/* Ko-fi 打赏挂件撤掉了：它是全站唯一还在「要钱」的入口，而没有 ICP 许可证的
             时候付费／募捐类入口不许进生产。组件文件留着，要放回来就重新挂这一行。 */}

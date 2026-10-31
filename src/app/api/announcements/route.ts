@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
+import {
+  loadAnnouncementFeed,
+  loadAnnouncementHistoryPage,
+} from '@/lib/announcements/feed'
+import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/announcements — 发给我的平台通知（定向给我的 + 全员广播）。
- * 每条带出我自己的已读时间（没读过就是 null），未读数由前端累计。
+ * GET /api/announcements — the single feed for INBOX, BANNER, MODAL and TOAST.
+ * The legacy fields (id/title/content/createdAt/broadcast/readAt + unread) stay
+ * intact; mode/priority/ack/dismiss/impression fields are additive.
  */
 export async function GET(request: NextRequest) {
-  // 平台通知按用户投递，不属于任何团队：还没建团队/入队的账号也得读得到，
-  // 否则侧栏每 30 秒轮询一次就是一次 403。
   const authResult = await getCurrentUserFromRequest(request)
   if (!authResult) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -20,27 +23,29 @@ export async function GET(request: NextRequest) {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: '请求过于频繁，请稍后再试',
-  }, 'platform-announcements')
+  }, 'platform-announcements', authResult.id)
   if (limited) return limited
 
-  const items = await prisma.platformAnnouncement.findMany({
-    where: { OR: [{ userId: null }, { userId: authResult.id }] },
-    orderBy: { createdAt: 'desc' },
-    take: 30,
-    include: {
-      reads: { where: { userId: authResult.id }, select: { readAt: true } },
-    },
-  })
+  try {
+    const historyCursor = request.nextUrl.searchParams.get('historyCursor')?.trim() || null
+    if (historyCursor) {
+      const historyLimit = Number(request.nextUrl.searchParams.get('historyLimit') || 50)
+      const page = await loadAnnouncementHistoryPage(authResult.id, historyCursor, historyLimit)
+      if (!page) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(page, {
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    }
 
-  return NextResponse.json({
-    items: items.map((a) => ({
-      id: a.id,
-      title: a.title,
-      content: a.content,
-      createdAt: a.createdAt,
-      broadcast: a.userId === null,
-      readAt: a.reads[0]?.readAt ?? null,
-    })),
-    unread: items.filter((a) => a.reads.length === 0).length,
-  })
+    const feed = await loadAnnouncementFeed(authResult.id)
+    if (!feed) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(feed, {
+      headers: { 'Cache-Control': 'no-store' },
+    })
+  } catch (error) {
+    // The receiver host degrades to no banner/modal and the rail keeps its last
+    // list; a failed feed must never block login or the studio.
+    logError('[ANNOUNCEMENT FEED] failed:', error)
+    return NextResponse.json({ error: '公告读取失败' }, { status: 500 })
+  }
 }

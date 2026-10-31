@@ -62,7 +62,7 @@ export default function PlatformMessagesPage() {
     setError(null)
     try {
       const [annRes, fbRes, usersRes] = await Promise.all([
-        apiFetch('/api/platform/announcements', { cache: 'no-store' }),
+        apiFetch('/api/platform/announcements?type=MESSAGE', { cache: 'no-store' }),
         apiFetch('/api/platform/feedback', { cache: 'no-store' }),
         apiFetch('/api/users', { cache: 'no-store' }),
       ])
