@@ -45,6 +45,17 @@ function read(rel: string) {
   const file = `${REPO}/${rel}`
   return existsSync(file) ? strip(readFileSync(file, 'utf8')) : ''
 }
+/**
+ * Extract one top-level function body. B1/I20 need to prove a field/count is in
+ * the function that feeds the endpoint, not just somewhere in the file.
+ */
+function functionBody(src: string, name: string): string {
+  const start = src.search(new RegExp(`(?:export\\s+)?async\\s+function\\s+${name}\\b`))
+  if (start < 0) return ''
+  const rest = src.slice(start + 1)
+  const next = rest.search(/\n(?:export\s+)?(?:async\s+)?function\s+|\nexport\s+(?:const|type|interface|class)\s+/)
+  return next >= 0 ? src.slice(start, start + 1 + next) : src.slice(start)
+}
 // 文案按 key 取，不能拿正则截段：顶层 `security` 之前还有一节 `settings.security`，截段会截到错的那一节。
 function json(rel: string): any {
   const file = `${REPO}/${rel}`
@@ -55,6 +66,7 @@ const LIST = 'src/app/platform/teams/page.tsx'
 const DETAIL = 'src/app/platform/teams/[id]/page.tsx'
 const HOME = 'src/app/platform/page.tsx'
 const API = 'src/app/api/platform/teams/route.ts'
+const TEAM_LIB = 'src/lib/platform-team-360.ts'
 // 三处共用一份身份行，别各写各的（各写一遍就是「乱」的源头）。
 const SHARED = 'src/components/PlatformTeamIdentity.tsx'
 // 复制那一下单独一枚控件：成员页、安全页也要用，所以它的判据不该绑在团队身份行上。
@@ -64,6 +76,7 @@ const listSrc = read(LIST)
 const detailSrc = read(DETAIL)
 const homeSrc = read(HOME)
 const apiSrc = read(API)
+const teamLibSrc = read(TEAM_LIB)
 const sharedSrc = read(SHARED)
 const copySrc = read(COPY)
 
@@ -88,9 +101,21 @@ async function main() {
     'A5 复制没成要说「复制失败」，不许按了没反应还装作复制过了', '')
 
   console.log('\n── B 分享键真的到了界面上 ──')
-  const apiSelectAt = apiSrc.search(/select:\s*\{[\s\S]{0,400}/)
-  check(apiSelectAt >= 0 && /shareKey:\s*true/.test(apiSrc.slice(apiSelectAt, apiSelectAt + 400)),
-    'B1 /api/platform/teams 的 select 里有 shareKey（服务端不给，界面就只能画空）', '')
+  // 列表数据已搬到 lib；判据必须钉住「lib 的 select 有它」＋「路由原样把 teams 吐出去」两层。
+  const listFn = functionBody(teamLibSrc, 'getPlatformTeamsList')
+  const listSelectAt = listFn.indexOf('select:')
+  const listShareAt = listFn.indexOf('shareKey: true')
+  const listCreatedByAt = listFn.indexOf('createdBy:')
+  const listSelectHasShareKey = listSelectAt >= 0
+    && listShareAt > listSelectAt
+    && (listCreatedByAt < 0 || listShareAt < listCreatedByAt)
+  const routeUsesList = /const\s+teams\s*=\s*await\s+getPlatformTeamsList\(/.test(apiSrc)
+  const routeReturnsWholeTeams = /NextResponse\.json\(\{\s*teams,\s*meta:/.test(apiSrc)
+    || /NextResponse\.json\(\{\s*meta:[\s\S]{0,240}\bteams\b/.test(apiSrc)
+  const routeProjectsTeams = /teams\s*:\s*teams\.(map|filter|reduce)/.test(apiSrc)
+  check(listSelectHasShareKey && routeUsesList && routeReturnsWholeTeams && !routeProjectsTeams,
+    'B1 getPlatformTeamsList 的 select 有 shareKey，且 /api/platform/teams 原样返回 teams（lib + 路由两层）',
+    `→ libSelect=${listSelectHasShareKey} routeUses=${routeUsesList} routeReturns=${routeReturnsWholeTeams} routeProjects=${routeProjectsTeams}`)
   check(!!listSrc && /shareKey/.test(listSrc.slice(0, 2000)),
     'B2 列表页的 Team 类型认 shareKey 这列（类型没写＝取到也是 undefined，界面静默少一行）', '')
 
@@ -239,11 +264,21 @@ async function main() {
     'I19 消息页那个条数用的是服务端总数，窗口装不下时补一句「这一屏只列最近 N 条」',
     `→ 总数那句 ${/共 \$\{feedbackTotal\} 条/.test(messages)} / 窗口那句 ${/这一屏只列最近 \$\{feedback\.length\} 条/.test(messages)}`)
 
-  // ⑦ 首页「成员」列数的是全部 TeamMember 行，而额度检查与团队详情的用量只算 status=ACTIVE。
-  const countBlock = (apiSrc.match(/_count:\s*\{[\s\S]{0,200}/) || [])[0] || ''
-  check(/members:\s*\{\s*where:[^}]*ACTIVE/.test(countBlock),
-    'I20 后台的成员数只算在队的成员，和额度检查、团队详情的用量口径是同一句话',
-    `→ ${JSON.stringify(countBlock.replace(/\s+/g, ' ').slice(0, 90))}`)
+  // ⑦ 成员数已从旧路由搬到 lib：列表走 usageMany 的 SQL，详情/额度走 getTeamUsage。
+  // 判据切函数体，钉住两处 ACTIVE-only 计数表达式，以及列表/详情的 _count 确实取 usage.members。
+  const usageManyFn = functionBody(teamLibSrc, 'usageMany')
+  const overviewFn = functionBody(teamLibSrc, 'getTeamOverview')
+  const getTeamUsageFn = functionBody(accessLib, 'getTeamUsage')
+  const listCounts = /usageMany\(ids\)/.test(listFn)
+    && /_count:\s*\{\s*members:\s*usage\.members/.test(listFn)
+  const listActiveOnly = /FROM "TeamMember"\s+m[\s\S]*?m\."status" = 'ACTIVE'[\s\S]*?AS members/.test(usageManyFn)
+  const detailCounts = /getTeamUsage\(teamId\)/.test(overviewFn)
+    && /_count:\s*\{\s*members:\s*usage\.members/.test(overviewFn)
+  const quotaCounts = /getTeamUsage\(id\)/.test(quotaApi)
+  const usageActiveOnly = /prisma\.teamMember\.count\(\{\s*where:\s*\{\s*teamId,\s*status:\s*'ACTIVE'\s*\}\s*\}\)/.test(getTeamUsageFn)
+  check(listCounts && listActiveOnly && detailCounts && quotaCounts && usageActiveOnly,
+    'I20 列表 usageMany、详情 getTeamUsage、额度 getTeamUsage 都是 ACTIVE-only，且列表/详情 _count 取 usage.members（同一口径）',
+    `→ listCounts=${listCounts} listActive=${listActiveOnly} detail=${detailCounts} quota=${quotaCounts} usageActive=${usageActiveOnly}`)
 
   // ⑧ 账号页自己说「平台账号」，可这页渲染出来的文案里还混着「成员」「用户」——一个东西三个名字。
   // 判法机械：把这页真的调用到的 key 抽出来，逐条看中文值。en/nl/de 本来就统一用 User/Gebruiker/Benutzer，不在这一刀里。
