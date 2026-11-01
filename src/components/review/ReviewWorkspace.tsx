@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Check, Share2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import ThumbnailReel from '@/components/ThumbnailReel'
@@ -100,6 +100,12 @@ function latestByName(videos: any[], name: string) {
   return getLatestVideo(group) as any ?? group[0] ?? null
 }
 
+function hasPlaybackUrl(video: any): boolean {
+  return Boolean(
+    video?.hlsUrl720p || video?.streamUrl720p || video?.streamUrl1080p || video?.streamUrl2160p
+  )
+}
+
 export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const {
     project, videos, videosByName, thumbnailsByName, activeVideoName, comments,
@@ -112,11 +118,73 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const tu = useTranslations('videoUi')
   const t = useTranslations('share')
 
+  // A catalog refresh can add a same-name version above the one being watched.
+  // Pin the version the viewer actually selected/started and keep its already
+  // minted URLs while the parent re-tokenizes the new catalog entry. Without
+  // this, automaticVideoIndex=0 would silently switch versions (pause + 0).
+  const [knownVideos, setKnownVideos] = useState<Map<string, any>>(() => new Map())
+  const [pinnedVideoId, setPinnedVideoId] = useState<string | null>(null)
+  const stableVideos = useMemo(() => {
+    return videos.map((video: any) => {
+      if (hasPlaybackUrl(video)) return video
+      const previous = knownVideos.get(video.id)
+      if (!previous) return video
+      return {
+        ...video,
+        hlsUrl720p: previous.hlsUrl720p || '',
+        streamUrl720p: previous.streamUrl720p || '',
+        streamUrl1080p: previous.streamUrl1080p || '',
+        streamUrl2160p: previous.streamUrl2160p || '',
+      }
+    })
+  }, [videos, knownVideos])
+  useEffect(() => {
+    setKnownVideos((current) => {
+      const next = new Map(current)
+      const ids = new Set(videos.map((video: any) => video.id))
+      let changed = false
+      for (const id of next.keys()) {
+        if (!ids.has(id)) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      for (const video of videos) {
+        if (!hasPlaybackUrl(video)) continue
+        const previous = next.get(video.id)
+        if (
+          !previous ||
+          previous.hlsUrl720p !== video.hlsUrl720p ||
+          previous.streamUrl720p !== video.streamUrl720p ||
+          previous.streamUrl1080p !== video.streamUrl1080p ||
+          previous.streamUrl2160p !== video.streamUrl2160p
+        ) {
+          next.set(video.id, video)
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [videos])
+  const pinnedVideo = pinnedVideoId
+    ? stableVideos.find((video: any) => video.id === pinnedVideoId) ?? null
+    : null
+  const pinnedIndex = pinnedVideo
+    ? stableVideos.findIndex((video: any) => video.id === pinnedVideo.id)
+    : -1
+  const playerVideoIndex = pinnedIndex >= 0 ? pinnedIndex : (initialVideoIndex ?? 0)
+  const onVideoStateChangeAction = actions.onVideoStateChange
+  const handleVideoStateChange = useCallback((state: any) => {
+    const id = state?.selectedVideo?.id
+    if (id) setPinnedVideoId((current) => current === id ? current : id)
+    onVideoStateChangeAction?.(state)
+  }, [onVideoStateChangeAction])
+
   const playableNames = useMemo(() => Array.from(new Set(videos.map((video) => video.name))), [videos])
   const activeIndex = playableNames.indexOf(activeVideoName)
   const previousVideoName = activeIndex > 0 ? playableNames[activeIndex - 1] : null
   const nextVideoName = activeIndex >= 0 && activeIndex < playableNames.length - 1 ? playableNames[activeIndex + 1] : null
-  const selectedVideo = latestByName(videos, activeVideoName)
+  const selectedVideo = pinnedVideo ?? latestByName(videos, activeVideoName)
   const showCommentPanel = !hideComments
   const canCompare = capabilities.canCompareVersions && playableNames.length > 1
   const menuExtra = (
@@ -196,7 +264,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
           <>
             <div className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] lg:h-full lg:min-h-0 lg:flex-1 lg:p-[2px] lg:pb-[2px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
-                videos={videos}
+                videos={stableVideos}
                 projectId={project.id}
                 projectStatus={project.status as any}
                 defaultQuality={defaultQuality}
@@ -207,8 +275,8 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 watermarkEnabled={project.watermarkEnabled}
                 activeVideoName={activeVideoName}
                 initialSeekTime={initialSeekTime}
-                initialVideoIndex={initialVideoIndex}
-                followLatestVersion={followLatestVersion}
+                initialVideoIndex={playerVideoIndex}
+                followLatestVersion={false}
                 isAdmin={capabilities.canSeeInternalComments}
                 isGuest={isGuest}
                 allowAssetDownload={Boolean(project.allowAssetDownload)}
@@ -220,7 +288,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 onApprove={capabilities.canApprove ? actions.onApprove : undefined}
                 authenticatedEmail={identity?.email ?? null}
                 authenticatedName={identity?.name ?? null}
-                onVideoStateChange={actions.onVideoStateChange}
+                onVideoStateChange={handleVideoStateChange}
                 hideApprovalAction={capabilities.canManageApproval || !capabilities.canApprove}
                 allowComparison={capabilities.canCompareVersions}
                 onPreviousVideo={previousVideoName ? () => actions.onVideoSelect(previousVideoName) : undefined}

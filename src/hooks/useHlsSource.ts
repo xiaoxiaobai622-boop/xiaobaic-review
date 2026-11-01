@@ -57,6 +57,11 @@ export function useHlsSource({
 }: UseHlsSourceOptions): UseHlsSourceResult {
   const [isUsingHls, setIsUsingHls] = useState(false)
   const onPlaybackErrorRef = useRef(onPlaybackError)
+  // A re-signed URL keeps the same video and element, so the effect below is
+  // torn down and rebuilt with no memory of where playback was. Carry that
+  // position across the rebuild; a different video changes attachmentKey and
+  // must not inherit the previous video's position.
+  const carriedPositionRef = useRef<{ key: string; position: number; playing?: boolean } | null>(null)
 
   useEffect(() => {
     onPlaybackErrorRef.current = onPlaybackError
@@ -88,6 +93,20 @@ export function useHlsSource({
     let lastScheduledPosition: number | null = null
     let disposed = false
     let lastNetworkStatus: number | undefined
+    // Last position the media element actually reached. Recovery uses this when
+    // the element has already reset to 0, so a restart cannot resurrect a stale
+    // pending target from an earlier attempt.
+    let lastPlaybackPosition = 0
+    const carryKey = String(attachmentKey ?? '')
+    const carried = carriedPositionRef.current
+    if (carried && carried.key === carryKey && carried.position > 0.1) {
+      pendingSeekPosition = carried.position
+    }
+    // A re-signed URL is the same playback, not a new play intent: resume once
+    // the carried position is applied, but only if it was actually playing.
+    let resumeAfterCarry = Boolean(
+      carried && carried.key === carryKey && carried.playing && playIntentRef?.current
+    )
 
     // Registered in attach order so teardown replays the same order.
     const videoListeners: Array<[string, () => void]> = []
@@ -187,6 +206,9 @@ export function useHlsSource({
       if (disposed || pendingSeekPosition === null) return
 
       const target = clampToDuration(pendingSeekPosition)
+      // A metadata/duration notification is not a request to replay an old
+      // target. Apply once; only put it back when the element refuses the seek.
+      pendingSeekPosition = null
 
       if (Number.isFinite(target)) {
         try {
@@ -196,11 +218,17 @@ export function useHlsSource({
         } catch {
           // The media element can reject a seek while metadata is changing;
           // retain pendingSeekPosition and retry on the next metadata event.
+          pendingSeekPosition = target
           return
         }
       }
 
       if (manifestReady) scheduleLoadAt(target)
+
+      if (resumeAfterCarry) {
+        resumeAfterCarry = false
+        if (playIntentRef?.current) void video.play().catch(() => {})
+      }
     }
 
     const setVideoSource = (source: string, type: 'hls' | 'fallback') => {
@@ -216,8 +244,9 @@ export function useHlsSource({
     const activateFallback = () => {
       if (disposed) return
 
+      const current = Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0
       const fallbackPosition = pendingSeekPosition ?? (
-        Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : null
+        current > 0 ? current : lastPlaybackPosition > 0 ? lastPlaybackPosition : null
       )
       const shouldResume = !video.paused || playIntentRef?.current === true
 
@@ -276,9 +305,6 @@ export function useHlsSource({
         return
       }
       sourceRestartAttempts += 1
-      if (Number.isFinite(media.currentTime) && media.currentTime > 0) {
-        pendingSeekPosition = Math.max(0, media.currentTime)
-      }
       manifestReady = false
       networkRecoveryAttempts = 0
       mediaRecoveryAttempts = 0
@@ -292,6 +318,13 @@ export function useHlsSource({
       restartTimer = setTimeout(() => {
         restartTimer = null
         if (disposed) return
+        // Snapshot the playhead at the moment the old session is actually torn
+        // down. If the element already reset itself, resume from the last
+        // position it really reached instead of an older pending target.
+        const atReset = Number.isFinite(media.currentTime) && media.currentTime > 0
+          ? media.currentTime
+          : lastPlaybackPosition
+        if (atReset > 0) pendingSeekPosition = atReset
         startHlsJs()
       }, 400 * sourceRestartAttempts)
     }
@@ -309,13 +342,16 @@ export function useHlsSource({
         return
       }
       nativeRestartAttempts += 1
-      if (Number.isFinite(media.currentTime) && media.currentTime > 0) {
-        pendingSeekPosition = Math.max(0, media.currentTime)
-      }
       const shouldResume = !media.paused || playIntentRef?.current === true
       nativeRestartTimer = setTimeout(() => {
         nativeRestartTimer = null
         if (disposed) return
+        // Same rule as the hls.js rebuild: the source is about to be replaced,
+        // so the position worth keeping is the one the element holds right now.
+        const atReset = Number.isFinite(media.currentTime) && media.currentTime > 0
+          ? media.currentTime
+          : lastPlaybackPosition
+        if (atReset > 0) pendingSeekPosition = atReset
         setVideoSource(hlsUrl, 'hls')
         if (shouldResume) {
           media.addEventListener('loadedmetadata', () => {
@@ -462,6 +498,29 @@ export function useHlsSource({
       if (manifestReady) scheduleLoadAt(video.currentTime)
     })
 
+    const rememberPlaybackPosition = () => {
+      if (Number.isFinite(video.currentTime) && video.currentTime > 0) {
+        lastPlaybackPosition = video.currentTime
+        carriedPositionRef.current = { key: carryKey, position: video.currentTime }
+      }
+    }
+    listenToVideo('timeupdate', rememberPlaybackPosition)
+    // A completed seek has reached its target; keeping the target pending makes
+    // the next metadata/duration notification rewind the playhead to it later.
+    listenToVideo('seeked', () => {
+      if (Number.isFinite(video.currentTime)) {
+        lastPlaybackPosition = video.currentTime
+        carriedPositionRef.current = { key: carryKey, position: video.currentTime }
+      }
+      if (pendingSeekPosition === null || !Number.isFinite(video.currentTime)) return
+      // hls.js cannot select a fragment for a seek made before the manifest is
+      // parsed; keep that target for MANIFEST_PARSED.
+      if (!manifestReady && hls) return
+      if (Math.abs(video.currentTime - clampToDuration(pendingSeekPosition)) <= 0.5) {
+        pendingSeekPosition = null
+      }
+    })
+
     // hls.js exposes `loadingEnabled` as a start/stop switch, not as an
     // indication that a fragment request is currently in flight. Let the
     // position/cooldown guard in scheduleLoadAt decide whether a restart
@@ -491,6 +550,9 @@ export function useHlsSource({
 
     return () => {
       disposed = true
+      if (Number.isFinite(video.currentTime) && video.currentTime > 0) {
+        carriedPositionRef.current = { key: carryKey, position: video.currentTime, playing: !video.paused }
+      }
       for (const [type, handler] of videoListeners) video.removeEventListener(type, handler)
       if (seekLoadTimer !== null) clearTimeout(seekLoadTimer)
       if (recoveryTimer !== null) clearTimeout(recoveryTimer)

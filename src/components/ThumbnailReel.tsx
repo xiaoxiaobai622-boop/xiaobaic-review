@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useRef, useEffect, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { CheckCircle2, ChevronLeft, ChevronRight, Film, ArrowLeft, GitCompareArrows, MessageSquare } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Film, ArrowLeft, GitCompareArrows, MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -56,6 +56,7 @@ export default function ThumbnailReel({
 }: ThumbnailReelProps) {
   const tShare = useTranslations('share')
   const tVideos = useTranslations('videos')
+  const tc = useTranslations('common')
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   // Start collapsed on first load
   const [isExpanded, setIsExpanded] = useState(false)
@@ -134,6 +135,21 @@ export default function ThumbnailReel({
     () => currentVideos.filter((video: any) => video.status === 'READY'),
     [currentVideos]
   )
+  const selectedVersion = useMemo(
+    () => playableVideos.find((video: any) => video.id === selectedVersionId) ?? playableVideos[0] ?? null,
+    [playableVideos, selectedVersionId]
+  )
+  const latestVersion = useMemo(
+    () => playableVideos.reduce((best: any, video: any) => (
+      !best || video.version > best.version ? video : best
+    ), null),
+    [playableVideos]
+  )
+  const newerVersion = latestVersion && selectedVersion &&
+    latestVersion.id !== selectedVersion.id &&
+    latestVersion.version > selectedVersion.version
+    ? latestVersion
+    : null
 
   useEffect(() => {
     if (playableVideos.length === 0) {
@@ -197,6 +213,20 @@ export default function ThumbnailReel({
                   <option key={video.id} value={video.id}>{video.versionLabel || `v${video.version}`}</option>
                 ))}
               </select>
+            )}
+            {newerVersion && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedVersionId(newerVersion.id)
+                  window.dispatchEvent(new CustomEvent('selectReviewVersion', { detail: { videoId: newerVersion.id } }))
+                }}
+                className="flex h-8 shrink-0 items-center gap-1 rounded-[6px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums text-foreground outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring sm:h-[32px] sm:rounded-[8px] sm:text-[13px]"
+                title={`${tc('version')} ${newerVersion.versionLabel || `v${newerVersion.version}`}`}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <span>{newerVersion.versionLabel || `v${newerVersion.version}`}</span>
+              </button>
             )}
             <div className="hidden items-center gap-0.5 sm:flex sm:gap-0 sm:rounded-[6px] sm:bg-[hsl(var(--secondary))]">
               <Button variant="ghost" size="icon" onClick={handlePrevVideo} disabled={activeIndex <= 0} className="h-7 w-7 sm:h-[32px] sm:w-[32px] sm:rounded-[8px]" title={tShare('previousVideo')}><ChevronLeft className="h-4 w-4" /></Button>
