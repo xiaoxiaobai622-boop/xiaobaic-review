@@ -54,7 +54,9 @@ check(
     source.includes('nativeRestartAttempts >= 2') &&
     source.includes('if (disposed || !media || !hlsUrl || nativeRestartTimer !== null) return') &&
     source.includes("setVideoSource(hlsUrl, 'hls')") &&
-    source.includes('pendingSeekPosition = Math.max(0, media.currentTime)'),
+    source.includes('const atReset = Number.isFinite(media.currentTime) && media.currentTime > 0') &&
+    source.includes(': lastPlaybackPosition') &&
+    source.includes('pendingSeekPosition = atReset'),
   'H4 原生 HLS 重载保留播放位置，且不会并发排多次重载',
 )
 check(
