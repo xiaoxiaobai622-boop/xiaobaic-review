@@ -137,7 +137,7 @@ async function main() {
     'E1 后台这几句不把「团队 ID」说成邀请用的或跨页面定位用的（那两件事分别归团队标识与短码，10-14 实测过）', '')
 
   console.log('\n── H 后台其余几处：叫法、身份串、假空态（10-15 他「接着改运营平台那几处乱的」）──')
-  const layout = read('src/app/platform/layout.tsx')
+  const layout = read('src/app/platform/layout.tsx') + read('src/app/platform/PlatformShell.tsx')
   const users = read('src/app/platform/users/page.tsx')
   const security = read('src/app/platform/security/SecurityEventsClient.tsx')
   const messages = read('src/app/platform/messages/page.tsx')
