@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { parseBearerToken } from '@/lib/auth'
 import { revokePlatformSession } from '@/lib/platform-session-registry'
+import { clearPlatformPwaRefreshCookie } from '@/lib/platform-pwa-cookie'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,5 +17,7 @@ export async function POST(request: NextRequest) {
     } catch {}
   }
 
-  return NextResponse.json({ success: true })
+  const response = NextResponse.json({ success: true })
+  clearPlatformPwaRefreshCookie(response, request)
+  return response
 }

@@ -41,6 +41,7 @@ const EVENT_LABEL_KEYS: Record<NotificationEventType, string> = {
   CLIENT_UPLOAD: 'clientUploads',
   SECURITY_ALERT: 'securityAlerts',
   DUE_DATE_REMINDER: 'dueDateReminders',
+  SUPPORT_NEW_MESSAGE: 'supportNewMessage',
 }
 
 function createDefaultSubscriptions(): Record<NotificationEventType, boolean> {

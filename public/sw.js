@@ -83,8 +83,9 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const scope = url.startsWith('/platform') ? '/platform' : '/studio'
       for (const client of clientList) {
-        if (client.url.includes('/studio') && 'focus' in client) {
+        if (client.url.includes(scope) && 'focus' in client) {
           client.navigate(url)
           return client.focus()
         }
@@ -108,6 +109,20 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   if (!event.request.url.startsWith(self.location.origin)) return
   if (event.request.url.includes('/api/')) return
+
+  const requestUrl = new URL(event.request.url)
+  if (event.request.mode === 'navigate' && requestUrl.pathname.startsWith('/platform')) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response.ok) {
+          const copy = response.clone()
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {})
+        }
+        return response
+      }).catch(() => caches.match(event.request).then((cached) => cached || Response.error()))
+    )
+    return
+  }
 
   event.respondWith(
     fetch(event.request).catch(() => caches.match(event.request).then((cachedResponse) => {

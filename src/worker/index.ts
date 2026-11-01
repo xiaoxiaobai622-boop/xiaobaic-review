@@ -17,6 +17,7 @@ import { runPreviewThumbnailBackfill } from './backfill'
 import { logError, logMessage } from '../lib/logging'
 import { dispatchPendingDurableTasks } from '../lib/durable-tasks'
 import { purgeExpiredRecycleBinItems } from '../lib/recycle-bin'
+import { purgeExpiredSupportConversations } from './support-retention'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -253,6 +254,11 @@ async function main() {
     await purgeExpiredRecycleBinItems().catch((err) => logError('Scheduled recycle bin cleanup failed', err))
   }, ONE_HOUR_MS)
 
+  const supportRetentionInterval = setInterval(async () => {
+    await purgeExpiredSupportConversations().catch((err) => logError('Scheduled support retention cleanup failed', err))
+  }, 24 * 60 * 60 * 1000)
+  await purgeExpiredSupportConversations().catch((err) => logError('Initial support retention cleanup failed', err))
+
   // Handle shutdown gracefully
   process.on('SIGTERM', async () => {
     logMessage('SIGTERM received, closing workers...')
@@ -260,6 +266,7 @@ async function main() {
     clearInterval(tempCleanupInterval)
     clearInterval(durableTaskInterval)
     clearInterval(recycleBinInterval)
+    clearInterval(supportRetentionInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),
@@ -279,6 +286,7 @@ async function main() {
     clearInterval(tempCleanupInterval)
     clearInterval(durableTaskInterval)
     clearInterval(recycleBinInterval)
+    clearInterval(supportRetentionInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),

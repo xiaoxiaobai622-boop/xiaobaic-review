@@ -1526,3 +1526,212 @@ model PlatformFeedback {
   @@index([userId])
   @@index([status, createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// 在线客服（纯文字）。附件刻意不建模：当前产品只允许文本，避免引入 S3 上传、
+// 图片解码和病毒扫描面。将来真要文件时再单独加 SupportAttachment + 迁移。
+// ---------------------------------------------------------------------------
+
+enum SupportConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+enum SupportMessageSenderType {
+  VISITOR
+  AGENT
+  SYSTEM
+}
+
+enum SupportMessageVisibility {
+  PUBLIC
+  INTERNAL
+}
+
+enum SupportMessageKind {
+  TEXT
+  SYSTEM
+}
+
+enum SupportParticipantRole {
+  VISITOR
+  AGENT
+}
+
+model SupportVisitor {
+  id             String   @id @default(cuid())
+  // Cookie 里只放随机 token，库里存 sha256；备份泄漏不能直接当会话使用。
+  sessionHash    String   @unique
+  userId         String?
+  name           String?
+  email          String?
+  locale         String   @default("zh")
+  ipHash         String?
+  userAgentHash  String?
+  consentAt      DateTime?
+  consentVersion String?
+  lastSeenAt     DateTime @default(now())
+  deletedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversations SupportConversation[]
+
+  @@index([userId])
+  @@index([lastSeenAt])
+}
+
+model SupportConversation {
+  id                     String                      @id @default(cuid())
+  publicId               String                      @unique @default(cuid())
+  visitorId              String
+  visitor                SupportVisitor              @relation(fields: [visitorId], references: [id], onDelete: Restrict)
+  userId                 String?
+  teamId                 String?
+  projectId              String?
+  source                 String                      @default("WEB")
+  pagePath               String?
+  referrerHost           String?
+  locale                 String                      @default("zh")
+  status                 SupportConversationStatus   @default(OPEN)
+  assigneeId             String?
+  priority               String?
+  tags                   String[]                    @default([])
+  lastSeq                Int                         @default(0)
+  lastMessageAt          DateTime                    @default(now())
+  lastMessagePreview     String?
+  lastMessageSenderType  SupportMessageSenderType?
+  unreadForAgent         Int                         @default(0)
+  unreadForVisitor       Int                         @default(0)
+  firstVisitorMessageAt  DateTime?
+  firstAgentReplyAt      DateTime?
+  closedAt               DateTime?
+  closedByType           String?
+  closedById             String?
+  reopenCount            Int                         @default(0)
+  csatScore              Int?
+  csatComment            String?
+  csatAt                 DateTime?
+  retentionUntil         DateTime?
+  deletedAt              DateTime?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+
+  participants  SupportParticipant[]
+  messages      SupportMessage[]
+  events        SupportEvent[]
+
+  @@index([status, lastMessageAt])
+  @@index([assigneeId, status])
+  @@index([visitorId, createdAt])
+  @@index([userId])
+  @@index([teamId])
+  @@index([projectId])
+  @@index([lastMessageAt])
+  @@index([retentionUntil])
+  @@index([deletedAt])
+}
+
+model SupportParticipant {
+  id               String                   @id @default(cuid())
+  conversationId   String
+  conversation     SupportConversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  principalKey     String
+  role             SupportParticipantRole
+  visitorId        String?
+  userId           String?
+  lastReadSeq      Int                      @default(0)
+  lastDeliveredSeq Int                      @default(0)
+  lastTypingAt     DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@unique([conversationId, principalKey])
+  @@index([visitorId])
+  @@index([userId])
+}
+
+model SupportMessage {
+  id             String                        @id @default(cuid())
+  conversationId String
+  conversation   SupportConversation           @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  seq            Int
+  senderType     SupportMessageSenderType
+  senderId       String?
+  clientId       String?
+  body           String
+  visibility     SupportMessageVisibility      @default(PUBLIC)
+  kind           SupportMessageKind            @default(TEXT)
+  createdAt      DateTime                      @default(now())
+  editedAt       DateTime?
+  deletedAt      DateTime?
+
+  notifications SupportNotification[]
+
+  @@unique([conversationId, seq])
+  @@unique([conversationId, clientId])
+  @@index([conversationId, createdAt])
+  @@index([conversationId, visibility, seq])
+}
+
+model SupportEvent {
+  id             String               @id @default(cuid())
+  conversationId String?
+  conversation   SupportConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  actorType      String
+  actorId        String?
+  type           String
+  metadata       Json?
+  ipHash         String?
+  createdAt      DateTime             @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([type, createdAt])
+}
+
+model SupportCannedResponse {
+  id         String    @id @default(cuid())
+  title      String
+  body       String
+  locale     String    @default("zh")
+  shortcut   String?
+  usageCount Int       @default(0)
+  createdBy  String?
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([locale, title])
+  @@index([shortcut])
+}
+
+model SupportSettings {
+  id                         String   @id @default("default")
+  businessHours              Json     @default("{}")
+  offlineMessage             Json     @default("{}")
+  firstResponseTargetMinutes Int      @default(15)
+  retentionDays              Int      @default(180)
+  csatEnabled                Boolean  @default(true)
+  fallbackContacts           Json     @default("{}")
+  quietHours                 Json     @default("{}")
+  enabled                    Boolean  @default(true)
+  updatedAt                  DateTime @updatedAt
+}
+
+model SupportNotification {
+  id           String         @id @default(cuid())
+  messageId    String
+  message      SupportMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  channel      String
+  recipientKey String
+  status       String         @default("PENDING")
+  attempts     Int            @default(0)
+  lastError    String?
+  sentAt       DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([messageId, channel, recipientKey])
+  @@index([status, createdAt])
+}

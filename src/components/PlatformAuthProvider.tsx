@@ -2,7 +2,14 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { clearPlatformTokens, getPlatformAccessToken, getPlatformRefreshToken, setPlatformTokens } from '@/lib/platform-token-store'
+import {
+  clearPlatformTokens,
+  getPlatformAccessToken,
+  getPlatformRefreshToken,
+  isPlatformPwaMode,
+  setPlatformPwaAccessToken,
+  setPlatformTokens,
+} from '@/lib/platform-token-store'
 
 type PlatformUser = {
   id: string
@@ -31,6 +38,7 @@ async function fetchSession() {
   const token = getPlatformAccessToken()
   const response = await fetch('/api/platform/auth/session', {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
+    signal: AbortSignal.timeout(8_000),
   })
   if (!response.ok) return null
   const data = await response.json()
@@ -56,6 +64,22 @@ async function refreshPlatform() {
   return false
 }
 
+async function refreshPlatformPwa() {
+  const response = await fetch('/api/platform/auth/refresh', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(8_000),
+  })
+  if (!response.ok) return false
+  const data = await response.json()
+  if (data.tokens?.accessToken) {
+    setPlatformPwaAccessToken(data.tokens.accessToken)
+    return true
+  }
+  return false
+}
+
 export function PlatformAuthProvider({
   children,
   requireAuth = false,
@@ -71,10 +95,11 @@ export function PlatformAuthProvider({
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      const pwa = isPlatformPwaMode()
       let sessionUser = await fetchSession()
-      if (!sessionUser && getPlatformRefreshToken()) {
-        await refreshPlatform()
-        sessionUser = await fetchSession()
+      if (!sessionUser) {
+        const refreshed = pwa ? await refreshPlatformPwa() : (getPlatformRefreshToken() ? await refreshPlatform() : false)
+        if (refreshed) sessionUser = await fetchSession()
       }
       if (!cancelled) {
         setUser(sessionUser)
@@ -99,6 +124,12 @@ export function PlatformAuthProvider({
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
+    } catch {}
+    try {
+      for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+        const key = window.localStorage.key(index)
+        if (key?.startsWith('vidx_support_admin_')) window.localStorage.removeItem(key)
+      }
     } catch {}
     clearPlatformTokens()
     setUser(null)

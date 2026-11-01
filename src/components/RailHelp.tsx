@@ -55,6 +55,18 @@ export default function RailHelp({ className }: { className?: string }) {
           </span>
         </a>
 
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('vidx-open-support'))}
+          className="flex w-full items-start gap-3 border-t border-border px-3 py-3 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+        >
+          <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-foreground">在线客服</span>
+            <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">文字对话，通常几分钟内回复</span>
+          </span>
+        </button>
+
         <section data-rail-help-support className="border-t border-border px-3 py-3">
           <p className="flex items-center gap-2 text-sm font-medium text-foreground">
             <MessageCircle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />

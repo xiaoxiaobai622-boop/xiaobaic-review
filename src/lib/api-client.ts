@@ -2,7 +2,7 @@ import { clearTokens, getAccessToken, getRefreshToken, setTokens, withAuthRefres
 import { logError } from './logging'
 import { getDeviceAuthHeaders } from './device-id'
 import { getActiveTeamId } from './team-store'
-import { getPlatformAccessToken } from './platform-token-store'
+import { getPlatformAccessToken, isPlatformPwaMode, setPlatformPwaAccessToken } from './platform-token-store'
 
 let redirectGuardUntil = 0
 let refreshInFlight: Promise<boolean> | null = null
@@ -19,7 +19,12 @@ export async function apiFetch(
     const response = await fetch(input, requestInit)
 
     if (response.status === 401) {
-      const refreshed = await attemptRefresh()
+      const platformRequest = isPlatformRequest(input)
+      if (platformRequest && isPlatformPwaMode() && await refreshPlatformPwaAccess()) {
+        const retryResponse = await fetch(input, withAuthHeader(input, init))
+        if (retryResponse.status !== 401) return retryResponse
+      }
+      const refreshed = platformRequest ? false : await attemptRefresh()
       if (refreshed) {
         const retryResponse = await fetch(input, withAuthHeader(input, init))
         if (retryResponse.status !== 401) {
@@ -134,6 +139,28 @@ export async function apiDelete<T = any>(
 
 function isPlatformConsole(): boolean {
   return typeof window !== 'undefined' && window.location.pathname.startsWith('/platform/')
+}
+
+function isPlatformRequest(input: RequestInfo | URL) {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  return url.startsWith('/api/platform/') || isPlatformConsole()
+}
+
+async function refreshPlatformPwaAccess() {
+  try {
+    const response = await fetch('/api/platform/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getDeviceAuthHeaders() },
+    })
+    if (!response.ok) return false
+    const data = await response.json()
+    if (!data?.tokens?.accessToken) return false
+    setPlatformPwaAccessToken(data.tokens.accessToken)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function withAuthHeader(input: RequestInfo | URL, init?: RequestInit): RequestInit {

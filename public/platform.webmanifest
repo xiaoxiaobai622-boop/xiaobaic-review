@@ -1,0 +1,22 @@
+{
+  "name": "逐帧审阅 运营",
+  "short_name": "运营",
+  "description": "逐帧审阅的单人运营后台：客服、团队、项目、公告与反馈",
+  "start_url": "/platform/support",
+  "scope": "/platform/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#111318",
+  "orientation": "any",
+  "icons": [
+    { "src": "/brand/logo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/logo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/logo-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "客服收件箱", "url": "/platform/support", "description": "打开客服收件箱" },
+    { "name": "团队", "url": "/platform/teams", "description": "查看团队与项目" },
+    { "name": "公告", "url": "/platform/announcements", "description": "管理公告" },
+    { "name": "反馈", "url": "/platform/messages", "description": "查看用户反馈" }
+  ]
+}

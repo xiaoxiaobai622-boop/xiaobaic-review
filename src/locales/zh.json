@@ -1801,6 +1801,7 @@
       "clientUploads": "收到收录文件",
       "securityAlerts": "安全警报",
       "dueDateReminders": "到期日提醒",
+      "supportNewMessage": "新客服消息",
       "configureBelow": "配置以下一个或多个目的地。",
       "addDestination": "添加目的地",
       "namePlaceholder": "例如管理员电话",

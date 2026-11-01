@@ -1856,6 +1856,7 @@
       "clientUploads": "Client Uploads",
       "securityAlerts": "Security Alerts",
       "dueDateReminders": "Due Date Reminders",
+      "supportNewMessage": "New Support Messages",
       "configureBelow": "Configure one or more destinations below.",
       "addDestination": "Add Destination",
       "namePlaceholder": "e.g. Admin Phone",

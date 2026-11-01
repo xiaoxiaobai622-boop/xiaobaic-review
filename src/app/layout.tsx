@@ -12,6 +12,7 @@ import { headers } from "next/headers";
 import { AppDialogProvider } from "@/components/AppDialogProvider";
 import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/theme'
 import { BRAND } from '@/lib/marketing/brand'
+import { SupportWidgetMount } from '@/components/support/SupportWidgetMount'
 
 // Force Node.js runtime across the app to allow use of Node APIs (e.g., crypto).
 export const runtime = 'nodejs';
@@ -119,6 +120,7 @@ export default async function RootLayout({
               <DesktopBridge />
               <GlobalActivityTracker />
               <main className="flex-1 min-h-0 flex flex-col">{children}</main>
+              <SupportWidgetMount />
             </AppDialogProvider>
           </StorageConfigProvider>
         </NextIntlClientProvider>

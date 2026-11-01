@@ -1801,6 +1801,7 @@
       "clientUploads": "Client-Uploads",
       "securityAlerts": "Sicherheitswarnungen",
       "dueDateReminders": "Fälligkeitserinnerungen",
+      "supportNewMessage": "Neue Support-Nachrichten",
       "configureBelow": "Ein oder mehrere Ziele unten konfigurieren.",
       "addDestination": "Ziel hinzufügen",
       "namePlaceholder": "z. B. Admin-Handy",

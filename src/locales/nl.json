@@ -1801,6 +1801,7 @@
       "clientUploads": "Client-uploads",
       "securityAlerts": "Beveiligingswaarschuwingen",
       "dueDateReminders": "Deadlineherinneringen",
+      "supportNewMessage": "Nieuwe supportberichten",
       "configureBelow": "Configureer hieronder een of meer bestemmingen.",
       "addDestination": "Bestemming Toevoegen",
       "namePlaceholder": "bijv. Admin telefoon",
