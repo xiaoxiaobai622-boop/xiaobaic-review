@@ -136,7 +136,7 @@ interface PushSubscriptionData {
 async function sendToSubscription(
   subscription: PushSubscriptionData,
   payload: PushNotificationPayload
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; statusCode?: number }> {
   try {
     await configureWebPush()
 
@@ -149,14 +149,14 @@ async function sendToSubscription(
     }
 
     // Non-2xx pushes reject with a WebPushError, handled in the catch below.
-    await webpush.sendNotification(pushSubscription, JSON.stringify(payload))
+    const response = await webpush.sendNotification(pushSubscription, JSON.stringify(payload))
 
-    return { success: true }
+    return { success: true, statusCode: response?.statusCode ?? 201 }
   } catch (error) {
     // Some push services return 201 which web-push might handle oddly
     if (error instanceof webpush.WebPushError) {
       if (error.statusCode === 201 || error.statusCode === 200) {
-        return { success: true }
+        return { success: true, statusCode: error.statusCode }
       }
 
       // 410 Gone or 404 Not Found = subscription expired
@@ -167,11 +167,11 @@ async function sendToSubscription(
           // Ignore if already deleted
         })
         logMessage('[WEB-PUSH] Removed expired subscription:', subscription.endpoint.slice(0, 50))
-        return { success: false, error: 'Subscription expired' }
+        return { success: false, statusCode: error.statusCode, error: 'Subscription expired' }
       }
 
       logError('[WEB-PUSH] Push error:', error.statusCode, error.message)
-      return { success: false, error: `Push service error: ${error.statusCode}` }
+      return { success: false, statusCode: error.statusCode, error: `Push service error: ${error.statusCode}` }
     }
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -180,8 +180,212 @@ async function sendToSubscription(
   }
 }
 
+export type PushAudience = 'support' | 'platform-admins' | 'team-admins' | 'legacy' | 'disabled'
+
+export interface PushTarget {
+  id: string
+  userId: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  surface: string
+  deviceName: string | null
+}
+
+export interface PushSubscriptionSelection {
+  audience: PushAudience
+  expectedSurface: 'main' | 'support'
+  subscriptions: PushTarget[]
+  projectId: string | null
+  teamId: string | null
+  reason: string | null
+}
+
+const PROJECT_PUSH_EVENTS = new Set<NotificationEventType>([
+  'CLIENT_COMMENT',
+  'CLIENT_UPLOAD',
+  'VIDEO_APPROVAL',
+  'DUE_DATE_REMINDER',
+])
+
+const PLATFORM_PUSH_EVENTS = new Set<NotificationEventType>([
+  'SECURITY_ALERT',
+])
+
+// Login and share-access events are audit-only; they must not produce any message.
+const AUDIT_ONLY_PUSH_EVENTS = new Set<NotificationEventType>([
+  'ADMIN_ACCESS',
+  'SHARE_ACCESS',
+])
+
+const PUSH_TARGET_SELECT = {
+  id: true,
+  userId: true,
+  endpoint: true,
+  p256dh: true,
+  auth: true,
+  surface: true,
+  deviceName: true,
+} as const
+
 /**
- * Send push notifications to all subscribed admin devices for an event
+ * Resolve who should receive a web push. Support messages stay on the support
+ * surface; project events go to the project's team OWNER/ADMIN; security and
+ * login events go to platform admins. Unknown future events keep the legacy
+ * main-surface behavior.
+ */
+export async function selectPushSubscriptions(
+  eventType: NotificationEventType,
+  payload: PushNotificationPayload,
+): Promise<PushSubscriptionSelection> {
+  const data = payload.data ?? {}
+  const projectId = typeof data.projectId === 'string' ? data.projectId : null
+
+  if (AUDIT_ONLY_PUSH_EVENTS.has(eventType)) {
+    return {
+      audience: 'disabled',
+      expectedSurface: 'main',
+      subscriptions: [],
+      projectId,
+      teamId: null,
+      reason: 'audit-only',
+    }
+  }
+
+  if (eventType === 'SUPPORT_NEW_MESSAGE') {
+    const subscriptions = await prisma.pushSubscription.findMany({
+      where: { subscribedEvents: { has: eventType }, surface: 'support' },
+      select: PUSH_TARGET_SELECT,
+    })
+    return {
+      audience: 'support',
+      expectedSurface: 'support',
+      subscriptions,
+      projectId: null,
+      teamId: null,
+      reason: subscriptions.length ? null : 'no-support-subscription',
+    }
+  }
+
+  if (PLATFORM_PUSH_EVENTS.has(eventType)) {
+    const subscriptions = await prisma.pushSubscription.findMany({
+      where: {
+        subscribedEvents: { has: eventType },
+        surface: 'main',
+        user: { isPlatformAdmin: true },
+      },
+      select: PUSH_TARGET_SELECT,
+    })
+    return {
+      audience: 'platform-admins',
+      expectedSurface: 'main',
+      subscriptions,
+      projectId,
+      teamId: null,
+      reason: subscriptions.length ? null : 'no-platform-admin-subscription',
+    }
+  }
+
+  if (PROJECT_PUSH_EVENTS.has(eventType)) {
+    if (!projectId) {
+      return {
+        audience: 'team-admins',
+        expectedSurface: 'main',
+        subscriptions: [],
+        projectId: null,
+        teamId: null,
+        reason: 'missing-project',
+      }
+    }
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
+    if (!project) {
+      return {
+        audience: 'team-admins',
+        expectedSurface: 'main',
+        subscriptions: [],
+        projectId,
+        teamId: null,
+        reason: 'project-not-found',
+      }
+    }
+    const admins = await prisma.teamMember.findMany({
+      where: { teamId: project.teamId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
+      select: { userId: true },
+    })
+    if (admins.length === 0) {
+      return {
+        audience: 'team-admins',
+        expectedSurface: 'main',
+        subscriptions: [],
+        projectId,
+        teamId: project.teamId,
+        reason: 'no-team-admins',
+      }
+    }
+    const subscriptions = await prisma.pushSubscription.findMany({
+      where: {
+        subscribedEvents: { has: eventType },
+        surface: 'main',
+        userId: { in: admins.map((admin) => admin.userId) },
+      },
+      select: PUSH_TARGET_SELECT,
+    })
+    return {
+      audience: 'team-admins',
+      expectedSurface: 'main',
+      subscriptions,
+      projectId,
+      teamId: project.teamId,
+      reason: subscriptions.length ? null : 'no-subscribed-team-admin',
+    }
+  }
+
+  const subscriptions = await prisma.pushSubscription.findMany({
+    where: { subscribedEvents: { has: eventType }, surface: 'main' },
+    select: PUSH_TARGET_SELECT,
+  })
+  return {
+    audience: 'legacy',
+    expectedSurface: 'main',
+    subscriptions,
+    projectId,
+    teamId: null,
+    reason: subscriptions.length ? null : 'no-recipients',
+  }
+}
+
+async function recordPushDelivery(input: {
+  subscriptionId: string | null
+  userId: string | null
+  deviceName: string | null
+  eventType: NotificationEventType
+  surface: string
+  projectId: string | null
+  teamId: string | null
+  success: boolean
+  statusCode?: number
+  error?: string
+}) {
+  await prisma.pushDeliveryLog.create({
+    data: {
+      subscriptionId: input.subscriptionId,
+      userId: input.userId,
+      deviceName: input.deviceName,
+      eventType: input.eventType,
+      surface: input.surface,
+      projectId: input.projectId,
+      teamId: input.teamId,
+      success: input.success,
+      statusCode: input.statusCode ?? null,
+      error: input.error ?? null,
+    },
+  }).catch(() => {
+    // Audit logging must never fail the send path.
+  })
+}
+
+/**
+ * Send push notifications through the routed audience for an event.
  */
 export async function sendPushNotifications(
   eventType: NotificationEventType,
@@ -196,21 +400,21 @@ export async function sendPushNotifications(
       badge: payload.badge || defaultBadge,
     }
 
-    const subscriptions = await prisma.pushSubscription.findMany({
-      where: {
-        subscribedEvents: {
-          has: eventType,
-        },
-      },
-      select: {
-        id: true,
-        endpoint: true,
-        p256dh: true,
-        auth: true,
-      },
-    })
+    const selection = await selectPushSubscriptions(eventType, normalizedPayload)
 
-    if (subscriptions.length === 0) {
+    if (selection.subscriptions.length === 0) {
+      await recordPushDelivery({
+        subscriptionId: null,
+        userId: null,
+        deviceName: null,
+        eventType,
+        surface: selection.expectedSurface,
+        projectId: selection.projectId,
+        teamId: selection.teamId,
+        success: false,
+        error: selection.reason || 'no recipients',
+      })
+      logMessage(`[WEB-PUSH] Event ${eventType}: no recipients (${selection.audience}:${selection.reason})`)
       return { sent: 0, failed: 0 }
     }
 
@@ -218,11 +422,24 @@ export async function sendPushNotifications(
     let failed = 0
 
     const results = await Promise.allSettled(
-      subscriptions.map(async (sub) => {
+      selection.subscriptions.map(async (sub) => {
         const result = await sendToSubscription(
           { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
           normalizedPayload
         )
+
+        await recordPushDelivery({
+          subscriptionId: sub.id,
+          userId: sub.userId,
+          deviceName: sub.deviceName,
+          eventType,
+          surface: sub.surface,
+          projectId: selection.projectId,
+          teamId: selection.teamId,
+          success: result.success,
+          statusCode: result.statusCode,
+          error: result.error,
+        })
 
         if (result.success) {
           // Update lastUsedAt
@@ -246,7 +463,7 @@ export async function sendPushNotifications(
       }
     }
 
-    logMessage(`[WEB-PUSH] Event ${eventType}: sent=${sent}, failed=${failed}`)
+    logMessage(`[WEB-PUSH] Event ${eventType} (${selection.audience}): sent=${sent}, failed=${failed}`)
     return { sent, failed }
   } catch (error) {
     logError('[WEB-PUSH] Failed to send notifications:', error)

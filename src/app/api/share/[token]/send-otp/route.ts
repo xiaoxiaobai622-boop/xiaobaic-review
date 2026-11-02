@@ -154,7 +154,7 @@ export async function POST(
       })
 
       void enqueueExternalNotification({
-        eventType: 'SHARE_ACCESS',
+        eventType: 'SECURITY_ALERT',
         title: (shareMessages.unauthorizedOtpRequestTitle || 'Unauthorized Access Attempt: {projectTitle}').replace('{projectTitle}', project.title),
         body: await (async () => {
           const baseUrl = await getAppUrl(request).catch(() => '')

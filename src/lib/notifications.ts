@@ -3,6 +3,7 @@ import { prisma } from './db'
 import { sendCommentNotificationEmail, sendAdminCommentNotificationEmail, sendProjectApprovedEmail, sendAdminProjectApprovedEmail, getEmailSettings, sendEmail, getRecipientLocale } from './email'
 import { generateNotificationSummaryEmail, generateAdminSummaryEmail } from './email-templates'
 import { getProjectRecipients, type Recipient } from './recipients'
+import { getProjectTeamAdminContacts } from './team-notification-recipients'
 import { generateProjectShareUrlById } from './url'
 import { getRedis } from './redis'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
@@ -140,11 +141,8 @@ export async function sendImmediateNotification(context: NotificationContext, ta
 
     await Promise.allSettled(emailPromises)
   } else {
-    // Send to admins — skip author if they are an admin
-    const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN' },
-      select: { email: true, name: true }
-    })
+    // Send to the project team's OWNER/ADMIN only.
+    const admins = await getProjectTeamAdminContacts(project.id)
 
     const targetAdmins = admins.filter(a => {
       if (comment.isInternal && authorEmail && a.email.toLowerCase() === authorEmail) return false
@@ -294,10 +292,7 @@ async function sendApprovalImmediately(context: ApprovalNotificationContext) {
   const allRecipients = await getProjectRecipients(project.id)
   const recipients = allRecipients.filter(r => r.receiveNotifications && r.email)
 
-  const admins = await prisma.user.findMany({
-    where: { role: 'ADMIN' },
-    select: { email: true, name: true }
-  })
+  const admins = await getProjectTeamAdminContacts(project.id)
 
   // Send to clients ONLY if complete project approval (all videos approved)
   // Don't send for partial approvals - client knows they just clicked approve
@@ -435,30 +430,42 @@ export async function flushPendingAdminNotifications(): Promise<void> {
       )
     }
 
-    const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN' },
-      select: { email: true, name: true }
-    })
-
-    if (admins.length === 0) {
-      logMessage('[FLUSH-ADMIN] No admins found')
-      return
-    }
-
     const emailSettings = await getEmailSettings()
     const companyName = emailSettings.companyName || 'FrameReview'
     const projects = Object.values(projectGroups)
 
-    logMessage(`[FLUSH-ADMIN] Sending ${validNotifications.length} queued notification(s) to ${admins.length} admin(s)`)
+    // Each admin only gets the projects whose team they own/administer.
+    const contactsByProject = new Map<string, Array<{ email: string; name: string | null }>>()
+    const adminMap = new Map<string, { email: string; name: string | null }>()
+    for (const project of projects) {
+      const contacts = await getProjectTeamAdminContacts(project.projectId)
+      contactsByProject.set(project.projectId, contacts)
+      for (const contact of contacts) {
+        if (!adminMap.has(contact.email)) adminMap.set(contact.email, contact)
+      }
+    }
+    const admins = Array.from(adminMap.values())
+
+    if (admins.length === 0) {
+      logMessage('[FLUSH-ADMIN] No team admin contacts found')
+      return
+    }
+
+    logMessage(`[FLUSH-ADMIN] Sending ${validNotifications.length} queued notification(s) to ${admins.length} team admin(s)`)
 
     for (const admin of admins) {
+      const adminProjects = projects.filter((project) =>
+        contactsByProject.get(project.projectId)?.some((contact) => contact.email === admin.email),
+      )
+      if (adminProjects.length === 0) continue
+
       const summaryEmail = await generateAdminSummaryEmail({
         companyName,
         accentColor: emailSettings.accentColor || undefined,
         appDomain: emailSettings.appDomain || undefined,
         adminName: admin.name || '',
         period: 'before schedule change',
-        projects,
+        projects: adminProjects,
         locale: emailSettings.language || 'en',
       })
 

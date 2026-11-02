@@ -15,6 +15,7 @@ interface PushSubscription {
   id: string
   deviceName: string | null
   userAgent: string | null
+  surface?: string
   subscribedEvents: string[]
   createdAt: string
   lastUsedAt: string
@@ -31,6 +32,10 @@ const EVENT_LABEL_KEYS: Record<NotificationEventType, string> = {
   DUE_DATE_REMINDER: 'dueDateReminders',
   SUPPORT_NEW_MESSAGE: 'supportNewMessage',
 }
+
+const PUSH_EVENT_TYPES = NOTIFICATION_EVENT_TYPES.filter(
+  (eventType) => !['SUPPORT_NEW_MESSAGE', 'ADMIN_ACCESS', 'SHARE_ACCESS'].includes(eventType),
+)
 
 export function WebPushSection({ active }: { active: boolean }) {
   const t = useTranslations('settings.webPush')
@@ -396,6 +401,11 @@ export function WebPushSection({ active }: { active: boolean }) {
                               {t('current')}
                             </span>
                           )}
+                          {sub.surface === 'support' && (
+                            <span className="text-xs bg-emerald-500/10 text-emerald-700 px-2 py-0.5 rounded">
+                              {t('supportDevice')}
+                            </span>
+                          )}
                         </div>
                       )}
                       <p className="text-xs text-muted-foreground truncate">
@@ -426,24 +436,31 @@ export function WebPushSection({ active }: { active: boolean }) {
                 </div>
 
                 {/* Event toggles */}
-                <div className="space-y-3 border-2 border-border p-4 rounded-lg bg-accent/5">
-                  <h4 className="font-semibold text-sm">{te('sendFor')}</h4>
-                  <div className="space-y-3">
-                    {NOTIFICATION_EVENT_TYPES.map((eventType) => (
-                      <div key={eventType} className="flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <Label className="text-sm font-normal">{te(EVENT_LABEL_KEYS[eventType])}</Label>
-                        </div>
-                        <Switch
-                          checked={sub.subscribedEvents.includes(eventType)}
-                          onCheckedChange={(checked) =>
-                            handleToggleEvent(sub.id, eventType, checked)
-                          }
-                        />
-                      </div>
-                    ))}
+                {sub.surface === 'support' ? (
+                  <div className="space-y-2 border-2 border-border p-4 rounded-lg bg-accent/5">
+                    <h4 className="font-semibold text-sm">{t('supportDevice')}</h4>
+                    <p className="text-xs text-muted-foreground">{t('supportDeviceHint')}</p>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-3 border-2 border-border p-4 rounded-lg bg-accent/5">
+                    <h4 className="font-semibold text-sm">{te('sendFor')}</h4>
+                    <div className="space-y-3">
+                      {PUSH_EVENT_TYPES.map((eventType) => (
+                        <div key={eventType} className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm font-normal">{te(EVENT_LABEL_KEYS[eventType])}</Label>
+                          </div>
+                          <Switch
+                            checked={sub.subscribedEvents.includes(eventType)}
+                            onCheckedChange={(checked) =>
+                              handleToggleEvent(sub.id, eventType, checked)
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

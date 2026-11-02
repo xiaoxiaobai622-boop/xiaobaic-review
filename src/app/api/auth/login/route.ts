@@ -6,7 +6,6 @@ import { validateRequest, loginSchema, safeParseBody } from '@/lib/validation'
 import { logSecurityEvent } from '@/lib/video-access'
 import { getClientIpAddress } from '@/lib/utils'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
-import { getAppUrl, buildFailedLoginLink } from '@/lib/url'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { getAdminDeviceFingerprint } from '@/lib/studio-device'
 import { WECHAT_SESSION_COOKIE } from '@/lib/wechat-auth'
@@ -106,29 +105,6 @@ export async function POST(request: NextRequest) {
             body: lockoutBody,
           },
         }).catch(() => {})
-      } else {
-        // Normal failed attempt — send ADMIN_ACCESS warning
-        const baseUrl = await getAppUrl(request).catch(() => '')
-        const link = buildFailedLoginLink(request, baseUrl)
-        const attemptBody = authMessages.someoneTriedToLogInWithEmailViaPassword?.replace('{email}', email)
-          || `Someone tried to log in with ${email} via password`
-        void enqueueExternalNotification({
-          eventType: 'ADMIN_ACCESS',
-          title: authMessages.failedLoginAttemptTitle || 'Failed Login Attempt',
-          body: [
-            attemptBody,
-            link ? `Link: ${link}` : null,
-          ]
-            .filter(Boolean)
-            .join('\n'),
-          notifyType: 'warning',
-          pushData: {
-            email,
-            ip: ipAddress,
-            title: authMessages.failedLoginAttemptTitle || 'Failed Login Attempt',
-            body: attemptBody,
-          },
-        }).catch(() => {})
       }
 
       return NextResponse.json(
@@ -166,22 +142,6 @@ export async function POST(request: NextRequest) {
       },
       wasBlocked: false,
     })
-
-    const loginBody = authMessages.userLoggedInViaPassword?.replace('{user}', user.name || user.email)
-      || `${user.name || user.email} logged in via password`
-
-    void enqueueExternalNotification({
-      eventType: 'ADMIN_ACCESS',
-      title: authMessages.adminLogin || 'Admin Login',
-      body: loginBody,
-      notifyType: 'info',
-      pushData: {
-        email: user.email,
-        ip: ipAddress,
-        title: authMessages.adminLogin || 'Admin Login',
-        body: loginBody,
-      },
-    }).catch(() => {})
 
     const response = NextResponse.json({
       success: true,

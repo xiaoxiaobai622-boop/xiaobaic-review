@@ -1,4 +1,5 @@
 import { prisma } from '../lib/db'
+import { getProjectTeamAdminContacts } from '../lib/team-notification-recipients'
 import { getEmailSettings, sendEmail } from '../lib/email'
 import { generateAdminSummaryEmail } from '../lib/email-templates'
 import { generateProjectShareUrlById } from '../lib/url'
@@ -124,14 +125,20 @@ export async function processAdminNotifications() {
       )
     }
 
-    // Get all admins
-    const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN' },
-      select: { email: true, name: true }
-    })
+    // Each admin only gets the projects whose team they own/administer.
+    const contactsByProject = new Map<string, Array<{ email: string; name: string | null }>>()
+    const adminMap = new Map<string, { email: string; name: string | null }>()
+    for (const project of Object.values(projectGroups)) {
+      const contacts = await getProjectTeamAdminContacts(project.projectId)
+      contactsByProject.set(project.projectId, contacts)
+      for (const contact of contacts) {
+        if (!adminMap.has(contact.email)) adminMap.set(contact.email, contact)
+      }
+    }
+    const admins = Array.from(adminMap.values())
 
     if (admins.length === 0) {
-      logMessage('No admin users found, skipping notification summary')
+      logMessage('No team admin users found, skipping notification summary')
       return
     }
 
@@ -157,13 +164,18 @@ export async function processAdminNotifications() {
         const projects = Object.values(projectGroups)
 
         for (const admin of admins) {
+          const adminProjects = projects.filter((project) =>
+            contactsByProject.get(project.projectId)?.some((contact) => contact.email === admin.email),
+          )
+          if (adminProjects.length === 0) continue
+
           const summaryEmail = await generateAdminSummaryEmail({
             companyName,
             accentColor: emailSettings.accentColor || undefined,
             appDomain: emailSettings.appDomain || undefined,
             adminName: admin.name || '',
             period,
-            projects,
+            projects: adminProjects,
             locale: emailSettings.language || 'en',
           })
 

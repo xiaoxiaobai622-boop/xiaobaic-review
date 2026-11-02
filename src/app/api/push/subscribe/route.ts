@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requirePlatformAdmin } from '@/lib/auth'
-import { NOTIFICATION_EVENT_TYPES } from '@/lib/external-notifications/constants'
+import { requirePushActor, eventsForPushActor } from '@/lib/push-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -10,24 +9,31 @@ import { logError } from '@/lib/logging'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+type PushSurface = 'main' | 'support'
+
+function normalizeSurface(value: unknown): PushSurface {
+  return value === 'support' ? 'support' : 'main'
+}
+
 // GET /api/push/subscribe - List push subscriptions for current admin
 export async function GET(request: NextRequest) {
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const webPushMessages = messages?.settings?.webPush || {}
 
-  const authResult = await requirePlatformAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
+  const actor = await requirePushActor(request)
+  if (actor instanceof Response) {
+    return actor
   }
 
   try {
     const subscriptions = await prisma.pushSubscription.findMany({
-      where: { userId: authResult.id },
+      where: { userId: actor.user.id },
       select: {
         id: true,
         deviceName: true,
         userAgent: true,
+        surface: true,
         subscribedEvents: true,
         createdAt: true,
         lastUsedAt: true,
@@ -63,22 +69,29 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const webPushMessages = messages?.settings?.webPush || {}
 
-  const authResult = await requirePlatformAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
+  const actor = await requirePushActor(request)
+  if (actor instanceof Response) {
+    return actor
   }
 
   const rateLimitResult = await rateLimit(
     request,
     { windowMs: 60 * 60 * 1000, maxRequests: 20, message: webPushMessages.tooManySubscriptionAttempts || 'Too many subscription attempts. Please wait.' },
     'push-subscribe',
-    authResult.id
+    actor.user.id
   )
   if (rateLimitResult) return rateLimitResult
 
   try {
     const body = await request.json()
     const { endpoint, keys, deviceName, subscribedEvents } = body
+    const surface = normalizeSurface(body.surface)
+    if (surface === 'support' && !actor.isPlatformAdmin) {
+      return NextResponse.json(
+        { error: 'Only platform administrators can use the support push surface.', code: 'SUPPORT_SURFACE_FORBIDDEN' },
+        { status: 403 },
+      )
+    }
 
     if (!endpoint || !keys?.p256dh || !keys?.auth) {
       return NextResponse.json(
@@ -97,42 +110,59 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate subscribedEvents
-    const events = subscribedEvents || [...NOTIFICATION_EVENT_TYPES]
-    const validEvents = events.filter((e: string) =>
-      NOTIFICATION_EVENT_TYPES.includes(e as typeof NOTIFICATION_EVENT_TYPES[number])
-    )
+    // Validate subscribedEvents. The support entry only owns the support event;
+    // the main console never subscribes to it.
+    const validEvents = eventsForPushActor(surface, subscribedEvents, actor)
 
     const userAgent = request.headers.get('user-agent') || undefined
+    const resolvedDeviceName = deviceName || (
+      surface === 'support'
+        ? '运营 PWA'
+        : actor.isPlatformAdmin
+          ? getDeviceNameFromUserAgent(userAgent)
+          : '团队通知'
+    )
 
     const existing = await prisma.pushSubscription.findUnique({
       where: { endpoint },
-      select: { userId: true },
+      select: { userId: true, surface: true },
     })
 
-    if (existing && existing.userId !== authResult.id) {
+    if (existing && existing.userId !== actor.user.id) {
       return NextResponse.json(
         { error: webPushMessages.deviceAlreadyRegisteredByAnotherAdmin || 'This device is already registered for push notifications by another admin.' },
         { status: 409 } // Conflict
       )
     }
 
+    if (existing && existing.surface !== surface) {
+      return NextResponse.json(
+        {
+          error: '这台设备已绑定其他通知入口。请先在原入口关闭推送，再在当前入口重新开启。',
+          code: 'SURFACE_CONFLICT',
+        },
+        { status: 409 },
+      )
+    }
+
     const subscription = await prisma.pushSubscription.upsert({
       where: { endpoint },
       create: {
-        userId: authResult.id,
+        userId: actor.user.id,
         endpoint,
         p256dh: keys.p256dh,
         auth: keys.auth,
         userAgent,
-        deviceName: deviceName || getDeviceNameFromUserAgent(userAgent),
+        deviceName: resolvedDeviceName,
+        surface,
         subscribedEvents: validEvents,
       },
       update: {
         p256dh: keys.p256dh,
         auth: keys.auth,
         userAgent,
-        deviceName: deviceName || getDeviceNameFromUserAgent(userAgent),
+        deviceName: resolvedDeviceName,
+        surface,
         subscribedEvents: validEvents,
         lastUsedAt: new Date(),
       },
@@ -142,6 +172,7 @@ export async function POST(request: NextRequest) {
       success: true,
       subscriptionId: subscription.id,
       deviceName: subscription.deviceName,
+      surface: subscription.surface,
     })
   } catch (error) {
     logError('[API] Failed to create push subscription:', error)
@@ -158,16 +189,16 @@ export async function PATCH(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const webPushMessages = messages?.settings?.webPush || {}
 
-  const authResult = await requirePlatformAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
+  const actor = await requirePushActor(request)
+  if (actor instanceof Response) {
+    return actor
   }
 
   const rateLimitResult = await rateLimit(
     request,
     { windowMs: 60 * 60 * 1000, maxRequests: 60, message: webPushMessages.tooManySubscriptionUpdates || 'Too many updates. Please wait.' },
     'push-update',
-    authResult.id
+    actor.user.id
   )
   if (rateLimitResult) return rateLimitResult
 
@@ -185,14 +216,22 @@ export async function PATCH(request: NextRequest) {
     const existing = await prisma.pushSubscription.findFirst({
       where: {
         id: subscriptionId,
-        userId: authResult.id,
+        userId: actor.user.id,
       },
+      select: { id: true, surface: true },
     })
 
     if (!existing) {
       return NextResponse.json(
         { error: webPushMessages.subscriptionNotFound || 'Subscription not found' },
         { status: 404 }
+      )
+    }
+
+    if (existing.surface === 'support' && !actor.isPlatformAdmin) {
+      return NextResponse.json(
+        { error: 'Only platform administrators can manage the support push surface.', code: 'SUPPORT_SURFACE_FORBIDDEN' },
+        { status: 403 },
       )
     }
 
@@ -203,10 +242,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (subscribedEvents !== undefined) {
-      const validEvents = subscribedEvents.filter((e: string) =>
-        NOTIFICATION_EVENT_TYPES.includes(e as typeof NOTIFICATION_EVENT_TYPES[number])
-      )
-      updateData.subscribedEvents = validEvents
+      updateData.subscribedEvents = eventsForPushActor(normalizeSurface(existing.surface), subscribedEvents, actor)
     }
 
     const subscription = await prisma.pushSubscription.update({
@@ -219,6 +255,7 @@ export async function PATCH(request: NextRequest) {
       subscription: {
         id: subscription.id,
         deviceName: subscription.deviceName,
+        surface: subscription.surface,
         subscribedEvents: subscription.subscribedEvents,
       },
     })

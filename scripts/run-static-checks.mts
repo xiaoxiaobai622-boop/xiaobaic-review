@@ -35,6 +35,7 @@ const CHECKS: Array<{ file: string; args?: string[] }> = [
   { file: 'scripts/check-review-deep-link.mts' },
   { file: 'scripts/check-team-numeric-id.mts', args: ['--static'] },
   { file: 'scripts/check-platform-team-identity.mts' },
+  { file: 'scripts/check-support-push-routing.mts' },
 ]
 
 const failed: string[] = []

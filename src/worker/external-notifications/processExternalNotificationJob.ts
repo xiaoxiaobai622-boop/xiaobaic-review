@@ -138,6 +138,12 @@ function safeErrorMessage(result: { error?: string } | null): string | null {
 }
 
 export async function processExternalNotificationJob(data: ExternalNotificationJob, jobId?: string): Promise<void> {
+  // Audit-only events must not reach Apprise even if an old job is still queued.
+  if (data.eventType === 'ADMIN_ACCESS' || data.eventType === 'SHARE_ACCESS') {
+    log(`Job ${jobId || '?'} skipped (audit-only event)`, { eventType: data.eventType })
+    return
+  }
+
   const startedAt = Date.now()
   const notifyType = normalizeNotifyType(data.notifyType)
 

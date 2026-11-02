@@ -78,6 +78,10 @@ export async function processDueDateReminders() {
         eventType: 'DUE_DATE_REMINDER',
         title: `Deadline Reminder: ${project.title}`,
         body: `"${project.title}" is due ${project.reminderType} (${dueStr})`,
+        pushData: {
+          projectId: project.id,
+          projectTitle: project.title,
+        },
       })
     } catch (notificationError) {
       externalFailures++
@@ -91,34 +95,28 @@ export async function processDueDateReminders() {
     if (!smtpReady) {
       logMessage('[WORKER] SMTP not configured — skipping due date reminder emails')
     } else {
-      const admins = await prisma.user.findMany({
-        where: { role: 'ADMIN' },
-        select: { email: true },
-      })
-      const adminEmails = admins.map(a => a.email).filter(Boolean)
-
-      if (adminEmails.length === 0) {
-        logMessage('[WORKER] No admin emails found — skipping due date reminder emails')
-      } else {
-        for (const project of allReminders) {
-          try {
-            const dueStr = new Date(project.dueDate!).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })
-            await sendDueDateReminderEmail({
-              adminEmails,
-              projectTitle: project.title,
-              dueDate: dueStr,
-              reminderType: project.reminderType,
-            })
-          } catch (emailError) {
-            emailFailures++
-            logError(`[WORKER] Failed to send due date reminder email (projectId=${project.id})`, emailError)
+      for (const project of allReminders) {
+        try {
+          const adminEmails = await getProjectTeamAdminEmails(project.id)
+          if (adminEmails.length === 0) {
+            logMessage(`[WORKER] No team admin emails for project ${project.id} — skipping reminder email`)
+            continue
           }
+          const dueStr = new Date(project.dueDate!).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })
+          await sendDueDateReminderEmail({
+            adminEmails,
+            projectTitle: project.title,
+            dueDate: dueStr,
+            reminderType: project.reminderType,
+          })
+        } catch (emailError) {
+          emailFailures++
+          logError(`[WORKER] Failed to send due date reminder email (projectId=${project.id})`, emailError)
         }
-        logMessage(`[WORKER] Sent due date reminder emails to ${adminEmails.length} admin(s)`) 
       }
     }
   } catch (error) {

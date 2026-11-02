@@ -3,6 +3,7 @@ import { isSmtpConfigured } from '@/lib/settings'
 import { sendAdminClientUploadEmail } from '@/lib/email'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
 import { getAppDomain } from '@/lib/url'
+import { getProjectTeamAdminContacts } from '@/lib/team-notification-recipients'
 import { logError, logMessage } from '@/lib/logging'
 
 /**
@@ -69,13 +70,10 @@ export async function handleReverseShareUploadNotification(params: {
       return
     }
 
-    const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN' },
-      select: { email: true },
-    })
+    const admins = await getProjectTeamAdminContacts(project.id)
 
     if (admins.length === 0) {
-      logMessage('[UPLOAD-NOTIFICATION] No admins to notify')
+      logMessage('[UPLOAD-NOTIFICATION] No team admins to notify')
       return
     }
 

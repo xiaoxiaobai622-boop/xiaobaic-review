@@ -34,7 +34,13 @@ function fillPushFieldFromBody(
   if (match) pushData[field] = match[1].trim()
 }
 
+// Login/access events are audit-only. Keep the SecurityEvent / SharePageAccess
+// rows, but never fan them out to push, Feishu, email or Apprise.
+const AUDIT_ONLY_EVENTS = new Set(['ADMIN_ACCESS', 'SHARE_ACCESS'])
+
 export async function enqueueExternalNotification(job: ExtendedNotificationJob): Promise<void> {
+  if (AUDIT_ONLY_EVENTS.has(job.eventType)) return
+
   // Send push notifications in parallel with queue (fire and forget)
   const sendPush = async () => {
     try {

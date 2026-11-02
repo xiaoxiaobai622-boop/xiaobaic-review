@@ -1,11 +1,8 @@
 import { prisma } from './db'
 import { NextRequest } from 'next/server'
 import { getSecuritySettings } from './video-access'
-import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
-import { generateProjectShareUrlById, getAppUrl } from '@/lib/url'
 import { getClientIpAddress } from '@/lib/utils'
 import { anonymizeIp } from '@/lib/ip-anonymization'
-import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 
 /**
@@ -60,52 +57,4 @@ export async function trackSharePageAccess(params: {
       logError('[ANALYTICS] Failed to track share page access', error)
     }
   }
-
-  // Fetch project info once for both body and pushData
-  const project = await prisma.project
-    .findUnique({
-      where: { id: projectId },
-      select: { id: true, title: true, slug: true },
-    })
-    .catch(() => null)
-
-  const locale = await getConfiguredLocale().catch(() => 'en')
-  const messages = await loadLocaleMessages(locale).catch(() => null)
-  const notificationsText = messages?.notificationsText
-
-  void enqueueExternalNotification({
-    eventType: 'SHARE_ACCESS',
-    title: (notificationsText?.shareLinkOpenedTitle || 'Share Link Opened: {projectTitle}')
-      .replace('{projectTitle}', project?.title || notificationsText?.unknownProject || 'Unknown Project'),
-    body: await (async () => {
-      const shareUrl = project?.id
-        ? await generateProjectShareUrlById(project.id, request).catch(() => '')
-        : ''
-      const baseUrl = await getAppUrl(request).catch(() => '')
-      const person = email || notificationsText?.someone || 'Someone'
-      const projectTitle = project?.title || notificationsText?.unknownProject || 'Unknown Project'
-      const linkTarget = shareUrl || baseUrl
-
-      return [
-        project?.title
-          ? (notificationsText?.openedProject || '{person} opened {projectTitle}')
-              .replace('{person}', person)
-              .replace('{projectTitle}', projectTitle)
-          : (notificationsText?.openedAProject || '{person} opened a project')
-              .replace('{person}', person),
-        (notificationsText?.method || 'Method: {method}').replace('{method}', accessMethod),
-        linkTarget ? (notificationsText?.link || 'Link: {url}').replace('{url}', linkTarget) : null,
-      ]
-        .filter(Boolean)
-        .join('\n')
-    })(),
-    notifyType: 'info',
-    pushData: {
-      projectTitle: project?.title || undefined,
-      projectId: project?.id || undefined,
-      email: email || undefined,
-    },
-  }).catch((notificationError) => {
-    logError('[ANALYTICS] Failed to enqueue share access notification', notificationError)
-  })
 }

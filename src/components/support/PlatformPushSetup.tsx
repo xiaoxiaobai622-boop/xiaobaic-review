@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Bell, BellOff, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 
@@ -11,9 +12,11 @@ function urlBase64ToUint8Array(value: string) {
   return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)))
 }
 
+type Surface = 'none' | 'support' | 'main' | 'unknown'
+
 export function PlatformPushSetup() {
   const [supported, setSupported] = useState(false)
-  const [subscribed, setSubscribed] = useState(false)
+  const [surface, setSurface] = useState<Surface>('none')
   const [busy, setBusy] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
   const [message, setMessage] = useState<string | null>(null)
@@ -30,14 +33,31 @@ export function PlatformPushSetup() {
       try {
         const registration = await navigator.serviceWorker.ready
         const existing = await registration.pushManager.getSubscription()
-        if (!cancelled) setSubscribed(Boolean(existing))
-      } catch {}
+        if (!existing) {
+          if (!cancelled) setSurface('none')
+          return
+        }
+        const response = await apiFetch(`/api/push/status?endpoint=${encodeURIComponent(existing.endpoint)}`, { cache: 'no-store' })
+        if (!response.ok) {
+          if (!cancelled) setSurface('unknown')
+          return
+        }
+        const data = await response.json().catch(() => null)
+        const owner = data?.subscription?.surface
+        if (!cancelled) setSurface(owner === 'support' ? 'support' : owner === 'main' ? 'main' : 'none')
+      } catch {
+        if (!cancelled) setSurface('unknown')
+      }
     })()
     return () => { cancelled = true }
   }, [])
 
   const enable = async () => {
     if (!supported || busy) return
+    if (surface === 'main') {
+      setMessage('这台设备已在主 App 开启通知；客服推送不能与主 App 共用，请先在主 App 关闭。')
+      return
+    }
     setBusy(true)
     setMessage(null)
     try {
@@ -68,13 +88,15 @@ export function PlatformPushSetup() {
           endpoint: json.endpoint,
           keys: json.keys,
           deviceName: '运营 PWA',
+          surface: 'support',
+          subscribedEvents: ['SUPPORT_NEW_MESSAGE'],
         }),
       })
       if (!response.ok) {
         const data = await response.json().catch(() => null)
         throw new Error(data?.error || '订阅失败')
       }
-      setSubscribed(true)
+      setSurface('support')
       setMessage('已开启新客服消息推送。')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '订阅失败')
@@ -85,6 +107,10 @@ export function PlatformPushSetup() {
 
   const disable = async () => {
     if (!supported || busy) return
+    if (surface !== 'support') {
+      setMessage('这台设备不属于客服推送，不能在这里退订。')
+      return
+    }
     setBusy(true)
     setMessage(null)
     try {
@@ -98,7 +124,7 @@ export function PlatformPushSetup() {
         }).catch(() => {})
         await subscription.unsubscribe()
       }
-      setSubscribed(false)
+      setSurface('none')
       setMessage('已关闭推送。')
     } finally {
       setBusy(false)
@@ -111,15 +137,24 @@ export function PlatformPushSetup() {
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={subscribed ? disable : enable}
-        disabled={busy}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs disabled:opacity-50 ${subscribed ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-border hover:bg-accent'}`}
-      >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : subscribed ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
-        {subscribed ? '推送已开启' : '开启推送'}
-      </button>
+      {surface === 'main' ? (
+        <span className="max-w-[280px] text-right text-[10px] text-amber-700 dark:text-amber-300">
+          这台设备已在主 App 开启通知；客服推送不能与主 App 共用。
+          <Link href="/platform/settings" className="ml-1 underline">去主 App 管理</Link>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={surface === 'support' ? disable : enable}
+          disabled={busy || surface === 'unknown'}
+          className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs disabled:opacity-50 ${surface === 'support' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-border hover:bg-accent'}`}
+        >
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : surface === 'support' ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+          {surface === 'support' ? '客服推送已开启' : '开启推送'}
+        </button>
+      )}
+      <span className="max-w-[280px] text-right text-[10px] text-muted-foreground">客服 PWA 只接收新客服消息；上传、批注等通知请在主 App 开启。</span>
+      {surface === 'unknown' && <span className="text-[10px] text-muted-foreground">无法确认这台设备的推送归属，请刷新后重试。</span>}
       {permission === 'denied' && <span className="text-[10px] text-muted-foreground">权限被拒绝，请到系统设置允许通知</span>}
       {message && <span className="max-w-[260px] text-right text-[10px] text-muted-foreground">{message}</span>}
     </div>

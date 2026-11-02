@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requirePlatformAdmin } from '@/lib/auth'
+import { requirePushActor } from '@/lib/push-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -18,9 +18,9 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const webPushMessages = messages?.settings?.webPush || {}
 
-  const authResult = await requirePlatformAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
+  const actor = await requirePushActor(request)
+  if (actor instanceof Response) {
+    return actor
   }
 
   // Rate limit: 20 unsubscribe attempts per hour per admin
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     request,
     { windowMs: 60 * 60 * 1000, maxRequests: 20, message: webPushMessages.tooManyUnsubscribeRequests || 'Too many requests. Please wait.' },
     'push-unsubscribe',
-    authResult.id
+    actor.user.id
   )
   if (rateLimitResult) return rateLimitResult
 
@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
     // The earlier guard guarantees exactly one handle is present, and both
     // deletes are scoped to the caller's own userId.
     const target = subscriptionId
-      ? { id: subscriptionId, userId: authResult.id }
-      : { endpoint, userId: authResult.id }
+      ? { id: subscriptionId, userId: actor.user.id }
+      : { endpoint, userId: actor.user.id }
     const { count } = await prisma.pushSubscription.deleteMany({ where: target })
 
     if (count === 0) {

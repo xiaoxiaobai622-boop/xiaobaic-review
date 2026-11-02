@@ -44,6 +44,10 @@ const EVENT_LABEL_KEYS: Record<NotificationEventType, string> = {
   SUPPORT_NEW_MESSAGE: 'supportNewMessage',
 }
 
+const DELIVERABLE_EVENT_TYPES = NOTIFICATION_EVENT_TYPES.filter(
+  (eventType) => eventType !== 'ADMIN_ACCESS' && eventType !== 'SHARE_ACCESS',
+)
+
 function createDefaultSubscriptions(): Record<NotificationEventType, boolean> {
   return NOTIFICATION_EVENT_TYPES.reduce((acc, eventType) => {
     acc[eventType] = true
@@ -338,6 +342,7 @@ export function ExternalNotificationsContent({ active, showIntro = true }: { act
       {showIntro && (
         <div className="text-sm text-muted-foreground">
           {t('configureBelow')}
+          <p className="mt-2 rounded-md border border-border bg-muted/30 p-3">{t('platformLevelNote')}</p>
         </div>
       )}
 
@@ -375,7 +380,7 @@ export function ExternalNotificationsContent({ active, showIntro = true }: { act
             <div className="space-y-3 border-2 border-border p-4 rounded-lg bg-accent/5">
               <h4 className="font-semibold text-sm">{t('sendFor')}</h4>
               <div className="space-y-3">
-                {NOTIFICATION_EVENT_TYPES.map((eventType) => (
+                {DELIVERABLE_EVENT_TYPES.map((eventType) => (
                   <div key={eventType} className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label className="text-sm font-normal">{t(EVENT_LABEL_KEYS[eventType])}</Label>
@@ -626,7 +631,7 @@ function DestinationEditor({
       <div className="space-y-3 border-2 border-border p-4 rounded-lg bg-accent/5">
         <h4 className="font-semibold text-sm">{t('sendFor')}</h4>
         <div className="space-y-3">
-          {NOTIFICATION_EVENT_TYPES.map((eventType) => (
+          {DELIVERABLE_EVENT_TYPES.map((eventType) => (
             <div key={eventType} className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-sm font-normal">{t(EVENT_LABEL_KEYS[eventType])}</Label>

@@ -1172,6 +1172,9 @@ model PushSubscription {
   userAgent  String?
   deviceName String?
 
+  // Which surface owns this device: main console or the support PWA.
+  surface String @default("main")
+
   // Event subscriptions (default: all events)
   subscribedEvents String[] @default(["SHARE_ACCESS", "ADMIN_ACCESS", "CLIENT_COMMENT", "VIDEO_APPROVAL", "CLIENT_UPLOAD", "SECURITY_ALERT"])
 
@@ -1179,6 +1182,30 @@ model PushSubscription {
   lastUsedAt DateTime @default(now())
 
   @@index([userId])
+  @@index([surface])
+}
+
+model PushDeliveryLog {
+  id String @id @default(cuid())
+
+  // Kept after the subscription is deleted so the audit trail survives.
+  subscriptionId String?
+  userId         String?
+  deviceName     String?
+
+  eventType String
+  surface   String?
+  projectId String?
+  teamId    String?
+
+  success    Boolean  @default(false)
+  statusCode Int?
+  error      String?
+  sentAt     DateTime @default(now())
+
+  @@index([eventType, sentAt])
+  @@index([subscriptionId, sentAt])
+  @@index([success, sentAt])
 }
 
 model EmailTemplate {

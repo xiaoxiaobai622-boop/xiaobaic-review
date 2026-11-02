@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation'
 import { appPrompt } from '@/components/AppDialogProvider'
 import TeamOverview from '@/components/TeamOverview'
 import TeamDangerZone from '@/components/TeamDangerZone'
+import { TeamPushSetup } from '@/components/TeamPushSetup'
 import { useAuth } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -239,6 +240,7 @@ export default function TeamPage() {
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}
     {team && team.status !== 'ACTIVE' && <div role="status" className="rounded-md border border-warning/30 bg-warning-visible p-3 text-sm text-foreground">该团队当前已停用，项目和团队接口暂不可用。请联系平台运营启用团队。</div>}
     {!team ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">还没有团队，先创建一个团队开始管理。</p><Button className="mt-4" onClick={createTeam}><Plus className="h-4 w-4" />创建团队</Button></CardContent></Card> : tab === 'team' ? <TeamInfoPanel team={team} role={activeRole} /> : tab === 'personal' ? <PersonalInfoPanel team={team} /> : team.status !== 'ACTIVE' ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm font-medium">团队已停用</p><p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p><Button className="mt-4" variant="outline" onClick={() => { window.history.replaceState(null, '', '/studio/team?tab=team'); window.dispatchEvent(new PopStateEvent('popstate')) }}>查看团队信息</Button></CardContent></Card> : <TeamOverview teamId={team.id} showHeading={false} />}
+    {team && team.status === 'ACTIVE' && (activeRole === 'OWNER' || activeRole === 'ADMIN') && <TeamPushSetup />}
     {team && activeRole && team.status === 'ACTIVE' && <TeamDangerZone team={team} role={activeRole} />}
   </div>
 }
