@@ -135,14 +135,24 @@ export async function findAccessibleVideo(
   user: AuthUser,
   projectId: string,
   videoId: string,
-): Promise<{ id: string; projectId: string } | null> {
+): Promise<{
+  id: string
+  projectId: string
+  sourceQualityPath: string | null
+  project: { watermarkEnabled: boolean; applyPreviewLut: boolean }
+} | null> {
   return db.video.findFirst({
     where: {
       id: videoId,
       projectId,
       project: projectAccessWhereForUser(user, projectId),
     },
-    select: { id: true, projectId: true },
+    select: {
+      id: true,
+      projectId: true,
+      sourceQualityPath: true,
+      project: { select: { watermarkEnabled: true, applyPreviewLut: true } },
+    },
   })
 }
 
@@ -438,6 +448,8 @@ export async function fetchProjectWithVideos(
     reviewStatus: true,
     thumbnailPath: true,
     hlsPath: true,
+    sourceQualityPath: true,
+    sourceQualityError: true,
     preview2160Path: true,
     preview1080Path: true,
     preview720Path: true,
@@ -468,6 +480,7 @@ export async function fetchProjectWithVideos(
     hideFeedback: true,
     previewResolution: true,
     watermarkEnabled: true,
+    applyPreviewLut: true,
     usePreviewForApprovedPlayback: true,
     allowAssetDownload: true,
     allowPhotoDownload: true,

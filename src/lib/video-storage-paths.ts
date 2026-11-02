@@ -14,6 +14,7 @@ const VIDEO_PATH_COLUMNS = [
   'preview1080Path',
   'preview720Path',
   'hlsPath',
+  'sourceQualityPath',
   'cleanPreview2160Path',
   'cleanPreview1080Path',
   'cleanPreview720Path',

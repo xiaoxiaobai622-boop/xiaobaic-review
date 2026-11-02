@@ -41,6 +41,7 @@ import { logError } from '@/lib/logging'
 import { cn } from '@/lib/utils'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { isVideoCandidate, VIDEO_INPUT_ACCEPT } from '@/lib/video-file-signature'
+import { hasProgressivePlayback } from '@/lib/video-playback'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import { useAuth } from '@/components/AuthProvider'
 import { getActiveTeamId } from '@/lib/team-store'
@@ -854,12 +855,13 @@ export default function ProjectPage() {
     reviewVersionsRef.current = reviewVersions
   }, [reviewVersions])
 
-  const mintReviewToken = useCallback(async (videoId: string, quality: '720p' | 'hls', force = false): Promise<string> => {
+  const mintReviewToken = useCallback(async (videoId: string, quality: '720p' | 'hls' | 'source', force = false): Promise<string> => {
     const cacheKey = `${videoId}:${quality}`
     const cached = reviewTokenCacheRef.current.get(cacheKey)
     if (!force && cached && Date.now() - cached.mintedAt < REVIEW_STREAM_TTL_MS) return cached.token
 
     const query = new URLSearchParams({ videoId, projectId: String(id), quality })
+    if (force) query.set('force', '1')
     const response = await apiFetch(`/api/studio/video-token?${query.toString()}`, { cache: 'no-store' })
     if (!response.ok) throw new Error('Failed to mint playback token')
     const data = await response.json()
@@ -978,12 +980,18 @@ export default function ProjectPage() {
     setReviewStreamStatus('loading')
     void (async () => {
       const settled = await Promise.allSettled(reviewVersions.map(async (video: any) => {
-        const progressive = await mintReviewToken(video.id, '720p')
+        // An HLS-only video has no progressive rendition. Minting a 720p token
+        // for it hands a non-HLS browser a URL that can only answer 415.
+        const progressive = hasProgressivePlayback(video)
+          ? await mintReviewToken(video.id, '720p').catch(() => '')
+          : ''
         const hls = video.hlsPath ? await mintReviewToken(video.id, 'hls').catch(() => '') : ''
+        const source = video.hasSourceQuality ? await mintReviewToken(video.id, 'source').catch(() => '') : ''
         return {
           ...video,
-          streamUrl720p: `/api/content/${progressive}`,
+          streamUrl720p: progressive ? `/api/content/${progressive}` : '',
           hlsUrl720p: hls ? `/api/content/${hls}` : '',
+          sourceUrl: source ? `/api/content/${source}` : '',
         }
       }))
       if (cancelled) return
@@ -1001,13 +1009,18 @@ export default function ProjectPage() {
     if (!video) return false
     reviewTokenCacheRef.current.delete(`${videoId}:720p`)
     reviewTokenCacheRef.current.delete(`${videoId}:hls`)
+    reviewTokenCacheRef.current.delete(`${videoId}:source`)
     try {
-      const progressive = await mintReviewToken(videoId, '720p', true)
+      const progressive = hasProgressivePlayback(video)
+        ? await mintReviewToken(videoId, '720p', true).catch(() => '')
+        : ''
       const hls = video.hlsPath ? await mintReviewToken(videoId, 'hls', true).catch(() => '') : ''
+      const source = video.hasSourceQuality ? await mintReviewToken(videoId, 'source', true).catch(() => '') : ''
       setReviewStreams((current) => current.map((item: any) => item.id === videoId ? {
         ...item,
-        streamUrl720p: `/api/content/${progressive}`,
+        streamUrl720p: progressive ? `/api/content/${progressive}` : '',
         hlsUrl720p: hls ? `/api/content/${hls}` : '',
+        sourceUrl: source ? `/api/content/${source}` : '',
       } : item))
       return true
     } catch {

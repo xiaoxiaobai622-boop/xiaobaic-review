@@ -77,6 +77,9 @@ interface VideoAccessToken {
   // Download is authorized by the link, so the permission must travel with the
   // token that can turn into a download. Playback does not consult this list.
   permissions?: string[]
+  // Source-quality bytes are a separate playback capability. Old tokens and
+  // preview tokens must not become source-quality streams by changing a URL.
+  sourceQualityAllowed?: boolean
 }
 
 /**
@@ -89,7 +92,7 @@ export async function generateVideoAccessToken(
   quality: string,
   request: NextRequest,
   sessionId: string,
-  options?: { skipCacheCheck?: boolean; shareId?: string; permissions?: string[] },
+  options?: { skipCacheCheck?: boolean; shareId?: string; permissions?: string[]; sourceQualityAllowed?: boolean },
 ): Promise<string> {
   const redis = getRedis()
 
@@ -113,6 +116,7 @@ export async function generateVideoAccessToken(
     isAdmin: sessionId.startsWith('admin:'),
     shareId: options?.shareId,
     permissions: options?.permissions,
+    sourceQualityAllowed: options?.sourceQualityAllowed === true,
   }
 
   const ttlSeconds = await getClientSessionTimeoutSeconds()
@@ -246,7 +250,7 @@ async function renewVideoAccessToken(
   // EXPIRE on a deleted key is a no-op, so a revoked session is never revived.
   await redis.expire(`video_access:${token}`, lifetime)
   await redis.expire(
-    `video_token_cache:${tokenData.sessionId}:${tokenData.videoId}:${tokenData.quality}`,
+    `video_token_cache:${tokenData.sessionId}:${tokenData.videoId}:${tokenData.quality}:${permissionsFingerprint(tokenData.permissions)}`,
     lifetime
   )
 }

@@ -3,7 +3,7 @@ import { prisma, LIVE_VIDEO, LIVE_COMMENT } from '@/lib/db'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
 import { canAccessProject, canAdministerProject, projectViewersWhere } from '@/lib/project-access'
 import { encrypt, decrypt } from '@/lib/encryption'
-import { isSmtpConfigured } from '@/lib/settings'
+import { isSmtpConfigured, isSourceQualityPlaybackEnabled } from '@/lib/settings'
 import { flushPendingClientNotifications } from '@/lib/notifications'
 import { invalidateShareTokensByProject } from '@/lib/session-invalidation'
 import { rateLimit } from '@/lib/rate-limit'
@@ -14,6 +14,7 @@ import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
+import { hasProgressivePlayback } from '@/lib/video-playback'
 import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
@@ -143,11 +144,23 @@ export async function GET(
       : null
 
     // Convert BigInt fields to strings for JSON serialization
+    const sourceQualityEnabled = await isSourceQualityPlaybackEnabled()
     const projectData = {
       ...project,
+      sourceQualityEnabled,
       memberCount,
       videos: project.videos.map((video: any) => ({
         ...video,
+        hasSourceQuality: Boolean(
+          sourceQualityEnabled &&
+          video.sourceQualityPath &&
+          !project.watermarkEnabled &&
+          !project.applyPreviewLut
+        ),
+        hasProgressivePlayback: hasProgressivePlayback(video),
+        sourceQualityUnavailableReason: sourceQualityEnabled && video.sourceQualityError
+          ? 'source_quality_unsupported'
+          : null,
         originalFileSize: video.originalFileSize.toString(),
         createdAt: video.createdAt instanceof Date ? video.createdAt.toISOString() : video.createdAt ?? null,
         updatedAt: video.updatedAt instanceof Date ? video.updatedAt.toISOString() : video.updatedAt ?? null,
@@ -582,6 +595,7 @@ export async function DELETE(
         video.preview1080Path,
         video.preview720Path,
         (video as any).hlsPath,
+        video.sourceQualityPath,
         video.cleanPreview2160Path,
         video.cleanPreview1080Path,
         video.cleanPreview720Path,

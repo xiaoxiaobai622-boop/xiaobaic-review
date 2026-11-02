@@ -1,0 +1,44 @@
+name: Playback failure report
+
+# Hourly alert probe. The report script exits 1 when the failed/auth/per-video
+# thresholds are crossed, which fails this workflow and notifies the repository
+# watchers. It runs inside the production app container so it can use the same
+# Redis configuration as the app; no production credentials live in the repo.
+#
+# Preconditions: the image containing scripts/playback-failure-report.mts must
+# be deployed, and the SERVER_HOST / SERVER_USER / SERVER_SSH_KEY repository
+# secrets must exist (the same ones used by backup-production.yml).
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: playback-failure-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Hourly playback failure report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run report inside the production app container
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 4m
+          script: |
+            set -eu
+            docker exec -w /app vitransfer-app \
+              npx tsx scripts/playback-failure-report.mts \
+              --hours=1 \
+              --failed-threshold=20 \
+              --auth-threshold=5 \
+              --video-threshold=5

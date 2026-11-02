@@ -6,6 +6,8 @@ import { prisma } from '@/lib/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { isSourceQualityPlaybackEnabled } from '@/lib/settings'
+import { trackSourceQualityEvent } from '@/lib/source-quality-analytics'
 
 
 export const runtime = 'nodejs'
@@ -13,7 +15,7 @@ export const dynamic = 'force-dynamic'
 
 // Playback renditions the studio surfaces. Originals go through
 // /api/videos/[id]/download-token, so they must never be minted from here.
-const PLAYBACK_QUALITIES = ['thumbnail', 'hls', '720p', '1080p', '2160p']
+const PLAYBACK_QUALITIES = ['thumbnail', 'hls', '720p', '1080p', '2160p', 'source']
 
 /**
  * Admin Video Token Generation Endpoint
@@ -39,6 +41,7 @@ export async function GET(request: NextRequest) {
     const videoId = searchParams.get('videoId')
     const projectId = searchParams.get('projectId')
     const quality = searchParams.get('quality')
+    const force = searchParams.get('force') === '1'
 
     if (!videoId || !projectId || !quality) {
       return NextResponse.json(
@@ -68,10 +71,30 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Cached token responses are cheap and should not count against the burst limit.
-    const cachedToken = await getCachedVideoAccessToken(videoId, projectId, quality, sessionId)
-    if (cachedToken) {
-      return NextResponse.json({ token: cachedToken })
+    if (quality === 'source') {
+      const enabled = await isSourceQualityPlaybackEnabled()
+      if (!enabled || !video.sourceQualityPath) {
+        return NextResponse.json(
+          { error: 'Source quality unavailable', code: 'SOURCE_QUALITY_UNAVAILABLE' },
+          { status: 403 }
+        )
+      }
+      if (video.project.watermarkEnabled || video.project.applyPreviewLut) {
+        return NextResponse.json(
+          { error: 'Source quality disabled by project policy', code: 'SOURCE_QUALITY_POLICY' },
+          { status: 403 }
+        )
+      }
+    }
+
+    // Cached tokens are cheap and should not count against the burst limit.
+    // Source-quality deliberately skips the cache: an older cached token may
+    // predate the sourceQualityAllowed claim.
+    if (quality !== 'source' && !force) {
+      const cachedToken = await getCachedVideoAccessToken(videoId, projectId, quality, sessionId)
+      if (cachedToken) {
+        return NextResponse.json({ token: cachedToken })
+      }
     }
 
     // Rate limiting: Allow generous limit for new token generation.
@@ -92,8 +115,16 @@ export async function GET(request: NextRequest) {
       quality,
       request,
       sessionId,
-      { skipCacheCheck: true },
+      { skipCacheCheck: true, sourceQualityAllowed: quality === 'source' },
     )
+
+    if (quality === 'source') {
+      void trackSourceQualityEvent({
+        eventType: 'SOURCE_QUALITY_TOKEN',
+        videoId,
+        projectId,
+      }).catch(() => {})
+    }
 
     return NextResponse.json({ token })
   } catch (error) {

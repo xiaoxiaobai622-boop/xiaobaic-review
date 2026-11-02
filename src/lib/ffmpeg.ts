@@ -80,6 +80,8 @@ export interface VideoMetadata {
   codec?: string
   audioCodecs?: string[]
   format?: string
+  hdr?: boolean
+  hasAlpha?: boolean
 }
 
 export async function getVideoMetadata(inputPath: string): Promise<VideoMetadata> {
@@ -184,6 +186,8 @@ export async function getVideoMetadata(inputPath: string): Promise<VideoMetadata
           codec: videoStream.codec_name,
           audioCodecs,
           format: metadata.format.format_name,
+          hdr: ['smpte2084', 'arib-std-b67'].includes(String(videoStream.color_transfer || '').toLowerCase()),
+          hasAlpha: typeof videoStream.pix_fmt === 'string' && videoStream.pix_fmt.includes('a'),
         }
 
         if (DEBUG) {
@@ -389,6 +393,84 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
       }
       reject(new Error(`Failed to start FFmpeg: ${err.message}`))
     })
+  })
+}
+
+/**
+ * High-bitrate H.264/AAC proxy for the optional source-quality playback mode.
+ * The uploaded original is never modified; this file is a separate review copy.
+ */
+export function sourceQualityBitrateKbps(width: number, height: number): number {
+  const shortSide = Math.min(width, height)
+  if (shortSide > 1080) return 16000
+  if (shortSide >= 900) return 8000
+  return 6000
+}
+
+export async function transcodeSourceQuality(
+  inputPath: string,
+  outputPath: string,
+  width: number,
+  height: number,
+  fps: number | undefined,
+): Promise<number> {
+  const cpuAllocation = getCpuAllocation()
+  const targetKbps = sourceQualityBitrateKbps(width, height)
+  const maxKbps = Math.round(targetKbps * 1.25)
+  const gopSize = Math.max(24, Math.round((fps || 25) * 2))
+
+  const args = [
+    '-v', 'error',
+    '-i', inputPath,
+    '-map', '0:v:0',
+    '-map', '0:a:0?',
+    '-map_metadata', '-1',
+    '-sn', '-dn',
+    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+    '-c:v', 'libx264',
+    '-preset', FFMPEG_PRESET,
+    '-profile:v', 'high',
+    '-pix_fmt', 'yuv420p',
+    '-b:v', `${targetKbps}k`,
+    '-maxrate', `${maxKbps}k`,
+    '-bufsize', `${maxKbps * 2}k`,
+    '-g', gopSize.toString(),
+    '-keyint_min', gopSize.toString(),
+    '-sc_threshold', '0',
+    '-threads', cpuAllocation.threadsPerJob.toString(),
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-ar', '48000',
+    '-movflags', '+faststart',
+    '-max_muxing_queue_size', '1024',
+    '-y',
+    outputPath,
+  ]
+
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('nice', ['-n', '10', ffmpegPath, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    attachIdleWatchdog(ffmpeg, FFMPEG_IDLE_TIMEOUT_MS, 'FFmpeg source-quality transcode')
+    let stderr = ''
+
+    ffmpeg.stderr.on('data', (data) => {
+      const text = data.toString()
+      stderr += text
+      if (text.includes('error') || text.includes('Error') || text.includes('failed')) {
+        logError('[FFMPEG SOURCE QUALITY]', text.trim())
+      }
+    })
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        resolve(targetKbps)
+      } else {
+        reject(new Error(`FFmpeg source-quality transcode failed (${code}): ${stderr.slice(0, 1000)}`))
+      }
+    })
+
+    ffmpeg.on('error', (err) => reject(new Error(`Failed to start FFmpeg source-quality transcode: ${err.message}`)))
   })
 }
 

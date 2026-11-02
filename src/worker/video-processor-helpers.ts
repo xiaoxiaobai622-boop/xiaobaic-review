@@ -1,6 +1,6 @@
 import { prisma } from '../lib/db'
 import { downloadFile, uploadFile } from '../lib/storage'
-import { transcodeVideo, generateThumbnail, getVideoMetadata, VideoMetadata } from '../lib/ffmpeg'
+import { transcodeVideo, transcodeSourceQuality, generateThumbnail, getVideoMetadata, VideoMetadata } from '../lib/ffmpeg'
 import fs from 'fs'
 import path from 'path'
 import { pipeline } from 'stream/promises'
@@ -47,6 +47,7 @@ const formatSeconds = (ms: number) => (ms / 1000).toFixed(2)
 export interface TempFiles {
   input?: string
   previews?: string[]
+  sourceQuality?: string
   thumbnail?: string
 }
 
@@ -54,6 +55,8 @@ export interface ProcessingSettings {
   resolution: string
   skipTranscoding: boolean
   applyLut: boolean
+  watermarkEnabled: boolean
+  sourceQualityEnabled: boolean
 }
 
 export interface VideoInfo {
@@ -149,14 +152,21 @@ export async function downloadAndValidateVideo(
 export async function fetchProcessingSettings(projectId: string): Promise<ProcessingSettings> {
   debugLog('Fetching processing settings...')
 
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: {
-      previewResolution: true,
-      skipTranscoding: true,
-      applyPreviewLut: true,
-    },
-  })
+  const [project, globalSettings] = await Promise.all([
+    prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        previewResolution: true,
+        skipTranscoding: true,
+        applyPreviewLut: true,
+        watermarkEnabled: true,
+      },
+    }),
+    prisma.settings.findUnique({
+      where: { id: 'default' },
+      select: { enableSourceQualityPlayback: true },
+    }),
+  ])
 
   debugLog('Project settings:', {
     resolution: project?.previewResolution
@@ -166,6 +176,8 @@ export async function fetchProcessingSettings(projectId: string): Promise<Proces
     resolution: project?.previewResolution || '720p',
     skipTranscoding: project?.skipTranscoding ?? false,
     applyLut: project?.applyPreviewLut ?? true,
+    watermarkEnabled: project?.watermarkEnabled ?? true,
+    sourceQualityEnabled: globalSettings?.enableSourceQualityPlayback ?? false,
   }
 }
 
@@ -377,6 +389,40 @@ export async function processThumbnail(
     logError(`[WORKER] Thumbnail generation failed for video ${videoId} (non-fatal)`, error)
     return null
   }
+}
+
+export function sourceQualityUnsupportedReason(metadata: VideoMetadata): string | null {
+  if (metadata.hdr) return 'HDR source requires the original download; the SDR proxy is disabled'
+  if (metadata.hasAlpha) return 'Alpha-channel source is not supported by the source-quality proxy'
+  return null
+}
+
+/**
+ * Generate the high-bitrate H.264/AAC proxy used by the optional source-quality
+ * playback mode. This never modifies the original and is never a download source.
+ */
+export async function processSourceQuality(
+  videoId: string,
+  projectId: string,
+  teamId: string,
+  inputPath: string,
+  metadata: VideoMetadata,
+  tempFiles: TempFiles,
+): Promise<{ path: string; bytes: bigint }> {
+  const tempPath = path.join(TEMP_DIR, `${videoId}-source-quality.mp4`)
+  tempFiles.sourceQuality = tempPath
+
+  const targetKbps = await transcodeSourceQuality(inputPath, tempPath, metadata.width, metadata.height, metadata.fps)
+  const stats = fs.statSync(tempPath)
+  const storagePath = teamProjectStorageKey(teamId, projectId, 'videos', videoId, 'source-quality.mp4')
+
+  logMessage(
+    `[WORKER] Source-quality proxy for ${videoId}: ${metadata.width}x${metadata.height}, ` +
+    `${targetKbps} kbps target, ${formatMB(stats.size)} MB`
+  )
+
+  await uploadFile(storagePath, fs.createReadStream(tempPath), stats.size, 'video/mp4')
+  return { path: storagePath, bytes: BigInt(stats.size) }
 }
 
 /**

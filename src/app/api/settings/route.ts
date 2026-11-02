@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
-import { isSmtpConfigured } from '@/lib/settings'
+import { isSmtpConfigured, invalidateSourceQualitySettingsCache } from '@/lib/settings'
+import { logPlatformAudit } from '@/lib/platform-audit'
 import { isValidAccentColor } from '@/lib/accent'
 import { flushPendingAdminNotifications } from '@/lib/notifications'
 import { invalidateEmailSettingsCache } from '@/lib/email'
@@ -52,6 +53,68 @@ export async function GET(request: NextRequest) {
       update: {},
     })
 
+    const recentPlatformActions = await prisma.securityEvent.findMany({
+      where: { type: 'PLATFORM_ADMIN_ACTION' },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { userId: true, createdAt: true, details: true },
+    }).catch(() => [])
+    const sourceQualityEvent = recentPlatformActions.find((event) => {
+      const details = event.details as Record<string, unknown> | null
+      return details?.action === 'SOURCE_QUALITY_SWITCH_CHANGE'
+    })
+    const sourceQualityAudit = sourceQualityEvent
+      ? {
+          at: sourceQualityEvent.createdAt.toISOString(),
+          actorName: String((sourceQualityEvent.details as any)?.actorName || sourceQualityEvent.userId || 'Platform admin'),
+          before: Boolean((sourceQualityEvent.details as any)?.before),
+          after: Boolean((sourceQualityEvent.details as any)?.after),
+          scope: String((sourceQualityEvent.details as any)?.scope || 'GLOBAL_ALL_TEAMS'),
+        }
+      : null
+
+    const sourceQualitySince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    const sourceQualityEventTypes = ['SOURCE_QUALITY_PLAY', 'SOURCE_QUALITY_FAILURE']
+    const [readyVideos, availableVideos, sourceTeamRows, sourceTotals, sourceRecent] = await Promise.all([
+      prisma.video.count({ where: { status: 'READY' } }),
+      prisma.video.count({ where: { status: 'READY', sourceQualityPath: { not: null } } }),
+      prisma.video.findMany({
+        where: { sourceQualityPath: { not: null } },
+        select: { project: { select: { teamId: true } } },
+      }),
+      prisma.videoAnalytics.groupBy({
+        by: ['eventType'],
+        where: { eventType: { in: sourceQualityEventTypes } },
+        _count: { _all: true },
+        _sum: { bytes: true },
+      }),
+      prisma.videoAnalytics.groupBy({
+        by: ['eventType'],
+        where: { eventType: { in: sourceQualityEventTypes }, createdAt: { gte: sourceQualitySince } },
+        _count: { _all: true },
+        _sum: { bytes: true },
+      }),
+    ])
+    const sourceStat = (rows: typeof sourceTotals, eventType: string) =>
+      rows.find((row) => row.eventType === eventType)
+    const totalPlay = sourceStat(sourceTotals, 'SOURCE_QUALITY_PLAY')
+    const totalFailure = sourceStat(sourceTotals, 'SOURCE_QUALITY_FAILURE')
+    const recentPlay = sourceStat(sourceRecent, 'SOURCE_QUALITY_PLAY')
+    const recentFailure = sourceStat(sourceRecent, 'SOURCE_QUALITY_FAILURE')
+    const sourceQualityStats = {
+      readyVideos,
+      availableVideos,
+      enabledTeams: new Set(
+        sourceTeamRows.map((row) => row.project?.teamId).filter((teamId): teamId is string => Boolean(teamId)),
+      ).size,
+      totalPlays: totalPlay?._count._all ?? 0,
+      totalFailures: totalFailure?._count._all ?? 0,
+      totalBytes: Number(totalPlay?._sum.bytes ?? 0),
+      recentPlays: recentPlay?._count._all ?? 0,
+      recentFailures: recentFailure?._count._all ?? 0,
+      recentBytes: Number(recentPlay?._sum.bytes ?? 0),
+    }
+
     // SECURITY: Never send SMTP password in cleartext — return masked placeholder
     const maskedSettings = {
       ...settings,
@@ -65,6 +128,8 @@ export async function GET(request: NextRequest) {
       ...maskedSettings,
       security: securitySettings,
       smtpConfigured,
+      sourceQualityAudit,
+      sourceQualityStats,
     })
   } catch (error) {
     logError('Error fetching settings:', error)
@@ -119,6 +184,7 @@ export async function PATCH(request: NextRequest) {
       adminNotificationTime,
       adminNotificationDay,
       defaultUsePreviewForApprovedPlayback,
+      enableSourceQualityPlayback,
       defaultAllowClientAssetUpload,
       defaultAllowReverseShare,
       defaultShowClientTutorial,
@@ -174,6 +240,13 @@ export async function PATCH(request: NextRequest) {
     if (brandingLogoPath !== undefined && brandingLogoPath !== null && typeof brandingLogoPath !== 'string') {
       return NextResponse.json(
         { error: settingsMessages.invalidBrandingLogoPath || 'Invalid branding logo path.' },
+        { status: 400 }
+      )
+    }
+
+    if (enableSourceQualityPlayback !== undefined && typeof enableSourceQualityPlayback !== 'boolean') {
+      return NextResponse.json(
+        { error: settingsMessages.invalidSourceQualityPlayback || 'Invalid source quality playback setting.' },
         { status: 400 }
       )
     }
@@ -371,6 +444,7 @@ export async function PATCH(request: NextRequest) {
       adminNotificationTime,
       adminNotificationDay: adminNotificationDay !== undefined ? adminNotificationDay : null,
       defaultUsePreviewForApprovedPlayback,
+      enableSourceQualityPlayback,
       defaultAllowClientAssetUpload,
       defaultAllowReverseShare,
       defaultShowClientTutorial,
@@ -393,11 +467,21 @@ export async function PATCH(request: NextRequest) {
       previousAdminSchedule = current?.adminNotificationSchedule || null
     }
 
+    let previousSourceQuality: boolean | null = null
+    if (enableSourceQualityPlayback !== undefined) {
+      const current = await prisma.settings.findUnique({
+        where: { id: 'default' },
+        select: { enableSourceQualityPlayback: true },
+      })
+      previousSourceQuality = current?.enableSourceQualityPlayback ?? false
+    }
+
     const settings = await prisma.settings.upsert({
       where: { id: 'default' },
       update: updateData,
       create: {
         id: 'default',
+        enableSourceQualityPlayback: enableSourceQualityPlayback ?? false,
         defaultTheme: defaultTheme || 'auto',
         accentColor: accentColor || 'blue',
         companyName,
@@ -425,7 +509,25 @@ export async function PATCH(request: NextRequest) {
 
     if (language !== undefined) invalidateConfiguredLocaleCache()
 
+    invalidateSourceQualitySettingsCache()
     invalidateEmailSettingsCache()
+
+    if (enableSourceQualityPlayback !== undefined) {
+      await logPlatformAudit({
+        request,
+        actorId: authResult.id,
+        action: 'SOURCE_QUALITY_SWITCH_CHANGE',
+        targetType: 'Settings',
+        targetId: 'default',
+        details: {
+          scope: 'GLOBAL_ALL_TEAMS',
+          actorName: (authResult as any).name || (authResult as any).email || authResult.id,
+          before: previousSourceQuality,
+          after: settings.enableSourceQualityPlayback,
+          downloadOriginalUnaffected: true,
+        },
+      })
+    }
 
     // Flush pending admin notifications when schedule changes
     if (previousAdminSchedule !== null && adminNotificationSchedule !== previousAdminSchedule) {

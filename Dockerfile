@@ -106,6 +106,9 @@ COPY --from=builder --link /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --link /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --link /app/prisma ./prisma
 COPY --from=builder --link /app/src ./src
+# Scheduled playback-failure report ( .github/workflows/playback-failure-report.yml )
+# runs inside this container; tsx is already a production dependency.
+COPY --from=builder --link /app/scripts/playback-failure-report.mts ./scripts/playback-failure-report.mts
 # 内容页文稿在运行时按路径读（`src/lib/marketing/content.ts:11` = `process.cwd()/content/marketing`），
 # 不在 `.next` 产物里；runner 是逐目录显式 COPY 的，少这一行就等于生产没有内容页。
 COPY --from=builder --link /app/content ./content

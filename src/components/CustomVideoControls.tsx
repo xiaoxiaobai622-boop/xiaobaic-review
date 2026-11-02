@@ -34,6 +34,9 @@ interface CustomVideoControlsProps {
   onFrameStep: (direction: 'forward' | 'backward') => void
   isLooping: boolean
   onToggleLoop: () => void
+  sourceQualityAvailable?: boolean
+  isSourceQuality?: boolean
+  onToggleSourceQuality?: () => void
   comments?: CommentWithReplies[]
   videoFps?: number
   videoId?: string
@@ -499,6 +502,8 @@ interface UtilityPlaybackButtonsProps {
   isMuted: boolean
   isFullscreen: boolean
   isLooping: boolean
+  sourceQualityAvailable: boolean
+  isSourceQuality: boolean
   showVolume: boolean
   onVolumeMouseEnter: () => void
   onVolumeMouseLeave: () => void
@@ -506,6 +511,7 @@ interface UtilityPlaybackButtonsProps {
   onToggleMute: () => void
   onToggleLoop: () => void
   onToggleFullscreen: () => void
+  onToggleSourceQuality: () => void
 }
 
 const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
@@ -513,6 +519,8 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
   isMuted,
   isFullscreen,
   isLooping,
+  sourceQualityAvailable,
+  isSourceQuality,
   showVolume,
   onVolumeMouseEnter,
   onVolumeMouseLeave,
@@ -520,11 +528,23 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
   onToggleMute,
   onToggleLoop,
   onToggleFullscreen,
+  onToggleSourceQuality,
 }: UtilityPlaybackButtonsProps) {
   const t = useTranslations('controls')
 
   return (
     <div className="relative z-[2] flex items-center gap-1 sm:gap-2">
+      {sourceQualityAvailable && (
+        <button
+          onClick={onToggleSourceQuality}
+          className={`flex h-8 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:text-[12px] ${isSourceQuality ? 'bg-foreground/10 text-primary' : 'text-foreground'}`}
+          aria-label={isSourceQuality ? t('previewQuality') : t('sourceQuality')}
+          aria-pressed={isSourceQuality}
+          title={isSourceQuality ? t('previewQuality') : t('sourceQuality')}
+        >
+          {isSourceQuality ? t('previewQuality') : t('sourceQuality')}
+        </button>
+      )}
       <div
         className="relative"
         onMouseEnter={onVolumeMouseEnter}
@@ -606,6 +626,9 @@ function CustomVideoControls({
   onFrameStep,
   isLooping,
   onToggleLoop,
+  sourceQualityAvailable = false,
+  isSourceQuality = false,
+  onToggleSourceQuality = () => {},
   comments = [],
   videoFps = 24,
   videoId = '',
@@ -1163,6 +1186,8 @@ function CustomVideoControls({
           isMuted={isMuted}
           isFullscreen={isFullscreen}
           isLooping={isLooping}
+          sourceQualityAvailable={sourceQualityAvailable}
+          isSourceQuality={isSourceQuality}
           showVolume={showVolume}
           onVolumeMouseEnter={handleVolumeMouseEnter}
           onVolumeMouseLeave={handleVolumeMouseLeave}
@@ -1170,6 +1195,7 @@ function CustomVideoControls({
           onToggleMute={onToggleMute}
           onToggleLoop={onToggleLoop}
           onToggleFullscreen={onToggleFullscreen}
+          onToggleSourceQuality={onToggleSourceQuality}
         />
       </div>
     </div>

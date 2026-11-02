@@ -504,6 +504,12 @@ model Video {
   mpsError  String?
   hlsPath   String?
 
+  // High-bitrate H.264/AAC playback proxy for the optional source-quality
+  // mode. This is not the uploaded original and is never used as a download.
+  sourceQualityPath  String?
+  sourceQualityError String?
+  sourceQualityBytes BigInt?
+
   // Preview versions (watermarked)
   preview2160Path String?
   preview1080Path String?
@@ -856,6 +862,11 @@ model Settings {
   // Default Approved Playback Setting
   defaultUsePreviewForApprovedPlayback Boolean @default(false)
 
+  // Global ops switch for the optional high-bitrate source-quality proxy.
+  // Off means no new proxy is generated and no source-quality playback token
+  // can be minted. The uploaded original stays download-only.
+  enableSourceQualityPlayback Boolean @default(false)
+
   // Default Client Asset Upload Setting
   defaultAllowClientAssetUpload Boolean @default(false)
 
@@ -1042,8 +1053,13 @@ model VideoAnalytics {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  // Event types: PAGE_VISIT, DOWNLOAD_COMPLETE
+  // Event types: PAGE_VISIT, DOWNLOAD_COMPLETE, SOURCE_QUALITY_TOKEN,
+  // SOURCE_QUALITY_PLAY, SOURCE_QUALITY_FAILURE
   eventType String
+
+  // Source-quality observability. Other event types may leave these null.
+  quality String?
+  bytes   BigInt?
 
   // Optional: Single asset ID for individual asset downloads
   assetId String?

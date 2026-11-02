@@ -45,6 +45,8 @@ interface ProjectInfoProps {
   className?: string
   usePreviewForApprovedPlayback?: boolean
   playbackQuality?: '720p' | '1080p' | '2160p'
+  isSourceQuality?: boolean
+  sourceQualityUnavailableReason?: string | null
   hideApprovalAction?: boolean
 }
 
@@ -71,6 +73,8 @@ function ProjectInfo({
   className,
   usePreviewForApprovedPlayback = false,
   playbackQuality,
+  isSourceQuality = false,
+  sourceQualityUnavailableReason = null,
   hideApprovalAction = false,
 }: ProjectInfoProps) {
   const [showInfoDialog, setShowInfoDialog] = useState(false)
@@ -386,12 +390,15 @@ function ProjectInfo({
                           const hasPreviewPaths = !!(videoAny.preview720Path || videoAny.preview1080Path || videoAny.preview2160Path)
                           const hasPreviewStreams = !!(videoAny.streamUrl720p || videoAny.streamUrl1080p || videoAny.streamUrl2160p)
                           const hasPreview = hasPreviewPaths || hasPreviewStreams
+                          const hasHls = !!videoAny.hlsUrl720p
                           const qualityLabel = playbackQuality || defaultQuality
+                          if (isSourceQuality) return t('sourceQuality')
                           if (isVideoApproved) {
-                            return usePreviewForApprovedPlayback
+                            return usePreviewForApprovedPlayback || hasHls
                               ? t('approvedPreview', { quality: qualityLabel })
                               : t('approvedOriginal')
                           }
+                          if (hasHls) return t('previewQuality')
                           if (!hasPreview) {
                             return t('originalQuality')
                           }
@@ -399,6 +406,9 @@ function ProjectInfo({
                         })()}
                       </span>
                     </div>
+                    {sourceQualityUnavailableReason && (
+                      <p className="mt-1 text-xs text-warning">{t('sourceQualityUnavailable')}</p>
+                    )}
                   </div>
                 </div>
               </DialogContent>

@@ -2,7 +2,28 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CollapsibleSection } from '@/components/ui/collapsible-section'
+import { appConfirm } from '@/components/AppDialogProvider'
 import { useTranslations } from 'next-intl'
+
+interface SourceQualityAudit {
+  at: string
+  actorName: string
+  before: boolean
+  after: boolean
+  scope: string
+}
+
+interface SourceQualityStats {
+  readyVideos: number
+  availableVideos: number
+  enabledTeams: number
+  totalPlays: number
+  totalFailures: number
+  totalBytes: number
+  recentPlays: number
+  recentFailures: number
+  recentBytes: number
+}
 
 interface VideoProcessingSettingsSectionProps {
   defaultPreviewResolution: string
@@ -11,6 +32,10 @@ interface VideoProcessingSettingsSectionProps {
   setDefaultSkipTranscoding: (value: boolean) => void
   defaultApplyPreviewLut: boolean
   setDefaultApplyPreviewLut: (value: boolean) => void
+  enableSourceQualityPlayback: boolean
+  setEnableSourceQualityPlayback: (value: boolean) => void
+  sourceQualityAudit?: SourceQualityAudit | null
+  sourceQualityStats?: SourceQualityStats | null
   show: boolean
   setShow: (value: boolean) => void
   collapsible?: boolean
@@ -23,11 +48,28 @@ export function VideoProcessingSettingsSection({
   setDefaultSkipTranscoding,
   defaultApplyPreviewLut,
   setDefaultApplyPreviewLut,
+  enableSourceQualityPlayback,
+  setEnableSourceQualityPlayback,
+  sourceQualityAudit = null,
+  sourceQualityStats = null,
   show,
   setShow,
   collapsible,
 }: VideoProcessingSettingsSectionProps) {
   const t = useTranslations('settings')
+
+  const handleSourceQualityChange = async (checked: boolean) => {
+    if (!checked) {
+      const confirmed = await appConfirm({
+        title: t('videoProcessing.sourceQualityDisableConfirmTitle'),
+        message: t('videoProcessing.sourceQualityDisableConfirmMessage'),
+        confirmLabel: t('videoProcessing.sourceQualityDisableConfirmLabel'),
+        tone: 'destructive',
+      })
+      if (!confirmed) return
+    }
+    setEnableSourceQualityPlayback(checked)
+  }
 
   return (
     <CollapsibleSection
@@ -39,6 +81,44 @@ export function VideoProcessingSettingsSection({
       contentClassName="space-y-4 border-t pt-4"
       collapsible={collapsible}
     >
+      <div className="space-y-3 border p-4 rounded-lg bg-muted/30">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="enableSourceQualityPlayback">{t('videoProcessing.sourceQualityEnabled')}</Label>
+            <p className="text-xs text-muted-foreground">{t('videoProcessing.sourceQualityEnabledHint')}</p>
+          </div>
+          <Switch
+            id="enableSourceQualityPlayback"
+            checked={enableSourceQualityPlayback}
+            onCheckedChange={handleSourceQualityChange}
+          />
+        </div>
+        {enableSourceQualityPlayback && (
+          <p className="text-xs text-warning">{t('videoProcessing.sourceQualityEnabledWarning')}</p>
+        )}
+        {sourceQualityAudit && (
+          <p className="text-xs text-muted-foreground">
+            {t('videoProcessing.sourceQualityLastChanged', {
+              actor: sourceQualityAudit.actorName,
+              time: new Date(sourceQualityAudit.at).toLocaleString(),
+              state: sourceQualityAudit.after
+                ? t('videoProcessing.sourceQualityStateOn')
+                : t('videoProcessing.sourceQualityStateOff'),
+            })}
+          </p>
+        )}
+        {sourceQualityStats && (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span>{t('videoProcessing.sourceQualityStatsAvailable', { available: sourceQualityStats.availableVideos, ready: sourceQualityStats.readyVideos })}</span>
+            <span>{t('videoProcessing.sourceQualityStatsTeams', { teams: sourceQualityStats.enabledTeams })}</span>
+            <span>{t('videoProcessing.sourceQualityStatsRecentPlays', { count: sourceQualityStats.recentPlays })}</span>
+            <span>{t('videoProcessing.sourceQualityStatsRecentFailures', { count: sourceQualityStats.recentFailures })}</span>
+            <span>{t('videoProcessing.sourceQualityStatsRecentBytes', { mb: (sourceQualityStats.recentBytes / 1024 / 1024).toFixed(1) })}</span>
+            <span>{t('videoProcessing.sourceQualityStatsTotalPlays', { count: sourceQualityStats.totalPlays })}</span>
+          </div>
+        )}
+      </div>
+
       <div className="space-y-3 border p-4 rounded-lg bg-muted/30">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">

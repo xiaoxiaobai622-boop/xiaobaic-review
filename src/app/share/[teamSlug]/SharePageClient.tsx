@@ -773,6 +773,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     videoId: string,
     quality: string,
     signal?: AbortSignal,
+    force = false,
   ): Promise<string> => {
     // Read the token at call time: it is rotated whenever the project refreshes,
     // and a mint holding the previous one is rejected long before its TTL ends.
@@ -793,13 +794,14 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       authToken = next
     }
 
-    const requestKey = `${authToken}:${videoId}:${quality}`
+    const requestKey = `${authToken}:${videoId}:${quality}:${force ? 'force' : 'cache'}`
     const inFlight = inFlightTokenRequestsRef.current.get(requestKey)
     if (inFlight && !inFlight.signal?.aborted) return inFlight.promise
     if (inFlight) inFlightTokenRequestsRef.current.delete(requestKey)
 
     const requestPromise = (async () => {
-      const response = await shareFetch(token, `/api/share/${token}/video-token?videoId=${videoId}&quality=${quality}`, {
+      const forceParam = force ? '&force=1' : ''
+      const response = await shareFetch(token, `/api/share/${token}/video-token?videoId=${videoId}&quality=${quality}${forceParam}`, {
         cache: 'no-store',
         headers: { Authorization: `Bearer ${authToken}` },
         signal,
@@ -839,6 +841,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     videos: any[],
     concurrency = 2,
     signal?: AbortSignal,
+    force = false,
   ) => {
     if (!shareToken) return videos
 
@@ -854,7 +857,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       // Include the configured preference so a prior 720p result cannot be
       // reused after the project switches to 1080p/2160p.
       const cacheKey = `${shareToken}:${video.id}:${defaultQuality}`
-      const cached = tokenCacheRef.current.get(cacheKey)
+      if (force) tokenCacheRef.current.delete(cacheKey)
+      const cached = force ? undefined : tokenCacheRef.current.get(cacheKey)
       if (cached && Date.now() - cached.mintedAt >= STREAM_TOKEN_MAX_AGE_MS) {
         tokenCacheRef.current.delete(cacheKey)
       } else if (cached) {
@@ -882,11 +886,14 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         // HLS and the preferred progressive rendition are independent
         // requests. Start them together so the first playable source is not
         // delayed by a serial token round trip.
-        const [hlsToken, preferredToken] = await Promise.all([
-          supportsHls && video.hasHls ? fetchVideoToken(video.id, 'hls', signal) : Promise.resolve(''),
+        const [hlsToken, preferredToken, sourceToken] = await Promise.all([
+          supportsHls && video.hasHls ? fetchVideoToken(video.id, 'hls', signal, force) : Promise.resolve(''),
           video.hasProgressivePlayback === false
             ? Promise.resolve('')
-            : fetchVideoToken(video.id, qualityOrder[0], signal),
+            : fetchVideoToken(video.id, qualityOrder[0], signal, force),
+          video.hasSourceQuality && canDownloadOriginal
+            ? fetchVideoToken(video.id, 'source', signal, force).catch(() => '')
+            : Promise.resolve(''),
         ])
         if (signal?.aborted) return
         streamTokenHls = hlsToken
@@ -901,7 +908,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         if (!preferredToken && video.hasProgressivePlayback !== false) {
           for (const quality of qualityOrder.slice(1)) {
             if (signal?.aborted) return
-            const streamToken = await fetchVideoToken(video.id, quality, signal)
+            const streamToken = await fetchVideoToken(video.id, quality, signal, force)
             if (quality === '720p') streamToken720p = streamToken
             if (quality === '1080p') streamToken1080p = streamToken
             if (quality === '2160p') streamToken2160p = streamToken
@@ -915,6 +922,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           hlsUrl720p: streamTokenHls ? `/api/content/${streamTokenHls}` : '',
           streamUrl1080p: streamToken1080p ? `/api/content/${streamToken1080p}` : '',
           streamUrl2160p: streamToken2160p ? `/api/content/${streamToken2160p}` : '',
+          sourceUrl: sourceToken ? `/api/content/${sourceToken}` : '',
           downloadUrl: null,
           thumbnailUrl: null,
         }
@@ -934,7 +942,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     })
 
     return videos.map((video: any) => tokenizedById.get(video.id) || video)
-  }, [defaultQuality, fetchVideoToken, shareToken, supportsHls])
+  }, [canDownloadOriginal, defaultQuality, fetchVideoToken, shareToken, supportsHls])
 
   // A stream URL the server has already let lapse is not something the viewer
   // can fix by reloading: drop this video's cached mint and sign a fresh one so
@@ -945,10 +953,10 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     const video = activeVideosRawRef.current.find((item: any) => item.id === videoId)
     if (!video) return false
 
-    const [refreshed] = await fetchTokensForVideos([video], 1)
+    const [refreshed] = await fetchTokensForVideos([video], 1, undefined, true)
     if (!refreshed || refreshed === video) return false
     if (!refreshed.hlsUrl720p && !refreshed.streamUrl720p &&
-        !refreshed.streamUrl1080p && !refreshed.streamUrl2160p) return false
+        !refreshed.streamUrl1080p && !refreshed.streamUrl2160p && !refreshed.sourceUrl) return false
 
     setActiveVideos((current: any[]) => current.map((item: any) => (
       item.id === videoId ? refreshed : item

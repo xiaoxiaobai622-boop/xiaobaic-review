@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { prisma } from '@/lib/db'
-import { isSmtpConfigured, getRateLimitSettings, getShareTokenTtlSeconds } from '@/lib/settings'
+import { isSmtpConfigured, getRateLimitSettings, getShareTokenTtlSeconds, isSourceQualityPlaybackEnabled } from '@/lib/settings'
 import { getCurrentUserFromRequest, getShareAuth, signShareToken } from '@/lib/auth'
 import { getPrimaryRecipient, getProjectRecipients } from '@/lib/recipients'
 import { verifyProjectAccess, fetchProjectWithVideos } from '@/lib/project-access'
@@ -15,6 +15,7 @@ import { resolveShareMetadata, isShareLinkActive, incrementShareLinkView, scopeV
 import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
 import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
 import { isShareSessionRevoked } from '@/lib/session-invalidation'
+import { hasProgressivePlayback } from '@/lib/video-playback'
 export const runtime = 'nodejs'
 
 
@@ -225,6 +226,7 @@ export async function GET(
       }
     }
 
+    const sourceQualityEnabled = await isSourceQualityPlaybackEnabled()
     const videosSanitizedBase = project.videos.map((video: any) => ({
       id: video.id,
       name: video.name,
@@ -238,6 +240,17 @@ export async function GET(
       fps: video.fps,
       codec: video.codec,
       status: video.status,
+      hasSourceQuality: Boolean(
+        sourceQualityEnabled &&
+        video.sourceQualityPath &&
+        linkPermissions(policy).includes('download') &&
+        !project.watermarkEnabled &&
+        !project.applyPreviewLut &&
+        (isAdmin || (video.approved && projectMeta.authMode !== 'NONE' && !isGuest))
+      ),
+      sourceQualityUnavailableReason: !sourceQualityEnabled || !video.sourceQualityError
+        ? null
+        : 'source_quality_unsupported',
       approved: video.approved,
       approvedAt: video.approvedAt,
       reviewStatus: video.reviewStatus,
@@ -247,17 +260,9 @@ export async function GET(
       // prevents the client from requesting an HLS token for MP4-only videos
       // or using a guaranteed-503 MP4 fallback for MPS HLS-only videos.
       hasHls: Boolean((video as any).hlsPath),
-      hasProgressivePlayback: Boolean(
-        (video as any).preview2160Path ||
-        (video as any).preview1080Path ||
-        (video as any).preview720Path ||
-        (video as any).cleanPreview2160Path ||
-        (video as any).cleanPreview1080Path ||
-        (video as any).cleanPreview720Path ||
-        // Browser-compatible READY uploads can play the original when no HLS
-        // rendition exists, so keep that path eligible as a fallback.
-        (!(video as any).hlsPath && video.status === 'READY'),
-      ),
+      // Must match the content endpoint: an HLS-only video with no preview is
+      // a 415, not a progressive fallback (even when the original exists).
+      hasProgressivePlayback: hasProgressivePlayback(video as any),
       createdAt: video.createdAt instanceof Date ? video.createdAt.toISOString() : video.createdAt ?? null,
       updatedAt: video.updatedAt instanceof Date ? video.updatedAt.toISOString() : video.updatedAt ?? null,
       hasAssets: (video._count?.assets ?? 0) > 0,
@@ -343,6 +348,8 @@ export async function GET(
       thumbnailUrl: video.thumbnailUrl,
       thumbnailPath: video.thumbnailPath,
       folderId: video.folderId,
+      hasSourceQuality: video.hasSourceQuality,
+      sourceQualityUnavailableReason: video.sourceQualityUnavailableReason,
     })) : videosSanitizedBase
 
     const sanitizedVideosByName = isGuest ? Object.keys(sortedVideosByName).reduce((acc: any, name: string) => {
@@ -362,6 +369,8 @@ export async function GET(
         thumbnailUrl: video.thumbnailUrl,
         thumbnailPath: video.thumbnailPath,
         folderId: video.folderId,
+        hasSourceQuality: video.hasSourceQuality,
+        sourceQualityUnavailableReason: video.sourceQualityUnavailableReason,
         hasHls: Boolean((video as any).hlsPath),
         hasProgressivePlayback: Boolean(
           (video as any).preview2160Path ||
@@ -445,6 +454,7 @@ export async function GET(
       },
       shareType: shareLink?.type || 'REVIEW',
       sharePermissions: linkPermissions(policy),
+      sourceQualityEnabled,
       // The visitor page has to answer "几时到期／还能看几次". 项目自己的地址没有在
       // 设置页里给出这两个栏位，所以那一行始终读回 null。
       shareExpiresAt: policy?.expiresAt ? new Date(policy.expiresAt).toISOString() : null,

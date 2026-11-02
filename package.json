@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint .",
     "check:static": "tsx scripts/run-static-checks.mts",
+    "playback:failure-report": "tsx scripts/playback-failure-report.mts",
     "postinstall": "prisma generate",
     "worker": "tsx src/worker/index.ts"
   },

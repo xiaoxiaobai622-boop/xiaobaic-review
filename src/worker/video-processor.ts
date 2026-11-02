@@ -1,8 +1,9 @@
 import { Job } from 'bullmq'
 import { VideoProcessingJob } from '../lib/queue'
 import { logMessage } from '../lib/logging'
-import { isMpsEnabled, submitMpsHls, waitForMpsHls } from '../lib/tencent-mps'
+import { isMpsEnabled, submitMpsHls, waitForMpsHls, submitMpsSourceQuality, waitForMpsSourceQuality, sourceQualityTemplateId } from '../lib/tencent-mps'
 import { isCdnPrefetchEnabled, prefetchHlsRendition } from '../lib/tencent-cdn'
+import { s3GetObjectSize } from '../lib/s3-storage'
 import { prisma } from '../lib/db'
 import {
   TempFiles,
@@ -13,6 +14,8 @@ import {
   processThumbnail,
   finalizeVideo,
   updateVideoStatus,
+  processSourceQuality,
+  sourceQualityUnsupportedReason,
   cleanupTempFiles,
   handleProcessingError,
   debugLog
@@ -40,6 +43,21 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
     const settings = await fetchProcessingSettings(projectId)
     const project = await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } })
     if (!project) throw new Error(`Project ${projectId} not found`)
+
+    const sourceQualityUnsupported = settings.sourceQualityEnabled && !settings.watermarkEnabled && !settings.applyLut
+      ? sourceQualityUnsupportedReason(videoInfo.metadata)
+      : null
+    if (sourceQualityUnsupported) {
+      await prisma.video.update({
+        where: { id: videoId },
+        data: {
+          sourceQualityPath: null,
+          sourceQualityBytes: null,
+          sourceQualityError: sourceQualityUnsupported,
+        },
+      })
+      logMessage(`[WORKER] Source-quality skipped for ${videoId}: ${sourceQualityUnsupported}`)
+    }
 
     // New uploads use Tencent MPS for HLS. The existing MP4/FFmpeg path remains
     // the fallback so older deployments and transient MPS failures stay usable.
@@ -84,6 +102,56 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
             codec: videoInfo.metadata.codec,
           },
         })
+
+        if (settings.sourceQualityEnabled && !settings.watermarkEnabled && !settings.applyLut && !sourceQualityUnsupported) {
+          const templateId = sourceQualityTemplateId(videoInfo.metadata.width, videoInfo.metadata.height)
+          if (!templateId) {
+            await prisma.video.update({
+              where: { id: videoId },
+              data: { sourceQualityError: 'source-quality template not configured' },
+            })
+            logMessage(`[WORKER] Source-quality skipped for ${videoId}: no MPS template configured`)
+          } else {
+            try {
+              const sourceTask = await submitMpsSourceQuality(
+                originalStoragePath,
+                videoId,
+                videoInfo.metadata.width,
+                videoInfo.metadata.height,
+                project.teamId,
+                projectId,
+              )
+              if (sourceTask) {
+                const sourceQualityPath = await waitForMpsSourceQuality(sourceTask.taskId)
+                if (sourceQualityPath) {
+                  const sourceQualityBytes = await s3GetObjectSize(sourceQualityPath).catch(() => null)
+                  await prisma.video.update({
+                    where: { id: videoId },
+                    data: {
+                      sourceQualityPath,
+                      sourceQualityBytes: sourceQualityBytes ? BigInt(sourceQualityBytes) : null,
+                      sourceQualityError: null,
+                    },
+                  })
+                  logMessage(`[WORKER] Tencent MPS source-quality ready for ${videoId}: ${sourceQualityPath}`)
+                } else {
+                  await prisma.video.update({
+                    where: { id: videoId },
+                    data: { sourceQualityError: 'source-quality output missing' },
+                  })
+                }
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              await prisma.video.update({
+                where: { id: videoId },
+                data: { sourceQualityError: message.slice(0, 500) },
+              })
+              logMessage(`[WORKER] Source-quality failed for ${videoId} (non-fatal): ${message}`)
+            }
+          }
+        }
+
         return
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -134,6 +202,35 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
       thumbnailPath,
       videoInfo.metadata
     )
+
+    if (settings.sourceQualityEnabled && !settings.watermarkEnabled && !settings.applyLut && !sourceQualityUnsupported) {
+      try {
+        const sourceQuality = await processSourceQuality(
+          videoId,
+          projectId,
+          project.teamId,
+          videoInfo.path,
+          videoInfo.metadata,
+          tempFiles,
+        )
+        await prisma.video.update({
+          where: { id: videoId },
+          data: {
+            sourceQualityPath: sourceQuality.path,
+            sourceQualityBytes: sourceQuality.bytes,
+            sourceQualityError: null,
+          },
+        })
+        logMessage(`[WORKER] Source-quality proxy ready for ${videoId}: ${sourceQuality.path}`)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        await prisma.video.update({
+          where: { id: videoId },
+          data: { sourceQualityError: message.slice(0, 500) },
+        })
+        logMessage(`[WORKER] Source-quality failed for ${videoId} (non-fatal): ${message}`)
+      }
+    }
 
     const totalTime = Date.now() - processingStart
     logMessage(`[WORKER] Successfully processed video ${videoId} in ${(totalTime / 1000).toFixed(2)}s`)

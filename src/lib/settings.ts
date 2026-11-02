@@ -15,6 +15,11 @@ const cachedRateLimits: CachedValue<{
 const cachedSessionTimeout: CachedValue<number> = { value: 15 * 60, expiresAt: 0 }
 const cachedAdminSessionTimeout: CachedValue<number> = { value: 15 * 60, expiresAt: 0 }
 const cachedSmtpConfigured: CachedValue<boolean> = { value: false, expiresAt: 0 }
+const cachedSourceQualityEnabled: CachedValue<boolean> = { value: false, expiresAt: 0 }
+
+export function invalidateSourceQualitySettingsCache(): void {
+  cachedSourceQualityEnabled.expiresAt = 0
+}
 
 function getHttpsEnvironmentOverride(): boolean | null {
   const envValue = process.env.HTTPS_ENABLED
@@ -70,6 +75,31 @@ export async function isSmtpConfigured(): Promise<boolean> {
   } catch (error) {
     logError('Error checking SMTP configuration:', error)
     return cachedSmtpConfigured.value
+  }
+}
+
+/**
+ * Global ops switch for the source-quality playback proxy. Off means the
+ * worker must not generate new proxies and the token/content routes must
+ * refuse a source-quality playback request.
+ */
+export async function isSourceQualityPlaybackEnabled(): Promise<boolean> {
+  const now = Date.now()
+  if (cachedSourceQualityEnabled.expiresAt > now) {
+    return cachedSourceQualityEnabled.value
+  }
+
+  try {
+    const settings = await prisma.settings.findUnique({
+      where: { id: 'default' },
+      select: { enableSourceQualityPlayback: true },
+    })
+    cachedSourceQualityEnabled.value = settings?.enableSourceQualityPlayback ?? false
+    cachedSourceQualityEnabled.expiresAt = now + SETTINGS_CACHE_TTL_MS
+    return cachedSourceQualityEnabled.value
+  } catch (error) {
+    logError('Error checking source-quality playback setting:', error)
+    return cachedSourceQualityEnabled.value
   }
 }
 

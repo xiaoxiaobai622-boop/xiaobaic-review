@@ -499,10 +499,13 @@ export default function AdminSharePage() {
           video.cleanPreview1080Path ||
           video.cleanPreview720Path,
         )
-        const [tokenHls, preferredToken] = await Promise.all([
+        const [tokenHls, preferredToken, tokenSource] = await Promise.all([
           supportsHls && hasHls ? fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId, signal) : Promise.resolve(''),
           hasProgressivePlayback
             ? fetchAdminVideoTokenWithRetry(video.id, qualityOrder[0], sessionId, signal)
+            : Promise.resolve(''),
+          video.hasSourceQuality
+            ? fetchAdminVideoTokenWithRetry(video.id, 'source', sessionId, signal).catch(() => '')
             : Promise.resolve(''),
         ])
         if (signal?.aborted) return
@@ -523,6 +526,7 @@ export default function AdminSharePage() {
           hlsUrl720p: tokenHls ? `/api/content/${tokenHls}` : '',
           streamUrl1080p: streamTokens['1080p'] ? `/api/content/${streamTokens['1080p']}` : '',
           streamUrl2160p: streamTokens['2160p'] ? `/api/content/${streamTokens['2160p']}` : '',
+          sourceUrl: tokenSource ? `/api/content/${tokenSource}` : '',
           // Downloads and thumbnails are requested independently when the
           // corresponding UI needs them; they should not delay playback.
           downloadUrl: null,

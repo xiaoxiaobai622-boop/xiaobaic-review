@@ -17,8 +17,9 @@ import { AnnotationData, type DrawingTool } from '@/types/annotations'
 import { secondsToTimecode } from '@/lib/timecode'
 import { logError } from '@/lib/logging'
 import { filterCommentsForVideo } from '@/lib/video-comment-filter'
-import { useHlsSource, type PlaybackFailureCause, type PlaybackFailureInfo } from '@/hooks/useHlsSource'
+import { useHlsSource, type PlaybackFailureCause, type PlaybackFailureInfo, type PlaybackRecoveryInfo } from '@/hooks/useHlsSource'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
+import { reportPlaybackFailure } from '@/lib/playback-telemetry'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -45,12 +46,18 @@ function resolvePlaybackSource(
     streamUrl1080p?: string | null
     streamUrl2160p?: string | null
     hlsUrl720p?: string | null
+    sourceUrl?: string | null
   } | null,
   defaultQuality: PlaybackQuality,
   supportsHls: boolean,
+  preferSourceQuality = false,
 ): PlaybackSource {
   if (!video) {
     return { videoId: null, url: '', hlsUrl: '', quality: defaultQuality }
+  }
+
+  if (preferSourceQuality && video.sourceUrl) {
+    return { videoId: video.id || null, url: video.sourceUrl, hlsUrl: '', quality: defaultQuality }
   }
 
   let url = ''
@@ -130,7 +137,8 @@ function hasReachedPendingSeek(
 const PLAYBACK_FAILURE_MESSAGES: Record<PlaybackFailureCause, string> = {
   auth: '播放授权已过期，请刷新页面重新打开。',
   decode: '当前浏览器无法解码该视频，请刷新页面或更换清晰度。',
-  unsupported: '该视频的格式当前浏览器不支持播放，请刷新页面重试。',
+  unsupported: '当前浏览器不支持该视频的播放格式，请换用支持 HLS 的浏览器，或下载原片查看。',
+  unavailable: '视频暂时不可用，请稍后重试。',
   network: '视频加载失败，请刷新页面或检查网络后重试。',
 }
 
@@ -240,10 +248,29 @@ export default function VideoPlayer({
   const [sourceVideoId, setSourceVideoId] = useState<string | null>(null)
   const [videoUrl, setVideoUrl] = useState<string>('')
   const [hlsUrl, setHlsUrl] = useState<string>('')
+  const [sourceQualityMode, setSourceQualityMode] = useState(false)
+  const [sourceQualityFailed, setSourceQualityFailed] = useState(false)
+  const [sourceQualityNotice, setSourceQualityNotice] = useState<string | null>(null)
+  const [qualityFallbackNotice, setQualityFallbackNotice] = useState<string | null>(null)
+  const [forcePreviewForQuality, setForcePreviewForQuality] = useState(false)
+  const [retryNonce, setRetryNonce] = useState(0)
+  const [retryStartTime, setRetryStartTime] = useState<number | null>(null)
+  const sourceQualitySwitchRef = useRef<PendingSeek | null>(null)
+  const sourceQualityResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [videoCrossOrigin, setVideoCrossOrigin] = useState<'anonymous' | null>('anonymous')
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [videoLoadFailure, setVideoLoadFailure] = useState<PlaybackFailureInfo | null>(null)
-  const streamAuthRetryForRef = useRef<string | null>(null)
+  const streamAuthRetryRef = useRef<{ videoId: string; count: number; lastAt: number } | null>(null)
+  const streamAuthRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const recoverySeekRef = useRef<PendingSeek | null>(null)
+  const lastFailureAtRef = useRef(0)
+  const authRecoveryInFlightRef = useRef(false)
+  const hadHlsRef = useRef(false)
+  const sourceGenerationRef = useRef(0)
+  const tRef = useRef(t)
+  useEffect(() => {
+    tRef.current = t
+  }, [t])
   const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<PlaybackQuality>(defaultQuality)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
   const [videoDuration, setVideoDuration] = useState(0)
@@ -467,13 +494,28 @@ export default function VideoPlayer({
   const selectedVideo = displayVideos[selectedVideoIndex]
   const selectedVideoData = selectedVideo as any
   const selectedVideoIdValue = selectedVideoData?.id ?? null
+  const playbackContextRef = useRef({
+    videoId: selectedVideoIdValue,
+    projectId,
+    quality: resolvedPlaybackQuality,
+  })
+  useEffect(() => {
+    playbackContextRef.current = {
+      videoId: selectedVideoIdValue,
+      projectId,
+      quality: resolvedPlaybackQuality,
+    }
+  }, [selectedVideoIdValue, projectId, resolvedPlaybackQuality])
   const selectedStreamUrl720p = selectedVideoData?.streamUrl720p || ''
   const selectedStreamUrl1080p = selectedVideoData?.streamUrl1080p || ''
   const selectedStreamUrl2160p = selectedVideoData?.streamUrl2160p || ''
   const selectedHlsUrl720p = selectedVideoData?.hlsUrl720p || ''
+  const selectedSourceUrl = selectedVideoData?.sourceUrl || ''
+  const sourceQualityAvailable = Boolean(selectedSourceUrl) && !sourceQualityFailed
+  const sourceQualityActive = sourceQualityMode && sourceQualityAvailable
   const sourceMatchesSelectedVideo = sourceVideoId === (selectedVideo?.id ?? null)
   const activeVideoUrl = sourceMatchesSelectedVideo ? videoUrl : ''
-  const activeHlsUrl = supportsHls && sourceMatchesSelectedVideo ? hlsUrl : ''
+  const activeHlsUrl = supportsHls && !forcePreviewForQuality && sourceMatchesSelectedVideo ? hlsUrl : ''
   const playbackSource = useMemo(() => {
     return resolvePlaybackSource(
       selectedVideoIdValue ? {
@@ -482,9 +524,11 @@ export default function VideoPlayer({
         streamUrl1080p: selectedStreamUrl1080p,
         streamUrl2160p: selectedStreamUrl2160p,
         hlsUrl720p: selectedHlsUrl720p,
+        sourceUrl: selectedSourceUrl,
       } : null,
       defaultQuality,
-      supportsHls,
+      supportsHls && !forcePreviewForQuality,
+      sourceQualityActive,
     )
   }, [
     defaultQuality,
@@ -493,7 +537,10 @@ export default function VideoPlayer({
     selectedStreamUrl1080p,
     selectedStreamUrl2160p,
     selectedHlsUrl720p,
+    selectedSourceUrl,
+    sourceQualityActive,
     supportsHls,
+    forcePreviewForQuality,
   ])
   const selectedVideoComments = useMemo(
     () => filterCommentsForVideo(comments, selectedVideo?.id),
@@ -501,45 +548,187 @@ export default function VideoPlayer({
   )
 
   const handlePlaybackError = useCallback((info: PlaybackFailureInfo) => {
+    const videoAtError = videoRef.current
+    const wasPlaying = playIntentRef.current || Boolean(videoAtError && !videoAtError.paused)
+    const failureTime = videoAtError && Number.isFinite(videoAtError.currentTime) && videoAtError.currentTime > 0
+      ? videoAtError.currentTime
+      : currentTimeRef.current
+    lastFailureAtRef.current = failureTime
     playIntentRef.current = false
     pendingSeekRef.current = null
     seekDriftRef.current = null
     setIsPlaying(false)
     setIsBuffering(false)
     setIsSeeking(false)
-    // Disabling crossOrigin only addresses a cross-origin refusal. A token the
-    // server rejected, a codec that cannot be decoded and a source that never
-    // arrived all fail identically on the second try, so report those at once
-    // instead of costing the viewer a silent reload before the message.
-    if (info.cause === 'network' && videoCrossOrigin === 'anonymous') {
+    // A source-quality stream that is refused or undecodable must not leave the
+    // viewer on a dead <video>. Put the preview back at the last known position
+    // and keep the switch hidden until the page reloads or the URL is re-minted.
+    if (sourceQualityActive) {
+      const time = videoAtError && Number.isFinite(videoAtError.currentTime) && videoAtError.currentTime > 0
+        ? videoAtError.currentTime
+        : currentTimeRef.current
+      sourceQualitySwitchRef.current = { time, resume: wasPlaying }
+      pendingSeekRef.current = { time, resume: wasPlaying }
+      playIntentRef.current = wasPlaying
+      setSourceQualityFailed(true)
+      setSourceQualityMode(false)
+      setSourceQualityNotice(t('sourceQualityFallback'))
+      setVideoLoadFailed(false)
+      setVideoLoadFailure(null)
+      reportPlaybackFailure({
+        cause: info.cause,
+        httpStatus: info.httpStatus,
+        mediaErrorCode: info.mediaErrorCode,
+        videoId: selectedVideo?.id,
+        projectId,
+        quality: 'source',
+        sourceQuality: true,
+        recovered: true,
+      })
+      return
+    }
+
+    const fail = (recovered: boolean) => {
+      recoverySeekRef.current = null
+      setVideoLoadFailure(info)
+      setVideoLoadFailed(true)
+      reportPlaybackFailure({
+        cause: info.cause,
+        httpStatus: info.httpStatus,
+        mediaErrorCode: info.mediaErrorCode,
+        videoId: selectedVideo?.id,
+        projectId,
+        quality: resolvedPlaybackQuality,
+        sourceQuality: false,
+        recovered,
+      })
+    }
+
+    // Dropping crossOrigin only helps a refusal whose HTTP status the browser
+    // hid (CORS/format). A probed 401/403 is auth, and a real network failure
+    // must keep its cause instead of becoming a second code-4 "unsupported".
+    if (info.cause === 'unsupported' && info.httpStatus === undefined && videoCrossOrigin === 'anonymous') {
       setVideoCrossOrigin(null)
       return
     }
     // A lapsed stream URL is recoverable without asking the viewer to reload:
-    // the page can sign a fresh one for this video alone. Try that once per
-    // video so a token that keeps coming back refused cannot loop here.
-    if (info.cause === 'auth' && onStreamAuthExpired && selectedVideo?.id &&
-        streamAuthRetryForRef.current !== selectedVideo.id) {
-      streamAuthRetryForRef.current = selectedVideo.id
-      onStreamAuthExpired(selectedVideo.id).then((recovered) => {
-        if (recovered) return
-        setVideoLoadFailure(info)
-        setVideoLoadFailed(true)
-      })
-      return
+    // the page can sign a fresh one for this video alone. Three attempts cover
+    // separate idle expiries in one page life; `playing` resets the budget.
+    const selectedId = selectedVideo?.id
+    if (info.cause === 'auth' && onStreamAuthExpired && selectedId) {
+      const now = Date.now()
+      const previous = streamAuthRetryRef.current
+      const sameVideo = previous?.videoId === selectedId
+      const attempts = sameVideo ? previous.count : 0
+      const lastAttemptAt = previous?.lastAt ?? 0
+      if (attempts < 3 && (!sameVideo || now - lastAttemptAt >= 1500)) {
+        streamAuthRetryRef.current = { videoId: selectedId, count: attempts + 1, lastAt: now }
+        authRecoveryInFlightRef.current = true
+        if (failureTime > 0.1) recoverySeekRef.current = { time: failureTime, resume: wasPlaying }
+        const generation = sourceGenerationRef.current
+        onStreamAuthExpired(selectedId).then((recovered) => {
+          if (!recovered) {
+            authRecoveryInFlightRef.current = false
+            // The HLS token could not be renewed. A still-valid progressive
+            // rendition is a better outcome than a dead player; keep the
+            // position, switch quality and say so instead of silently
+            // downgrading or leaving the screen dead.
+            if (videoUrl && activeHlsUrl) {
+              recoverySeekRef.current = failureTime > 0.1 ? { time: failureTime, resume: wasPlaying } : null
+              playIntentRef.current = wasPlaying
+              setForcePreviewForQuality(true)
+              setQualityFallbackNotice(t('qualityFallback'))
+              setVideoLoadFailed(false)
+              setVideoLoadFailure(null)
+              reportPlaybackFailure({
+                cause: info.cause,
+                httpStatus: info.httpStatus,
+                mediaErrorCode: info.mediaErrorCode,
+                videoId: selectedId,
+                projectId,
+                quality: resolvedPlaybackQuality,
+                sourceQuality: false,
+                recovered: true,
+                fallback: true,
+              })
+              return
+            }
+            fail(false)
+            return
+          }
+          // The error handler cleared the intent so the dead element could not
+          // keep retrying. A fresh URL deserves the play intent the viewer had
+          // before the refusal, otherwise recovery succeeds but stays paused.
+          if (wasPlaying) playIntentRef.current = true
+          reportPlaybackFailure({
+            cause: info.cause,
+            httpStatus: info.httpStatus,
+            mediaErrorCode: info.mediaErrorCode,
+            videoId: selectedId,
+            projectId,
+            quality: resolvedPlaybackQuality,
+            sourceQuality: false,
+            recovered: true,
+          })
+          // A re-mint that returns the same URL leaves a dead element behind
+          // this callback. Give the new source one paint to install; if the
+          // element is still in error without a new source generation, say so.
+          if (streamAuthRecoveryTimerRef.current !== null) clearTimeout(streamAuthRecoveryTimerRef.current)
+          streamAuthRecoveryTimerRef.current = setTimeout(() => {
+            streamAuthRecoveryTimerRef.current = null
+            if (sourceGenerationRef.current !== generation) return
+            authRecoveryInFlightRef.current = false
+            if (!videoRef.current?.error) return
+            fail(false)
+          }, 2500)
+        })
+        return
+      }
     }
-    setVideoLoadFailure(info)
-    setVideoLoadFailed(true)
-  }, [onStreamAuthExpired, selectedVideo?.id, videoCrossOrigin])
+    fail(false)
+  }, [
+    sourceQualityActive,
+    onStreamAuthExpired,
+    selectedVideo?.id,
+    t,
+    videoCrossOrigin,
+    projectId,
+    resolvedPlaybackQuality,
+    videoUrl,
+    activeHlsUrl,
+  ])
+
+  const handlePlaybackRecovered = useCallback((recovery?: PlaybackRecoveryInfo) => {
+    setVideoLoadFailed(false)
+    setVideoLoadFailure(null)
+    setRetryStartTime(null)
+    if (recovery?.fallback) {
+      setQualityFallbackNotice(tRef.current('qualityFallback'))
+    }
+    if (recovery) {
+      reportPlaybackFailure({
+        cause: recovery.cause,
+        httpStatus: recovery.httpStatus,
+        videoId: selectedVideo?.id,
+        projectId,
+        quality: resolvedPlaybackQuality,
+        sourceQuality: false,
+        recovered: true,
+        fallback: recovery.fallback === true,
+      })
+    }
+  }, [selectedVideo?.id, projectId, resolvedPlaybackQuality])
 
   const { isUsingHls } = useHlsSource({
     videoRef,
     hlsUrl: activeHlsUrl,
     fallbackUrl: activeVideoUrl,
     enabled: Boolean(activeHlsUrl || activeVideoUrl),
-    attachmentKey: `${selectedVideo?.id ?? 'none'}:${videoCrossOrigin ?? 'no-cors'}`,
+    attachmentKey: `${selectedVideo?.id ?? 'none'}:${videoCrossOrigin ?? 'no-cors'}:${retryNonce}`,
     playIntentRef,
     onPlaybackError: handlePlaybackError,
+    onPlaybackRecovered: handlePlaybackRecovered,
+    initialPosition: retryStartTime,
   })
 
   // Comparison mode state
@@ -811,14 +1000,66 @@ export default function VideoPlayer({
   // position across a same-video HLS/MP4 source fallback.
   useEffect(() => {
     hasInitiallySeenRef.current = false
-    streamAuthRetryForRef.current = null
+    streamAuthRetryRef.current = null
+    sourceQualitySwitchRef.current = null
+    setSourceQualityFailed(false)
+    setSourceQualityNotice(null)
+    if (sourceQualityResumeTimerRef.current !== null) {
+      clearTimeout(sourceQualityResumeTimerRef.current)
+      sourceQualityResumeTimerRef.current = null
+    }
+    if (streamAuthRecoveryTimerRef.current !== null) {
+      clearTimeout(streamAuthRecoveryTimerRef.current)
+      streamAuthRecoveryTimerRef.current = null
+    }
+  }, [activeVideoName, selectedVideo?.id, selectedSourceUrl])
+
+  // A re-minted URL for the same video must keep the recovery position, so
+  // only a real video change discards it.
+  useEffect(() => {
+    recoverySeekRef.current = null
+    setRetryStartTime(null)
+    lastFailureAtRef.current = 0
+    authRecoveryInFlightRef.current = false
+    hadHlsRef.current = false
+    setForcePreviewForQuality(false)
+    setQualityFallbackNotice(null)
   }, [activeVideoName, selectedVideo?.id])
+
+  useEffect(() => () => {
+    if (sourceQualityResumeTimerRef.current !== null) {
+      clearTimeout(sourceQualityResumeTimerRef.current)
+    }
+    if (streamAuthRecoveryTimerRef.current !== null) {
+      clearTimeout(streamAuthRecoveryTimerRef.current)
+    }
+  }, [])
 
   // Safety check: ensure selectedVideo exists before accessing properties
   const isVideoApproved = selectedVideo ? (selectedVideo as any).approved === true : false
 
   useEffect(() => {
-    currentTimeRef.current = 0
+    sourceGenerationRef.current += 1
+    const nextHasHls = Boolean(playbackSource.hlsUrl)
+    if (authRecoveryInFlightRef.current) {
+      if (hadHlsRef.current && !nextHasHls && playbackSource.url) {
+        setQualityFallbackNotice(tRef.current('qualityFallback'))
+        const context = playbackContextRef.current
+        reportPlaybackFailure({
+          cause: 'auth',
+          videoId: context.videoId,
+          projectId: context.projectId,
+          quality: context.quality,
+          sourceQuality: false,
+          recovered: true,
+          fallback: true,
+        })
+      }
+      authRecoveryInFlightRef.current = false
+    }
+    hadHlsRef.current = nextHasHls
+    const switchIntent = sourceQualitySwitchRef.current
+    if (!switchIntent) currentTimeRef.current = 0
     setResolvedPlaybackQuality(playbackSource.quality)
     setVideoCrossOrigin('anonymous')
     setVideoLoadFailed(false)
@@ -826,7 +1067,61 @@ export default function VideoPlayer({
     setVideoUrl(playbackSource.url)
     setHlsUrl(playbackSource.hlsUrl)
     setSourceVideoId(playbackSource.videoId)
+    if (switchIntent) {
+      pendingSeekRef.current = { time: switchIntent.time, resume: switchIntent.resume }
+      sourceQualitySwitchRef.current = null
+    } else if (recoverySeekRef.current) {
+      pendingSeekRef.current = recoverySeekRef.current
+      recoverySeekRef.current = null
+    }
   }, [playbackSource])
+
+  const retryPlayback = useCallback(() => {
+    const video = videoRef.current
+    const at = lastFailureAtRef.current ||
+      (video && Number.isFinite(video.currentTime) ? video.currentTime : 0) ||
+      currentTimeRef.current
+    setRetryStartTime(at > 0.1 ? at : null)
+    playIntentRef.current = true
+    streamAuthRetryRef.current = null
+    authRecoveryInFlightRef.current = false
+    setVideoLoadFailed(false)
+    setVideoLoadFailure(null)
+    setQualityFallbackNotice(null)
+    setForcePreviewForQuality(false)
+    setRetryNonce((value) => value + 1)
+  }, [])
+
+  const handleToggleSourceQuality = useCallback(() => {
+    if (!sourceQualityAvailable) return
+    const video = videoRef.current
+    const time = video && Number.isFinite(video.currentTime)
+      ? video.currentTime
+      : currentTimeRef.current
+    const resume = video ? !video.paused || playIntentRef.current : playIntentRef.current
+    const switchTarget = { time, resume }
+    // Set the seek intent before the source swap starts. A local file can emit
+    // `canplay` before the render effect that would otherwise install it.
+    sourceQualitySwitchRef.current = switchTarget
+    pendingSeekRef.current = switchTarget
+    playIntentRef.current = resume
+    if (sourceQualityResumeTimerRef.current !== null) {
+      clearTimeout(sourceQualityResumeTimerRef.current)
+      sourceQualityResumeTimerRef.current = null
+    }
+    if (resume) {
+      // A source reset can emit a late pause after canplay. Retry once; a real
+      // pause clears playIntentRef, so this cannot override the viewer.
+      sourceQualityResumeTimerRef.current = setTimeout(() => {
+        sourceQualityResumeTimerRef.current = null
+        const current = videoRef.current
+        if (current && playIntentRef.current && current.paused) {
+          void current.play().catch(() => {})
+        }
+      }, 700)
+    }
+    setSourceQualityMode((previous) => !previous)
+  }, [sourceQualityAvailable])
 
   const handleTimelineSeek = useCallback((timestamp: number, resume = false) => {
     const video = videoRef.current
@@ -1141,8 +1436,18 @@ export default function VideoPlayer({
       if (duration !== null) setVideoDuration(duration)
       setVolume(video.volume)
       setIsMuted(video.muted)
+      const pendingSeek = pendingSeekRef.current
+      if (pendingSeek) {
+        const target = clampMediaTime(video, pendingSeek.time)
+        try {
+          if (Math.abs(video.currentTime - target) > 0.05) video.currentTime = target
+        } catch {
+          // The next media event retries the target.
+        }
+        if (pendingSeek.resume && playIntentRef.current) requestPlay()
+      }
     }
-  }, [])
+  }, [requestPlay])
 
   const handleDurationChange = useCallback(() => {
     const video = videoRef.current
@@ -1269,6 +1574,12 @@ export default function VideoPlayer({
         setIsPlaying(false)
         return
       }
+      // A recovered token has now produced real playback. The next idle
+      // expiry on this page deserves the same recovery budget, and a network
+      // retry that succeeded must not leave its old failure overlay on screen.
+      streamAuthRetryRef.current = null
+      setVideoLoadFailed(false)
+      setVideoLoadFailure(null)
       setIsPlaying(true)
       setIsBuffering(false)
       const pendingSeek = pendingSeekRef.current
@@ -1620,8 +1931,30 @@ export default function VideoPlayer({
               )}
 
               {videoLoadFailed && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-4 text-center text-sm text-muted-foreground">
-                  {PLAYBACK_FAILURE_MESSAGES[videoLoadFailure?.cause ?? 'network']}
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 p-4 text-center text-sm text-muted-foreground">
+                  <div>{PLAYBACK_FAILURE_MESSAGES[videoLoadFailure?.cause ?? 'network']}</div>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      retryPlayback()
+                    }}
+                    className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    {t('retryPlayback')}
+                  </button>
+                </div>
+              )}
+
+              {qualityFallbackNotice && !videoLoadFailed && (
+                <div className="pointer-events-none absolute left-1/2 top-3 z-[16] -translate-x-1/2 rounded-md bg-black/80 px-3 py-1.5 text-center text-xs text-white shadow-lg">
+                  {qualityFallbackNotice}
+                </div>
+              )}
+
+              {sourceQualityNotice && !videoLoadFailed && (
+                <div className="pointer-events-none absolute left-1/2 top-3 z-[16] -translate-x-1/2 rounded-md bg-black/80 px-3 py-1.5 text-center text-xs text-white shadow-lg">
+                  {sourceQualityNotice}
                 </div>
               )}
 
@@ -1757,6 +2090,9 @@ export default function VideoPlayer({
                     onFrameStep={handleFrameStep}
                     isLooping={isLooping}
                     onToggleLoop={handleToggleLoop}
+                    sourceQualityAvailable={sourceQualityAvailable}
+                    isSourceQuality={sourceQualityActive}
+                    onToggleSourceQuality={handleToggleSourceQuality}
                     comments={selectedVideoComments}
                     videoFps={selectedVideo?.fps || 24}
                     videoId={selectedVideo?.id}
@@ -1822,6 +2158,8 @@ export default function VideoPlayer({
         className={projectInfoClassName}
         usePreviewForApprovedPlayback={usePreviewForApprovedPlayback}
         playbackQuality={resolvedPlaybackQuality}
+        isSourceQuality={sourceQualityActive}
+        sourceQualityUnavailableReason={selectedVideoData?.sourceQualityUnavailableReason || null}
         hideApprovalAction={hideApprovalAction}
       />
     </div>

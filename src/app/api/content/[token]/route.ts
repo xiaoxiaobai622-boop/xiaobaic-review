@@ -12,6 +12,8 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getClientIpAddress } from '@/lib/utils'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
+import { isSourceQualityPlaybackEnabled } from '@/lib/settings'
+import { trackSourceQualityEvent } from '@/lib/source-quality-analytics'
 import {
   STREAM_CHUNK_SIZE_BYTES,
   STREAM_HIGH_WATER_MARK_BYTES,
@@ -43,6 +45,8 @@ type VideoMetadata = {
   originalFileName: string
   originalStoragePath: string
   hlsPath: string | null
+  sourceQualityPath: string | null
+  sourceQualityBytes: bigint | null
   cleanPreview2160Path: string | null
   cleanPreview1080Path: string | null
   cleanPreview720Path: string | null
@@ -55,6 +59,8 @@ type VideoMetadata = {
   project: {
     title: string
     allowAssetDownload: boolean
+    watermarkEnabled: boolean
+    applyPreviewLut: boolean
   }
 }
 
@@ -102,6 +108,8 @@ async function getVideoMetadata(videoId: string, projectId: string): Promise<Vid
       originalFileName: true,
       originalStoragePath: true,
       hlsPath: true,
+      sourceQualityPath: true,
+      sourceQualityBytes: true,
       cleanPreview2160Path: true,
       cleanPreview1080Path: true,
       cleanPreview720Path: true,
@@ -111,7 +119,7 @@ async function getVideoMetadata(videoId: string, projectId: string): Promise<Vid
       thumbnailPath: true,
       approved: true,
       status: true,
-      project: { select: { title: true, allowAssetDownload: true } },
+      project: { select: { title: true, allowAssetDownload: true, watermarkEnabled: true, applyPreviewLut: true } },
     },
   }).then((video) => video as VideoMetadata | null)
 
@@ -140,6 +148,7 @@ const hlsManifestHeaders = {
   // but allow the browser to reuse it for the same review session.
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=30',
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Expose-Headers': 'Retry-After, Content-Range, Content-Length, Accept-Ranges',
 }
 
 function hlsManifestResponse(manifest: string): NextResponse {
@@ -151,10 +160,34 @@ function hlsManifestResponse(manifest: string): NextResponse {
 // hls.js never learns it was a 403 and the reviewer is told to check their
 // connection when the real cause is an expired viewing token. The body is only
 // "access denied", and the success path already allows any origin.
-function contentRefusal(status: number, error: string, headers?: Record<string, string>): NextResponse {
-  return NextResponse.json({ error }, {
+function contentRefusal(
+  status: number,
+  error: string,
+  headers?: Record<string, string>,
+  code?: string,
+): NextResponse {
+  return NextResponse.json(code ? { error, code } : { error }, {
     status,
-    headers: { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store', ...headers },
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'Retry-After, Content-Range, Content-Length, Accept-Ranges',
+      'Cache-Control': 'no-store',
+      ...headers,
+    },
+  })
+}
+
+// Range/empty responses still go through CORS so a cross-origin player can
+// read the status instead of seeing an opaque network failure.
+function contentEmpty(status: number, headers?: Record<string, string>): NextResponse {
+  return new NextResponse(null, {
+    status,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'Retry-After, Content-Range, Content-Length, Accept-Ranges',
+      'Cache-Control': 'no-store',
+      ...headers,
+    },
   })
 }
 
@@ -371,6 +404,8 @@ export async function GET(
       })
 
       ipRateLimitResult.headers.set('Access-Control-Allow-Origin', '*')
+      ipRateLimitResult.headers.set('Access-Control-Expose-Headers', 'Retry-After, Content-Range, Content-Length, Accept-Ranges')
+      ipRateLimitResult.headers.set('Cache-Control', 'no-store')
       return ipRateLimitResult
     }
 
@@ -477,7 +512,7 @@ export async function GET(
     if (requestedQuality === 'hls' && hlsPath && isS3Mode()) {
       const manifestPath = resolveHlsManifestPath(hlsPath, requestedManifestPath)
       if (!manifestPath) {
-        return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 400 })
+        return contentRefusal(400, shareMessages.accessDenied || 'Access denied', undefined, 'HLS_MANIFEST_PATH_INVALID')
       }
 
       // Cache the rewritten manifest to avoid repeated S3 downloads and
@@ -488,9 +523,11 @@ export async function GET(
       const manifestCacheKey = `hls_manifest:${manifestPath}:${token}`
       const rewrittenManifest = await buildHlsManifest(manifestPath, redis, manifestCacheKey, token)
       if (!rewrittenManifest) {
-        return NextResponse.json(
-          { error: '视频正在处理，请稍后再试', code: 'HLS_NOT_READY' },
-          { status: 409, headers: { 'Retry-After': '10' } },
+        return contentRefusal(
+          409,
+          '视频正在处理，请稍后再试',
+          { 'Retry-After': '10' },
+          'HLS_NOT_READY',
         )
       }
       return hlsManifestResponse(rewrittenManifest)
@@ -529,13 +566,77 @@ export async function GET(
     let filename: string | null = null
     let contentType = getVideoContentType(video.originalFileName || '')
 
-    if (assetId && isDownload) {
+    if (requestedQuality === 'source') {
+      const trackSourceFailure = () => {
+        void trackSourceQualityEvent({
+          eventType: 'SOURCE_QUALITY_FAILURE',
+          videoId: video.id,
+          projectId: video.projectId,
+        }).catch(() => {})
+      }
+      // Source-quality is playback only. It must never become a download or
+      // bypass the platform switch that hides it from the review surfaces.
+      if (isDownload) {
+        trackSourceFailure()
+        return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
+      }
+      if (verifiedToken.sourceQualityAllowed !== true) {
+        trackSourceFailure()
+        return contentRefusal(403, 'Source quality unavailable', undefined, 'SOURCE_QUALITY_TOKEN_REQUIRED')
+      }
+      if (!(await isSourceQualityPlaybackEnabled())) {
+        trackSourceFailure()
+        return contentRefusal(403, 'Source quality unavailable', undefined, 'SOURCE_QUALITY_UNAVAILABLE')
+      }
+      // The metadata cache is deliberately short but project policy and approval
+      // can change while a source token is alive. Read those two fields fresh so
+      // watermark/LUT or an approval rollback takes effect on the next request.
+      const liveSourcePolicy = await prisma.video.findUnique({
+        where: { id: video.id },
+        select: {
+          approved: true,
+          project: { select: { watermarkEnabled: true, applyPreviewLut: true } },
+        },
+      })
+      if (!liveSourcePolicy) {
+        trackSourceFailure()
+        return contentRefusal(404, shareMessages.accessDenied || 'Access denied')
+      }
+      if (!isAdminRequest && !liveSourcePolicy.approved) {
+        trackSourceFailure()
+        return contentRefusal(403, 'Source quality unavailable', undefined, 'SOURCE_QUALITY_APPROVAL_REQUIRED')
+      }
+      if (liveSourcePolicy.project.watermarkEnabled || liveSourcePolicy.project.applyPreviewLut) {
+        trackSourceFailure()
+        return contentRefusal(403, 'Source quality disabled by project policy', undefined, 'SOURCE_QUALITY_POLICY')
+      }
+      if (!video.sourceQualityPath) {
+        trackSourceFailure()
+        return contentRefusal(409, 'Source quality not ready', undefined, 'SOURCE_QUALITY_NOT_READY')
+      }
+      filePath = video.sourceQualityPath
+      contentType = 'video/mp4'
+
+      // Count one play per access token. Range requests are the normal way a
+      // progressive source is delivered, so the generic trackVideoAccess path
+      // deliberately skips them; this narrower counter still needs them.
+      const playKey = `source_quality_play:${token}`
+      const firstPlay = await redis.set(playKey, '1', 'EX', 600, 'NX').catch(() => null)
+      if (firstPlay === 'OK') {
+        void trackSourceQualityEvent({
+          eventType: 'SOURCE_QUALITY_PLAY',
+          videoId: video.id,
+          projectId: video.projectId,
+          bytes: Number(video.sourceQualityBytes || 0),
+        }).catch(() => {})
+      }
+    } else if (assetId && isDownload) {
       const asset = await prisma.videoAsset.findUnique({
         where: { id: assetId }
       })
 
       if (!asset || asset.videoId !== video.id) {
-  return NextResponse.json({ error: shareMessages.assetNotFound || 'Asset not found' }, { status: 404 })
+        return contentRefusal(404, shareMessages.assetNotFound || 'Asset not found')
       }
 
       // Client-uploaded comment attachments keep their download affordance;
@@ -545,17 +646,17 @@ export async function GET(
         isClientUploadedAsset: asset.uploadedBy === 'client',
         permissions: verifiedToken.permissions,
       })) {
-        return NextResponse.json({ error: shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed' }, { status: 403 })
+        return contentRefusal(403, shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed')
       }
 
       // Check permissions (skip for admins and client-uploaded comment attachments)
       if (!isAdminRequest && asset.uploadedBy !== 'client') {
         if (!video.project.allowAssetDownload) {
-          return NextResponse.json({ error: shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed' }, { status: 403 })
+          return contentRefusal(403, shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed')
         }
 
         if (!video.approved) {
-          return NextResponse.json({ error: shareMessages.assetsOnlyAvailableForApprovedVideos || 'Assets only available for approved videos' }, { status: 403 })
+          return contentRefusal(403, shareMessages.assetsOnlyAvailableForApprovedVideos || 'Assets only available for approved videos')
         }
       }
 
@@ -568,7 +669,7 @@ export async function GET(
         isAdmin: isAdminRequest,
         permissions: verifiedToken.permissions,
       })) {
-        return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 403 })
+        return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
       }
 
       if (verifiedToken.quality === 'thumbnail') {
@@ -583,13 +684,15 @@ export async function GET(
         filePath = getPreferredPreviewPath(video.approved)
         if (!filePath) {
           // MPS videos have a playable HLS rendition but no local MP4 preview.
-          // Never silently substitute the original here: an HLS networking error
-          // must remain recoverable rather than causing a large original upload
-          // to be streamed as playback.
+          // A progressive token for this video is not pointing at a transient
+          // outage: the rendition does not exist. Answer 415 so the player can
+          // show the unsupported/download guidance instead of retrying a 503.
           if (hlsPath && requestedQuality !== 'thumbnail') {
-            return NextResponse.json(
-              { error: 'HLS playback is temporarily unavailable', code: 'HLS_PLAYBACK_UNAVAILABLE' },
-              { status: 503, headers: { 'Retry-After': '10' } },
+            return contentRefusal(
+              415,
+              'Only HLS playback is available for this video',
+              undefined,
+              'PROGRESSIVE_RENDITION_UNAVAILABLE',
             )
           }
 
@@ -598,9 +701,11 @@ export async function GET(
           if (video.status === 'READY' && originalPath) {
             filePath = originalPath
           } else {
-            return NextResponse.json(
-              { error: '视频正在处理，请稍后再试', code: 'PREVIEW_NOT_READY' },
-              { status: 409, headers: { 'Retry-After': '10' } }
+            return contentRefusal(
+              409,
+              '视频正在处理，请稍后再试',
+              { 'Retry-After': '10' },
+              'PREVIEW_NOT_READY',
             )
           }
         }
@@ -608,14 +713,14 @@ export async function GET(
     }
 
     if (!filePath) {
-  return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 404 })
+      return contentRefusal(404, shareMessages.accessDenied || 'Access denied')
     }
 
     // ── S3 mode: redirect browser directly to MinIO ───────────────────────────
     if (isS3Mode()) {
       const fileExistsOnS3 = await s3FileExists(filePath)
       if (!fileExistsOnS3) {
-        return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 404 })
+        return contentRefusal(404, shareMessages.accessDenied || 'Access denied')
       }
 
       // Track non-range access fire-and-forget — must not delay the 302 redirect
@@ -652,11 +757,15 @@ export async function GET(
         })
       } else {
         // Streaming (video player): long-lived presigned URL so range requests hit S3 directly
-        const ct = getVideoContentType(video.originalFileName || '')
-        const presignedUrl = await s3GetPresignedStreamUrl(filePath, 14400, ct)
+        const ct = requestedQuality === 'source'
+          ? 'video/mp4'
+          : getVideoContentType(video.originalFileName || '')
+        const ttlSeconds = requestedQuality === 'source' ? 900 : 14400
+        const cacheControl = requestedQuality === 'source' ? 'private, no-store' : 'public, max-age=3600'
+        const presignedUrl = await s3GetPresignedStreamUrl(filePath, ttlSeconds, ct)
         return NextResponse.redirect(presignedUrl, {
           status: 302,
-          headers: { 'Cache-Control': 'public, max-age=3600' },
+          headers: { 'Cache-Control': cacheControl },
         })
       }
     }
@@ -665,13 +774,13 @@ export async function GET(
     const fullPath = getFilePath(filePath)
     
     if (!existsSync(fullPath)) {
-  return NextResponse.json({ error: shareMessages.accessDenied || 'Access denied' }, { status: 404 })
+      return contentRefusal(404, shareMessages.accessDenied || 'Access denied')
     }
 
     const stat = statSync(fullPath)
 
     if (isDownload && verifiedToken.quality === 'thumbnail') {
-  return NextResponse.json({ error: shareMessages.thumbnailsCannotBeDownloaded || 'Thumbnails cannot be downloaded directly' }, { status: 403 })
+      return contentRefusal(403, shareMessages.thumbnailsCannotBeDownloaded || 'Thumbnails cannot be downloaded directly')
     }
 
     const range = request.headers.get('range')
@@ -679,7 +788,9 @@ export async function GET(
     const isThumbnail = verifiedToken.quality === 'thumbnail'
     const cacheControl = isThumbnail
       ? 'public, max-age=86400, immutable'
-      : 'public, max-age=3600'
+      : requestedQuality === 'source'
+        ? 'private, max-age=60'
+        : 'public, max-age=3600'
 
     if (isDownload) {
       // Use asset filename if available, otherwise generate from video info
@@ -737,10 +848,7 @@ export async function GET(
       // crippled throughput.
       const parsedRange = parseDownloadRangeHeader(range || 'bytes=0-', stat.size)
       if (!parsedRange) {
-        return new NextResponse(null, {
-          status: 416,
-          headers: { 'Content-Range': `bytes */${stat.size}` },
-        })
+        return contentEmpty(416, { 'Content-Range': `bytes */${stat.size}` })
       }
       const { start, end } = parsedRange
       const chunksize = (end - start) + 1
@@ -771,10 +879,7 @@ export async function GET(
     if (range) {
       const parsedRange = parseBoundedRangeHeader(range, stat.size, STREAM_CHUNK_SIZE_BYTES)
       if (!parsedRange) {
-        return new NextResponse(null, {
-          status: 416,
-          headers: { 'Content-Range': `bytes */${stat.size}` },
-        })
+        return contentEmpty(416, { 'Content-Range': `bytes */${stat.size}` })
       }
       const { start, end } = parsedRange
       const chunksize = (end - start) + 1
@@ -840,6 +945,6 @@ export async function GET(
     const locale = await getConfiguredLocale().catch(() => 'en')
     const messages = await loadLocaleMessages(locale).catch(() => null)
     const shareMessages = messages?.share || {}
-    return NextResponse.json({ error: shareMessages.failedToStreamVideo || 'Failed to stream video' }, { status: 500 })
+    return contentRefusal(500, shareMessages.failedToStreamVideo || 'Failed to stream video')
   }
 }

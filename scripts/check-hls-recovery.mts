@@ -30,7 +30,6 @@ function between(start: string, end: string) {
 const mediaErrorHandler = between('const handleMediaElementError = () => {', "listenToVideo('error'")
 const hlsFatalHandler = between('hls.on(Events.ERROR', 'hls.attachMedia(media)')
 const fragLoadedHandler = between('hls.on(Events.FRAG_LOADED', 'hls.on(Events.ERROR')
-const playingListener = source.match(/listenToVideo\('playing'[^\n]*/)?.[0] ?? ''
 
 check(
   Boolean(mediaErrorHandler) && mediaErrorHandler.includes('restartHls()') && !mediaErrorHandler.includes('activateFallback()'),
@@ -52,7 +51,8 @@ check(
 check(
   source.includes('const restartNativeHls = () =>') &&
     source.includes('nativeRestartAttempts >= 2') &&
-    source.includes('if (disposed || !media || !hlsUrl || nativeRestartTimer !== null) return') &&
+    source.includes('nativeRestartTimer !== null') &&
+    source.includes('nativeProbeInFlight') &&
     source.includes("setVideoSource(hlsUrl, 'hls')") &&
     source.includes('const atReset = Number.isFinite(media.currentTime) && media.currentTime > 0') &&
     source.includes(': lastPlaybackPosition') &&
@@ -65,15 +65,20 @@ check(
     fragLoadedHandler.includes('mediaRecoveryAttempts = 0'),
   'H5 成功取到分片后重置重试预算（恢复后不会一直背着旧失败）',
 )
+const playingBlock = between("listenToVideo('playing'", 'listenToVideo(\'loadedmetadata\'')
 check(
-  Boolean(playingListener) && playingListener.includes('nativeRestartAttempts = 0'),
-  'H6 真正播起来后重置原生 HLS 预算',
-  playingListener || '找不到 playing 监听',
+  Boolean(playingBlock) &&
+    playingBlock.includes('nativeRestartAttempts = 0') &&
+    playingBlock.includes('fallbackNetworkAttempts = 0'),
+  'H6 真正播起来后重置原生 HLS 与渐进源的重试预算',
+  playingBlock || '找不到 playing 监听',
 )
 check(
   hlsFatalHandler.includes('restartHls()') &&
-    (hlsFatalHandler.match(/activateFallback\(\)/g) ?? []).length === 1,
-  'H7 hls.js 致命错误先重建；只有 401/403 才立即降级',
+    hlsFatalHandler.includes("cause: 'auth'") &&
+    hlsFatalHandler.includes('terminalFailureReported') &&
+    (hlsFatalHandler.match(/activateFallback\(\)/g) ?? []).length === 0,
+  'H7 hls.js 致命错误先重建；401/403 交给播放器重签，不直接降级',
   `activateFallback 次数=${(hlsFatalHandler.match(/activateFallback\(\)/g) ?? []).length}`,
 )
 check(

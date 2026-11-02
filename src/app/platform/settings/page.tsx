@@ -43,6 +43,25 @@ interface Settings {
   maxReverseShareFiles: number | null
   autoApproveProject: boolean | null
   defaultUsePreviewForApprovedPlayback: boolean | null
+  enableSourceQualityPlayback: boolean | null
+  sourceQualityAudit: {
+    at: string
+    actorName: string
+    before: boolean
+    after: boolean
+    scope: string
+  } | null
+  sourceQualityStats: {
+    readyVideos: number
+    availableVideos: number
+    enabledTeams: number
+    totalPlays: number
+    totalFailures: number
+    totalBytes: number
+    recentPlays: number
+    recentFailures: number
+    recentBytes: number
+  } | null
   defaultAllowClientAssetUpload: boolean | null
   defaultAllowReverseShare: boolean | null
   defaultShowClientTutorial: boolean | null
@@ -145,6 +164,9 @@ export default function GlobalSettingsPage() {
   const [maxReverseShareFiles, setMaxReverseShareFiles] = useState('10')
   const [autoApproveProject, setAutoApproveProject] = useState(true)
   const [defaultUsePreviewForApprovedPlayback, setDefaultUsePreviewForApprovedPlayback] = useState(false)
+  const [enableSourceQualityPlayback, setEnableSourceQualityPlayback] = useState(false)
+  const [sourceQualityAudit, setSourceQualityAudit] = useState<Settings['sourceQualityAudit']>(null)
+  const [sourceQualityStats, setSourceQualityStats] = useState<Settings['sourceQualityStats']>(null)
   const [defaultAllowClientAssetUpload, setDefaultAllowClientAssetUpload] = useState(false)
   const [defaultAllowReverseShare, setDefaultAllowReverseShare] = useState(false)
   const [defaultShowClientTutorial, setDefaultShowClientTutorial] = useState(true)
@@ -222,6 +244,9 @@ export default function GlobalSettingsPage() {
     setMaxReverseShareFiles(data.maxReverseShareFiles?.toString() || '10')
     setAutoApproveProject(data.autoApproveProject ?? true)
     setDefaultUsePreviewForApprovedPlayback(data.defaultUsePreviewForApprovedPlayback ?? false)
+    setEnableSourceQualityPlayback(data.enableSourceQualityPlayback ?? false)
+    setSourceQualityAudit(data.sourceQualityAudit ?? null)
+    setSourceQualityStats(data.sourceQualityStats ?? null)
     setDefaultAllowClientAssetUpload(data.defaultAllowClientAssetUpload ?? false)
     setDefaultAllowReverseShare(data.defaultAllowReverseShare ?? false)
     setDefaultShowClientTutorial(data.defaultShowClientTutorial ?? true)
@@ -623,6 +648,7 @@ export default function GlobalSettingsPage() {
         maxReverseShareFiles: parseInt(maxReverseShareFiles, 10) || 10,
         autoApproveProject: autoApproveProject,
         defaultUsePreviewForApprovedPlayback: defaultUsePreviewForApprovedPlayback,
+        enableSourceQualityPlayback: enableSourceQualityPlayback,
         defaultAllowClientAssetUpload: defaultAllowClientAssetUpload,
         defaultAllowReverseShare: defaultAllowReverseShare,
         defaultShowClientTutorial: defaultShowClientTutorial,
@@ -794,6 +820,9 @@ export default function GlobalSettingsPage() {
     defaultPreviewResolution, setDefaultPreviewResolution,
     defaultSkipTranscoding, setDefaultSkipTranscoding,
     defaultApplyPreviewLut, setDefaultApplyPreviewLut,
+    enableSourceQualityPlayback, setEnableSourceQualityPlayback,
+    sourceQualityAudit,
+    sourceQualityStats,
   }
 
   const projectDefaultsProps = {
