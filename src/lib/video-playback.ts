@@ -26,3 +26,16 @@ export function hasProgressivePlayback(video: PlaybackVideoShape | null | undefi
   }
   return !video.hlsPath && video.status === 'READY' && Boolean(video.originalStoragePath)
 }
+
+/**
+ * Which source a quick preview should mint. A progressive preview keeps the
+ * 720p behaviour; an HLS-only video must mint an HLS token instead of a
+ * progressive one that can only answer 415.
+ */
+export type QuickPreviewSource = 'progressive' | 'hls' | 'unavailable'
+
+export function pickQuickPreviewSource(video: PlaybackVideoShape | null | undefined): QuickPreviewSource {
+  if (hasProgressivePlayback(video)) return 'progressive'
+  if (video?.hlsPath) return 'hls'
+  return 'unavailable'
+}

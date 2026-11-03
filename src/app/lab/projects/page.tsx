@@ -10,6 +10,8 @@ import PopupComparison from './review-popups/PopupComparison'
 import SharedControls from './SharedControls'
 import ProjectMenus from './ProjectMenus'
 import UploadSamples from './UploadSamples'
+import UploadModalSample from './UploadModalSample'
+import PreviewSample from './PreviewSample'
 import './lab.css'
 
 const VARIANTS = [
@@ -30,6 +32,8 @@ function Lab() {
   if (fromUrl === 'controls') return <SharedControls />
   if (fromUrl === 'menus') return <ProjectMenus />
   if (fromUrl === 'uploads') return <UploadSamples />
+  if (fromUrl === 'upload-modal') return <UploadModalSample />
+  if (fromUrl === 'preview') return <PreviewSample />
 
   return (
     <div className="lab-root">

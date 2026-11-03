@@ -20,6 +20,8 @@ import { apiPatch, apiFetch, apiDelete } from '@/lib/api-client'
 import { FILE_LIMITS } from '@/lib/file-validation'
 import { useTranslations } from 'next-intl'
 import VideoComparison, { type VideoComparisonComment } from './VideoComparison'
+import { useHlsSource, type PlaybackFailureCause } from '@/hooks/useHlsSource'
+import { pickQuickPreviewSource, type QuickPreviewSource } from '@/lib/video-playback'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
 import { VideoReviewStatusControl } from './VideoReviewStatusSelect'
@@ -66,6 +68,38 @@ function formatVideoUploadTime(...candidates: unknown[]): string {
   }).formatToParts(date)
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value || ''
   return `${value('year')}-${value('month')}-${value('day')} ${value('hour')}:${value('minute')}`
+}
+
+function QuickPreviewPlayer({
+  progressiveUrl,
+  hlsUrl,
+  onPlaybackError,
+}: {
+  progressiveUrl?: string
+  hlsUrl?: string
+  onPlaybackError: (cause: PlaybackFailureCause) => void
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  // The video lives in a Dialog portal; this component owns both the element
+  // and the source attach so the ref is ready before the HLS effect runs.
+  useHlsSource({
+    videoRef,
+    hlsUrl: hlsUrl || null,
+    fallbackUrl: progressiveUrl || null,
+    enabled: Boolean(hlsUrl || progressiveUrl),
+    attachmentKey: `${hlsUrl || ''}:${progressiveUrl || ''}`,
+    onPlaybackError: (info) => onPlaybackError(info.cause),
+  })
+  return (
+    <video
+      ref={videoRef}
+      src={progressiveUrl}
+      controls
+      autoPlay
+      playsInline
+      className="w-full max-h-[70vh] bg-black rounded-lg"
+    />
+  )
 }
 
 interface AdminVideoManagerProps {
@@ -201,7 +235,14 @@ export default function AdminVideoManager({
   const [deletingGroup, setDeletingGroup] = useState<string | null>(null)
   const [duplicatingVideoId, setDuplicatingVideoId] = useState<string | null>(null)
   const [dropTargetGroup, setDropTargetGroup] = useState<string | null>(null)
-  const [preview, setPreview] = useState<{ name: string; label: string; token: string } | null>(null)
+  const [preview, setPreview] = useState<{
+    name: string
+    label: string
+    source: QuickPreviewSource
+    progressiveUrl?: string
+    hlsUrl?: string
+    failure?: 'hls-unsupported' | 'playback'
+  } | null>(null)
   const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
   const [comparisonComments, setComparisonComments] = useState<VideoComparisonComment[]>([])
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
@@ -430,25 +471,35 @@ export default function AdminVideoManager({
       .find(v => v.status === 'READY')
     if (!latest) return
 
+    const source = pickQuickPreviewSource(latest)
+    const label = latest.versionLabel || `v${latest.version}`
+
+    if (source === 'unavailable') {
+      setPreview({ name: groupName, label, source })
+      return
+    }
+
     try {
-      const res = await apiFetch(
-        videoTokenUrl(latest.id, '720p'),
-        { cache: 'no-store' }
-      )
-      if (!res.ok) {
-        appAlert(t('failedToLoadData'))
+      const quality = source === 'hls' ? 'hls' : '720p'
+      const res = await apiFetch(videoTokenUrl(latest.id, quality), { cache: 'no-store' })
+      const data = res.ok ? await res.json() : null
+      if (!data?.token) {
+        setPreview({ name: groupName, label, source, failure: 'playback' })
         return
       }
-      const data = await res.json()
-      if (data.token) {
-        setPreview({ name: groupName, label: latest.versionLabel || `v${latest.version}`, token: data.token })
-        return
-      }
-      appAlert(t('failedToLoadData'))
+      setPreview({
+        name: groupName,
+        label,
+        source,
+        ...(source === 'hls'
+          ? { hlsUrl: `/api/content/${data.token}` }
+          : { progressiveUrl: `/api/content/${data.token}` }),
+      })
     } catch {
-      appAlert(t('failedToLoadData'))
+      setPreview({ name: groupName, label, source, failure: 'playback' })
     }
   }
+
 
   const handleCompare = async (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -460,13 +511,20 @@ export default function AdminVideoManager({
     try {
       const [versionsWithStreams, commentsResponse] = await Promise.all([
         Promise.all(readyVersions.map(async video => {
+          const source = pickQuickPreviewSource(video)
+          if (source === 'unavailable') throw new Error(t('failedToLoadData'))
+          const quality = source === 'hls' ? 'hls' : '720p'
           const response = await apiFetch(
-            videoTokenUrl(video.id, '720p'),
+            videoTokenUrl(video.id, quality),
             { cache: 'no-store' }
           )
           if (!response.ok) throw new Error(t('failedToLoadData'))
           const data = await response.json()
-          return { ...video, streamUrl720p: `/api/content/${data.token}` }
+          return {
+            ...video,
+            streamUrl720p: source === 'progressive' ? `/api/content/${data.token}` : '',
+            hlsUrl720p: source === 'hls' ? `/api/content/${data.token}` : '',
+          }
         })),
         apiFetch(`/api/comments?projectId=${projectId}`, { cache: 'no-store' }),
       ])
@@ -1773,14 +1831,38 @@ export default function AdminVideoManager({
           <DialogHeader>
             <DialogTitle className="truncate">{preview?.name} — {preview?.label}</DialogTitle>
           </DialogHeader>
-          {preview && (
-            <video
-              src={`/api/content/${preview.token}`}
-              controls
-              autoPlay
-              className="w-full max-h-[70vh] bg-black rounded-lg"
+          {preview && (preview.source === 'unavailable' || preview.failure) ? (
+            <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                {preview.source === 'unavailable'
+                  ? t('previewUnavailable')
+                  : preview.failure === 'hls-unsupported'
+                    ? t('previewHlsOnly')
+                    : t('previewLoadFailed')}
+              </p>
+              <Button
+                type="button"
+                onClick={(event) => {
+                  setPreview(null)
+                  handleOpenReview(preview.name, event)
+                }}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                {t('openReviewPage')}
+              </Button>
+            </div>
+          ) : preview ? (
+            <QuickPreviewPlayer
+              progressiveUrl={preview.source === 'progressive' ? preview.progressiveUrl : undefined}
+              hlsUrl={preview.source === 'hls' ? preview.hlsUrl : undefined}
+              onPlaybackError={(cause) => {
+                setPreview(current => {
+                  if (!current || current.failure) return current
+                  return { ...current, failure: cause === 'unsupported' ? 'hls-unsupported' : 'playback' }
+                })
+              }}
             />
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
 

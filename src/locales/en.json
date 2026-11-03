@@ -1011,6 +1011,9 @@
     "failedToFetchAssets": "Failed to fetch assets",
     "failedToFetchVideos": "Failed to fetch project videos",
     "failedToLoadData": "Failed to load data",
+    "previewUnavailable": "No playable preview is available for this video. Open it on the review page.",
+    "previewHlsOnly": "This video is HLS-only and this browser cannot play HLS. Open it on the review page.",
+    "previewLoadFailed": "The preview failed to load. Open it on the review page.",
     "copyingAssets": "Copying assets...",
     "copyAssets": "Copy {count} asset(s)",
 

@@ -29,6 +29,8 @@ const CHECKS: Array<{ file: string; args?: string[] }> = [
   { file: 'scripts/check-review-login-surface.mts' },
   { file: 'scripts/check-share-scope.mts' },
   { file: 'scripts/check-comment-visibility.mts' },
+  { file: 'scripts/check-comment-author-name.mts' },
+  { file: 'scripts/check-quick-preview-source.mts' },
   { file: 'scripts/check-share-video-scope.mts' },
   { file: 'scripts/check-share-renewal-rotation.mts' },
   { file: 'scripts/check-download-permissions.mts' },

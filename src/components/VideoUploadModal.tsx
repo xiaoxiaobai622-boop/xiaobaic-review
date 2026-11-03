@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { FeishuBindingPrompt } from './FeishuBindingPrompt'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
@@ -506,10 +506,26 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
     }
   }
 
+  // Drain the batch queue for the state snapshot we were called with. Queue
+  // entries are removed before starting, so a re-render cannot start one twice.
+  const drainBatch = useCallback((uploads: PendingUpload[]) => {
+    if (batchQueueRef.current.length === 0) return
+    const statuses = Object.fromEntries(uploads.map((u) => [u.id, u.status]))
+    const { start, rest } = pickUploadBatch(batchQueueRef.current, statuses)
+    batchQueueRef.current = rest
+    for (const id of start) {
+      const item = uploads.find((u) => u.id === id)
+      if (item?.status === 'pending') void startUploadRef.current?.(item)
+    }
+  }, [])
+
   const handleStartAll = () => {
     batchQueueRef.current = pendingUploads
       .filter(u => u.status === 'pending' && u.videoName.trim())
       .map(u => u.id)
+    // The click itself must start work: waiting for the next pendingUploads
+    // change meant a name edit was required before anything happened.
+    drainBatch(pendingUploads)
   }
 
   useEffect(() => {
@@ -517,15 +533,8 @@ export function VideoUploadModal({ isOpen, onClose, projectId, onUploadComplete,
   })
 
   useEffect(() => {
-    if (batchQueueRef.current.length === 0) return
-    const statuses = Object.fromEntries(pendingUploads.map((u) => [u.id, u.status]))
-    const { start, rest } = pickUploadBatch(batchQueueRef.current, statuses)
-    batchQueueRef.current = rest
-    for (const id of start) {
-      const item = pendingUploads.find((u) => u.id === id)
-      if (item?.status === 'pending') void startUploadRef.current?.(item)
-    }
-  }, [pendingUploads])
+    drainBatch(pendingUploads)
+  }, [drainBatch, pendingUploads])
 
   const handleRetry = (id: string) => {
     const item = pendingUploads.find(u => u.id === id)

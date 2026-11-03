@@ -3,6 +3,7 @@ import { getPrimaryRecipient } from '@/lib/recipients'
 import { isSmtpConfigured } from '@/lib/settings'
 import { getRedis } from '@/lib/redis'
 import { validateCommentLength, containsSuspiciousPatterns, sanitizeCommentHtml } from '@/lib/security/html-sanitization'
+import { validateCommentAuthorName } from '@/lib/comment-author-name'
 import { sendImmediateNotification, queueNotification } from '@/lib/notifications'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
 import { getAppDomain } from '@/lib/url'
@@ -125,27 +126,17 @@ export async function sanitizeAndValidateContent(params: {
 
   let sanitizedAuthorName = authorName || null
   if (sanitizedAuthorName) {
-    sanitizedAuthorName = sanitizedAuthorName.trim().normalize('NFC')
-
-    // Names are international user data. Allow Unicode letters, combining marks,
-    // numbers and common name punctuation while rejecting markup and controls.
-    const validAuthorName = /^[\p{L}\p{M}\p{N}\p{Zs}\-_.()'’·]+$/u.test(sanitizedAuthorName)
-    if (!validAuthorName) {
+    const nameValidation = validateCommentAuthorName(sanitizedAuthorName)
+    if (!nameValidation.valid) {
       return {
         valid: false,
-        error: 'Invalid characters in name',
+        error: nameValidation.error === 'length'
+          ? 'Name is too long (max 50 characters)'
+          : 'Invalid characters in name',
         errorStatus: 400
       }
     }
-
-    if (sanitizedAuthorName.length > 50) {
-      return {
-        valid: false,
-        error: 'Name is too long (max 50 characters)',
-        errorStatus: 400
-      }
-    }
-
+    sanitizedAuthorName = nameValidation.name
   }
 
   return {
