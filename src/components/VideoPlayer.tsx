@@ -260,6 +260,7 @@ export default function VideoPlayer({
   const [videoCrossOrigin, setVideoCrossOrigin] = useState<'anonymous' | null>('anonymous')
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
   const [videoLoadFailure, setVideoLoadFailure] = useState<PlaybackFailureInfo | null>(null)
+  const [reconnectingSource, setReconnectingSource] = useState(false)
   const streamAuthRetryRef = useRef<{ videoId: string; count: number; lastAt: number } | null>(null)
   const streamAuthRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recoverySeekRef = useRef<PendingSeek | null>(null)
@@ -557,6 +558,7 @@ export default function VideoPlayer({
     playIntentRef.current = false
     pendingSeekRef.current = null
     seekDriftRef.current = null
+    setReconnectingSource(false)
     setIsPlaying(false)
     setIsBuffering(false)
     setIsSeeking(false)
@@ -579,6 +581,8 @@ export default function VideoPlayer({
         cause: info.cause,
         httpStatus: info.httpStatus,
         mediaErrorCode: info.mediaErrorCode,
+        hlsErrorType: info.hlsErrorType,
+        hlsErrorDetails: info.hlsErrorDetails,
         videoId: selectedVideo?.id,
         projectId,
         quality: 'source',
@@ -596,9 +600,14 @@ export default function VideoPlayer({
         cause: info.cause,
         httpStatus: info.httpStatus,
         mediaErrorCode: info.mediaErrorCode,
+        hlsErrorType: info.hlsErrorType,
+        hlsErrorDetails: info.hlsErrorDetails,
         videoId: selectedVideo?.id,
         projectId,
-        quality: resolvedPlaybackQuality,
+        // HLS playback used to be logged as 720p, which made the report look
+        // like a progressive-rendition problem. The HLS error source is the
+        // honest label.
+        quality: info.hlsErrorType ? 'hls' : resolvedPlaybackQuality,
         sourceQuality: false,
         recovered,
       })
@@ -644,9 +653,11 @@ export default function VideoPlayer({
                 cause: info.cause,
                 httpStatus: info.httpStatus,
                 mediaErrorCode: info.mediaErrorCode,
+                hlsErrorType: info.hlsErrorType,
+                hlsErrorDetails: info.hlsErrorDetails,
                 videoId: selectedId,
                 projectId,
-                quality: resolvedPlaybackQuality,
+                quality: info.hlsErrorType ? 'hls' : resolvedPlaybackQuality,
                 sourceQuality: false,
                 recovered: true,
                 fallback: true,
@@ -664,9 +675,11 @@ export default function VideoPlayer({
             cause: info.cause,
             httpStatus: info.httpStatus,
             mediaErrorCode: info.mediaErrorCode,
+            hlsErrorType: info.hlsErrorType,
+            hlsErrorDetails: info.hlsErrorDetails,
             videoId: selectedId,
             projectId,
-            quality: resolvedPlaybackQuality,
+            quality: info.hlsErrorType ? 'hls' : resolvedPlaybackQuality,
             sourceQuality: false,
             recovered: true,
           })
@@ -701,6 +714,7 @@ export default function VideoPlayer({
   const handlePlaybackRecovered = useCallback((recovery?: PlaybackRecoveryInfo) => {
     setVideoLoadFailed(false)
     setVideoLoadFailure(null)
+    setReconnectingSource(false)
     setRetryStartTime(null)
     if (recovery?.fallback) {
       setQualityFallbackNotice(tRef.current('qualityFallback'))
@@ -709,9 +723,10 @@ export default function VideoPlayer({
       reportPlaybackFailure({
         cause: recovery.cause,
         httpStatus: recovery.httpStatus,
+        hlsErrorType: recovery.hlsErrorType,
         videoId: selectedVideo?.id,
         projectId,
-        quality: resolvedPlaybackQuality,
+        quality: recovery.hlsErrorType ? 'hls' : resolvedPlaybackQuality,
         sourceQuality: false,
         recovered: true,
         fallback: recovery.fallback === true,
@@ -728,6 +743,7 @@ export default function VideoPlayer({
     playIntentRef,
     onPlaybackError: handlePlaybackError,
     onPlaybackRecovered: handlePlaybackRecovered,
+    onPlaybackRecovering: () => setReconnectingSource(true),
     initialPosition: retryStartTime,
   })
 
@@ -1064,6 +1080,7 @@ export default function VideoPlayer({
     setVideoCrossOrigin('anonymous')
     setVideoLoadFailed(false)
     setVideoLoadFailure(null)
+    setReconnectingSource(false)
     setVideoUrl(playbackSource.url)
     setHlsUrl(playbackSource.hlsUrl)
     setSourceVideoId(playbackSource.videoId)
@@ -1087,6 +1104,7 @@ export default function VideoPlayer({
     authRecoveryInFlightRef.current = false
     setVideoLoadFailed(false)
     setVideoLoadFailure(null)
+    setReconnectingSource(false)
     setQualityFallbackNotice(null)
     setForcePreviewForQuality(false)
     setRetryNonce((value) => value + 1)
@@ -1580,6 +1598,7 @@ export default function VideoPlayer({
       streamAuthRetryRef.current = null
       setVideoLoadFailed(false)
       setVideoLoadFailure(null)
+      setReconnectingSource(false)
       setIsPlaying(true)
       setIsBuffering(false)
       const pendingSeek = pendingSeekRef.current
@@ -1943,6 +1962,12 @@ export default function VideoPlayer({
                   >
                     {t('retryPlayback')}
                   </button>
+                </div>
+              )}
+
+              {reconnectingSource && !videoLoadFailed && (
+                <div className="pointer-events-none absolute left-1/2 top-3 z-[16] -translate-x-1/2 rounded-md bg-black/80 px-3 py-1.5 text-center text-xs text-white shadow-lg">
+                  {t('reconnectingSource')}
                 </div>
               )}
 

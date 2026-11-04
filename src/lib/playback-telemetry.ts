@@ -2,6 +2,8 @@ export interface PlaybackFailureEvent {
   cause: string
   httpStatus?: number
   mediaErrorCode?: number
+  hlsErrorType?: string
+  hlsErrorDetails?: string
   videoId?: string | null
   projectId?: string
   quality?: string

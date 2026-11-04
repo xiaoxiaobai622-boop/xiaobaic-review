@@ -53,7 +53,7 @@ check(
     source.includes('nativeRestartAttempts >= 2') &&
     source.includes('nativeRestartTimer !== null') &&
     source.includes('nativeProbeInFlight') &&
-    source.includes("setVideoSource(hlsUrl, 'hls')") &&
+    source.includes("setVideoSource(currentHlsUrl, 'hls')") &&
     source.includes('const atReset = Number.isFinite(media.currentTime) && media.currentTime > 0') &&
     source.includes(': lastPlaybackPosition') &&
     source.includes('pendingSeekPosition = atReset'),

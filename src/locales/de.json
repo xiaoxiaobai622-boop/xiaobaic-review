@@ -1023,6 +1023,7 @@
     "sourceQualityFallback": "Quellqualität ist vorübergehend nicht verfügbar. Zur Vorschau zurückgekehrt.",
     "qualityFallback": "Diese Qualität ist vorübergehend nicht verfügbar. Zur Vorschauqualität gewechselt.",
     "retryPlayback": "Erneut versuchen",
+    "reconnectingSource": "Verbindung zur Videoquelle wird wiederhergestellt…",
     "sourceQualityUnavailable": "Quellqualität nicht verfügbar: Bitte die Originaldatei herunterladen.",
     "downscaledPreview": "Herunterskalierte Vorschau ({quality})",
     "downloadOriginal": "Video in Originalqualität herunterladen",

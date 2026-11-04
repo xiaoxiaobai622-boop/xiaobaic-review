@@ -14,6 +14,10 @@ function cleanId(value: unknown): string {
   return typeof value === 'string' ? value.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) : ''
 }
 
+function cleanLabel(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z0-9_.-]{1,48}$/.test(value) ? value : null
+}
+
 function hourBucket(date = new Date()): string {
   return date.toISOString().slice(0, 13).replace(/[-T]/g, '')
 }
@@ -40,6 +44,8 @@ export async function POST(request: NextRequest) {
   const projectId = cleanId(body.projectId)
   const httpStatus = Number.isInteger(body.httpStatus) ? Number(body.httpStatus) : null
   const mediaErrorCode = Number.isInteger(body.mediaErrorCode) ? Number(body.mediaErrorCode) : null
+  const hlsErrorType = cleanLabel(body.hlsErrorType)
+  const hlsErrorDetails = cleanLabel(body.hlsErrorDetails)
   const sourceQuality = body.sourceQuality === true
   const recovered = body.recovered === true
   const fallback = body.fallback === true
@@ -48,6 +54,8 @@ export async function POST(request: NextRequest) {
   const keys = [
     `playback_failure:hour:${bucket}:total`,
     `playback_failure:hour:${bucket}:cause:${cause}`,
+    `playback_failure:hour:${bucket}:quality:${quality}`,
+    `playback_failure:hour:${bucket}:source_quality:${sourceQuality ? 'true' : 'false'}`,
     recovered ? `playback_failure:hour:${bucket}:recovered` : `playback_failure:hour:${bucket}:failed`,
   ]
   if (fallback) keys.push(`playback_failure:hour:${bucket}:fallback`)
@@ -67,6 +75,8 @@ export async function POST(request: NextRequest) {
     cause,
     httpStatus,
     mediaErrorCode,
+    hlsErrorType,
+    hlsErrorDetails,
     quality,
     videoId: videoId || null,
     projectId: projectId || null,

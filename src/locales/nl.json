@@ -1023,6 +1023,7 @@
     "sourceQualityFallback": "Bronkwaliteit is tijdelijk niet beschikbaar. Terug naar voorbeeld.",
     "qualityFallback": "Deze kwaliteit is tijdelijk niet beschikbaar. Overgeschakeld naar voorbeeldkwaliteit.",
     "retryPlayback": "Opnieuw proberen",
+    "reconnectingSource": "Opnieuw verbinden met de videobron…",
     "sourceQualityUnavailable": "Bronkwaliteit niet beschikbaar: download het originele bestand.",
     "downscaledPreview": "Verkleind voorbeeld ({quality})",
     "downloadOriginal": "Download de video in originele kwaliteit",

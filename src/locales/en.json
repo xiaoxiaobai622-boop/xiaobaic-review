@@ -1061,6 +1061,7 @@
     "sourceQualityFallback": "Source quality is unavailable. Switched back to preview.",
     "qualityFallback": "This quality is temporarily unavailable. Switched to preview quality.",
     "retryPlayback": "Retry",
+    "reconnectingSource": "Reconnecting to the video source…",
     "sourceQualityUnavailable": "Source quality unavailable: download the original file instead.",
     "downscaledPreview": "Downscaled Preview ({quality})",
     "downloadOriginal": "Download original quality video",

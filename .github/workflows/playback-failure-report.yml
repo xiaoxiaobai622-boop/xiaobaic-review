@@ -38,7 +38,9 @@ jobs:
             set -eu
             docker exec -w /app vitransfer-app \
               npx tsx scripts/playback-failure-report.mts \
-              --hours=1 \
-              --failed-threshold=20 \
-              --auth-threshold=5 \
-              --video-threshold=5
+              --cursor \
+              --hours=24 \
+              --failed-threshold=6 \
+              --auth-threshold=3 \
+              --video-threshold=6 \
+              --cause-threshold=6

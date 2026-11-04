@@ -1023,6 +1023,7 @@
     "sourceQualityFallback": "源画质暂不可用，已回退预览",
     "qualityFallback": "当前清晰度暂不可用，已切换到预览清晰度",
     "retryPlayback": "重试",
+    "reconnectingSource": "正在重新连接视频源…",
     "sourceQualityUnavailable": "原画质不可用：该源文件需下载原片",
     "downscaledPreview": "缩小预览 ({quality})",
     "downloadOriginal": "下载原画质视频",

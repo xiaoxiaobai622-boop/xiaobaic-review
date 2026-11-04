@@ -13,6 +13,8 @@ interface UseHlsSourceOptions {
   playIntentRef?: { current: boolean }
   onPlaybackError?: (info: PlaybackFailureInfo) => void
   onPlaybackRecovered?: (info?: PlaybackRecoveryInfo) => void
+  /** A bounded retry is waiting for a fresh manifest before giving up. */
+  onPlaybackRecovering?: (attempt: number) => void
   /** Position to restore when a user-requested retry re-attaches the source. */
   initialPosition?: number | null
 }
@@ -30,11 +32,17 @@ export interface PlaybackFailureInfo {
   httpStatus?: number
   /** `HTMLMediaElement.error.code`: 3 = decode, 4 = unsupported source. */
   mediaErrorCode?: number
+  /** hls.js ErrorTypes value (networkError/mediaError/otherError). */
+  hlsErrorType?: string
+  /** hls.js ErrorDetails value, for example fragLoadError. */
+  hlsErrorDetails?: string
 }
 
 export interface PlaybackRecoveryInfo {
   cause: PlaybackFailureCause
   httpStatus?: number
+  /** hls.js ErrorTypes value when the recovered session was HLS. */
+  hlsErrorType?: string
   /** True when the retry succeeded on the progressive fallback rendition. */
   fallback?: boolean
 }
@@ -66,6 +74,13 @@ const PLAYBACK_PROBE_TIMEOUT_MS = 4000
 const FALLBACK_NETWORK_RETRY_DELAYS_MS = [1000, 3000]
 const UNAVAILABLE_PROBE_DELAYS_MS = [1000, 3000, 5000, 7000]
 const UNAVAILABLE_MAX_RETRIES = 2
+// A CDN edge can refuse segment traffic for tens of seconds (Tencent returns
+// 418 while a node cannot read its config, and the browser cannot read that
+// status without CORS). The normal HLS budget burns through in about half a
+// minute, which is shorter than those blips. Keep one quiet retry cycle with a
+// freshly signed manifest so a transient edge failure recovers on its own.
+// Bounded: two attempts, then the real failure is surfaced.
+const HLS_ONLY_RECOVERY_DELAYS_MS = [15000, 45000]
 
 interface UseHlsSourceResult {
   isUsingHls: boolean
@@ -83,11 +98,13 @@ export function useHlsSource({
   playIntentRef,
   onPlaybackError,
   onPlaybackRecovered,
+  onPlaybackRecovering,
   initialPosition,
 }: UseHlsSourceOptions): UseHlsSourceResult {
   const [isUsingHls, setIsUsingHls] = useState(false)
   const onPlaybackErrorRef = useRef(onPlaybackError)
   const onPlaybackRecoveredRef = useRef(onPlaybackRecovered)
+  const onPlaybackRecoveringRef = useRef(onPlaybackRecovering)
   const initialPositionRef = useRef(initialPosition)
   // A re-signed URL keeps the same video and element, so the effect below is
   // torn down and rebuilt with no memory of where playback was. Carry that
@@ -102,6 +119,10 @@ export function useHlsSource({
   useEffect(() => {
     onPlaybackRecoveredRef.current = onPlaybackRecovered
   }, [onPlaybackRecovered])
+
+  useEffect(() => {
+    onPlaybackRecoveringRef.current = onPlaybackRecovering
+  }, [onPlaybackRecovering])
 
   useEffect(() => {
     initialPositionRef.current = initialPosition
@@ -148,6 +169,13 @@ export function useHlsSource({
     let lastScheduledPosition: number | null = null
     let disposed = false
     let lastNetworkStatus: number | undefined
+    // The last fatal error survives session rebuilds: the cause the viewer saw
+    // must not turn into a generic "network" just because a restart cleared the
+    // transient status that produced it.
+    let lastFailureInfo: PlaybackFailureInfo | null = null
+    let currentHlsUrl = hlsUrl ?? ''
+    let hlsOnlyRecoveryAttempts = 0
+    let hlsOnlyRecoveryTimer: ReturnType<typeof setTimeout> | null = null
     // Last position the media element actually reached. Recovery uses this when
     // the element has already reset to 0, so a restart cannot resurrect a stale
     // pending target from an earlier attempt.
@@ -299,9 +327,85 @@ export function useHlsSource({
       video.load()
     }
 
+    const withRecoveryNonce = (url: string, attempt: number): string => {
+      try {
+        const next = new URL(url, window.location.origin)
+        // The manifest is cached for five minutes and hls.js reuses its signed
+        // segment URLs across session rebuilds; a retry must fetch a fresh one.
+        next.searchParams.set('_hls_retry', String(attempt))
+        return next.toString()
+      } catch {
+        return url
+      }
+    }
+
+    const scheduleHlsOnlyRecovery = (mode: 'hls' | 'native'): boolean => {
+      if (fallbackUrl || !currentHlsUrl) return false
+      // Auth and unavailable answers already have their own recovery paths.
+      // A statusless network failure (including a CDN refusal the browser
+      // could not read) or a fatal parse of a cached fragment can be healed by
+      // a fresh manifest; both are retried a bounded number of times.
+      const recoverable = lastFailureInfo?.cause === 'network' || lastFailureInfo?.cause === 'decode'
+      if (!recoverable) return false
+      if (hlsOnlyRecoveryAttempts >= HLS_ONLY_RECOVERY_DELAYS_MS.length) return false
+      if (hlsOnlyRecoveryTimer !== null) return true
+
+      const attempt = hlsOnlyRecoveryAttempts + 1
+      hlsOnlyRecoveryAttempts = attempt
+      onPlaybackRecoveringRef.current?.(attempt)
+      hlsOnlyRecoveryTimer = setTimeout(() => {
+        hlsOnlyRecoveryTimer = null
+        if (disposed) return
+
+        const at = Number.isFinite(video.currentTime) && video.currentTime > 0
+          ? video.currentTime
+          : lastPlaybackPosition
+        if (at > 0) pendingSeekPosition = at
+        // A successful `playing` reports this recovery with the original cause
+        // instead of pretending the first failure never happened.
+        pendingRecoveryInfo = {
+          cause: lastFailureInfo?.cause ?? 'network',
+          httpStatus: lastFailureInfo?.httpStatus,
+          hlsErrorType: lastFailureInfo?.hlsErrorType,
+        }
+        currentHlsUrl = withRecoveryNonce(currentHlsUrl, attempt)
+        sourceRestartAttempts = 0
+        networkRecoveryAttempts = 0
+        mediaRecoveryAttempts = 0
+        nativeRestartAttempts = 0
+        manifestReady = false
+        lastNetworkStatus = undefined
+        terminalFailureReported = false
+
+        // The fatal error paused the element and the player has not been told
+        // yet, so the viewer's play intent is still in the ref. Restore it once
+        // the fresh source has metadata.
+        if (playIntentRef?.current) {
+          video.addEventListener('loadedmetadata', () => {
+            if (!disposed) void video.play().catch(() => {})
+          }, { once: true })
+        }
+        if (mode === 'native' || video.canPlayType('application/vnd.apple.mpegurl')) {
+          setVideoSource(currentHlsUrl, 'hls')
+          return
+        }
+        startHlsJs()
+      }, HLS_ONLY_RECOVERY_DELAYS_MS[attempt - 1])
+      return true
+    }
+
     const activateFallback = () => {
       if (disposed) return
 
+      // Carry the fatal error we actually saw. Rebuilding a session clears the
+      // transient status, and an HLS-only video has no progressive fallback to
+      // hide behind: without this every manifest/media failure reached the
+      // viewer as "network" with no status and no media error code.
+      const failureInfo: PlaybackFailureInfo = lastFailureInfo ?? {
+        cause: classifyPlaybackFailure(lastNetworkStatus, video.error?.code),
+        httpStatus: lastNetworkStatus,
+        mediaErrorCode: video.error?.code,
+      }
       fallbackNetworkAttempts = 0
       const current = Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0
       const fallbackPosition = pendingSeekPosition ?? (
@@ -320,8 +424,9 @@ export function useHlsSource({
 
       if (fallbackUrl) {
         pendingRecoveryInfo = {
-          cause: classifyPlaybackFailure(lastNetworkStatus),
-          httpStatus: lastNetworkStatus,
+          cause: failureInfo.cause,
+          httpStatus: failureInfo.httpStatus,
+          hlsErrorType: failureInfo.hlsErrorType,
           fallback: true,
         }
         setVideoSource(fallbackUrl, 'fallback')
@@ -345,10 +450,7 @@ export function useHlsSource({
         setIsUsingHls(false)
         if (terminalFailureReported) return
         terminalFailureReported = true
-        onPlaybackErrorRef.current?.({
-          cause: classifyPlaybackFailure(lastNetworkStatus),
-          httpStatus: lastNetworkStatus,
-        })
+        onPlaybackErrorRef.current?.(failureInfo)
       }
     }
 
@@ -367,6 +469,7 @@ export function useHlsSource({
       // the first rebuild even starts.
       if (restartTimer !== null) return
       if (!hls || sourceRestartAttempts >= 2) {
+        if (scheduleHlsOnlyRecovery('hls')) return
         activateFallback()
         return
       }
@@ -392,6 +495,14 @@ export function useHlsSource({
           : lastPlaybackPosition
         if (atReset > 0) pendingSeekPosition = atReset
         startHlsJs()
+        // Rebuilding paused the element; a viewer who was watching should get
+        // playback back once the fresh session has data, not a silently paused
+        // frame that they have to click again.
+        if (playIntentRef?.current) {
+          media.addEventListener('loadedmetadata', () => {
+            if (!disposed) void media.play().catch(() => {})
+          }, { once: true })
+        }
       }, 400 * sourceRestartAttempts)
     }
 
@@ -578,8 +689,9 @@ export function useHlsSource({
     // budget with a full session rebuild.
     const restartNativeHls = () => {
       const media = video
-      if (disposed || !media || !hlsUrl || nativeRestartTimer !== null || nativeProbeInFlight) return
+      if (disposed || !media || !currentHlsUrl || nativeRestartTimer !== null || nativeProbeInFlight) return
       if (nativeRestartAttempts >= 2) {
+        if (scheduleHlsOnlyRecovery('native')) return
         activateFallback()
         return
       }
@@ -595,7 +707,7 @@ export function useHlsSource({
             ? media.currentTime
             : lastPlaybackPosition
           if (atReset > 0) pendingSeekPosition = atReset
-          setVideoSource(hlsUrl, 'hls')
+          setVideoSource(currentHlsUrl, 'hls')
           if (shouldResume) {
             media.addEventListener('loadedmetadata', () => {
               if (!disposed) void media.play().catch(() => {})
@@ -613,10 +725,16 @@ export function useHlsSource({
         return
       }
       nativeProbeInFlight = true
-      void probePlaybackStatus(hlsUrl).then((probe) => {
+      void probePlaybackStatus(currentHlsUrl).then((probe) => {
         nativeProbeInFlight = false
         if (disposed) return
         const status = probe?.status
+        lastFailureInfo = {
+          cause: classifyPlaybackFailure(status, video.error?.code),
+          httpStatus: status,
+          mediaErrorCode: video.error?.code,
+          hlsErrorType: 'nativeMedia',
+        }
         if (status === 401 || status === 403) {
           if (terminalFailureReported) return
           terminalFailureReported = true
@@ -635,7 +753,7 @@ export function useHlsSource({
 
     function startHlsJs() {
       const media = video
-      const sourceUrl = hlsUrl
+      const sourceUrl = currentHlsUrl
       if (disposed || !media || !sourceUrl) return
       if (hls) {
         try {
@@ -685,20 +803,46 @@ export function useHlsSource({
         // failures from earlier seek targets must not carry into later seeks,
         // and a rebuilt session starts its retry budget over.
         if (networkRecoveryAttempts > 0) {
-          onPlaybackRecoveredRef.current?.({ cause: 'network', httpStatus: lastNetworkStatus })
+          onPlaybackRecoveredRef.current?.({
+            cause: lastFailureInfo?.cause ?? 'network',
+            httpStatus: lastFailureInfo?.httpStatus ?? lastNetworkStatus,
+            hlsErrorType: lastFailureInfo?.hlsErrorType,
+          })
         }
         networkRecoveryAttempts = 0
         mediaRecoveryAttempts = 0
         sourceRestartAttempts = 0
+        hlsOnlyRecoveryAttempts = 0
+        lastFailureInfo = null
         lastNetworkStatus = undefined
       })
 
       hls.on(Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal || disposed || !hls) return
 
+        const status = data.response?.code
+        if (status) lastNetworkStatus = status
+        const failureStatus = status ?? lastNetworkStatus
+        const mediaErrorCode = video.error?.code
+        let cause = classifyPlaybackFailure(failureStatus, mediaErrorCode)
+        if (cause === 'network' && data.type === ErrorTypes.MEDIA_ERROR) {
+          // A fatal media error after recoverMediaError() means the buffer
+          // could not be parsed/appended, not that the connection died. A
+          // fresh manifest can still heal a corrupt cached fragment.
+          cause = 'decode'
+        }
+        // Keep the fatal error across session rebuilds. `lastNetworkStatus`
+        // alone is cleared by restartHls(), which used to turn every terminal
+        // failure into a statusless "network" one.
+        lastFailureInfo = {
+          cause,
+          httpStatus: failureStatus,
+          mediaErrorCode,
+          hlsErrorType: String(data.type),
+          hlsErrorDetails: String(data.details),
+        }
+
         if (data.type === ErrorTypes.NETWORK_ERROR) {
-          const status = data.response?.code
-          if (status) lastNetworkStatus = status
           // A 401/403 means the media URL itself was refused. The player owns
           // the re-mint and fallback decision: hand it the auth cause instead
           // of silently swapping to the progressive rendition.
@@ -708,7 +852,9 @@ export function useHlsSource({
             onPlaybackErrorRef.current?.({
               cause: 'auth',
               httpStatus: status,
-              mediaErrorCode: video.error?.code,
+              mediaErrorCode,
+              hlsErrorType: String(data.type),
+              hlsErrorDetails: String(data.details),
             })
             return
           }
@@ -744,6 +890,17 @@ export function useHlsSource({
     const handleMediaElementError = () => {
       if (terminalFailureReported) return
       if (sourceType === 'hls') {
+        // hls.js reports richer details first; only fill the gap for native HLS
+        // and for a media element that died without an hls.js error. A
+        // progressive fallback failure must not inherit the HLS label.
+        if (!lastFailureInfo) {
+          lastFailureInfo = {
+            cause: classifyPlaybackFailure(lastNetworkStatus, video.error?.code),
+            httpStatus: lastNetworkStatus,
+            mediaErrorCode: video.error?.code,
+            hlsErrorType: 'mediaElement',
+          }
+        }
         if (hls) {
           if (mediaRecoveryAttempts < 1) {
             mediaRecoveryAttempts += 1
@@ -813,11 +970,17 @@ export function useHlsSource({
     listenToVideo('playing', () => {
       const recovered = pendingRecoveryInfo ?? (
         networkRecoveryAttempts > 0
-          ? { cause: 'network' as const, httpStatus: lastNetworkStatus }
+          ? {
+              cause: lastFailureInfo?.cause ?? 'network' as const,
+              httpStatus: lastFailureInfo?.httpStatus ?? lastNetworkStatus,
+              hlsErrorType: lastFailureInfo?.hlsErrorType,
+            }
           : undefined
       )
       pendingRecoveryInfo = null
       nativeRestartAttempts = 0
+      hlsOnlyRecoveryAttempts = 0
+      lastFailureInfo = null
       fallbackNetworkAttempts = 0
       fallbackResumeOnReconnect = false
       unavailableProbeStarted = false
@@ -861,9 +1024,9 @@ export function useHlsSource({
     }
     window.addEventListener('online', handleOnline)
 
-    if (hlsUrl && video.canPlayType('application/vnd.apple.mpegurl')) {
-      setVideoSource(hlsUrl, 'hls')
-    } else if (hlsUrl && Hls.isSupported()) {
+    if (currentHlsUrl && video.canPlayType('application/vnd.apple.mpegurl')) {
+      setVideoSource(currentHlsUrl, 'hls')
+    } else if (currentHlsUrl && Hls.isSupported()) {
       startHlsJs()
     } else if (fallbackUrl) {
       setVideoSource(fallbackUrl, 'fallback')
@@ -887,6 +1050,7 @@ export function useHlsSource({
       if (fallbackRetryTimer !== null) clearTimeout(fallbackRetryTimer)
       if (unavailableProbeTimer !== null) clearTimeout(unavailableProbeTimer)
       if (unavailableRetryTimer !== null) clearTimeout(unavailableRetryTimer)
+      if (hlsOnlyRecoveryTimer !== null) clearTimeout(hlsOnlyRecoveryTimer)
       pendingForceLoad = false
       hls?.destroy()
       video.pause()

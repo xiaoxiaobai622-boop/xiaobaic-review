@@ -48,7 +48,7 @@ check(
 check(
   hook.includes('const probePlaybackStatus = async') &&
     hook.includes('await probePlaybackStatus(fallbackUrl)') &&
-    hook.includes('probePlaybackStatus(hlsUrl).then'),
+    hook.includes('probePlaybackStatus(currentHlsUrl).then'),
   'P2 渐进源与原生 HLS 失败时都探测真实 HTTP 状态',
 )
 
@@ -193,10 +193,71 @@ check(
   'P18 studio/share 不再给 HLS-only 铸 720p；缺 rendition 返回 415/unsupported + 下载出口',
 )
 
+check(
+  hook.includes('HLS_ONLY_RECOVERY_DELAYS_MS') &&
+    hook.includes('scheduleHlsOnlyRecovery') &&
+    hook.includes('withRecoveryNonce') &&
+    hook.includes('lastFailureInfo') &&
+    hook.includes('onPlaybackErrorRef.current?.(failureInfo)') &&
+    hook.includes('hlsErrorDetails') &&
+    hook.includes('onPlaybackRecovering'),
+  'P19 HLS-only 终结失败保留真实 cause/状态，并有界重取新清单后仍在无回退时如实上报',
+)
+
+check(
+  player.includes('reconnectingSource') &&
+    player.includes('onPlaybackRecovering') &&
+    player.includes("info.hlsErrorType ? 'hls' : resolvedPlaybackQuality") &&
+    telemetryRoute.includes('hlsErrorDetails') &&
+    reportScript.includes('cause-threshold') &&
+    reportScript.includes('causeTotals') &&
+    workflow.includes('--failed-threshold=6') &&
+    workflow.includes('--video-threshold=6') &&
+    workflow.includes('--cause-threshold=6'),
+  'P20 静默重连有可见提示；告警阈值高于 4/h 自动化且低于 8/h 事故，日志带 hls 细节',
+)
+
+check(
+  telemetryRoute.includes('quality:${quality}') &&
+    telemetryRoute.includes('source_quality:') &&
+    reportScript.includes('source_quality') &&
+    reportScript.includes('allQualities') &&
+    reportScript.includes('sourceQuality') &&
+    reportScript.includes("args.get('buckets')") &&
+    reportScript.includes('explicitBuckets'),
+  'P21 报告按小时统计并输出 quality 与 sourceQuality，支持指定 bucket 复核',
+)
+
+const mediaErrorBranch = hook.slice(
+  hook.indexOf('const handleMediaElementError'),
+  hook.indexOf("} else if (sourceType === 'fallback')"),
+)
+const beforeHlsBranch = mediaErrorBranch.slice(0, mediaErrorBranch.indexOf("if (sourceType === 'hls')"))
+check(
+  hook.includes('hlsErrorType?: string') &&
+    hook.includes('hlsErrorType: lastFailureInfo?.hlsErrorType') &&
+    player.includes("recovery.hlsErrorType ? 'hls'") &&
+    mediaErrorBranch.includes("hlsErrorType: 'mediaElement'") &&
+    !beforeHlsBranch.includes("hlsErrorType: 'mediaElement'"),
+  'P22 recovered 事件保留 hlsErrorType 并标 quality=hls；渐进回退失败不继承 HLS 标签',
+)
+
+check(
+  workflow.includes('--cursor') &&
+    workflow.includes('--hours=24') &&
+    reportScript.includes("args.get('cursor')") &&
+    reportScript.includes('last_evaluated_bucket') &&
+    reportScript.includes('shiftBucket') &&
+    reportScript.includes('now-bucket') &&
+    reportScript.includes('failedVideoMaxPerBucket') &&
+    reportScript.includes('cursor advanced'),
+  'P23 定时报告用游标覆盖上次评估以来的完整小时；旧 bucket 不重复告警；宽窗口按单小时最大视频失败数判阈值',
+)
+
 if (failures.length > 0) {
   console.error(`\n播放失败分类契约 ${failures.length} 项不满足：`)
   for (const failure of failures) console.error(`  ${failure}`)
   process.exit(1)
 }
 
-console.log('\n播放失败分类契约 18 项全部通过')
+console.log('\n播放失败分类契约 23 项全部通过')
