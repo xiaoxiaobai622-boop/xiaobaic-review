@@ -113,7 +113,7 @@ async function supportFetch(input: string, init: RequestInit = {}) {
   return fetch(input, { ...init, headers: init.headers || supportHeaders(), credentials: 'same-origin', cache: 'no-store' })
 }
 
-export function SupportWidget({ placement = 'bottom', hideLauncher = false }: { placement?: 'bottom' | 'side'; hideLauncher?: boolean }) {
+export function SupportWidget({ placement = 'bottom', hideLauncher = false, embed = false }: { placement?: 'bottom' | 'side'; hideLauncher?: boolean; embed?: boolean }) {
   const [open, setOpen] = useState(false)
   const [bootstrapped, setBootstrapped] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -445,13 +445,13 @@ export function SupportWidget({ placement = 'bottom', hideLauncher = false }: { 
 
       {open && (
         <div
-          className={`fixed inset-0 z-[70] flex items-end justify-end bg-black/20 p-3 sm:items-center sm:justify-end ${placement === 'side' ? 'sm:pl-12' : ''}`}
+          className={embed ? 'fixed inset-0 z-[70] flex bg-popover' : `fixed inset-0 z-[70] flex items-end justify-end bg-black/20 p-3 sm:items-center sm:justify-end ${placement === 'side' ? 'sm:pl-12' : ''}`}
           role="dialog"
           aria-modal="true"
           aria-label={strings.title}
           onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }}
         >
-          <section className="flex h-[min(640px,calc(100dvh-1.5rem))] w-full flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl sm:ml-auto sm:w-[390px]">
+          <section className={embed ? 'flex h-[100dvh] w-full flex-col overflow-hidden bg-popover pb-[env(safe-area-inset-bottom)]' : 'flex h-[min(640px,calc(100dvh-1.5rem))] w-full flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl sm:ml-auto sm:w-[390px]'}
             <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -463,9 +463,9 @@ export function SupportWidget({ placement = 'bottom', hideLauncher = false }: { 
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">{strings.subtitle}</p>
               </div>
-              <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1.5 hover:bg-accent" aria-label={strings.close}>
+              {!embed && <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1.5 hover:bg-accent" aria-label={strings.close}>
                 <X className="h-4 w-4" />
-              </button>
+              </button>}
             </header>
 
             <div className="flex min-h-0 flex-1 flex-col bg-background/40">
