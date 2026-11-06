@@ -12,7 +12,7 @@ export function SupportEmbed() {
   }, [])
 
   return (
-    <main style={{ height: '100dvh', overflow: 'hidden' }}>
+    <main style={{ height: '100dvh', overflow: 'hidden', background: 'var(--background)' }}>
       <SupportWidget placement="side" hideLauncher embed />
     </main>
   )
