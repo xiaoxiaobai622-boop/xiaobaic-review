@@ -1,19 +1,12 @@
-'use client'
+import type { Viewport } from 'next'
+import { SupportEmbed } from './SupportEmbed'
 
-import { useEffect } from 'react'
-import { SupportWidget } from '@/components/support/SupportWidget'
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
 
-export default function SupportEmbedPage() {
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      window.dispatchEvent(new Event('vidx-open-support'))
-    }, 400)
-    return () => window.clearTimeout(timer)
-  }, [])
-
-  return (
-    <main style={{ minHeight: '100vh', background: '#0B0D16' }}>
-      <SupportWidget placement="side" hideLauncher />
-    </main>
-  )
+export default function SupportPage() {
+  return <SupportEmbed />
 }
