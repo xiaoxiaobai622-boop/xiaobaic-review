@@ -451,7 +451,7 @@ export function SupportWidget({ placement = 'bottom', hideLauncher = false, embe
           aria-label={strings.title}
           onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }}
         >
-          <section className={embed ? 'flex h-[100dvh] w-full flex-col overflow-hidden bg-popover pb-[env(safe-area-inset-bottom)]' : 'flex h-[min(640px,calc(100dvh-1.5rem))] w-full flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl sm:ml-auto sm:w-[390px]'}
+          <section className={embed ? 'flex h-[100dvh] w-full flex-col overflow-hidden bg-popover pb-[env(safe-area-inset-bottom)]' : 'flex h-[min(640px,calc(100dvh-1.5rem))] w-full flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl sm:ml-auto sm:w-[390px]'}>
             <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-4">
               <div>
                 <div className="flex items-center gap-2">
