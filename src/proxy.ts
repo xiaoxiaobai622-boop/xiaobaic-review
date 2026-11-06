@@ -110,14 +110,21 @@ export async function proxy(request: NextRequest) {
     cspDirectives.push('upgrade-insecure-requests')
   }
 
+  // 小程序 web-view 用的客服页需要允许被嵌入（开发者工具的 web-view 是 iframe 实现），
+  // 其余页面维持 DENY。只对 /support 放开，避免全站失去点击劫持防护。
+  const isSupportEmbed = url.pathname === '/support' || url.pathname.startsWith('/support/')
+  const csp = (isSupportEmbed
+    ? cspDirectives.map((directive) => (directive.startsWith('frame-ancestors') ? "frame-ancestors *" : directive))
+    : cspDirectives).join('; ')
+
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-nonce', nonce)
 
   const response = NextResponse.next({ request: { headers: requestHeaders } })
 
-  response.headers.set('Content-Security-Policy', cspDirectives.join('; '))
+  response.headers.set('Content-Security-Policy', csp)
   response.headers.set('X-DNS-Prefetch-Control', 'on')
-  response.headers.set('X-Frame-Options', 'DENY')
+  if (!isSupportEmbed) response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('Referrer-Policy', 'same-origin')
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()')
