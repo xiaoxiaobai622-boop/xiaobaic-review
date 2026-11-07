@@ -1,5 +1,5 @@
 import { Worker, Queue } from 'bullmq'
-import { VideoProcessingJob, AssetProcessingJob, ProjectUploadProcessingJob, ExternalNotificationJob, PhotoProcessingJob } from '../lib/queue'
+import { VideoProcessingJob, AssetProcessingJob, ProjectUploadProcessingJob, ExternalNotificationJob, UploadNotificationBatchJob, PhotoProcessingJob } from '../lib/queue'
 import { initStorage } from '../lib/storage'
 import { runCleanup } from '../lib/upload-cleanup'
 import { getRedisForQueue, closeRedisConnection } from '../lib/redis'
@@ -11,6 +11,7 @@ import { processPhoto } from './photo-processor'
 import { processAdminNotifications } from './studio-notifications'
 import { processClientNotifications } from './client-notifications'
 import { processExternalNotificationJob } from './external-notifications/processExternalNotificationJob'
+import { processUploadNotificationBatch } from './upload-notification-batch'
 import { processDueDateReminders } from './due-date-reminders'
 import { cleanupOldTempFiles, ensureTempDir } from './cleanup'
 import { runPreviewThumbnailBackfill } from './backfill'
@@ -213,6 +214,31 @@ async function main() {
   })
 
   logMessage('External notification worker started')
+
+  // Coalesced upload summaries (email + push + Apprise).
+  const uploadNotificationBatchWorker = new Worker<UploadNotificationBatchJob>(
+    'upload-notification-batches',
+    async (job) => {
+      await processUploadNotificationBatch(job.data.batchKey)
+    },
+    {
+      connection: getRedisForQueue(),
+      concurrency: 2,
+    }
+  )
+
+  uploadNotificationBatchWorker.on('completed', (job) => {
+    if (DEBUG) {
+      logMessage(`[WORKER] Upload notification batch ${job.id} completed`)
+    }
+  })
+
+  uploadNotificationBatchWorker.on('failed', (job, err) => {
+    logError(`[WORKER ERROR] Upload notification batch ${job?.id} failed`, err)
+  })
+
+  logMessage('Upload notification batch worker started')
+  logMessage('  → Upload email/push/Apprise summaries require this worker; without it batches stay queued')
 
   // Run cleanup on startup
   logMessage('Running initial TUS upload cleanup...')

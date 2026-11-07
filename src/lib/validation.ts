@@ -454,6 +454,8 @@ export const createCommentSchema = z.object({
   visibility: z.enum(['PUBLIC', 'INTERNAL']).optional(),
   recipientId: cuidSchema.optional().nullable(),
   parentId: cuidSchema.optional(),
+  /** Explicit @ targets chosen in the composer; never parsed from raw text. */
+  mentionedUserIds: z.array(cuidSchema).max(20).optional(),
   assetIds: z.array(z.string()).max(50).optional(),
   annotations: annotationDataSchema.optional().nullable(),
 })

@@ -8,6 +8,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
 import { logError, logMessage } from '@/lib/logging'
+import { emitApprovalInAppNotification, logInAppEmitResult } from '@/lib/in-app-notifications/emit'
 
 export const runtime = 'nodejs'
 
@@ -145,6 +146,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     logMessage('[APPROVAL] Video approval complete, preparing notifications')
 
+    const isCompleteProjectApproval = allApproved && autoApprove
+
+    // In-app is independent of SMTP: the team should see the approval even
+    // when email is not configured.
+    void emitApprovalInAppNotification({
+      projectId,
+      videoId: selectedVideoId,
+      approved: true,
+      isComplete: isCompleteProjectApproval,
+      actorUserId: currentUser.id,
+      actorName: currentUser.name || currentUser.email || '团队成员',
+      occurredAt: new Date(),
+    }).then((emitResult) => logInAppEmitResult('approval', emitResult)).catch((emitError) => {
+      logError('[APPROVAL] Failed to emit in-app notification', emitError)
+    })
+
     // Handle approval notifications (will queue and/or send immediately based on schedule)
     try {
       const smtpConfigured = await isSmtpConfigured()
@@ -153,10 +170,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!smtpConfigured) {
         logMessage('[APPROVAL] SMTP not configured, skipping notifications')
       } else {
-        // Determine if this is a complete project approval or partial
-        // Complete = ALL unique videos have at least one approved version
-        const isCompleteProjectApproval = allApproved && autoApprove
-
         // For complete approval, send all approved videos
         // For partial approval (single video), send only the just-approved video
         let approvedVideosList: Array<{ name: string; id: string }>
@@ -181,6 +194,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             id: project.id,
             title: project.title,
             slug: project.slug,
+            teamId: project.teamId,
             clientNotificationSchedule: project.clientNotificationSchedule
           },
           approvedVideos: approvedVideosList,

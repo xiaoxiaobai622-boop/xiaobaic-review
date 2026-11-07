@@ -53,6 +53,7 @@ export function useCommentManagement({
 
   const [optimisticComments, setOptimisticComments] = useState<CommentWithReplies[]>([])
   const [newComment, setNewComment] = useState('')
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
   // 批注可见范围（对标 frame.io 的 公共/内部）：只影响共享端能否看到，isInternal 的来源语义不动。
   const [commentVisibility, setCommentVisibility] = useState<'PUBLIC' | 'INTERNAL'>('PUBLIC')
   const [selectedTimestamp, setSelectedTimestamp] = useState<number | null>(null) // Internal: still use seconds for video player integration
@@ -487,7 +488,9 @@ export function useCommentManagement({
     setOptimisticComments(prev => [...prev, optimisticComment])
 
     const commentParentId = replyingToCommentId
+    const mentionedForComment = mentionedUserIds
     setNewComment('')
+    setMentionedUserIds([])
     setSelectedTimestamp(null)
     // Keep selectedVideoId so user can post multiple comments
     setHasAutoFilledTimestamp(false)
@@ -529,6 +532,10 @@ export function useCommentManagement({
         requestBody.assetIds = commentAssetIds
       }
 
+      if (mentionedForComment.length > 0) {
+        requestBody.mentionedUserIds = mentionedForComment
+      }
+
       let updatedComments: CommentWithReplies[]
       if (shareToken && effectiveShareSlug) {
         updatedComments = await shareApiPost<CommentWithReplies[]>(effectiveShareSlug, '/api/comments', requestBody)
@@ -548,6 +555,7 @@ export function useCommentManagement({
     } catch (error) {
       setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
       setNewComment(commentContent)
+      setMentionedUserIds(mentionedForComment)
       setSelectedTimestamp(commentTimestamp)
       setSelectedVideoId(validatedVideoId)
       setPendingAnnotation(annotationForComment)
@@ -686,6 +694,8 @@ export function useCommentManagement({
   return {
     comments,
     newComment,
+    mentionedUserIds,
+    setMentionedUserIds,
     commentVisibility,
     setCommentVisibility,
     selectedTimestamp,

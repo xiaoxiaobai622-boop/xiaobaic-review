@@ -6,6 +6,7 @@ let videoQueueInstance: Queue<VideoProcessingJob> | null = null
 let assetQueueInstance: Queue<AssetProcessingJob> | null = null
 let projectUploadQueueInstance: Queue<ProjectUploadProcessingJob> | null = null
 let externalNotificationQueueInstance: Queue<ExternalNotificationJob> | null = null
+let uploadNotificationBatchQueueInstance: Queue<UploadNotificationBatchJob> | null = null
 let photoQueueInstance: Queue<PhotoProcessingJob> | null = null
 
 export interface VideoProcessingJob {
@@ -35,12 +36,19 @@ export interface ExternalNotificationJob {
   // When set, worker sends only to these destinations (used for tests).
   destinationIds?: string[]
 
-  // Used for subscription matching and logging.
+  // Used for subscription matching and logging. teamId/projectId let a
+  // destination narrow itself via config.teamIds/config.projectIds.
   eventType: string
+  teamId?: string
+  projectId?: string
 
   title: string
   body: string
   notifyType?: 'info' | 'success' | 'warning' | 'failure'
+}
+
+export interface UploadNotificationBatchJob {
+  batchKey: string
 }
 
 export function getVideoQueue(): Queue<VideoProcessingJob> {
@@ -177,6 +185,26 @@ export function getExternalNotificationQueue(): Queue<ExternalNotificationJob> {
   }
 
   return externalNotificationQueueInstance!
+}
+
+export function getUploadNotificationBatchQueue(): Queue<UploadNotificationBatchJob> {
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    throw new Error('Queue not available during build phase')
+  }
+
+  if (!uploadNotificationBatchQueueInstance) {
+    uploadNotificationBatchQueueInstance = new Queue<UploadNotificationBatchJob>('upload-notification-batches', {
+      connection: getRedisForQueue() as any,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: { age: 86400 },
+      },
+    } as any) as unknown as Queue<UploadNotificationBatchJob>
+  }
+
+  return uploadNotificationBatchQueueInstance!
 }
 
 // Export for backward compatibility, but use getter in new code

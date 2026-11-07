@@ -119,6 +119,8 @@ export default function CommentSection({
   const {
     comments,
     newComment,
+    mentionedUserIds,
+    setMentionedUserIds,
     selectedTimestamp,
     selectedVideoId,
     selectedVideoFps,
@@ -156,6 +158,36 @@ export default function CommentSection({
   })
 
   const [localComments, setLocalComments] = useState<CommentWithReplies[]>(initialComments)
+  const [mentionCandidates, setMentionCandidates] = useState<Array<{ id: string; name: string; avatarUrl?: string | null }>>([])
+
+  useEffect(() => {
+    if (!showVisibilitySelector) {
+      setMentionCandidates([])
+      return
+    }
+    let cancelled = false
+    void apiFetch(`/api/projects/${projectId}/members`, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const members = Array.isArray(data?.members) ? data.members : []
+        setMentionCandidates(
+          members
+            .filter((member: any) => member?.id && member.id !== adminUser?.id)
+            .map((member: any) => ({
+              id: member.id,
+              name: member.name || member.email || '成员',
+              avatarUrl: member.avatarUrl ?? null,
+            })),
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setMentionCandidates([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, showVisibilitySelector, adminUser?.id])
 
   // The page-level review shell owns comment fetching and passes the current
   // tree down. Keep a local copy only for optimistic comments while a parent
@@ -619,6 +651,9 @@ export default function CommentSection({
           replyingToComment={replyingToComment}
           onCancelReply={handleCancelReply}
           focusRequest={replyFocusRequest}
+          mentionCandidates={showVisibilitySelector ? mentionCandidates : undefined}
+          mentionedUserIds={mentionedUserIds}
+          onMentionedUserIdsChange={setMentionedUserIds}
           currentVideoRestricted={currentVideoRestricted}
           restrictionMessage={restrictionMessage}
           commentsDisabled={commentsDisabled}

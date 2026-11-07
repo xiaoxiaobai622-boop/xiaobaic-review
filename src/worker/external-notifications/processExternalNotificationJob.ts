@@ -38,6 +38,30 @@ function logError(message: string, extra?: Record<string, unknown>) {
   baseLogError(`[EXTERNAL-NOTIFICATIONS] ${sanitizedMessage}`)
 }
 
+/**
+ * A destination may narrow itself to specific teams/projects through
+ * config.teamIds / config.projectIds. Empty/omitted means the historical
+ * platform-wide destination, which stays backward compatible.
+ */
+function destinationMatchesScope(
+  destination: { config: unknown },
+  job: ExternalNotificationJob,
+): boolean {
+  const config = destination.config && typeof destination.config === 'object' && !Array.isArray(destination.config)
+    ? destination.config as Record<string, unknown>
+    : {}
+  const teamIds = Array.isArray(config.teamIds)
+    ? config.teamIds.filter((value): value is string => typeof value === 'string' && value.length > 0)
+    : []
+  const projectIds = Array.isArray(config.projectIds)
+    ? config.projectIds.filter((value): value is string => typeof value === 'string' && value.length > 0)
+    : []
+
+  if (teamIds.length > 0 && (!job.teamId || !teamIds.includes(job.teamId))) return false
+  if (projectIds.length > 0 && (!job.projectId || !projectIds.includes(job.projectId))) return false
+  return true
+}
+
 function safeTextPreview(text: string, maxLen: number): string {
   const normalized = text.replace(/\s+/g, ' ').trim()
   if (normalized.length <= maxLen) return normalized
@@ -155,7 +179,7 @@ export async function processExternalNotificationJob(data: ExternalNotificationJ
     bodyPreview: data.body ? safeTextPreview(data.body, 140) : undefined,
   })
 
-  const destinations = data.destinationIds?.length
+  const destinations = (data.destinationIds?.length
     ? await prisma.notificationDestination.findMany({
         where: { id: { in: data.destinationIds } },
       })
@@ -169,7 +193,7 @@ export async function processExternalNotificationJob(data: ExternalNotificationJ
             },
           },
         },
-      })
+      })).filter((destination) => destinationMatchesScope(destination, data))
 
   if (destinations.length === 0) {
     log(`Job ${jobId || '?'} skipped (no matching destinations)`, {

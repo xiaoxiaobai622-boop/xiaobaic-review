@@ -24,6 +24,9 @@ import {
   fetchProjectComments
 
 } from '@/lib/comment-helpers'
+import { logError } from '@/lib/logging'
+import { emitCommentInAppNotifications, logInAppEmitResult } from '@/lib/in-app-notifications/emit'
+import { intersectMentionedViewers, resolveProjectViewers } from '@/lib/in-app-notifications/recipients'
 export const runtime = 'nodejs'
 
 
@@ -248,6 +251,7 @@ export async function POST(request: NextRequest) {
       timecodeEnd,
       content,
       parentId,
+      mentionedUserIds,
       assetIds,
       annotations,
       visibility,
@@ -502,12 +506,55 @@ export async function POST(request: NextRequest) {
       attachmentNames = linkedAssets.map(a => a.originalFileName || a.fileName)
     }
 
+    // @ targets are only accepted from the studio side; a share visitor must
+    // never be able to ping team members by crafting a request body.
+    let validMentionedUserIds: string[] = []
+    if (accessCheck.isAdmin && mentionedUserIds && mentionedUserIds.length > 0) {
+      const viewers = await resolveProjectViewers(projectId, {
+        excludeUserId: authContext.user.id,
+      })
+      validMentionedUserIds = intersectMentionedViewers(
+        viewers,
+        mentionedUserIds,
+        authContext.user.id,
+      ).map((viewer) => viewer.userId)
+
+      if (validMentionedUserIds.length > 0) {
+        await prisma.commentMention.createMany({
+          data: validMentionedUserIds.map((userId) => ({ commentId: comment.id, userId })),
+          skipDuplicates: true,
+        }).catch((mentionError) => {
+          logError('[COMMENT-NOTIFICATION] Failed to store mentions', mentionError)
+        })
+      }
+    }
+
     await handleCommentNotifications({
       comment,
       projectId,
       videoId,
       parentId,
       attachmentNames,
+    })
+
+    void emitCommentInAppNotifications({
+      comment: {
+        id: comment.id,
+        projectId: comment.projectId,
+        videoId: comment.videoId,
+        videoVersion: comment.videoVersion,
+        parentId: comment.parentId,
+        userId: comment.userId,
+        authorEmail: comment.authorEmail,
+        authorName: comment.authorName,
+        content: comment.content,
+        timecode: comment.timecode,
+        visibility: comment.visibility,
+        createdAt: comment.createdAt,
+      },
+      mentionedUserIds: validMentionedUserIds,
+    }).then((result) => logInAppEmitResult('comment', result)).catch((notificationError) => {
+      logError('[COMMENT-NOTIFICATION] Failed to emit in-app notification', notificationError)
     })
 
     const allComments = await fetchProjectComments(projectId)

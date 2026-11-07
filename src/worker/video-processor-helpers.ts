@@ -6,6 +6,7 @@ import path from 'path'
 import { pipeline } from 'stream/promises'
 import { TEMP_DIR } from './cleanup'
 import { logError, logMessage } from '../lib/logging'
+import { emitVideoReadyInAppNotification, logInAppEmitResult } from '../lib/in-app-notifications/emit'
 import { teamProjectStorageKey } from '../lib/storage-keys'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
@@ -474,6 +475,15 @@ export async function finalizeVideo(
     where: { id: videoId },
     data: updateData,
   })
+
+  // Local-FFmpeg fallback (and any caller that finalizes without the MPS
+  // branch) must reach the in-app feed too. The emitter's video+recipient
+  // dedupeKey makes a second path a no-op.
+  void emitVideoReadyInAppNotification(videoId)
+    .then((emitResult) => logInAppEmitResult('video ready (fallback)', emitResult))
+    .catch((emitError) => {
+      logError('[WORKER] Failed to emit in-app video-ready notification (fallback)', emitError)
+    })
 
   // Keep the original collection upload in place. Mark it ready so the inbox
   // can show completion without moving or deleting the source file.

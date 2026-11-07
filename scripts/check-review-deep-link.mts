@@ -39,9 +39,14 @@ check(studioClient.includes('initialSeekTime={initialSeekTime}'), 'studio review
 check(studioClient.includes('initialVideoIndex={initialVideoIndex}'), 'studio review forwards initial version index')
 check(studioClient.includes('followLatestVersion={urlVersion === null}'), 'studio review follows latest only without a version param')
 
-const rail = readFileSync(resolve('src/components/RailNotifications.tsx'), 'utf8')
-check(rail.includes('buildReviewPath('), 'in-app notifications use the shared path builder')
-check(rail.includes('videoVersion'), 'in-app notifications keep the video version')
+const inAppFormat = readFileSync(resolve('src/lib/in-app-notifications/format.ts'), 'utf8')
+check(inAppFormat.includes('buildReviewPath('), 'in-app notifications use the shared path builder')
+check(inAppFormat.includes('version: params.version'), 'in-app notifications keep the video version')
+const inAppEmit = readFileSync(resolve('src/lib/in-app-notifications/emit.ts'), 'utf8')
+check(
+  inAppEmit.includes('version: comment.videoVersion ?? video?.version'),
+  'in-app comment notifications keep the comment version',
+)
 
 const email = readFileSync(resolve('src/lib/email.ts'), 'utf8')
 check(email.includes('version: opts.version'), 'email deep link includes the version')

@@ -20,7 +20,7 @@ interface NotificationContext {
 }
 
 interface ApprovalNotificationContext {
-  project: { id: string; title: string; slug: string; clientNotificationSchedule: string }
+  project: { id: string; title: string; slug: string; teamId?: string; clientNotificationSchedule: string }
   video?: { id: string; name: string; versionLabel?: string | null }
   approvedVideos?: Array<{ id: string; name: string }>
   approved: boolean // true = approved, false = unapproved
@@ -91,6 +91,10 @@ export async function sendImmediateNotification(context: NotificationContext, ta
   const authorEmail = comment.authorEmail?.toLowerCase() || null
 
   if (target === 'client') {
+    if (comment.visibility === 'INTERNAL') {
+      logMessage('[IMMEDIATE→CLIENT] Skipped - internal-visibility comment')
+      return
+    }
     // Send to clients — skip author if they are a client
     const allRecipients = await getProjectRecipients(comment.projectId)
     const recipients = allRecipients.filter(r => {
@@ -238,6 +242,7 @@ export async function queueNotification(
         content: comment.content,
         timecode: comment.timecode,
         isReply,
+        visibility: comment.visibility,
         parentCommentId: comment.parentId,
         parentComment: parentCommentData,
         attachmentNames: attachmentNames || [],
@@ -360,6 +365,8 @@ async function sendApprovalImmediately(context: ApprovalNotificationContext) {
 
   void enqueueExternalNotification({
     eventType: 'VIDEO_APPROVAL',
+    teamId: project.teamId,
+    projectId: project.id,
     title: `${authorName || 'Client'} ${approved ? 'Approved' : 'Unapproved'}: ${project.title}`,
     body: [
       `${authorName || 'A client'}${authorEmail ? ` (${authorEmail})` : ''} ${approved ? 'approved' : 'unapproved'} ${videoNames}`,

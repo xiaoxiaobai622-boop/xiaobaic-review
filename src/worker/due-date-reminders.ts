@@ -4,6 +4,7 @@ import { enqueueExternalNotification } from '../lib/external-notifications/enque
 import { sendDueDateReminderEmail } from '../lib/email'
 import { isSmtpConfigured } from '../lib/settings'
 import { logError, logMessage } from '../lib/logging'
+import { emitDueDateInAppNotification, logInAppEmitResult } from '../lib/in-app-notifications/emit'
 
 const REDIS_KEY = 'due_date_reminder:last_check'
 let firstRun = true
@@ -18,7 +19,7 @@ function findProjectsDueOn(from: Date, dueReminder: 'DAY_BEFORE' | 'WEEK_BEFORE'
       dueReminder,
       status: { notIn: ['APPROVED', 'ARCHIVED'] },
     },
-    select: { id: true, title: true, dueDate: true },
+    select: { id: true, title: true, dueDate: true, teamId: true },
   })
 }
 
@@ -70,12 +71,32 @@ export async function processDueDateReminders() {
   let externalFailures = 0
   let emailFailures = 0
 
+  const dayKey = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+
   // Send external notifications for each reminder
   for (const project of allReminders) {
+    // In-app is independent of the external channel; a failed Apprise job
+    // must not suppress the team's in-app reminder.
+    void emitDueDateInAppNotification({
+      projectId: project.id,
+      dueDate: project.dueDate!,
+      reminderType: project.reminderType,
+      dayKey,
+    }).then((emitResult) => logInAppEmitResult('due date', emitResult)).catch((emitError) => {
+      logError(`[WORKER] Failed to emit in-app due date notification (projectId=${project.id})`, emitError)
+    })
+
     try {
       const dueStr = new Date(project.dueDate!).toLocaleDateString()
       await enqueueExternalNotification({
         eventType: 'DUE_DATE_REMINDER',
+        teamId: project.teamId,
+        projectId: project.id,
         title: `Deadline Reminder: ${project.title}`,
         body: `"${project.title}" is due ${project.reminderType} (${dueStr})`,
         pushData: {

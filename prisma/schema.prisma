@@ -770,6 +770,7 @@ model Comment {
   project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   video   Video        @relation(fields: [videoId], references: [id], onDelete: Cascade)
   assets  VideoAsset[]
+  mentions CommentMention[]
 
   @@index([projectId])
   @@index([videoId])
@@ -1777,4 +1778,84 @@ model SupportNotification {
 
   @@unique([messageId, channel, recipientKey])
   @@index([status, createdAt])
+}
+
+// In-app notification feed. One row per recipient so unread counts and
+// per-recipient aggregation stay a single indexed query.
+model UserNotification {
+  id              String    @id @default(cuid())
+  eventType       String
+  category        String // TEAM | MENTION
+  teamId          String
+  projectId       String?
+  videoId         String?
+  commentId       String?
+  actorUserId     String?
+  actorName       String?
+  recipientUserId String
+  title           String
+  body            String?
+  deepLink        String?
+  aggregateKey    String?
+  aggregateCount  Int       @default(1)
+  dedupeKey       String    @unique
+  payload         Json?
+  createdAt       DateTime  @default(now())
+  lastEventAt     DateTime  @default(now())
+  readAt          DateTime?
+  seenAt          DateTime?
+  clickedAt       DateTime?
+  dismissedAt     DateTime?
+
+  @@unique([recipientUserId, aggregateKey])
+  @@index([recipientUserId, teamId, category, readAt, lastEventAt])
+  @@index([teamId, lastEventAt])
+  @@index([projectId, lastEventAt])
+  @@index([commentId])
+}
+
+// Event-level idempotency log. Aggregated rows update one feed row, but every
+// source event still gets a unique dedupeKey so retries cannot inflate counts.
+model UserNotificationEvent {
+  id              String   @id @default(cuid())
+  dedupeKey       String   @unique
+  notificationId  String?
+  eventType       String
+  teamId          String
+  projectId       String?
+  recipientUserId String
+  entityId        String?
+  createdAt       DateTime @default(now())
+
+  @@index([recipientUserId, createdAt])
+  @@index([teamId, createdAt])
+  @@index([notificationId])
+}
+
+model CommentMention {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([commentId, userId])
+  @@index([userId])
+  @@index([commentId])
+}
+
+model UserNotificationDelivery {
+  id             String   @id @default(cuid())
+  notificationId String
+  channel        String // EMAIL | PUSH | APPRISE | FEISHU
+  recipient      String?
+  success        Boolean  @default(false)
+  statusCode     Int?
+  error          String?
+  providerId     String?
+  sentAt         DateTime @default(now())
+
+  @@unique([notificationId, channel, recipient])
+  @@index([channel, sentAt])
+  @@index([success, sentAt])
 }

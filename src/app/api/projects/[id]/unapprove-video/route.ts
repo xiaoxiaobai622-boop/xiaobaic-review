@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
+import { emitApprovalInAppNotification, logInAppEmitResult } from '@/lib/in-app-notifications/emit'
 import { canManageProjectApproval } from '@/lib/project-access'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { rateLimit } from '@/lib/rate-limit'
@@ -111,6 +112,18 @@ export async function POST(
     logMessage(
       `[VIDEO-APPROVAL] Unapproved selected video ${selectedVideoId}; videoChanged=${videoUpdate.count}; projectStatusChanged=${projectUpdate.count}`
     )
+
+    void emitApprovalInAppNotification({
+      projectId,
+      videoId: selectedVideoId,
+      approved: false,
+      isComplete: false,
+      actorUserId: currentUser.id,
+      actorName: currentUser.name || currentUser.email || '团队成员',
+      occurredAt: new Date(),
+    }).then((emitResult) => logInAppEmitResult('video unapproval', emitResult)).catch((emitError) => {
+      logError('[VIDEO-APPROVAL] Failed to emit in-app unapproval notification', emitError)
+    })
 
     return NextResponse.json({
       success: true,

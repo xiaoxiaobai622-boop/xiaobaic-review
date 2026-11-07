@@ -1,6 +1,7 @@
 import { Job } from 'bullmq'
 import { VideoProcessingJob } from '../lib/queue'
-import { logMessage } from '../lib/logging'
+import { logError, logMessage } from '../lib/logging'
+import { emitVideoReadyInAppNotification, logInAppEmitResult } from '../lib/in-app-notifications/emit'
 import { isMpsEnabled, submitMpsHls, waitForMpsHls, submitMpsSourceQuality, waitForMpsSourceQuality, sourceQualityTemplateId } from '../lib/tencent-mps'
 import { isCdnPrefetchEnabled, prefetchHlsRendition } from '../lib/tencent-cdn'
 import { s3GetObjectSize } from '../lib/s3-storage'
@@ -73,6 +74,11 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
           data: { mpsStatus: 'READY', hlsPath: result.hlsPath, mpsError: null, status: 'READY', processingProgress: 100 },
         })
         logMessage(`[WORKER] Tencent MPS HLS ready for video ${videoId}: ${result.hlsPath}`)
+        void emitVideoReadyInAppNotification(videoId)
+          .then((emitResult) => logInAppEmitResult('video ready', emitResult))
+          .catch((emitError) => {
+            logError('[WORKER] Failed to emit in-app video-ready notification', emitError)
+          })
 
         // A prefetch rejection says nothing about the transcode, so it is contained
         // here rather than allowed to reach the catch below — that would mark the

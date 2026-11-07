@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
@@ -44,6 +44,11 @@ interface CommentInputProps {
   onCancelReply: () => void
   focusRequest?: number
 
+  /** Project viewers that can be @-mentioned. Studio side only. */
+  mentionCandidates?: Array<{ id: string; name: string; avatarUrl?: string | null }>
+  mentionedUserIds?: string[]
+  onMentionedUserIdsChange?: (ids: string[]) => void
+
   // Restrictions
   currentVideoRestricted: boolean
   restrictionMessage?: string
@@ -71,6 +76,14 @@ interface CommentInputProps {
   onShowShortcuts?: () => void
 }
 
+function findMentionToken(value: string, cursor: number): { start: number; query: string } | null {
+  const before = value.slice(0, cursor)
+  const match = before.match(/(^|\s)@([^\s@]*)$/)
+  if (!match) return null
+  const query = match[2] ?? ''
+  return { start: cursor - query.length - 1, query }
+}
+
 export default function CommentInput({
   newComment,
   onCommentChange,
@@ -88,6 +101,9 @@ export default function CommentInput({
   replyingToComment,
   onCancelReply,
   focusRequest,
+  mentionCandidates = [],
+  mentionedUserIds = [],
+  onMentionedUserIdsChange,
   currentVideoRestricted,
   restrictionMessage,
   commentsDisabled,
@@ -113,6 +129,9 @@ export default function CommentInput({
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [visOpen, setVisOpen] = useState(false)
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionIndex, setMentionIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const emojiBtnRef = useRef<HTMLButtonElement | null>(null)
   const visBtnRef = useRef<HTMLButtonElement | null>(null)
@@ -137,6 +156,71 @@ export default function CommentInput({
     const end = el.value.length
     el.setSelectionRange(end, end)
   }, [focusRequest])
+
+  const mentionNameById = useMemo(
+    () => new Map(mentionCandidates.map((candidate) => [candidate.id, candidate.name])),
+    [mentionCandidates],
+  )
+
+  const filteredMentionCandidates = useMemo(() => {
+    if (!mentionOpen) return []
+    const query = mentionQuery.trim().toLowerCase()
+    return mentionCandidates
+      .filter((candidate) => !query || candidate.name.toLowerCase().includes(query))
+      .slice(0, 8)
+  }, [mentionCandidates, mentionOpen, mentionQuery])
+
+  useEffect(() => {
+    if (!newComment) {
+      setMentionOpen(false)
+      setMentionQuery('')
+    }
+  }, [newComment])
+
+  function handleCommentChangeWithMentions(value: string, cursor: number) {
+    onCommentChange(value)
+    const token = findMentionToken(value, cursor)
+    if (token && mentionCandidates.length > 0) {
+      setMentionQuery(token.query)
+      setMentionOpen(true)
+      setMentionIndex(0)
+    } else {
+      setMentionOpen(false)
+      setMentionQuery('')
+    }
+
+    if (onMentionedUserIdsChange && mentionedUserIds.length > 0) {
+      const kept = mentionedUserIds.filter((id) => {
+        const name = mentionNameById.get(id)
+        return name ? value.includes(`@${name}`) : false
+      })
+      if (kept.length !== mentionedUserIds.length) {
+        onMentionedUserIdsChange(kept)
+      }
+    }
+  }
+
+  function selectMention(candidate: { id: string; name: string }) {
+    const el = textareaRef.current
+    const cursor = el?.selectionStart ?? newComment.length
+    const token = findMentionToken(newComment, cursor)
+    const insertion = `@${candidate.name} `
+    const next = token
+      ? newComment.slice(0, token.start) + insertion + newComment.slice(cursor)
+      : `${newComment}${insertion}`
+
+    onCommentChange(next)
+    if (onMentionedUserIdsChange && !mentionedUserIds.includes(candidate.id)) {
+      onMentionedUserIdsChange([...mentionedUserIds, candidate.id])
+    }
+    setMentionOpen(false)
+    setMentionQuery('')
+    requestAnimationFrame(() => {
+      el?.focus()
+      const position = (token?.start ?? newComment.length) + insertion.length
+      el?.setSelectionRange(position, position)
+    })
+  }
 
   function insertEmoji(emoji: string) {
     const el = textareaRef.current
@@ -242,6 +326,36 @@ export default function CommentInput({
       return
     }
 
+    if (mentionOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (filteredMentionCandidates.length > 0) {
+          setMentionIndex((index) => (index + 1) % filteredMentionCandidates.length)
+        }
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (filteredMentionCandidates.length > 0) {
+          setMentionIndex((index) => (index - 1 + filteredMentionCandidates.length) % filteredMentionCandidates.length)
+        }
+        return
+      }
+      if (e.key === 'Enter') {
+        if (filteredMentionCandidates.length > 0) {
+          e.preventDefault()
+          selectMention(filteredMentionCandidates[mentionIndex] || filteredMentionCandidates[0])
+          return
+        }
+        setMentionOpen(false)
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMentionOpen(false)
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       // Prevent multiple submissions while loading
@@ -321,8 +435,11 @@ export default function CommentInput({
                 ref={textareaRef}
                 aria-label={t('typeMessage')}
                 value={newComment}
-                onChange={(e) => onCommentChange(e.target.value)}
+                onChange={(e) => handleCommentChangeWithMentions(e.target.value, e.target.selectionStart ?? e.target.value.length)}
                 onKeyDown={handleKeyDown}
+                aria-autocomplete="list"
+                aria-expanded={mentionOpen}
+                aria-haspopup="listbox"
                 className={cn(
                   'h-[75px] min-h-[75px] resize-none rounded-md text-sm',
                   // 内嵌工具栏压在输入框底部：留白要盖过它，否则长文本最后一行会被图标挡住。
@@ -330,6 +447,36 @@ export default function CommentInput({
                 )}
                 rows={2}
               />
+              {mentionOpen && (
+                <div
+                  role="listbox"
+                  aria-label="提及成员"
+                  className="absolute bottom-full left-0 z-30 mb-1 w-64 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg"
+                >
+                  <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground">提及成员</p>
+                  {filteredMentionCandidates.length === 0 ? (
+                    <p className="px-2 py-2 text-xs text-muted-foreground">没有匹配的成员</p>
+                  ) : filteredMentionCandidates.map((candidate, index) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      role="option"
+                      aria-selected={index === mentionIndex}
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                        selectMention(candidate)
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+                        index === mentionIndex ? 'bg-accent text-foreground' : 'text-foreground hover:bg-accent',
+                      )}
+                    >
+                      <InitialsAvatar name={candidate.name} size="sm" />
+                      <span className="truncate">{candidate.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               {newComment.length === 0 && (
                 <span aria-hidden="true" className="comment-placeholder-shimmer pointer-events-none absolute left-3 top-2 select-none text-sm">
                   {t('typeMessage')}

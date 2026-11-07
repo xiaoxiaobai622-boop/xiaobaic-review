@@ -151,6 +151,17 @@ export async function sanitizeAndValidateContent(params: {
  * Sends notifications immediately or queues them based on schedule
  * Also tracks pending notifications in Redis for cancellation support
  */
+/**
+ * Client-facing channels must stay closed for an internal-visibility comment and
+ * for any reply inside an internal thread (the digest can include parent text).
+ */
+export function isCommentVisibleToClients(
+  comment: { visibility?: string | null },
+  parent?: { visibility?: string | null } | null,
+): boolean {
+  return comment.visibility !== 'INTERNAL' && parent?.visibility !== 'INTERNAL'
+}
+
 export async function handleCommentNotifications(params: {
   comment: any
   projectId: string
@@ -163,6 +174,24 @@ export async function handleCommentNotifications(params: {
   try {
     const isAdminComment = comment.isInternal
 
+    // INTERNAL notes are team-only. The in-app feed notifies the team; the
+    // email/Apprise paths must never carry them to a client address.
+    if (comment.visibility === 'INTERNAL') {
+      logMessage('[COMMENT-NOTIFICATION] INTERNAL visibility — in-app only, email/external skipped')
+      return
+    }
+
+    // A PUBLIC reply under an INTERNAL thread is still team-only for clients:
+    // the parent's text can appear in the digest, so treat the whole thread as
+    // client-invisible.
+    const parent = parentId
+      ? await prisma.comment.findUnique({
+          where: { id: parentId },
+          select: { visibility: true },
+        })
+      : null
+    const clientVisible = isCommentVisibleToClients(comment, parent)
+
     // Get project info (used by both email and external notifications)
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -170,6 +199,7 @@ export async function handleCommentNotifications(params: {
         id: true,
         title: true,
         slug: true,
+        teamId: true,
         clientNotificationSchedule: true,
       }
     })
@@ -189,8 +219,10 @@ export async function handleCommentNotifications(params: {
 
     logMessage('[COMMENT-NOTIFICATION] Video:', video?.name || 'None')
 
-    // External notifications (Apprise) - client comments only
-    if (!isAdminComment) {
+    // External notifications (Apprise + Web Push) - client comments only.
+    // A PUBLIC reply under an INTERNAL parent is still client-invisible; it
+    // must not leak through the external channels either.
+    if (!isAdminComment && clientVisible) {
       const appDomain = await getAppDomain()
       const adminShareUrl = (() => {
         if (!appDomain) return ''
@@ -223,6 +255,8 @@ export async function handleCommentNotifications(params: {
 
       await enqueueExternalNotification({
         eventType: 'CLIENT_COMMENT',
+        teamId: project.teamId,
+        projectId: project.id,
         title: `New Comment on ${project.title}`,
         body: [
           `From: ${clientDisplay}`,
@@ -287,22 +321,25 @@ export async function handleCommentNotifications(params: {
     const clientImmediate = clientSchedule === 'IMMEDIATE'
     const adminImmediate = adminSchedule === 'IMMEDIATE'
 
-    if (clientImmediate) {
+    if (clientVisible && clientImmediate) {
       logMessage('[COMMENT-NOTIFICATION] Client path: sending immediately...')
       await sendImmediateNotification(context, 'client')
+    } else if (!clientVisible) {
+      logMessage('[COMMENT-NOTIFICATION] Client path: skipped (internal thread)')
     }
     if (adminImmediate) {
       logMessage('[COMMENT-NOTIFICATION] Admin path: sending immediately...')
       await sendImmediateNotification(context, 'admin')
     }
 
-    // Queue once if either side needs batched delivery.
-    // Pre-mark sides that were already sent immediately so workers don't re-process them.
-    if (!clientImmediate || !adminImmediate) {
+    // Queue once if either side still needs batched delivery. A non-visible
+    // client side is pre-marked as handled so the client worker never sends it.
+    const needQueue = (clientVisible && !clientImmediate) || !adminImmediate
+    if (needQueue) {
       logMessage(`[COMMENT-NOTIFICATION] Queuing for batched delivery (admin: ${adminSchedule}, client: ${clientSchedule})...`)
       await queueNotification(context, {
         admins: adminImmediate,
-        clients: clientImmediate,
+        clients: !clientVisible || clientImmediate,
       })
     }
   } catch (emailError) {

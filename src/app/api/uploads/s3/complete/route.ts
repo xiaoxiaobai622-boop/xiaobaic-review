@@ -242,6 +242,7 @@ export async function POST(request: NextRequest) {
         fileName: dbProjectUpload.originalFileName || dbProjectUpload.fileName,
         uploaderName: dbProjectUpload.uploadedByName,
         uploaderEmail: dbProjectUpload.uploadedByEmail,
+        uploadId: dbProjectUpload.id,
       })
     }
 

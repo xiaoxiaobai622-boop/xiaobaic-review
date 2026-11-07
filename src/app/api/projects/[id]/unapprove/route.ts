@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
 import { logError } from '@/lib/logging'
+import { emitApprovalInAppNotification, logInAppEmitResult } from '@/lib/in-app-notifications/emit'
 
 export const runtime = 'nodejs'
 
@@ -101,6 +102,17 @@ export async function POST(
         approvedAt: null,
         approvedVideoId: null
       }
+    })
+
+    void emitApprovalInAppNotification({
+      projectId,
+      approved: false,
+      isComplete: false,
+      actorUserId: authResult.id,
+      actorName: authResult.name || authResult.email || '团队成员',
+      occurredAt: new Date(),
+    }).then((emitResult) => logInAppEmitResult('project unapproval', emitResult)).catch((emitError) => {
+      logError('[APPROVAL] Failed to emit in-app unapproval notification', emitError)
     })
 
     return NextResponse.json({

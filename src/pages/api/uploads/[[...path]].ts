@@ -385,6 +385,7 @@ async function handleProjectUploadFinish(tusFilePath: string, upload: any, proje
     fileName: projectUpload.originalFileName || projectUpload.fileName,
     uploaderName: projectUpload.uploadedByName,
     uploaderEmail: projectUpload.uploadedByEmail,
+    uploadId: projectUpload.id,
   })
 
   await cleanupTUSMetadata(tusFilePath)

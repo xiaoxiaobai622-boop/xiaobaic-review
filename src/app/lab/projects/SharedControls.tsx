@@ -17,6 +17,12 @@ export default function SharedControls() {
   const [result, setResult] = useState('')
   const [notice, setNotice] = useState(0)
   const [comment, setComment] = useState('这一条批注故意写得很长，用来检查输入框最后一行文字会不会被底部的表情、时间码和发送按钮挡住视线。'.repeat(2))
+  const [mentions, setMentions] = useState<string[]>([])
+  const mentionCandidates = [
+    { id: 'sample-user-1', name: '林一' },
+    { id: 'sample-user-2', name: '周剪' },
+    { id: 'sample-user-3', name: '陈调色' },
+  ]
   return (
     <main data-shared-controls className="min-h-screen bg-background p-6 text-foreground">
       <div className="mx-auto flex max-w-lg flex-col gap-5">
@@ -68,6 +74,9 @@ export default function SharedControls() {
 
             visibility="PUBLIC"
             onVisibilityChange={() => {}}
+            mentionCandidates={mentionCandidates}
+            mentionedUserIds={mentions}
+            onMentionedUserIdsChange={setMentions}
             sendInsideComposer
           />
         </section>
