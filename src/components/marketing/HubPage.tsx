@@ -27,7 +27,7 @@ export async function hubMetadata(group: HubGroup): Promise<Metadata> {
   return {
     // `<title>` 用带品类词的长标题；导航、面包屑、llms.txt 仍用短的 `hub.title`。
     title: hub.seoTitle,
-    description: hub.description,
+    description: hub.metaDescription,
     keywords: [...BRAND.keywords],
     alternates: { canonical: url },
     openGraph: {
@@ -35,7 +35,7 @@ export async function hubMetadata(group: HubGroup): Promise<Metadata> {
       siteName: BRAND.zh,
       locale: 'zh_CN',
       title: hub.seoTitle,
-      description: hub.description,
+      description: hub.metaDescription,
       url,
       images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
     },

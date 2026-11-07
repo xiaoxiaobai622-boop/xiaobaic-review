@@ -1,18 +1,47 @@
 import { LegalDoc } from '@/components/LegalDoc'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 
-// 与 /privacy 同一条修复：在 sitemap 里却没有 canonical。
-export async function generateMetadata() {
+import type { Metadata } from 'next'
+import { JsonLd } from '@/components/marketing/JsonLd'
+
+const TITLE = '用户服务协议：账号、内容与服务责任 | 逐帧审阅'
+const DESCRIPTION = '逐帧审阅用户服务协议：账号注册与登录、上传内容的权利与责任、审片链接使用规则及服务变更说明。'
+
+export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
+  const url = `${site}/terms`
   return {
-    title: '用户服务协议',
-    description: '逐帧审阅用户服务协议：账号注册与登录、上传内容的权利与责任、审片链接使用规则及服务变更说明。',
-    alternates: { canonical: `${site}/terms` },
+    metadataBase: new URL(site),
+    title: { absolute: TITLE },
+    description: DESCRIPTION,
+    alternates: { canonical: url },
+    openGraph: {
+      title: TITLE,
+      description: DESCRIPTION,
+      url,
+      type: 'website',
+      locale: 'zh_CN',
+      siteName: '逐帧审阅',
+      images: [{ url: `${site}/og/brand-1200x630.png`, width: 1200, height: 630, alt: '逐帧审阅' }],
+    },
   }
 }
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  const site = await getSiteUrlFromRequest()
+  const url = `${site}/terms`
   return (
+    <>
+      <JsonLd value={{
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        '@id': `${url}#webpage`,
+        url,
+        name: TITLE,
+        description: DESCRIPTION,
+        inLanguage: 'zh-CN',
+        isPartOf: { '@type': 'WebSite', '@id': `${site}/#website`, url: site, name: '逐帧审阅' },
+      }} />
     <LegalDoc
       title="用户服务协议"
       updatedAt="2026年10月4日"
@@ -78,5 +107,6 @@ export default function TermsPage() {
         },
       ]}
     />
+    </>
   )
 }

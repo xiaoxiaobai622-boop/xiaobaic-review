@@ -5,20 +5,28 @@ import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { JsonLd } from '@/components/marketing/JsonLd'
 import MarketingCta from '@/components/marketing/MarketingCta'
 
+const DESCRIPTION = '逐帧审阅成长计划内测已于 2026 年 10 月 1 日开始，当前提供 10 GB 存储空间和最多 5 个团队席位。额度不足时，可通过工作区帮助面板联系客服申请支持。'
+const UPDATED_ON = '2026-11-07'
+const FAQ = [
+  { q: '成长计划内测什么时候开始？', a: '内测已于 2026 年 10 月 1 日正式开始。' },
+  { q: '当前内测提供多少空间和团队席位？', a: '当前内测提供 10 GB 存储空间和最多 5 个团队席位。' },
+  { q: '存储空间或团队席位不够怎么办？', a: '通过工作区左侧窄栏底部的帮助按钮，在面板里选择联系客服。我们会根据实际使用需求，适当提供更大的存储额度或更多席位。' },
+]
+
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
   const url = `${site}/news/beta`
   return {
     title: '逐帧审阅成长计划内测公告',
-    description: '逐帧审阅成长计划内测已于 2026 年 10 月 1 日正式开始。',
+    description: DESCRIPTION,
     alternates: { canonical: url },
     openGraph: {
       type: 'article',
       title: '逐帧审阅成长计划内测公告',
-      description: '逐帧审阅成长计划内测已于 2026 年 10 月 1 日正式开始。',
+      description: DESCRIPTION,
       url,
       publishedTime: '2026-10-20',
-      modifiedTime: '2026-10-20',
+      modifiedTime: UPDATED_ON,
       images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
     },
     robots: { index: true, follow: true },
@@ -45,7 +53,7 @@ export default async function BetaAnnouncementPage() {
           </h1>
 
           <p className="mt-5 max-w-2xl text-base leading-8 text-[#3f4550] sm:text-[17px]">
-            逐帧审阅成长计划内测已于 2026 年 10 月 1 日正式开始。感谢每一位参与和支持逐帧审阅的用户，欢迎你和我们一起把产品做得更好。
+            {DESCRIPTION} 感谢每一位参与和支持逐帧审阅的用户，欢迎你和我们一起把产品做得更好。
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-[#6f7580]">
@@ -84,6 +92,14 @@ export default async function BetaAnnouncementPage() {
             </p>
           </section>
 
+          <section aria-labelledby="beta-faq">
+            <h2 id="beta-faq" className="text-lg font-semibold text-[#171a20]">常见问题</h2>
+            <dl className="mt-4 space-y-4">
+              {FAQ.map(({ q, a }) => <div key={q}><dt className="font-medium">{q}</dt><dd className="mt-1">{a}</dd></div>)}
+            </dl>
+          </section>
+          <p className="text-sm text-[#6f7580]">公告核稿于 <time dateTime={UPDATED_ON}>{UPDATED_ON}</time>；上方保留原发布日期。</p>
+
           <p className="border-t border-[#eef0f3] pt-6">
             感谢每一位参与和支持逐帧审阅的用户。<br />
             <strong className="font-semibold text-[#171a20]">逐帧审阅，与每一帧共同进步。</strong>
@@ -104,14 +120,30 @@ export default async function BetaAnnouncementPage() {
             '@id': `${url}#article`,
             headline: '欢迎加入逐帧审阅成长计划内测',
             name: '逐帧审阅成长计划内测公告',
-            description: '逐帧审阅成长计划内测已于 2026 年 10 月 1 日正式开始。',
+            description: DESCRIPTION,
             inLanguage: 'zh-CN',
             datePublished: '2026-10-20',
-            dateModified: '2026-10-20',
+            dateModified: UPDATED_ON,
             author: { '@id': `${site}/#organization` },
             publisher: { '@id': `${site}/#organization` },
             mainEntityOfPage: { '@type': 'WebPage', '@id': url },
             url,
+          }}
+        />
+        <JsonLd value={{
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          '@id': `${url}#faq`,
+          mainEntity: FAQ.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+        }} />
+        <JsonLd
+          value={{
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: BRAND.zh, item: site },
+              { '@type': 'ListItem', position: 2, name: '内测公告', item: url },
+            ],
           }}
         />
       </div>

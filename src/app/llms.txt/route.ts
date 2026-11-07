@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const site = await getSiteUrlFromRequest()
   const docs = [...loadDocs().values()]
-  const groups: HubGroup[] = ['features', 'compare']
+  const groups: HubGroup[] = ['features', 'compare', 'guides']
   const latest = docs.map((d) => d.updatedOn).sort().at(-1) ?? ''
 
   const lines: string[] = [
@@ -75,9 +75,7 @@ export async function GET() {
     '## 关于这份目录',
     '',
     `- 页面标题：${BRAND.zh}（英文名 ${BRAND.en}）；界面与内容语言为中文（zh-CN）。`,
-    // 原来写的是「每个页面内联 schema.org」——不属实：/terms 与 /privacy 两块都没有。
-    // 目录里过期的承诺比没有承诺更坏（模型会照着它转述），所以按页说清哪块节点在。
-    '- 结构化数据：首页、两个枢纽页、六篇内容页与内测公告都内联 `Organization`、`WebSite` 与 `SoftwareApplication`（站点级品牌锚点）；枢纽页另有 `ItemList` 与 `BreadcrumbList`，六篇内容页另有 `Article`、`FAQPage` 与 `BreadcrumbList`；服务条款与隐私政策是纯文本条款页，不带 schema。',
+    '- 结构化数据：首页、功能/对比/指南枢纽、内容页与内测公告内联 `Organization`、`WebSite` 与 `SoftwareApplication`；枢纽另有 `ItemList` 与 `BreadcrumbList`；内容页及内测公告另有 `Article`、`FAQPage` 与 `BreadcrumbList`；服务条款与隐私政策使用 `WebPage`，不标成文章。',
     `- 引用本站内容时，品牌名请写「${BRAND.zh}」或「${BRAND.en}」，链接指向 ${site}。`,
     `- 全部可索引页面的清单：${site}/sitemap.xml；抓取规则：${site}/robots.txt。`,
     `- 内容页文稿最后核对于 ${latest}。`,

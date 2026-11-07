@@ -399,6 +399,7 @@ export default function HomeClient() {
                 <button className={styles.navBtn} type="button" aria-haspopup="true" aria-expanded={openNav === 'compare'} aria-controls="home-drop-compare" onClick={navToggle('compare')}>怎么选 <ChevronDown size={13} strokeWidth={2} /></button>
                 <div className={styles.navDrop} id="home-drop-compare">
                   <Link href="/compare">对比总览</Link>
+                  <Link href="/guides">审片选型指南</Link>
                   <Link href="/compare/frame-io">对比 Frame.io</Link>
                   <Link href="/compare/fenzhen">对比分秒帧</Link>
                   <Link href="/compare/netdisk-wechat">对比网盘加微信</Link>
@@ -427,7 +428,7 @@ export default function HomeClient() {
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
             <span className={styles.betaBadge}><i aria-hidden="true" />内测中 · 免费开放</span>
-            <h1>让每一条意见，<br />都落在画面上。</h1>
+            <h1>逐帧审阅，<br />让意见落在画面上。</h1>
             <p>
               逐帧审阅是面向影视团队的在线审片平台：上传素材、逐帧批注、管理版本、安全交付，
               全部在同一条时间轴上完成。内测期间所有功能免费使用。
@@ -682,6 +683,35 @@ export default function HomeClient() {
                 </ol>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="reading" className={styles.readingSection} aria-labelledby="reading-heading">
+        <div className={styles.readingInner}>
+          <h2 id="reading-heading">功能详解与审片指南</h2>
+          <p>先了解具体功能，再按团队流程选工具；客户如何访问、如何交付，都有对应说明。</p>
+          <div className={styles.readingColumns}>
+            <nav aria-label="功能详解">
+              <h3>把一轮审片走完整</h3>
+              <ul>
+                <li><Link href="/features/frame-comments">逐帧批注与时间码意见</Link></li>
+                <li><Link href="/features/versions">视频版本对比与定稿记录</Link></li>
+                <li><Link href="/features/share-link">审片链接与视频交付权限</Link></li>
+                <li><Link href="/features/review-workflow">视频团队协作的完整流程</Link></li>
+              </ul>
+            </nav>
+            <nav aria-label="审片指南与工具对比">
+              <h3>按场景选工具</h3>
+              <ul>
+                <li><Link href="/guides/online-video-review-tools">在线审片工具：官方能力对照</Link></li>
+                <li><Link href="/guides/video-review-software">视频审片软件：团队选型与试用清单</Link></li>
+                <li><Link href="/guides/client-no-signup-review">客户免注册审片：入口与权限边界</Link></li>
+                <li><Link href="/compare/frame-io">Frame.io 与逐帧审阅的适用场景</Link></li>
+                <li><Link href="/compare/fenzhen">分秒帧与逐帧审阅的差异说明</Link></li>
+                <li><Link href="/compare/netdisk-wechat">网盘微信审片的流程问题</Link></li>
+              </ul>
+            </nav>
           </div>
         </div>
       </section>

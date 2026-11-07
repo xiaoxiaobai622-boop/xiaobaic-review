@@ -1,17 +1,19 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
+export type MarketingGroup = 'compare' | 'features' | 'guides'
 export type Section = { heading: string; html: string }
 export type MarketingDoc = {
-  slug: string; group: 'compare' | 'features'; title: string; description: string
+  slug: string; group: MarketingGroup; title: string; description: string
   /** 只进 `<title>` / og:title 的长标题（带品类词）；缺省回落到 `title`。导航、相关链接、llms.txt 仍用短 `title`。 */
   seoTitle: string
   h1: string; updatedOn: string; sections: Section[]; cta: { href: string; label: string }
+  illustration?: { src: string; alt: string; caption: string; width: number; height: number }
   related: string[]; faq: { q: string; a: string }[]; bodyHtml: string
 }
 
 const DIR = join(process.cwd(), 'content', 'marketing')
-const GROUPS = new Set(['compare', 'features'])
+const GROUPS = new Set< string>(['compare', 'features', 'guides'])
 let cache: Map<string, MarketingDoc> | null = null
 
 /* ------------------------------------------------------------------ 前言与校验 */
@@ -70,8 +72,8 @@ function validate(meta: Record<string, unknown>, file: string): MarketingDoc {
   if (!isAllowedHref(cta.href)) throw new Error(`${file} cta.href 形态不合法（只允许站内根相对路径或 http(s)）：${cta.href}`)
   const related = Array.isArray(meta.related) ? (meta.related as unknown[]) : []
   for (const r of related) {
-    if (typeof r !== 'string' || !/^(?:compare|features)\//.test(r)) {
-      throw new Error(`${file} related 必须是 compare/... 或 features/... 前缀，实际 ${String(r)}`)
+    if (typeof r !== 'string' || !/^(?:compare|features|guides)\//.test(r)) {
+      throw new Error(`${file} related 必须是 compare/...、features/... 或 guides/... 前缀，实际 ${String(r)}`)
     }
   }
   const faq = meta.faq
@@ -86,10 +88,23 @@ function validate(meta: Record<string, unknown>, file: string): MarketingDoc {
   if (seoTitle !== undefined && (typeof seoTitle !== 'string' || !seoTitle.trim())) {
     throw new Error(`${file} seoTitle 若写就必须是非空字符串`)
   }
+  const updatedOn = req('updatedOn')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(updatedOn) || !Number.isFinite(Date.parse(updatedOn)) || new Date(updatedOn).toISOString().slice(0, 10) !== updatedOn) {
+    throw new Error(`${file} updatedOn 必须是真实的 YYYY-MM-DD 日期`)
+  }
+  const illustration = meta.illustration as MarketingDoc['illustration']
+  if (illustration && (
+    typeof illustration.src !== 'string' || !/^\/home\/[a-z0-9-]+\.png$/.test(illustration.src)
+    || typeof illustration.alt !== 'string' || !illustration.alt.trim()
+    || typeof illustration.caption !== 'string' || !illustration.caption.trim()
+    || !Number.isInteger(illustration.width) || illustration.width <= 0
+    || !Number.isInteger(illustration.height) || illustration.height <= 0
+  )) throw new Error(`${file} illustration 必须使用本地产品截图及真实尺寸、说明`)
   return {
+    illustration,
     group: group as MarketingDoc['group'], slug, title: req('title'),
     seoTitle: typeof seoTitle === 'string' ? seoTitle : req('title'),
-    description: req('description'), h1: req('h1'), updatedOn: req('updatedOn'),
+    description: req('description'), h1: req('h1'), updatedOn,
     sections: [], cta: { href: cta.href, label: cta.label },
     related: related as string[], faq: faq as { q: string; a: string }[], bodyHtml: '',
   }
@@ -269,6 +284,11 @@ export function loadDocs(): Map<string, MarketingDoc> {
   for (const file of readdirSync(DIR).filter((f) => f.endsWith('.md')).sort()) {
     const doc = parseDoc(file)
     map.set(`${doc.group}/${doc.slug}`, doc)
+  }
+  for (const [key, doc] of map) {
+    for (const related of doc.related) {
+      if (!map.has(related) || related === key) throw new Error(`${key} related 不存在或指向自身：${related}`)
+    }
   }
   cache = map
   return map

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { escapeHtml, getDoc, loadDocs, type MarketingDoc } from '@/lib/marketing/content'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
@@ -33,9 +34,7 @@ export async function docMetadata(group: string, slug: string): Promise<Metadata
       title: doc.seoTitle,
       description: doc.description,
       url,
-      publishedTime: doc.updatedOn,
-      // 同一个日期填两个槽：抓取器（含大模型的回答引擎）看的是 `modified_time`，只给
-      // `published_time` 会被读成"这篇写完就没动过"。
+      // 文稿只有核稿日期，不把最近修订日期冒充首次发布日期。
       modifiedTime: doc.updatedOn,
       // `resolve-metadata.js` 的 `case 'openGraph'` 是整体替换，不是深合并：这一页一旦带
       // openGraph，layout 那份（含 images）就整块被顶掉，og:image 会直接消失。所以 images
@@ -62,7 +61,7 @@ export async function DocPage({
   group,
   params,
 }: {
-  group: 'compare' | 'features'
+  group: MarketingDoc['group']
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
@@ -84,6 +83,21 @@ export async function DocPage({
         className="text-3xl font-bold leading-snug text-[#171a20] sm:text-4xl"
         dangerouslySetInnerHTML={{ __html: escapeHtml(doc.h1) }}
       />
+
+      {doc.illustration && (
+        <figure className="mt-8">
+          <Image
+            src={doc.illustration.src}
+            alt={doc.illustration.alt}
+            width={doc.illustration.width}
+            height={doc.illustration.height}
+            sizes="(max-width: 768px) 100vw, 728px"
+            quality={90}
+            className="h-auto w-full rounded-lg border border-[#dfe2e7]"
+          />
+          <figcaption className="mt-2 text-sm leading-6 text-[#6f7580]">{doc.illustration.caption}</figcaption>
+        </figure>
+      )}
 
       <div className={`mt-8 ${PROSE}`}>
         <MarkdownBody html={doc.bodyHtml} />
@@ -121,7 +135,7 @@ export async function DocPage({
       )}
 
       {/* 作者/发布方按 `@id` 指回 `BrandLd` 那个节点，不再各页复制一份组织信息。
-          `datePublished` 与 `dateModified` 同值：文稿只有"最后核对于"这一个日期，没有独立的上线日，
+          文稿只有"最后核对于"这一个日期，所以只写 dateModified；
           编一个发布日就是给模型喂假数据。 */}
       <JsonLd
         value={{
@@ -132,7 +146,6 @@ export async function DocPage({
           name: doc.title,
           description: doc.description,
           inLanguage: 'zh-CN',
-          datePublished: doc.updatedOn,
           dateModified: doc.updatedOn,
           author: { '@id': `${site}/#organization` },
           publisher: { '@id': `${site}/#organization` },

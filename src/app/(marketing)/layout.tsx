@@ -36,11 +36,12 @@ export default function MarketingLayout({ children }: Readonly<{ children: React
     <div className="flex min-h-dvh flex-col bg-[#f4f5f7] text-[#171a20]">
       <BrandLd />
       <header className="border-b border-[#dfe2e7] bg-white">
-        <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-5">
+        <div className="mx-auto flex min-h-16 w-full max-w-3xl flex-wrap items-center justify-between gap-x-5 gap-y-3 px-5 py-4">
           <Link href="/" className="font-semibold text-[15px]">{BRAND.zh}</Link>
-          <nav className="flex items-center gap-4 text-sm text-[#6f7580]">
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[#6f7580]">
             <Link href="/features" className="hover:text-[#171a20]">功能</Link>
             <Link href="/compare" className="hover:text-[#171a20]">对比</Link>
+            <Link href="/guides" className="hover:text-[#171a20]">指南</Link>
             <Link href="/news/beta" className="hover:text-[#171a20]">内测公告</Link>
             <Link href="/" className="hover:text-[#171a20]">返回首页</Link>
           </nav>

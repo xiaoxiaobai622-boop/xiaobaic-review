@@ -12,15 +12,16 @@ import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = await getSiteUrlFromRequest()
-  const now = new Date()
+  // 固定核稿日；不得把每次请求/构建时间冒充内容更新。
+  const reviewedOn = '2026-11-07'
 
   // 首页这条**不带尾斜杠**：Next 渲染根路径 canonical 时会把 `https://vidx.cn/` 归一成
   // `https://vidx.cn`（10-09 线上实测），两边不一致就等于给同一个页面两个地址。
-  const statics: MetadataRoute.Sitemap = [site, `${site}/features`, `${site}/compare`, `${site}/privacy`, `${site}/terms`].map(
-    (url) => ({ url, lastModified: now }),
+  const statics: MetadataRoute.Sitemap = [site, `${site}/features`, `${site}/compare`, `${site}/guides`, `${site}/privacy`, `${site}/terms`].map(
+    (url) => ({ url, lastModified: reviewedOn }),
   )
 
-  // 文稿带 frontmatter 的 `updatedOn`，比"现在"诚实；其余条目没有维护日期，只能用生成时间。
+  // 文稿使用 frontmatter 的真实核稿日期。
   const docs: MetadataRoute.Sitemap = [...loadDocs().values()].map((d) => ({
     url: `${site}/${d.group}/${d.slug}`,
     lastModified: new Date(d.updatedOn),
@@ -28,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // 内测公告：营销导航与审片页横幅都链向它、页面自带 index + canonical，此前却漏在 sitemap 外。
   // 日期与页内 `<time>` / `article:modified_time` 同值（`news/beta/page.tsx`）。
-  const news: MetadataRoute.Sitemap = [{ url: `${site}/news/beta`, lastModified: new Date('2026-10-20') }]
+  const news: MetadataRoute.Sitemap = [{ url: `${site}/news/beta`, lastModified: new Date('2026-11-07') }]
 
   return [...statics, ...docs, ...news]
 }

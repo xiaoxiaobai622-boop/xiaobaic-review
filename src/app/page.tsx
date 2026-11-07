@@ -16,16 +16,17 @@ export async function generateMetadata(): Promise<Metadata> {
     // 根 layout 没有 metadataBase（那里取基址一抛就是全站 500），所以相对路径的分享图
     // 必须在这一段自己带上基座——10-08 线上实测首页 og:image 曾渲染成 http://localhost:4321/…
     metadataBase: new URL(site),
+    title: { absolute: '逐帧审阅：在线审片与视频批注协作平台' },
     description: BRAND.homeDescription,
     keywords: [...BRAND.keywords],
-    alternates: { canonical: `${site}/` },
+    alternates: { canonical: site },
     openGraph: {
       type: 'website',
       siteName: BRAND.zh,
       locale: 'zh_CN',
-      title: BRAND.tabTitle,
+      title: '逐帧审阅：在线审片与视频批注协作平台',
       description: BRAND.homeDescription,
-      url: `${site}/`,
+      url: site,
       // 与 `(marketing)/layout.tsx` 同一张图；换成 1200×630 的分享卡片图要另做一张素材。
       images: [{ url: '/og/brand-1200x630.png', width: 1200, height: 630, alt: BRAND.zh }],
     },

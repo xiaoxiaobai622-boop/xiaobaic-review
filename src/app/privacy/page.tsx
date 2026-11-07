@@ -1,19 +1,47 @@
 import { LegalDoc } from '@/components/LegalDoc'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 
-// 这两页在 sitemap.xml 里，却没有 canonical（10-17 实测：sitemap 11 条里独缺这两条）。
-// 绝对前缀与全站其它页同源，都走 getSiteUrlFromRequest()，不写字面域名。
-export async function generateMetadata() {
+import type { Metadata } from 'next'
+import { JsonLd } from '@/components/marketing/JsonLd'
+
+const TITLE = '隐私政策：个人信息收集、使用与保护 | 逐帧审阅'
+const DESCRIPTION = '逐帧审阅隐私政策：说明在线审片平台收集哪些个人信息、用于什么目的、保存多久，以及您如何查询、更正和删除。'
+
+export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
+  const url = `${site}/privacy`
   return {
-    title: '隐私政策',
-    description: '逐帧审阅隐私政策：说明在线审片平台收集哪些个人信息、用于什么目的、保存多久，以及您如何查询、更正和删除。',
-    alternates: { canonical: `${site}/privacy` },
+    metadataBase: new URL(site),
+    title: { absolute: TITLE },
+    description: DESCRIPTION,
+    alternates: { canonical: url },
+    openGraph: {
+      title: TITLE,
+      description: DESCRIPTION,
+      url,
+      type: 'website',
+      locale: 'zh_CN',
+      siteName: '逐帧审阅',
+      images: [{ url: `${site}/og/brand-1200x630.png`, width: 1200, height: 630, alt: '逐帧审阅' }],
+    },
   }
 }
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const site = await getSiteUrlFromRequest()
+  const url = `${site}/privacy`
   return (
+    <>
+      <JsonLd value={{
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        '@id': `${url}#webpage`,
+        url,
+        name: TITLE,
+        description: DESCRIPTION,
+        inLanguage: 'zh-CN',
+        isPartOf: { '@type': 'WebSite', '@id': `${site}/#website`, url: site, name: '逐帧审阅' },
+      }} />
     <LegalDoc
       title="隐私政策"
       updatedAt="2026年10月4日"
@@ -87,5 +115,6 @@ export default function PrivacyPage() {
         },
       ]}
     />
+    </>
   )
 }
