@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import Link from 'next/link'
 import AdminVideoManager from '@/components/AdminVideoManager'
 import OverlayMenu from '@/components/OverlayMenu'
+import { useSubmenuClamp } from '@/hooks/useSubmenuClamp'
 import ProjectActions from '@/components/ProjectActions'
 import ProjectMembersButton from '@/components/ProjectMembersButton'
 import PanelToggleButton from '@/components/PanelToggleButton'
@@ -433,11 +434,13 @@ export default function ProjectPage() {
   const closeOverlay = () => setOverlay(null)
   const [projectFolders, setProjectFolders] = useState<Array<{ id: string; name: string; createdAt?: string; _count?: { videos: number } }>>([])
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
-  const [folderMenu, setFolderMenu] = useState<{ id: string; left: number; top: number } | null>(null)
+  const [folderMenu, setFolderMenu] = useState<{ id: string } | null>(null)
   const [folderMenuOpen, setFolderMenuOpen] = useState(false)
   const [folderShareMenuId, setFolderShareMenuId] = useState<string | null>(null)
   const folderMenuRef = useRef<HTMLDivElement | null>(null)
   const folderMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const folderShareSubmenuRef = useRef<HTMLDivElement | null>(null)
+  useSubmenuClamp(folderShareSubmenuRef, folderShareMenuId !== null, 'right')
 
   const closeFolderMenu = (restoreFocus = true) => {
     setFolderMenuOpen(false)
@@ -1658,8 +1661,8 @@ export default function ProjectPage() {
               open={contextMenuOpen}
               onOpenChange={(open) => { if (!open) setContextMenuOpen(false) }}
               label={t('projectActions')}
-              left={contextMenu ? Math.min(contextMenu.x, window.innerWidth - 220) : 0}
-              top={contextMenu ? Math.min(contextMenu.y, window.innerHeight - 260) : 0}
+              anchorPoint={contextMenu}
+              placement={{ align: 'start', side: 'bottom', gap: 0 }}
               menuRef={contextMenuRef}
               onKeyDown={handleContextMenuKeyDown}
               returnFocusRef={workspaceRef}
@@ -1805,15 +1808,8 @@ export default function ProjectPage() {
                         <button type="button" className="absolute bottom-2.5 right-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="文件夹操作" title="文件夹操作" aria-haspopup="menu" aria-expanded={folderMenu?.id === folder.id} onClick={(event) => {
                           event.stopPropagation()
                           folderMenuTriggerRef.current = event.currentTarget
-                          const rect = event.currentTarget.getBoundingClientRect()
-                          const menuWidth = 208
-                          const menuHeight = 294
-                          const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))
-                          const top = rect.bottom + menuHeight <= window.innerHeight - 8
-                            ? rect.bottom + 6
-                            : Math.max(8, rect.top - menuHeight - 6)
                           setFolderShareMenuId(null)
-                          setFolderMenu((current) => current?.id === folder.id ? current : { id: folder.id, left, top })
+                          setFolderMenu((current) => current?.id === folder.id ? current : { id: folder.id })
                           setFolderMenuOpen((current) => !(current && folderMenu?.id === folder.id))
                         }}>
                           <MoreVertical className="h-4 w-4" />
@@ -1835,8 +1831,7 @@ export default function ProjectPage() {
                     open={folderMenuOpen}
                     onOpenChange={(open) => { if (!open) closeFolderMenu(false) }}
                     label={`${folder.name} 文件夹操作`}
-                    left={folderMenu.left}
-                    top={folderMenu.top}
+                    placement={{ align: 'end', side: 'bottom', gap: 6 }}
                     triggerRef={folderMenuTriggerRef}
                     menuRef={folderMenuRef}
                     onKeyDown={handleFolderMenuKeyDown}
@@ -1851,7 +1846,7 @@ export default function ProjectPage() {
                       <button type="button" role="menuitem" className={menuItemClass} data-submenu-trigger="folder-share" onClick={(event) => { event.stopPropagation(); setFolderShareMenuId(folder.id); focusFolderShareMenu(true) }} aria-haspopup="menu" aria-expanded={folderShareMenuId === folder.id}>
                         <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
                       </button>
-                      {folderShareMenuId === folder.id && <div role="menu" aria-label={`${folder.name} 分享类型`} data-submenu-panel="folder-share" className="absolute left-full top-0 z-[100] -ml-px w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150">
+                      {folderShareMenuId === folder.id && <div ref={folderShareSubmenuRef} role="menu" aria-label={`${folder.name} 分享类型`} data-submenu-panel="folder-share" className="absolute left-full top-0 z-[100] -ml-px w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150">
                         <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('REVIEW', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><MessageSquare className="h-4 w-4" />审阅分享</button>
                         <button type="button" role="menuitem" className={menuItemClass} onClick={() => openObjectShare('DELIVERY', { scopeType: 'FOLDER', scopeId: folder.id, name: folder.name })}><PackageCheck className="h-4 w-4" />交付分享</button>
                       </div>}

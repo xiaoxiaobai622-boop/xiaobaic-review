@@ -1,18 +1,26 @@
 'use client'
 
-import { ReactNode, RefObject, useEffect, useRef } from 'react'
+import { ReactNode, RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import motion from '@/components/ui/surface-motion.module.css'
 import { cn } from '@/lib/utils'
+import { useAnchoredPosition } from '@/hooks/useAnchoredPosition'
+import type { AnchoredPlacement } from '@/lib/anchored-position'
 
 interface OverlayMenuProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   label: string
-  left: number
-  top: number
+  /** Desired top-left; only used when no anchor is supplied. */
+  left?: number
+  top?: number
   width?: number
   side?: 'top' | 'bottom'
+  /** Geometry anchor. Defaults to triggerRef when present. */
+  anchorRef?: RefObject<HTMLElement | null>
+  /** Pointer anchor for context menus. */
+  anchorPoint?: { x: number; y: number } | null
+  placement?: AnchoredPlacement
   triggerRef?: RefObject<HTMLElement | null>
   returnFocusRef?: RefObject<HTMLElement | null>
   menuRef?: RefObject<HTMLDivElement | null>
@@ -29,12 +37,37 @@ interface OverlayMenuProps {
  */
 export default function OverlayMenu({
   open, onOpenChange, label, left, top, width = 208, side = 'bottom',
-  triggerRef, returnFocusRef, menuRef, onKeyDown, onEscape, className, children,
+  anchorRef, anchorPoint, placement, triggerRef, returnFocusRef, menuRef, onKeyDown, onEscape, className, children,
 }: OverlayMenuProps) {
   const contentRef = useRef<HTMLDivElement | null>(null)
+  const [content, setContent] = useState<HTMLDivElement | null>(null)
   const outside = useRef(false)
+  const anchored = anchorRef != null || triggerRef != null || anchorPoint != null
+  const position = useAnchoredPosition({
+    open,
+    anchorRef: anchorRef ?? triggerRef,
+    anchorPoint,
+    content,
+    placement: {
+      side,
+      gap: 6,
+      padding: 8,
+      ...placement,
+    },
+    onDismiss: () => {
+      // The trigger scrolled away: close without yanking focus (and the page
+      // scroll position) back to it.
+      outside.current = true
+      onOpenChange(false)
+    },
+  })
 
   const focusOwner = () => (returnFocusRef?.current ?? triggerRef?.current) ?? null
+  const attachContent = useCallback((node: HTMLDivElement | null) => {
+    contentRef.current = node
+    setContent(node)
+    if (menuRef) menuRef.current = node
+  }, [menuRef])
 
   useEffect(() => {
     if (!open) return
@@ -56,10 +89,7 @@ export default function OverlayMenu({
     }} modal={false}>
       <Dialog.Portal>
         <Dialog.Content
-          ref={(node) => {
-            contentRef.current = node
-            if (menuRef) menuRef.current = node
-          }}
+          ref={attachContent}
           role="menu"
           aria-label={label}
           aria-describedby={undefined}
@@ -86,10 +116,13 @@ export default function OverlayMenu({
             className,
           )}
           style={{
-            left,
-            top,
-            width,
-            ['--surface-y' as string]: side === 'bottom' ? '-8px' : '8px',
+            left: anchored ? position.left : left,
+            top: anchored ? position.top : top,
+            width: anchored ? (placement?.anchorWidth ? (position.ready ? position.width : undefined) : (position.ready ? position.width : width)) : width,
+            visibility: anchored && !position.ready ? 'hidden' : undefined,
+            maxHeight: anchored && position.ready ? position.maxHeight : undefined,
+            overflowY: anchored && position.ready && position.height >= position.maxHeight ? 'auto' : undefined,
+            ['--surface-y' as string]: (anchored ? position.side : side) === 'bottom' ? '-8px' : '8px',
           }}
         >
           <Dialog.Title className="sr-only">{label}</Dialog.Title>

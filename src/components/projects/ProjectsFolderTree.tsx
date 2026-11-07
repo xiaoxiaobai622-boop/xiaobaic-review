@@ -19,10 +19,7 @@ import { NO_GROUP_KEY } from '@/lib/projects-filter'
 
 const COLLAPSED_STORAGE_KEY = 'admin_projects_folder_collapsed'
 const ROOT_KEY = ''
-/** Anchoring constants for the portalled folder menu; the height is generous so a
- *  wrapped translation still flips the menu above the trigger instead of off-screen. */
 const MENU_WIDTH = 160
-const MENU_HEIGHT = 210
 
 function loadCollapsed(): Set<string> {
   if (typeof window === 'undefined') return new Set()
@@ -74,7 +71,7 @@ export default function ProjectsFolderTree({
   const [draft, setDraft] = useState('')
   const [editorError, setEditorError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [menu, setMenu] = useState<{ id: string; left: number; top: number } | null>(null)
+  const [menu, setMenu] = useState<{ id: string } | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const menuTriggerRef = useRef<HTMLElement | null>(null)
@@ -145,13 +142,8 @@ export default function ProjectsFolderTree({
   // it: the menu is portalled to <body> and anchored to the viewport instead.
   const toggleMenu = (folderId: string, trigger: HTMLElement) => {
     menuTriggerRef.current = trigger
-    const rect = trigger.getBoundingClientRect()
-    const left = Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8))
-    const top = rect.bottom + MENU_HEIGHT <= window.innerHeight - 8
-      ? rect.bottom + 6
-      : Math.max(8, rect.top - MENU_HEIGHT - 6)
     if (menuOpen && menu?.id === folderId) { closeMenu(); return }
-    setMenu({ id: folderId, left, top })
+    setMenu({ id: folderId })
     setMenuOpen(true)
   }
 
@@ -446,9 +438,8 @@ export default function ProjectsFolderTree({
             open={menuOpen}
             onOpenChange={(open) => { if (!open) closeMenu(false) }}
             label={`${folder.name} ${t('folderActions')}`}
-            left={menu.left}
-            top={menu.top}
             width={MENU_WIDTH}
+            placement={{ align: 'end', side: 'bottom', gap: 6 }}
             triggerRef={menuTriggerRef}
             menuRef={menuRef}
             onKeyDown={handleMenuKeyDown}

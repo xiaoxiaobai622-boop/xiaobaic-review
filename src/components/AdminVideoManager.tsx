@@ -2,7 +2,7 @@
 
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
@@ -21,6 +21,8 @@ import { FILE_LIMITS } from '@/lib/file-validation'
 import { useTranslations } from 'next-intl'
 import VideoComparison, { type VideoComparisonComment } from './VideoComparison'
 import { useHlsSource, type PlaybackFailureCause } from '@/hooks/useHlsSource'
+import { useAnchoredPosition } from '@/hooks/useAnchoredPosition'
+import { useSubmenuClamp } from '@/hooks/useSubmenuClamp'
 import { pickQuickPreviewSource, type QuickPreviewSource } from '@/lib/video-playback'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
@@ -246,11 +248,19 @@ export default function AdminVideoManager({
   const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
   const [comparisonComments, setComparisonComments] = useState<VideoComparisonComment[]>([])
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
-  const [actionMenuPosition, setActionMenuPosition] = useState<{ left: number; top: number; submenuSide: 'left' | 'right'; offsetY: string } | null>(null)
+  const [actionMenuRenderedGroup, setActionMenuRenderedGroup] = useState<string | null>(null)
+  const [actionMenuContent, setActionMenuContent] = useState<HTMLDivElement | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
-  const actionMenuAnchorRef = useRef<{ top: number; bottom: number } | null>(null)
+  const actionMenuCloseTimer = useRef<number | null>(null)
+  const shareSubmenuRef = useRef<HTMLDivElement | null>(null)
+  const statusSubmenuRef = useRef<HTMLDivElement | null>(null)
+  const versionSubmenuRef = useRef<HTMLDivElement | null>(null)
   const actionMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const outsideMenuRef = useRef(false)
+  const attachActionMenuContent = useCallback((node: HTMLDivElement | null) => {
+    actionMenuRef.current = node
+    setActionMenuContent(node)
+  }, [])
   const [shareTypeMenuGroup, setShareTypeMenuGroup] = useState<string | null>(null)
   const [versionSourceMenuGroup, setVersionSourceMenuGroup] = useState<string | null>(null)
   const [reviewStatusMenuGroup, setReviewStatusMenuGroup] = useState<string | null>(null)
@@ -271,36 +281,35 @@ export default function AdminVideoManager({
   const bulkMoveTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
 
-  useEffect(() => {
-    if (!actionMenuGroup) setActionMenuPosition(null)
-  }, [actionMenuGroup])
-
-  // Reposition against the rendered menu height so bottom-row actions stay
-  // directly above the trigger instead of floating far away due to a stale
-  // height estimate.
-  useLayoutEffect(() => {
-    if (!actionMenuGroup || !actionMenuPosition || !actionMenuRef.current || !actionMenuAnchorRef.current) return
-
-    const menuHeight = Math.min(actionMenuRef.current.offsetHeight, window.innerHeight - 16)
-    const anchor = actionMenuAnchorRef.current
-    const nextTop = anchor.bottom + menuHeight <= window.innerHeight - 8
-      ? anchor.bottom + 6
-      : Math.max(8, anchor.top - menuHeight - 6)
-    const nextOffsetY = nextTop >= anchor.bottom ? '-8px' : '8px'
-
-    if (Math.abs(nextTop - actionMenuPosition.top) > 1 || actionMenuPosition.offsetY !== nextOffsetY) {
-      setActionMenuPosition((current) => current ? { ...current, top: nextTop, offsetY: nextOffsetY } : current)
-    }
-  }, [actionMenuGroup, actionMenuPosition])
-
   const closeActionMenus = useCallback((restoreFocus = true) => {
     setActionMenuGroup(null)
-    // Keep the measured position: the popup stays mounted for its exit animation.
+    // Keep the popup mounted long enough to play its exit animation.
     setShareTypeMenuGroup(null)
     setVersionSourceMenuGroup(null)
     setReviewStatusMenuGroup(null)
+    if (actionMenuCloseTimer.current) window.clearTimeout(actionMenuCloseTimer.current)
+    actionMenuCloseTimer.current = window.setTimeout(() => {
+      setActionMenuRenderedGroup(null)
+      actionMenuCloseTimer.current = null
+    }, 180)
     if (restoreFocus) actionMenuTriggerRef.current?.focus()
   }, [])
+
+  useEffect(() => () => {
+    if (actionMenuCloseTimer.current) window.clearTimeout(actionMenuCloseTimer.current)
+  }, [])
+
+  const actionMenuPosition = useAnchoredPosition({
+    open: actionMenuGroup !== null,
+    anchorRef: actionMenuTriggerRef,
+    content: actionMenuContent,
+    placement: { side: 'bottom', align: 'end', gap: 6, padding: 8 },
+    onDismiss: () => closeActionMenus(false),
+  })
+
+  useSubmenuClamp(shareSubmenuRef, shareTypeMenuGroup !== null, actionMenuPosition.submenuSide)
+  useSubmenuClamp(statusSubmenuRef, reviewStatusMenuGroup !== null, actionMenuPosition.submenuSide)
+  useSubmenuClamp(versionSubmenuRef, versionSourceMenuGroup !== null, actionMenuPosition.submenuSide)
 
   // Keyboard focus enters the menu with the first action instead of staying on
   // the trigger behind the overlay.
@@ -1452,17 +1461,11 @@ export default function AdminVideoManager({
                             closeActionMenus()
                             return
                           }
-                          const rect = e.currentTarget.getBoundingClientRect()
-                          actionMenuAnchorRef.current = { top: rect.top, bottom: rect.bottom }
-                          const menuWidth = 208
-                          const menuHeight = 520
-                          const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8))
-                          const top = rect.bottom + menuHeight <= window.innerHeight - 8
-                            ? rect.bottom + 6
-                            : Math.max(8, rect.top - menuHeight - 6)
-                          const submenuSide = left + menuWidth + 160 <= window.innerWidth - 8 ? 'right' : 'left'
-                          const offsetY = top >= rect.bottom ? '-8px' : '8px'
-                          setActionMenuPosition({ left, top, submenuSide, offsetY })
+                          if (actionMenuCloseTimer.current) {
+                            window.clearTimeout(actionMenuCloseTimer.current)
+                            actionMenuCloseTimer.current = null
+                          }
+                          setActionMenuRenderedGroup(groupName)
                           setActionMenuGroup(groupName)
                         }}
                         aria-label={t('videoActions')}
@@ -1472,7 +1475,7 @@ export default function AdminVideoManager({
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {actionMenuPosition && (
+                      {actionMenuRenderedGroup === groupName && (
                         <DialogPrimitive.Root
                           open={actionMenuGroup === groupName}
                           modal={false}
@@ -1485,11 +1488,11 @@ export default function AdminVideoManager({
                         >
                           <DialogPrimitive.Portal>
                             {/* Keep overflow visible so the side submenus are not
-                                clipped by the scroll container. The menu is
-                                repositioned above/below its trigger by the
-                                layout effect when it is near a viewport edge. */}
+                                clipped by the scroll container. The hook
+                                positions this against the trigger's measured
+                                rect and flips it above/below near an edge. */}
                             <DialogPrimitive.Content
-                              ref={actionMenuRef}
+                              ref={attachActionMenuContent}
                               role="menu"
                               aria-label={t('videoActions')}
                               aria-describedby={undefined}
@@ -1508,7 +1511,10 @@ export default function AdminVideoManager({
                               style={{
                                 left: actionMenuPosition.left,
                                 top: actionMenuPosition.top,
-                                ['--surface-y' as string]: actionMenuPosition.offsetY,
+                                visibility: actionMenuPosition.ready ? undefined : 'hidden',
+                                maxHeight: actionMenuPosition.ready ? actionMenuPosition.maxHeight : undefined,
+                                overflowY: actionMenuPosition.ready && actionMenuPosition.height >= actionMenuPosition.maxHeight ? 'auto' : undefined,
+                                ['--surface-y' as string]: actionMenuPosition.side === 'bottom' ? '-8px' : '8px',
                               }}
                               onClick={(event) => event.stopPropagation()}
                             >
@@ -1517,7 +1523,7 @@ export default function AdminVideoManager({
                               <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName); focusSubmenuFirstItem('share', true) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName} data-submenu-trigger="share">
                                 <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
                               </button>
-                              {shareTypeMenuGroup === groupName && <div role="menu" aria-label={`${groupName} 分享类型`} data-submenu-panel="share" className={cn('absolute top-0 z-[100] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')}>
+                              {shareTypeMenuGroup === groupName && <div ref={shareSubmenuRef} role="menu" aria-label={`${groupName} 分享类型`} data-submenu-panel="share" className={cn('absolute top-0 z-[100] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')}>
                                 <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
                                 <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
                               </div>}
@@ -1571,7 +1577,7 @@ export default function AdminVideoManager({
                                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
                               </button>
                               {reviewStatusMenuGroup === groupName && (
-                                <div data-submenu-panel="status" className={cn('absolute top-0 z-[60] w-44 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
+                                <div ref={statusSubmenuRef} data-submenu-panel="status" className={cn('absolute top-0 z-[60] w-44 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
                                   {VIDEO_REVIEW_STATUS_OPTIONS.map(option => {
                                     const isCurrent = getEffectiveVideoReviewStatus(displayLatestVideo) === option.value
                                     return (
@@ -1638,7 +1644,7 @@ export default function AdminVideoManager({
                                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 </button>
                                 {versionSourceMenuGroup === groupName && (
-                                  <div data-submenu-panel="version" className={cn('absolute top-0 z-[60] w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
+                                  <div ref={versionSubmenuRef} data-submenu-panel="version" className={cn('absolute top-0 z-[60] w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
                                     <button type="button" onClick={(e) => openLocalVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                                       <Upload className="h-4 w-4" />{t('localUpload')}
                                     </button>

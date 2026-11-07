@@ -69,7 +69,6 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
 
   // 身份块整块是一枚弹出式按钮（对标那排也是整块可点），点开的是这个项目自己的菜单。
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
-  const [projectMenuRect, setProjectMenuRect] = useState<{ left: number; top: number; width: number } | null>(null)
   const menuRootRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -300,16 +299,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               data-tutorial="project-info-trigger"
               aria-haspopup="menu"
               aria-expanded={projectMenuOpen}
-              onClick={() => {
-                if (!projectMenuOpen) {
-                  const root = menuRootRef.current
-                  const rect = root?.getBoundingClientRect()
-                  if (rect) {
-                    setProjectMenuRect({ left: bare ? rect.left - 20 : rect.left, top: rect.bottom + 1, width: bare ? rect.width + 40 : rect.width })
-                  }
-                }
-                setProjectMenuOpen((open) => !open)
-              }}
+              onClick={() => setProjectMenuOpen((open) => !open)}
               className="flex w-full min-w-0 items-center gap-[16px] rounded-[8px] text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span
@@ -328,15 +318,20 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               <ChevronsUpDown className="h-[16px] w-[16px] shrink-0 text-foreground" aria-hidden="true" />
             </button>
 
-            {projectMenuRect && (
-              <OverlayMenu
+            <OverlayMenu
                 open={projectMenuOpen}
                 onOpenChange={(open) => { if (!open) setProjectMenuOpen(false) }}
                 label={t('projectMenuLabel')}
-                left={projectMenuRect.left}
-                top={projectMenuRect.top}
-                width={projectMenuRect.width}
+                anchorRef={menuRootRef}
                 triggerRef={triggerRef}
+                placement={{
+                  align: 'start',
+                  side: 'bottom',
+                  gap: 6,
+                  anchorWidth: true,
+                  widthDelta: bare ? 40 : 0,
+                  xOffset: bare ? -20 : 0,
+                }}
                 menuRef={menuRef}
                 className="border-0 shadow-elevation-lg"
                 onKeyDown={(event) => {
@@ -373,7 +368,6 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                   onSelect={pickMembers}
                 />
               </OverlayMenu>
-            )}
           </div>
         </ShellHeader>
         <ShellContent className={bare ? 'space-y-3 pt-3' : 'space-y-3 pb-2'}>

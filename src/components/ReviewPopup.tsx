@@ -31,6 +31,10 @@ function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', 
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
   const outside = useRef(false)
   const escaped = useRef(false)
+  const onOpenChangeRef = useRef(onOpenChange)
+  useLayoutEffect(() => {
+    onOpenChangeRef.current = onOpenChange
+  })
   const [position, setPosition] = useState<CSSProperties>({ visibility: 'hidden', '--popup-offset': side === 'top' ? '8px' : '-8px' } as CSSProperties)
 
   useLayoutEffect(() => {
@@ -56,8 +60,13 @@ function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', 
       const topEdge = (viewport?.offsetTop ?? 0) + 8
       const rightEdge = leftEdge + (viewport?.width ?? window.innerWidth) - 16
       const bottomEdge = topEdge + (viewport?.height ?? window.innerHeight) - 16
-      const above = Math.max(0, rect.top - topEdge - 4)
-      const below = Math.max(0, bottomEdge - rect.bottom - 4)
+      const gap = 6
+      if (!trigger.isConnected || rect.bottom < topEdge || rect.top > bottomEdge || rect.right < leftEdge || rect.left > rightEdge) {
+        onOpenChangeRef.current(false)
+        return
+      }
+      const above = Math.max(0, rect.top - topEdge - gap)
+      const below = Math.max(0, bottomEdge - rect.bottom - gap)
       const naturalHeight = content.scrollHeight + 2
       const preferred = side === 'top' ? above : below
       const opposite = side === 'top' ? below : above
@@ -67,7 +76,7 @@ function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', 
       const actualWidth = Math.min(width, rightEdge - leftEdge)
       const desiredLeft = align === 'center' ? rect.left + (rect.width - actualWidth) / 2 : align === 'end' ? rect.right - actualWidth : rect.left
       const left = Math.min(Math.max(leftEdge, desiredLeft), rightEdge - actualWidth)
-      const top = actualSide === 'top' ? rect.top - 4 - height : rect.bottom + 4
+      const top = actualSide === 'top' ? rect.top - gap - height : rect.bottom + gap
       setPosition({
         left, top, width: actualWidth, maxHeight: available, visibility: 'visible',
         '--popup-origin': `${Math.max(0, Math.min(actualWidth, rect.left + rect.width / 2 - left))}px ${actualSide === 'top' ? '100%' : '0%'}`,
