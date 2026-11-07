@@ -46,7 +46,7 @@ const versionPoints = [
 
 const sharePoints = [
   { icon: ShieldCheck, title: '密码与有效期', detail: '每条链接单独设密码、到期时间、打开次数上限，到期自动失效。' },
-  { icon: Link2, title: '权限按条勾选', detail: '看、留言、下载、点通过，四样各开各的，按链接单独控制。' },
+  { icon: Link2, title: '权限按条勾选', detail: '看、留言、下载按链接单独控制；版本通过由有管理权限的团队成员确认。' },
   { icon: MousePointerClick, title: '谁打开过有记录', detail: '每次访问都有据可查，客户顺着同一条链接还能把原片回传。' },
 ]
 
@@ -588,8 +588,8 @@ export default function HomeClient() {
                 审片链接。
               </h2>
               <p className={styles.sectionLead}>
-                一条链接对应一套设置：谁能看、能不能留言、能不能下载、能不能点通过，
-                都是按链接单独勾出来的，不是全局开关。
+                一条链接对应一套设置：谁能看、能不能留言、能不能下载，
+                都是按链接单独勾出来的；版本通过由有管理权限的团队成员确认。
               </p>
               <a className={styles.pillGhost} href={dashboardHref}>
                 生成审片链接 <ArrowRight size={15} strokeWidth={2} />
@@ -598,7 +598,7 @@ export default function HomeClient() {
             <div className={styles.row}>
               <div className={styles.rowCopy}>
                 <h3>权限按条勾，到期自动停</h3>
-                <p>看、留言、下载、点通过四样各开各的；密码、到期时间、打开次数上限按链接单独设置。</p>
+                <p>看、留言、下载按链接单独设置；密码、到期时间、打开次数上限也跟着链接走，版本通过由有管理权限的团队成员确认。</p>
                 <TickList items={sharePoints} />
               </div>
               <div className={styles.rowShot}>
