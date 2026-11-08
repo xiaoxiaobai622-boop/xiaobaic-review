@@ -13,6 +13,8 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import { formatDate } from '@/lib/utils'
 import { clientKeyFor, clientLabelFor, NO_CLIENT_KEY, type ProjectListItem } from '@/lib/projects-filter'
 import { PROJECT_DND_MIME, folderOptions, folderPathLabels, type FolderNode } from '@/lib/project-folders'
+import { isEditableContextTarget, contextMenuPoint as contextMenuPointFromEvent, elementContextPoint, type ContextMenuPoint } from '@/lib/context-menu'
+import OverlayMenu from '@/components/OverlayMenu'
 import ReviewPopup from '@/components/ReviewPopup'
 
 const GROUP_STORAGE_KEY = 'admin_projects_group'
@@ -232,8 +234,11 @@ interface ProjectCardProps {
   folderLabel: string | null
   folderOptions: { id: string; name: string; depth: number }[]
   dragging: boolean
+  contextMenuPoint: ContextMenuPoint | null
   onToggleSelect: (id: string) => void
   onToggleMenu: (id: string | null) => void
+  onOpenContextMenu: (project: ProjectListItem, point: ContextMenuPoint) => void
+  onCloseContextMenu: () => void
   onTogglePin: (id: string) => void
   onCopyLink: (project: ProjectListItem) => void
   onSetStatus: (project: ProjectListItem, status: string) => void
@@ -245,17 +250,98 @@ interface ProjectCardProps {
 
 function ProjectCard({
   project, href, isAdmin, pinned, batchMode, selected, menuOpen, showClient, showStatus, showProgress,
-  showFolderChip, folderLabel, folderOptions, dragging,
-  onToggleSelect, onToggleMenu, onTogglePin, onCopyLink, onSetStatus, onMove, onDragStart, onDragEnd, onDeleteRequest,
+  showFolderChip, folderLabel, folderOptions, dragging, contextMenuPoint,
+  onToggleSelect, onToggleMenu, onOpenContextMenu, onCloseContextMenu, onTogglePin, onCopyLink, onSetStatus, onMove, onDragStart, onDragEnd, onDeleteRequest,
 }: ProjectCardProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const approvedVideos = project.videos.filter((v) => v.reviewStatus === 'APPROVED').length
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const cardLinkRef = useRef<HTMLAnchorElement | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const menuItems = (
+    <>
+      <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onTogglePin(project.id)}>
+        {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+        {pinned ? t('menuUnpin') : t('menuPin')}
+      </button>
+      <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onCopyLink(project)}>
+        <Link2 className="w-3.5 h-3.5" />
+        {t('menuCopyLink')}
+      </button>
+      <div className="mt-1 pt-1 border-t border-border">
+        <FolderPickList
+          options={folderOptions}
+          currentFolderId={project.groupId || null}
+          onSelect={(folderId) => onMove(project, folderId)}
+        />
+      </div>
+      {project.status !== 'APPROVED' && (
+        <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'APPROVED')}>
+          <Check className="w-3.5 h-3.5" />
+          {t('menuApprove')}
+        </button>
+      )}
+      {project.status === 'ARCHIVED' ? (
+        <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'IN_REVIEW')}>
+          <ArchiveRestore className="w-3.5 h-3.5" />
+          {t('menuRestore')}
+        </button>
+      ) : (
+        <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'ARCHIVED')}>
+          <Archive className="w-3.5 h-3.5" />
+          {t('menuArchive')}
+        </button>
+      )}
+      <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-destructive text-left" onClick={() => onDeleteRequest(project)}>
+        <Trash2 className="w-3.5 h-3.5" />
+        {tc('delete')}
+      </button>
+    </>
+  )
+
+  const handleContextMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const menu = contextMenuRef.current
+    if (!menu) return
+    const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled]), button:not([disabled])')]
+    if (items.length === 0) return
+    const current = items.indexOf(document.activeElement as HTMLElement)
+    let next = 0
+    if (event.key === 'ArrowDown') next = current < 0 ? 0 : (current + 1) % items.length
+    else if (event.key === 'ArrowUp') next = current <= 0 ? items.length - 1 : current - 1
+    else if (event.key === 'End') next = items.length - 1
+    items[next]?.focus()
+  }
+
+  const openContextMenuAt = (event: React.MouseEvent | React.KeyboardEvent, fallback?: Element | null) => {
+    const target = event.target as HTMLElement
+    if (isEditableContextTarget(target)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const focusable = document.activeElement instanceof HTMLElement && cardRef.current?.contains(document.activeElement)
+      ? document.activeElement
+      : cardLinkRef.current
+    const anchorEl = fallback ?? focusable ?? cardRef.current ?? (target instanceof Element ? target : null)
+    const point = 'clientX' in event
+      ? contextMenuPointFromEvent(event, anchorEl)
+      : anchorEl ? elementContextPoint(anchorEl) : null
+    if (point) onOpenContextMenu(project, point)
+  }
 
   return (
     <div
+      ref={cardRef}
       data-card-root
+      data-card-context
+      onContextMenu={isAdmin ? (event) => openContextMenuAt(event, cardRef.current) : undefined}
+      onKeyDown={isAdmin ? (event) => {
+        if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+        openContextMenuAt(event)
+      } : undefined}
       className={`relative rounded-xl border bg-card shadow-sm transition-[color,background-color,border-color,opacity,transform] duration-150 active:bg-accent/20 ${selected ? 'border-primary ring-2 ring-primary-visible' : 'border-border hover:border-primary/60'} ${dragging ? 'opacity-40 scale-[0.9]' : ''}`}
     >
       {isAdmin && batchMode && (
@@ -293,46 +379,14 @@ function ProjectCard({
             align="end"
             width={230}
           >
-            <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onTogglePin(project.id)}>
-              {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-              {pinned ? t('menuUnpin') : t('menuPin')}
-            </button>
-            <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onCopyLink(project)}>
-              <Link2 className="w-3.5 h-3.5" />
-              {t('menuCopyLink')}
-            </button>
-            <div className="mt-1 pt-1 border-t border-border">
-              <FolderPickList
-                options={folderOptions}
-                currentFolderId={project.groupId || null}
-                onSelect={(folderId) => onMove(project, folderId)}
-              />
+            <div onClick={(event) => { if ((event.target as HTMLElement).closest('[role="menuitem"]')) onToggleMenu(null) }}>
+              {menuItems}
             </div>
-            {project.status !== 'APPROVED' && (
-              <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'APPROVED')}>
-                <Check className="w-3.5 h-3.5" />
-                {t('menuApprove')}
-              </button>
-            )}
-            {project.status === 'ARCHIVED' ? (
-              <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'IN_REVIEW')}>
-                <ArchiveRestore className="w-3.5 h-3.5" />
-                {t('menuRestore')}
-              </button>
-            ) : (
-              <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'ARCHIVED')}>
-                <Archive className="w-3.5 h-3.5" />
-                {t('menuArchive')}
-              </button>
-            )}
-            <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-destructive text-left" onClick={() => onDeleteRequest(project)}>
-              <Trash2 className="w-3.5 h-3.5" />
-              {tc('delete')}
-            </button>
           </ReviewPopup>
         </>
       )}
       <Link
+        ref={cardLinkRef}
         href={href}
         onClick={(e) => { if (batchMode) { e.preventDefault(); onToggleSelect(project.id) } }}
         draggable={isAdmin}
@@ -370,6 +424,21 @@ function ProjectCard({
           {batchMode && <span className="text-[11px]">{formatDate(project.updatedAt)}</span>}
         </div>
       </Link>
+      {isAdmin && contextMenuPoint && (
+        <OverlayMenu
+          open
+          onOpenChange={(open) => { if (!open) onCloseContextMenu() }}
+          label={t('projectActions')}
+          anchorPoint={contextMenuPoint}
+          placement={{ side: 'bottom', align: 'start', gap: 6, pointer: true }}
+          returnFocusRef={cardLinkRef}
+          menuRef={contextMenuRef}
+          onKeyDown={handleContextMenuKeyDown}
+          onClick={(event) => { if ((event.target as HTMLElement).closest('[role="menuitem"]')) onCloseContextMenu() }}
+        >
+          {menuItems}
+        </OverlayMenu>
+      )}
     </div>
   )
 }
@@ -397,6 +466,7 @@ export default function ProjectsDashboard({
   const [batchMode, setBatchMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [cardContextMenu, setCardContextMenu] = useState<{ id: string; point: ContextMenuPoint } | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [batchFolderMenu, setBatchFolderMenu] = useState(false)
   const batchFolderTriggerRef = useRef<HTMLButtonElement>(null)
@@ -438,6 +508,23 @@ export default function ProjectsDashboard({
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
   }, [menuOpen, batchFolderMenu])
+
+  useEffect(() => {
+    if (!cardContextMenu) return
+    if (!projects.some((p) => p.id === cardContextMenu.id)) setCardContextMenu(null)
+  }, [projects, cardContextMenu])
+
+  const openCardContextMenu = (project: ProjectListItem, point: ContextMenuPoint) => {
+    setMenuOpen(null)
+    setCardContextMenu({ id: project.id, point })
+    // Right-clicking an unselected card selects it; an existing multi-selection stays intact.
+    setSelected((prev) => (prev.has(project.id) ? prev : new Set([project.id])))
+  }
+
+  const toggleCardMenu = (id: string | null) => {
+    setCardContextMenu(null)
+    setMenuOpen(id)
+  }
 
   const projectHref = (project: ProjectListItem) => isAdmin
     ? `/studio/projects/${project.id}`
@@ -658,8 +745,11 @@ export default function ProjectsDashboard({
     folderLabel: p.groupId ? (folderLabelsById.get(p.groupId) ?? null) : null,
     folderOptions: folderOpts,
     dragging: draggingId === p.id,
+    contextMenuPoint: cardContextMenu?.id === p.id ? cardContextMenu.point : null,
     onToggleSelect: toggleSelect,
-    onToggleMenu: setMenuOpen,
+    onToggleMenu: toggleCardMenu,
+    onOpenContextMenu: openCardContextMenu,
+    onCloseContextMenu: () => setCardContextMenu(null),
     onTogglePin: togglePin,
     onCopyLink: handleCopyLink,
     onSetStatus: applyStatus,

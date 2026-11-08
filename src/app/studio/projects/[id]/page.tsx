@@ -1656,7 +1656,7 @@ export default function ProjectPage() {
             )}
           </aside>
 
-          <main ref={workspaceRef as React.RefObject<HTMLElement>} id="review-workspace" tabIndex={-1} className="scrollbar-hidden relative min-w-0 overscroll-contain bg-popover p-3 focus:outline-none sm:p-4 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px]" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }); setContextMenuOpen(true) }}>
+          <main ref={workspaceRef as React.RefObject<HTMLElement>} id="review-workspace" tabIndex={-1} className="scrollbar-hidden relative min-w-0 overscroll-contain bg-popover p-3 focus:outline-none sm:p-4 lg:min-h-0 lg:overflow-y-auto lg:rounded-[8px]" onContextMenu={(event) => { if ((event.target as HTMLElement).closest('button,a,input,img,video,[role="menu"],[data-video-card],[data-card-context]')) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }); setContextMenuOpen(true) }}>
             <OverlayMenu
               open={contextMenuOpen}
               onOpenChange={(open) => { if (!open) setContextMenuOpen(false) }}

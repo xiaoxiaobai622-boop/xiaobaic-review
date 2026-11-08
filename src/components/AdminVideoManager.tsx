@@ -23,6 +23,8 @@ import VideoComparison, { type VideoComparisonComment } from './VideoComparison'
 import { useHlsSource, type PlaybackFailureCause } from '@/hooks/useHlsSource'
 import { useAnchoredPosition } from '@/hooks/useAnchoredPosition'
 import { useSubmenuClamp } from '@/hooks/useSubmenuClamp'
+import OverlayMenu from '@/components/OverlayMenu'
+import { isEditableContextTarget, contextMenuPoint as contextMenuPointFromEvent, elementContextPoint, type ContextMenuPoint } from '@/lib/context-menu'
 import { pickQuickPreviewSource, type QuickPreviewSource } from '@/lib/video-playback'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
@@ -250,12 +252,14 @@ export default function AdminVideoManager({
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
   const [actionMenuRenderedGroup, setActionMenuRenderedGroup] = useState<string | null>(null)
   const [actionMenuContent, setActionMenuContent] = useState<HTMLDivElement | null>(null)
+  const [actionMenuPoint, setActionMenuPoint] = useState<ContextMenuPoint | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const actionMenuCloseTimer = useRef<number | null>(null)
   const shareSubmenuRef = useRef<HTMLDivElement | null>(null)
   const statusSubmenuRef = useRef<HTMLDivElement | null>(null)
   const versionSubmenuRef = useRef<HTMLDivElement | null>(null)
   const actionMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const actionMenuReturnRef = useRef<HTMLElement | null>(null)
   const outsideMenuRef = useRef(false)
   const attachActionMenuContent = useCallback((node: HTMLDivElement | null) => {
     actionMenuRef.current = node
@@ -290,9 +294,10 @@ export default function AdminVideoManager({
     if (actionMenuCloseTimer.current) window.clearTimeout(actionMenuCloseTimer.current)
     actionMenuCloseTimer.current = window.setTimeout(() => {
       setActionMenuRenderedGroup(null)
+      setActionMenuPoint(null)
       actionMenuCloseTimer.current = null
     }, 180)
-    if (restoreFocus) actionMenuTriggerRef.current?.focus()
+    if (restoreFocus) (actionMenuReturnRef.current ?? actionMenuTriggerRef.current)?.focus()
   }, [])
 
   useEffect(() => () => {
@@ -300,16 +305,37 @@ export default function AdminVideoManager({
   }, [])
 
   const actionMenuPosition = useAnchoredPosition({
-    open: actionMenuGroup !== null,
+    open: actionMenuGroup !== null && actionMenuPoint === null,
     anchorRef: actionMenuTriggerRef,
     content: actionMenuContent,
     placement: { side: 'bottom', align: 'end', gap: 6, padding: 8 },
     onDismiss: () => closeActionMenus(false),
   })
 
-  useSubmenuClamp(shareSubmenuRef, shareTypeMenuGroup !== null, actionMenuPosition.submenuSide)
-  useSubmenuClamp(statusSubmenuRef, reviewStatusMenuGroup !== null, actionMenuPosition.submenuSide)
-  useSubmenuClamp(versionSubmenuRef, versionSourceMenuGroup !== null, actionMenuPosition.submenuSide)
+  // A pointer menu opens toward the middle of the screen so its side submenus have room.
+  const activeSubmenuSide: 'left' | 'right' = actionMenuPoint && actionMenuPoint.x > window.innerWidth / 2
+    ? 'left'
+    : actionMenuPoint ? 'right' : actionMenuPosition.submenuSide
+
+  useSubmenuClamp(shareSubmenuRef, shareTypeMenuGroup !== null, activeSubmenuSide)
+  useSubmenuClamp(statusSubmenuRef, reviewStatusMenuGroup !== null, activeSubmenuSide)
+  useSubmenuClamp(versionSubmenuRef, versionSourceMenuGroup !== null, activeSubmenuSide)
+
+  const openActionMenuAt = (groupName: string, point: ContextMenuPoint, focusTarget: HTMLElement | null) => {
+    if (actionMenuCloseTimer.current) {
+      window.clearTimeout(actionMenuCloseTimer.current)
+      actionMenuCloseTimer.current = null
+    }
+    setShareTypeMenuGroup(null)
+    setVersionSourceMenuGroup(null)
+    setReviewStatusMenuGroup(null)
+    actionMenuTriggerRef.current = null
+    actionMenuReturnRef.current = focusTarget
+    setActionMenuPoint(point)
+    setActionMenuRenderedGroup(groupName)
+    setActionMenuGroup(groupName)
+    setSelectedGroups((current) => (current.has(groupName) ? current : new Set([groupName])))
+  }
 
   // Keyboard focus enters the menu with the first action instead of staying on
   // the trigger behind the overlay.
@@ -591,6 +617,13 @@ export default function AdminVideoManager({
   }
 
   const handleCardKeyDown = (groupName: string, event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      if (isEditableContextTarget(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      openActionMenuAt(groupName, elementContextPoint(event.currentTarget), event.currentTarget)
+      return
+    }
     if (event.target !== event.currentTarget) return
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
@@ -1256,10 +1289,179 @@ export default function AdminVideoManager({
           </>
         ) : null
 
+        const renderActionMenuItems = (submenuSide: 'left' | 'right') => (
+          <>
+            <div className="relative" onMouseEnter={() => { setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); setShareTypeMenuGroup(groupName) }} onMouseLeave={() => setShareTypeMenuGroup(null)}>
+              <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName); focusSubmenuFirstItem('share', true) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName} data-submenu-trigger="share">
+                <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </button>
+              {shareTypeMenuGroup === groupName && <div ref={shareSubmenuRef} role="menu" aria-label={`${groupName} 分享类型`} data-submenu-panel="share" className={cn('absolute top-0 z-[100] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')}>
+                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
+                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
+              </div>}
+            </div>
+            <button type="button" role="menuitem" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+              <Play className="h-4 w-4" />{t('previewVideo')}
+            </button>
+            <button type="button" role="menuitem" onClick={(e) => handleOpenReview(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+              <ExternalLink className="h-4 w-4" />{t('openReviewPage')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation()
+                setActionMenuGroup(null)
+                setVersionSourceMenuGroup(null)
+                setReviewStatusMenuGroup(null)
+                onShowVideoInfo?.({
+                  name: groupName,
+                  videos: [...groupVideos].sort((a, b) => b.version - a.version),
+                })
+              }}
+              className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+            >
+              <Layers3 className="h-4 w-4" />{t('versionInfo')}
+            </button>
+            <div
+              className="relative"
+              onMouseEnter={() => {
+                setVersionSourceMenuGroup(null)
+                setReviewStatusMenuGroup(groupName)
+              }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setVersionSourceMenuGroup(null)
+                  setReviewStatusMenuGroup(groupName)
+                  focusSubmenuFirstItem('status', true)
+                }}
+                className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+                aria-haspopup="menu"
+                aria-expanded={reviewStatusMenuGroup === groupName}
+                data-submenu-trigger="status"
+              >
+                <ListChecks className="h-4 w-4" />
+                <span className="flex-1">{t('setReviewStatus')}</span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </button>
+              {reviewStatusMenuGroup === groupName && (
+                <div ref={statusSubmenuRef} data-submenu-panel="status" className={cn('absolute top-0 z-[60] w-44 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
+                  {VIDEO_REVIEW_STATUS_OPTIONS.map(option => {
+                    const isCurrent = getEffectiveVideoReviewStatus(displayLatestVideo) === option.value
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="menuitem"
+                        disabled={reviewStatusUpdatingVideoId === latestVideo.id || isCurrent}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void handleVideoReviewStatus(latestVideo, option.value)
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: option.dotColor }} />
+                        <span className="flex-1">{t(option.labelKey)}</span>
+                        {isCurrent && <Check className="h-4 w-4 text-primary" aria-hidden="true" />}
+                      </button>
+                    )
+                  })}
+                  <div className="my-1 border-t border-border" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={reviewStatusUpdatingVideoId === latestVideo.id || getEffectiveVideoReviewStatus(displayLatestVideo) === null}
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      if (!(await appConfirm(t('removeReviewStatusConfirm')))) return
+                      void handleVideoReviewStatus(latestVideo, null)
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <CircleOff className="h-4 w-4 text-muted-foreground" />
+                    {t('removeReviewStatus')}
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="my-1 border-t border-border" />
+            {projectStatus !== 'APPROVED' && (
+              <div
+                className="relative"
+                onMouseEnter={() => {
+                  setReviewStatusMenuGroup(null)
+                  setVersionSourceMenuGroup(groupName)
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setReviewStatusMenuGroup(null)
+                    setVersionSourceMenuGroup(groupName)
+                    focusSubmenuFirstItem('version', true)
+                  }}
+                  className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+                  aria-haspopup="menu"
+                  aria-expanded={versionSourceMenuGroup === groupName}
+                  data-submenu-trigger="version"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span className="flex-1">{t('uploadNewVersion')}</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </button>
+                {versionSourceMenuGroup === groupName && (
+                  <div ref={versionSubmenuRef} data-submenu-panel="version" className={cn('absolute top-0 z-[60] w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
+                    <button type="button" onClick={(e) => openLocalVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                      <Upload className="h-4 w-4" />{t('localUpload')}
+                    </button>
+                    <button type="button" onClick={(e) => openCollectionVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                      <FolderInput className="h-4 w-4" />{t('collectionReplace')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              disabled={groupVideos.filter(v => v.status === 'READY').length < 2}
+              onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleCompare(groupName, e) }}
+              className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <GitCompareArrows className="h-4 w-4" />{t('compareVersions')}
+            </button>
+            {projectStatus !== 'APPROVED' && (
+              <>
+                <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleStartEditGroupName(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
+                  <Pencil className="h-4 w-4" />{t('editVideoName')}
+                </button>
+                <div className="my-1 border-t border-border" />
+                <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleDeleteGroup(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
+                  <Trash2 className="h-4 w-4" />{t('deleteVideo')}
+                </button>
+              </>
+            )}
+          </>
+        )
+
         return (
           <Card
             key={groupName}
             data-video-card
+            data-card-context
+            onContextMenu={(event) => {
+              if (isEditableContextTarget(event.target)) return
+              event.preventDefault()
+              event.stopPropagation()
+              const focusTarget = event.currentTarget.querySelector<HTMLElement>('[role="button"]') ?? event.currentTarget
+              const point = contextMenuPointFromEvent(event, focusTarget)
+              if (point) openActionMenuAt(groupName, point, focusTarget)
+            }}
             draggable={latestVideo.status === 'READY'}
             onDragStart={(event) => handleVersionDragStart(event, latestVideo)}
             onDragOver={(event) => {
@@ -1454,10 +1656,11 @@ export default function AdminVideoManager({
                         onClick={(e) => {
                           e.stopPropagation()
                           actionMenuTriggerRef.current = e.currentTarget
+                          actionMenuReturnRef.current = e.currentTarget
                           setShareTypeMenuGroup(null)
                           setVersionSourceMenuGroup(null)
                           setReviewStatusMenuGroup(null)
-                          if (actionMenuGroup === groupName) {
+                          if (actionMenuGroup === groupName && actionMenuPoint === null) {
                             closeActionMenus()
                             return
                           }
@@ -1465,6 +1668,7 @@ export default function AdminVideoManager({
                             window.clearTimeout(actionMenuCloseTimer.current)
                             actionMenuCloseTimer.current = null
                           }
+                          setActionMenuPoint(null)
                           setActionMenuRenderedGroup(groupName)
                           setActionMenuGroup(groupName)
                         }}
@@ -1475,7 +1679,7 @@ export default function AdminVideoManager({
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {actionMenuRenderedGroup === groupName && (
+                      {actionMenuRenderedGroup === groupName && actionMenuPoint === null && (
                         <DialogPrimitive.Root
                           open={actionMenuGroup === groupName}
                           modal={false}
@@ -1519,164 +1723,34 @@ export default function AdminVideoManager({
                               onClick={(event) => event.stopPropagation()}
                             >
                               <DialogPrimitive.Title className="sr-only">{t('videoActions')}</DialogPrimitive.Title>
-                            <div className="relative" onMouseEnter={() => { setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); setShareTypeMenuGroup(groupName) }} onMouseLeave={() => setShareTypeMenuGroup(null)}>
-                              <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setShareTypeMenuGroup(groupName); focusSubmenuFirstItem('share', true) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent" aria-haspopup="menu" aria-expanded={shareTypeMenuGroup === groupName} data-submenu-trigger="share">
-                                <Share2 className="h-4 w-4" /><span className="flex-1">分享</span><ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              </button>
-                              {shareTypeMenuGroup === groupName && <div ref={shareSubmenuRef} role="menu" aria-label={`${groupName} 分享类型`} data-submenu-panel="share" className={cn('absolute top-0 z-[100] w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')}>
-                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('REVIEW', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><MessageSquare className="h-4 w-4" />审阅分享</button>
-                                <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
-                              </div>}
-                            </div>
-                            <button type="button" role="menuitem" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-                              <Play className="h-4 w-4" />{t('previewVideo')}
-                            </button>
-                            <button type="button" role="menuitem" onClick={(e) => handleOpenReview(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-                              <ExternalLink className="h-4 w-4" />{t('openReviewPage')}
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setActionMenuGroup(null)
-                                setVersionSourceMenuGroup(null)
-                                setReviewStatusMenuGroup(null)
-                                onShowVideoInfo?.({
-                                  name: groupName,
-                                  videos: [...groupVideos].sort((a, b) => b.version - a.version),
-                                })
-                              }}
-                              className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
-                            >
-                              <Layers3 className="h-4 w-4" />{t('versionInfo')}
-                            </button>
-                            <div
-                              className="relative"
-                              onMouseEnter={() => {
-                                setVersionSourceMenuGroup(null)
-                                setReviewStatusMenuGroup(groupName)
-                              }}
-                            >
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setVersionSourceMenuGroup(null)
-                                  setReviewStatusMenuGroup(groupName)
-                                  focusSubmenuFirstItem('status', true)
-                                }}
-                                className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
-                                aria-haspopup="menu"
-                                aria-expanded={reviewStatusMenuGroup === groupName}
-                                data-submenu-trigger="status"
-                              >
-                                <ListChecks className="h-4 w-4" />
-                                <span className="flex-1">{t('setReviewStatus')}</span>
-                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              </button>
-                              {reviewStatusMenuGroup === groupName && (
-                                <div ref={statusSubmenuRef} data-submenu-panel="status" className={cn('absolute top-0 z-[60] w-44 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
-                                  {VIDEO_REVIEW_STATUS_OPTIONS.map(option => {
-                                    const isCurrent = getEffectiveVideoReviewStatus(displayLatestVideo) === option.value
-                                    return (
-                                      <button
-                                        key={option.value}
-                                        type="button"
-                                        role="menuitem"
-                                        disabled={reviewStatusUpdatingVideoId === latestVideo.id || isCurrent}
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          void handleVideoReviewStatus(latestVideo, option.value)
-                                        }}
-                                        className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-wait disabled:opacity-60"
-                                      >
-                                        <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: option.dotColor }} />
-                                        <span className="flex-1">{t(option.labelKey)}</span>
-                                        {isCurrent && <Check className="h-4 w-4 text-primary" aria-hidden="true" />}
-                                      </button>
-                                    )
-                                  })}
-                                  <div className="my-1 border-t border-border" />
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    disabled={reviewStatusUpdatingVideoId === latestVideo.id || getEffectiveVideoReviewStatus(displayLatestVideo) === null}
-                                    onClick={async (e) => {
-                                      e.stopPropagation()
-                                      if (!(await appConfirm(t('removeReviewStatusConfirm')))) return
-                                      void handleVideoReviewStatus(latestVideo, null)
-                                    }}
-                                    className="flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-                                  >
-                                    <CircleOff className="h-4 w-4 text-muted-foreground" />
-                                    {t('removeReviewStatus')}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                            <div className="my-1 border-t border-border" />
-                            {projectStatus !== 'APPROVED' && (
-                              <div
-                                className="relative"
-                                onMouseEnter={() => {
-                                  setReviewStatusMenuGroup(null)
-                                  setVersionSourceMenuGroup(groupName)
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setReviewStatusMenuGroup(null)
-                                    setVersionSourceMenuGroup(groupName)
-                                    focusSubmenuFirstItem('version', true)
-                                  }}
-                                  className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
-                                  aria-haspopup="menu"
-                                  aria-expanded={versionSourceMenuGroup === groupName}
-                                  data-submenu-trigger="version"
-                                >
-                                  <Upload className="h-4 w-4" />
-                                  <span className="flex-1">{t('uploadNewVersion')}</span>
-                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                </button>
-                                {versionSourceMenuGroup === groupName && (
-                                  <div ref={versionSubmenuRef} data-submenu-panel="version" className={cn('absolute top-0 z-[60] w-40 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150', actionMenuPosition.submenuSide === 'left' ? 'right-full -mr-px' : 'left-full -ml-px')} role="menu">
-                                    <button type="button" onClick={(e) => openLocalVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-                                      <Upload className="h-4 w-4" />{t('localUpload')}
-                                    </button>
-                                    <button type="button" onClick={(e) => openCollectionVersionPicker(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-                                      <FolderInput className="h-4 w-4" />{t('collectionReplace')}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            <button
-                              type="button"
-                              disabled={groupVideos.filter(v => v.status === 'READY').length < 2}
-                              onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleCompare(groupName, e) }}
-                              className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              <GitCompareArrows className="h-4 w-4" />{t('compareVersions')}
-                            </button>
-                            {projectStatus !== 'APPROVED' && (
-                              <>
-                                <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleStartEditGroupName(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-                                  <Pencil className="h-4 w-4" />{t('editVideoName')}
-                                </button>
-                                <div className="my-1 border-t border-border" />
-                                <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleDeleteGroup(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
-                                  <Trash2 className="h-4 w-4" />{t('deleteVideo')}
-                                </button>
-                              </>
-                            )}
+                              {renderActionMenuItems(activeSubmenuSide)}
                             </DialogPrimitive.Content>
                           </DialogPrimitive.Portal>
                         </DialogPrimitive.Root>
+                      )}
+                      {actionMenuRenderedGroup === groupName && actionMenuPoint && (
+                        <OverlayMenu
+                          open={actionMenuGroup === groupName}
+                          onOpenChange={(open) => { if (!open) closeActionMenus(false) }}
+                          label={t('videoActions')}
+                          anchorPoint={actionMenuPoint}
+                          placement={{ side: 'bottom', align: 'start', gap: 6, pointer: true }}
+                          returnFocusRef={actionMenuReturnRef}
+                          menuRef={actionMenuRef}
+                          onKeyDown={handleActionMenuKeyDown}
+                          onEscape={() => {
+                            if (shareTypeMenuGroup || reviewStatusMenuGroup || versionSourceMenuGroup) {
+                              setShareTypeMenuGroup(null)
+                              setReviewStatusMenuGroup(null)
+                              setVersionSourceMenuGroup(null)
+                              return true
+                            }
+                            return false
+                          }}
+                          className="w-52"
+                        >
+                          {renderActionMenuItems(activeSubmenuSide)}
+                        </OverlayMenu>
                       )}
                     </div>
                   )

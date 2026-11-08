@@ -25,6 +25,7 @@ interface OverlayMenuProps {
   returnFocusRef?: RefObject<HTMLElement | null>
   menuRef?: RefObject<HTMLDivElement | null>
   onKeyDown?: (event: React.KeyboardEvent<HTMLDivElement>) => void
+  onClick?: React.MouseEventHandler<HTMLDivElement>
   /** Return true when the Escape key was consumed (e.g. a submenu closed instead of the root). */
   onEscape?: () => boolean
   className?: string
@@ -37,7 +38,7 @@ interface OverlayMenuProps {
  */
 export default function OverlayMenu({
   open, onOpenChange, label, left, top, width = 208, side = 'bottom',
-  anchorRef, anchorPoint, placement, triggerRef, returnFocusRef, menuRef, onKeyDown, onEscape, className, children,
+  anchorRef, anchorPoint, placement, triggerRef, returnFocusRef, menuRef, onKeyDown, onClick, onEscape, className, children,
 }: OverlayMenuProps) {
   const contentRef = useRef<HTMLDivElement | null>(null)
   const [content, setContent] = useState<HTMLDivElement | null>(null)
@@ -70,12 +71,14 @@ export default function OverlayMenu({
   }, [menuRef])
 
   useEffect(() => {
-    if (!open) return
+    // Focusing while the menu is still hidden (before its first measurement)
+    // is a no-op, so wait until the anchored position is ready.
+    if (!open || (anchored && !position.ready)) return
     const frame = requestAnimationFrame(() => {
-      contentRef.current?.querySelector<HTMLElement>('[role="menuitem"], button:not([disabled])')?.focus()
+      contentRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled]):not([aria-disabled="true"]), button:not([disabled])')?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
-  }, [open])
+  }, [open, anchored, position.ready])
 
   return (
     <Dialog.Root open={open} onOpenChange={(next) => {
@@ -109,6 +112,7 @@ export default function OverlayMenu({
             outside.current = true
           }}
           onKeyDown={onKeyDown}
+          onClick={onClick}
           className={cn(
             'fixed z-[90] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl outline-none',
             motion.surface,
