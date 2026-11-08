@@ -16,6 +16,7 @@ import {
   type FolderNode,
 } from '@/lib/project-folders'
 import { NO_GROUP_KEY } from '@/lib/projects-filter'
+import { isEditableContextTarget, contextMenuPoint as contextMenuPointFromEvent, elementContextPoint, type ContextMenuPoint } from '@/lib/context-menu'
 
 const COLLAPSED_STORAGE_KEY = 'admin_projects_folder_collapsed'
 const ROOT_KEY = ''
@@ -71,17 +72,33 @@ export default function ProjectsFolderTree({
   const [draft, setDraft] = useState('')
   const [editorError, setEditorError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [menu, setMenu] = useState<{ id: string } | null>(null)
+  const [menu, setMenu] = useState<{ id: string; point: ContextMenuPoint | null } | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const menuTriggerRef = useRef<HTMLElement | null>(null)
+  const menuReturnRef = useRef<HTMLElement | null>(null)
+  const menuCloseTimer = useRef<number | null>(null)
+
+  const cancelMenuClose = () => {
+    if (menuCloseTimer.current) {
+      window.clearTimeout(menuCloseTimer.current)
+      menuCloseTimer.current = null
+    }
+  }
 
   const closeMenu = (restoreFocus = true) => {
     setMenuOpen(false)
-    if (restoreFocus) menuTriggerRef.current?.focus()
-    // Keep the measured position until the exit animation finishes.
-    window.setTimeout(() => setMenu(null), 160)
+    if (restoreFocus) menuReturnRef.current?.focus()
+    // Keep the measured position until the exit animation finishes. Opening the
+    // next menu (e.g. right-clicking another folder) cancels this pending clear.
+    cancelMenuClose()
+    menuCloseTimer.current = window.setTimeout(() => {
+      menuCloseTimer.current = null
+      setMenu(null)
+    }, 160)
   }
+
+  useEffect(() => () => cancelMenuClose(), [])
 
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
@@ -142,8 +159,34 @@ export default function ProjectsFolderTree({
   // it: the menu is portalled to <body> and anchored to the viewport instead.
   const toggleMenu = (folderId: string, trigger: HTMLElement) => {
     menuTriggerRef.current = trigger
+    menuReturnRef.current = trigger
     if (menuOpen && menu?.id === folderId) { closeMenu(); return }
-    setMenu({ id: folderId })
+    cancelMenuClose()
+    setMenu({ id: folderId, point: null })
+    setMenuOpen(true)
+  }
+
+  const openFolderContextMenu = (
+    folder: FolderNode,
+    event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+    row: HTMLElement | null,
+  ) => {
+    if (!isAdmin || !row) return
+    if (isEditableContextTarget(event.target)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const focused = document.activeElement instanceof HTMLElement && row.contains(document.activeElement)
+      ? document.activeElement
+      : null
+    const anchor = focused ?? row
+    const point = 'clientX' in event
+      ? contextMenuPointFromEvent(event, anchor)
+      : elementContextPoint(anchor)
+    if (!point) return
+    cancelMenuClose()
+    menuTriggerRef.current = null
+    menuReturnRef.current = anchor
+    setMenu({ id: folder.id, point })
     setMenuOpen(true)
   }
 
@@ -315,9 +358,9 @@ export default function ProjectsFolderTree({
     },
   })
 
-  const rowClass = (active: boolean, isDropTarget: boolean) => [
+  const rowClass = (active: boolean, isDropTarget: boolean, contextActive = false) => [
     'group/row w-full flex items-center gap-1 pr-1.5 h-9 rounded-lg text-sm transition-colors',
-    active ? 'bg-primary-visible text-foreground border-2 border-primary-visible font-semibold' : 'hover:bg-accent/60 border-2 border-transparent text-foreground',
+    active || contextActive ? 'bg-primary-visible text-foreground border-2 border-primary-visible font-semibold' : 'hover:bg-accent/60 border-2 border-transparent text-foreground',
     isDropTarget ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : '',
   ].join(' ')
 
@@ -370,9 +413,21 @@ export default function ProjectsFolderTree({
           const isCollapsed = collapsed.has(folder.id)
           const count = counts.get(folder.id) ?? 0
           const active = openFolderId === folder.id
+          const contextActive = menu?.id === folder.id && menu.point !== null
           return (
             <li key={folder.id} className="py-0.5">
-              <div className={rowClass(active, dropKey === folder.id)} style={{ paddingLeft: indentOf(depth) }} {...dropHandlers(folder.id, folder.id)}>
+              <div
+                className={rowClass(active, dropKey === folder.id, contextActive)}
+                data-card-context
+                data-context-active={contextActive || undefined}
+                style={{ paddingLeft: indentOf(depth) }}
+                onContextMenu={isAdmin ? (event) => openFolderContextMenu(folder, event, event.currentTarget) : undefined}
+                onKeyDown={isAdmin ? (event) => {
+                  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+                  openFolderContextMenu(folder, event, event.currentTarget)
+                } : undefined}
+                {...dropHandlers(folder.id, folder.id)}
+              >
                 {kids.length > 0 ? (
                   <button
                     type="button"
@@ -439,8 +494,10 @@ export default function ProjectsFolderTree({
             onOpenChange={(open) => { if (!open) closeMenu(false) }}
             label={`${folder.name} ${t('folderActions')}`}
             width={MENU_WIDTH}
-            placement={{ align: 'end', side: 'bottom', gap: 6 }}
-            triggerRef={menuTriggerRef}
+            placement={{ align: 'end', side: 'bottom', gap: 6, pointer: menu.point !== null }}
+            anchorPoint={menu.point}
+            triggerRef={menu.point ? undefined : menuTriggerRef}
+            returnFocusRef={menuReturnRef}
             menuRef={menuRef}
             onKeyDown={handleMenuKeyDown}
           >

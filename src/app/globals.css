@@ -511,6 +511,13 @@
     outline-offset: 2px;
   }
 
+  /* Menus auto-focus their first item; the global outline reads as a selected
+   * state, so keep focus working without painting the purple ring. */
+  [role="menu"]:focus-visible,
+  [role="menu"] :is(button, [role="menuitem"], [role="menuitemradio"]):focus-visible {
+    outline: none;
+  }
+
   /*
    * Press baseline — every interactive target answers pointerdown, including
    * the ones that only had hover styling. Component-specific active:bg-* /

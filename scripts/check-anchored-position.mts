@@ -70,3 +70,22 @@ const submenuLeft = computeAnchoredPosition({
 })
 assert.equal(submenuLeft.submenuSide, 'left')
 console.log('ok - submenu side flips near the right edge:', submenuRight.submenuSide, submenuLeft.submenuSide)
+
+const point = (x: number, y: number) => ({ left: x, top: y, right: x, bottom: y, width: 0, height: 0 })
+const pointerMenu = { width: 208, height: 260 }
+const pointerPlacement = { align: 'start' as const, side: 'bottom' as const, gap: 6, padding: 8, pointer: true }
+
+const pointerDownRight = computeAnchoredPosition({ anchor: point(100, 400), size: pointerMenu, viewport, placement: pointerPlacement })
+assert.equal(pointerDownRight.left, 106)
+assert.equal(pointerDownRight.top, 406)
+
+const pointerFlipLeft = computeAnchoredPosition({ anchor: point(1400, 400), size: pointerMenu, viewport, placement: pointerPlacement })
+assert.equal(pointerFlipLeft.left + pointerMenu.width, 1394)
+
+const pointerFlipUp = computeAnchoredPosition({ anchor: point(100, 850), size: pointerMenu, viewport, placement: pointerPlacement })
+assert.equal(pointerFlipUp.top + pointerMenu.height, 844)
+
+const pointerFlipCorner = computeAnchoredPosition({ anchor: point(1430, 890), size: pointerMenu, viewport, placement: pointerPlacement })
+assert.ok(pointerFlipCorner.left >= 8 && pointerFlipCorner.left + pointerMenu.width <= 1432)
+assert.ok(pointerFlipCorner.top >= 8 && pointerFlipCorner.top + pointerMenu.height <= 892)
+console.log('ok - pointer menus keep a 6px gap and flip left/up near edges:', JSON.stringify(pointerFlipCorner))

@@ -103,9 +103,15 @@ export function useAnchoredPosition({
         return
       }
 
+      const computed = window.getComputedStyle(content)
+      const measuredWidth = Number.parseFloat(computed.width) || content.offsetWidth
+      const measuredHeight = Number.parseFloat(computed.height) || content.offsetHeight
       const result = computeAnchoredPosition({
         anchor,
-        size: { width: content.offsetWidth, height: content.offsetHeight },
+        // getComputedStyle keeps the fractional layout box (and ignores the open
+        // transition's scale). Round up so a flipped menu's nearest edge never
+        // lands short of the placement gap.
+        size: { width: Math.ceil(measuredWidth), height: Math.ceil(measuredHeight) },
         viewport: bounds,
         placement: placementRef.current,
       })

@@ -21,6 +21,8 @@ export type AnchoredPlacement = {
   widthDelta?: number
   xOffset?: number
   submenuWidth?: number
+  /** The anchor is a pointer: keep `gap` on both axes and flip left/up when a side cannot fit. */
+  pointer?: boolean
 }
 
 export type AnchoredPosition = {
@@ -73,7 +75,9 @@ export function computeAnchoredPosition({
     : align === 'end'
       ? anchor.right - width + xOffset
       : anchor.left + xOffset
-  const left = clamp(naturalLeft, minLeft, maxLeft)
+  const left = placement.pointer
+    ? pointerLeft({ anchor, width, viewport, gap, padding, xOffset, minLeft, maxLeft })
+    : clamp(naturalLeft, minLeft, maxLeft)
 
   const belowTop = anchor.bottom + gap
   const aboveTop = anchor.top - gap - height
@@ -102,4 +106,24 @@ export function computeAnchoredPosition({
   const submenuSide = left + width + 6 + submenuWidth <= viewport.right - padding ? 'right' : 'left'
 
   return { left, top, width, height, maxHeight, side: actualSide, submenuSide }
+}
+
+/** A pointer menu opens down-right, then flips to whichever side of the pointer fits. */
+function pointerLeft({
+  anchor, width, viewport, gap, padding, xOffset, minLeft, maxLeft,
+}: {
+  anchor: AnchorRect
+  width: number
+  viewport: ViewportRect
+  gap: number
+  padding: number
+  xOffset: number
+  minLeft: number
+  maxLeft: number
+}): number {
+  const rightLeft = anchor.left + gap + xOffset
+  const leftLeft = anchor.left - gap - width + xOffset
+  if (rightLeft + width <= viewport.right - padding) return rightLeft
+  if (leftLeft >= viewport.left + padding) return leftLeft
+  return clamp(rightLeft, minLeft, maxLeft)
 }
