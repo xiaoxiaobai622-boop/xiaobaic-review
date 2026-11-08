@@ -46,6 +46,7 @@ import { hasProgressivePlayback } from '@/lib/video-playback'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import { useAuth } from '@/components/AuthProvider'
 import { getActiveTeamId } from '@/lib/team-store'
+import { STUDIO_HEADER_SHELL_CLASS, STUDIO_SIDEBAR_TRACK_PX } from '@/app/studio/shell'
 import FolderInteraction from '@/components/ui/folder-interaction'
 import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
 
@@ -98,10 +99,10 @@ const SHELL_COL_WIDTHS_KEY = 'vitransfer-admin-project-shell-cols'
 // 那两条模板就直接从 CSS 里消失）。
 const SHELL_GRID_COLS = {
   withSidebar: {
-    plain: 'lg:grid-cols-[288px_var(--shell-grid)]',
-    player: 'lg:grid-cols-[288px_var(--shell-grid)_2px_var(--shell-player)]',
-    comments: 'lg:grid-cols-[288px_var(--shell-grid)_2px_var(--shell-comments)]',
-    both: 'lg:grid-cols-[288px_var(--shell-grid)_2px_var(--shell-player)] xl:grid-cols-[288px_var(--shell-grid)_2px_var(--shell-player)_2px_var(--shell-comments)]',
+    plain: 'lg:grid-cols-[var(--studio-sidebar-track-width)_var(--shell-grid)]',
+    player: 'lg:grid-cols-[var(--studio-sidebar-track-width)_var(--shell-grid)_2px_var(--shell-player)]',
+    comments: 'lg:grid-cols-[var(--studio-sidebar-track-width)_var(--shell-grid)_2px_var(--shell-comments)]',
+    both: 'lg:grid-cols-[var(--studio-sidebar-track-width)_var(--shell-grid)_2px_var(--shell-player)] xl:grid-cols-[var(--studio-sidebar-track-width)_var(--shell-grid)_2px_var(--shell-player)_2px_var(--shell-comments)]',
   },
   collapsed: {
     plain: 'lg:grid-cols-[var(--shell-grid)]',
@@ -897,9 +898,10 @@ export default function ProjectPage() {
     return { player: at(gridIdx + 2), comments: reviewCommentsMounted ? at(gridIdx + 4) : null }
   }, [sidebarCollapsed, reviewPaneMounted, reviewCommentsMounted])
 
-  // 整行里被占死的量：项目侧栏 288（折叠时 0）+ 两枚把手各 2px（＝栏面之间那条缝的宽度）。
+  // 整行里被占死的量：项目侧栏轨道宽（折叠时 0）+ 两枚把手各 2px（＝栏面之间那条缝的宽度）。
+  // 轨道宽与 globals.css 的 --studio-sidebar-track-width 同源，见 @/app/studio/shell。
   // 把手固定按两枚算，即便 1024–1279 那一档只有一枚把手真进了这一行：宁可少给 2px，也不让面板宽度跟着「开几块」变。
-  const shellFixedPx = (sidebarCollapsed ? 0 : 288) + 4
+  const shellFixedPx = (sidebarCollapsed ? 0 : STUDIO_SIDEBAR_TRACK_PX) + 4
   // 两块面板加起来最多能占多少：整行减掉被占死的量和素材网格的下限。
   const shellPanesRoomPx = useCallback(
     () => (shellGridRef.current?.clientWidth ?? 0) - shellFixedPx - SHELL_TRACK_MIN.grid,
@@ -1547,7 +1549,7 @@ export default function ProjectPage() {
             四周边距也照它：顶 0（他那条白色顶栏上方只剩 1px 画布）、右 2px、底 2px（实测他窗口右沿
             css x 2545-2546、底沿 y 1245-1246 都是画布），圆角统一 8px（他栏面四角实测 R≈8：
             左栏顶角从 x69/y59 收到 x63/y65，右列底角从 x2544/y1239 收到 x2539/y1244）。 */}
-        <div className="mb-[2px] flex flex-wrap items-center justify-between gap-3 rounded-[8px] bg-popover px-3 py-1 lg:py-4">
+        <div className={`mb-[2px] flex flex-wrap items-center justify-between gap-3 rounded-[8px] bg-popover px-3 py-1 ${STUDIO_HEADER_SHELL_CLASS}`}>
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
             <Link
               href="/studio/projects"
@@ -1604,9 +1606,10 @@ export default function ProjectPage() {
           {/* 宽屏上下分栏：上半工作区入口、下半信息区（项目信息，选中素材时被版本信息顶替），各自独立滚动。
               下半占 6 成：它的内容量远大于上半，等高会让下半一直滚、上半空掉大半。 */}
           <aside className={cn(
-            'flex min-w-0 flex-col lg:mr-[2px] lg:grid lg:min-h-0',
+            'flex min-w-0 flex-col lg:mr-[var(--studio-shell-gap)] lg:grid lg:min-h-0',
             infoAreaCollapsed ? 'lg:grid-rows-1' : 'lg:grid-rows-[2fr_3fr]',
-            sidebarCollapsed && 'hidden'
+            // lg:hidden 不能省：lg:grid 的 display 在 lg 起会盖掉 hidden，收起时侧栏会摊成整行。
+            sidebarCollapsed && 'hidden lg:hidden'
           )}>
             <nav className="scrollbar-hidden flex gap-1 overflow-x-auto rounded-[8px] bg-popover p-2 lg:flex-col lg:overflow-y-auto lg:py-4">
               {([

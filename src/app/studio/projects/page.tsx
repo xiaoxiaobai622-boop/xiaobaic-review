@@ -25,6 +25,7 @@ import { useTranslations } from 'next-intl'
 import { Switch } from '@/components/ui/switch'
 import type { ViewMode } from '@/components/ViewModeToggle'
 import { getActiveTeamId } from '@/lib/team-store'
+import { STUDIO_HEADER_SHELL_CLASS } from '@/app/studio/shell'
 import { folderPath, type FolderNode } from '@/lib/project-folders'
 import {
   applyProjectsQuery,
@@ -558,24 +559,21 @@ export default function AdminPage() {
   }
 
   if (loading) {
-    // 骨架按真页面的 DOM 形状逐层占位（页头带 / 236px 侧栏 / 工具栏行 / 四张统计卡 / 项目卡网格），
+    // 骨架按真页面的 DOM 形状逐层占位（页头带 / 288px 轨道侧栏 / 工具栏行 / 四张统计卡 / 项目卡网格），
     // 卡内每根占位条用真卡同款字号与行高，不写死整卡高度——猜数字反而会跳版式。
     return (
       <div className="flex-1 min-h-0 bg-background lg:h-[calc(100dvh-var(--admin-header-height))] lg:overflow-hidden">
         <div className="w-full px-3 py-3 sm:px-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-0 lg:pr-[2px] lg:pt-0 lg:pb-[2px]" aria-busy="true">
           <p className="sr-only">{t('loadingProjects')}</p>
-          <div className="flex items-center justify-between gap-4 border-b border-border pb-3 mb-3 lg:shrink-0 lg:mb-[2px] lg:rounded-[8px] lg:border-b-0 lg:bg-popover lg:px-4 lg:py-3">
-            {/* 页头/按钮/工具栏三段的尺寸都按真元素的实际行高：h1 是 text-2xl(32px)、说明是 text-sm(20px)、Button default 是 h-10。 */}
-            <div className="space-y-1">
-              <div className="h-8 w-44 animate-pulse rounded-md bg-muted" />
-              <div className="h-5 w-64 animate-pulse rounded-md bg-muted/70" />
-            </div>
-            <div className="h-10 w-24 animate-pulse rounded-md bg-muted" />
+          <div className={`flex items-center justify-between gap-4 border-b border-border pb-3 mb-3 ${STUDIO_HEADER_SHELL_CLASS}`}>
+            {/* 页头只占一行：真页头是 h1 + 一枚 h-9 图标按钮，占位条按同款行高。 */}
+            <div className="h-8 w-44 animate-pulse rounded-md bg-muted" />
+            <div className="h-9 w-9 animate-pulse rounded-md bg-muted" />
           </div>
 
-          <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[2px]">
-            {/* 侧栏骨架跟着已存的收缩态走，否则刷新一次就先看到 236px 再缩成 56px。 */}
-            <div className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 flex-col gap-1.5 overflow-y-auto px-2 pb-4 lg:flex lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14 items-center' : 'w-[236px]'}`}>
+          <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[var(--studio-shell-gap)]">
+            {/* 侧栏骨架跟着已存的收缩态走，否则刷新一次就先看到展开宽再缩成图标列。 */}
+            <div className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 flex-col gap-1.5 overflow-y-auto px-2 pb-4 lg:flex lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14 items-center' : 'lg:w-[var(--studio-sidebar-width)]'}`}>
               {[0, 1, 2, 3, 4].map((key) => (
                 <div key={key} className={`h-9 animate-pulse rounded-lg bg-muted/70 ${folderRailCollapsed ? 'w-9' : 'w-full'}`} />
               ))}
@@ -805,9 +803,9 @@ export default function AdminPage() {
   return (
     <div className="flex-1 min-h-0 bg-background lg:h-[calc(100dvh-var(--admin-header-height))] lg:overflow-hidden">
       <div className="w-full px-3 py-3 sm:px-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-0 lg:pr-[2px] lg:pt-0 lg:pb-[2px]">
-        <div className="flex justify-between items-center gap-4 border-b border-border pb-3 mb-3 lg:shrink-0 lg:mb-[2px] lg:rounded-[8px] lg:border-b-0 lg:bg-popover lg:px-4 lg:py-3">
+        <div className={`flex justify-between items-center gap-4 border-b border-border pb-3 mb-3 ${STUDIO_HEADER_SHELL_CLASS}`}>
           <div>
-            <h1 className="text-xl sm:text-2xl font-semibold flex min-h-[44px] items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-semibold flex min-h-[44px] items-center gap-2 lg:min-h-0">
               <FolderKanban className="w-6 h-6" />
               {t('dashboard')}
             </h1>
@@ -821,8 +819,8 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[2px]">
-          <aside className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 overflow-y-auto px-2 pb-4 lg:block lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14' : 'w-[236px]'}`}>
+        <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[var(--studio-shell-gap)]">
+          <aside className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 overflow-y-auto px-2 pb-4 lg:block lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14' : 'lg:w-[var(--studio-sidebar-width)]'}`}>
             {/* 收缩时树只隐藏、不卸载：行内编辑器与折叠集合都活在组件里，
                 卸载再挂就等于给「新建文件夹」写第二套实现。 */}
             <div className={folderRailCollapsed ? 'hidden' : undefined}>{renderFolderTree(true)}</div>

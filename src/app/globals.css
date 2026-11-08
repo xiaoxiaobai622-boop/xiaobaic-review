@@ -102,6 +102,12 @@
 
     /* Layout helpers */
     --admin-header-height: 0px;
+
+    /* Studio 壳层（项目中心 / 项目详情共用）。288 是整列轨道，含栏面与右侧内容区之间的
+       2px 画布缝；可见栏面 = 288 - 2 = 286，和详情页实测 rect 一致。 */
+    --studio-sidebar-track-width: 288px;
+    --studio-shell-gap: 2px;
+    --studio-sidebar-width: calc(var(--studio-sidebar-track-width) - var(--studio-shell-gap));
   }
 
   /*
