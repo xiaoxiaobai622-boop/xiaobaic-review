@@ -78,7 +78,7 @@ export async function DocPage({
   return (
     <article className="mx-auto w-full max-w-3xl px-5 py-10 sm:py-14">
       {/* 与正文同一套「只转义 &<>」的口径：React 文本节点会把 h1 里的直引号写成 `&quot;`，
-          而 SEO 契约要求 H1 逐字含 `意见挂在第几帧，不是"大概三分钟"`。h1 只来自受审文稿。 */}
+          而 H1 允许出现直引号，逐字渲染才不会被转义成 `&quot;`。h1 只来自受审文稿。 */}
       <h1
         className="text-3xl font-bold leading-snug text-[#171a20] sm:text-4xl"
         dangerouslySetInnerHTML={{ __html: escapeHtml(doc.h1) }}
@@ -93,6 +93,9 @@ export async function DocPage({
             height={doc.illustration.height}
             sizes="(max-width: 768px) 100vw, 728px"
             quality={90}
+            preload
+            loading="eager"
+            fetchPriority="high"
             className="h-auto w-full rounded-lg border border-[#dfe2e7]"
           />
           <figcaption className="mt-2 text-sm leading-6 text-[#6f7580]">{doc.illustration.caption}</figcaption>

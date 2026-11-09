@@ -17,14 +17,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // 首页这条**不带尾斜杠**：Next 渲染根路径 canonical 时会把 `https://vidx.cn/` 归一成
   // `https://vidx.cn`（10-09 线上实测），两边不一致就等于给同一个页面两个地址。
-  const statics: MetadataRoute.Sitemap = [site, `${site}/features`, `${site}/compare`, `${site}/guides`, `${site}/privacy`, `${site}/terms`].map(
-    (url) => ({ url, lastModified: reviewedOn }),
-  )
+  const statics: MetadataRoute.Sitemap = [
+    { url: site, lastModified: reviewedOn, images: [`${site}/home/review-comments.webp`, `${site}/home/versions-grid.webp`, `${site}/home/collect-upload.webp`] },
+    { url: `${site}/features`, lastModified: reviewedOn },
+    { url: `${site}/compare`, lastModified: reviewedOn },
+    { url: `${site}/guides`, lastModified: reviewedOn },
+    { url: `${site}/privacy`, lastModified: reviewedOn },
+    { url: `${site}/terms`, lastModified: reviewedOn },
+  ]
 
-  // 文稿使用 frontmatter 的真实核稿日期。
+  // 文稿使用 frontmatter 的真实核稿日期；有配图的把图片一并交给图片索引。
   const docs: MetadataRoute.Sitemap = [...loadDocs().values()].map((d) => ({
     url: `${site}/${d.group}/${d.slug}`,
     lastModified: new Date(d.updatedOn),
+    images: d.illustration ? [`${site}${d.illustration.src}`] : undefined,
   }))
 
   // 内测公告：营销导航与审片页横幅都链向它、页面自带 index + canonical，此前却漏在 sitemap 外。

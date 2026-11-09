@@ -94,7 +94,7 @@ function validate(meta: Record<string, unknown>, file: string): MarketingDoc {
   }
   const illustration = meta.illustration as MarketingDoc['illustration']
   if (illustration && (
-    typeof illustration.src !== 'string' || !/^\/home\/[a-z0-9-]+\.png$/.test(illustration.src)
+    typeof illustration.src !== 'string' || !/^\/home\/[a-z0-9-]+\.(?:png|webp)$/.test(illustration.src)
     || typeof illustration.alt !== 'string' || !illustration.alt.trim()
     || typeof illustration.caption !== 'string' || !illustration.caption.trim()
     || !Number.isInteger(illustration.width) || illustration.width <= 0
@@ -149,7 +149,7 @@ function assertSubset(body: string, lineOffset: number, file: string): void {
  * 不加任何清洗，也不引 DOMPurify。引号故意不转义：中文文稿里的「」“”要原样进 HTML。
  *
  * 也是 `(marketing)` 里标题类字段的渲染口径：React 的文本节点会把 `"` 转成 `&quot;`，
- * 而契约的 H1 就带直引号（`意见挂在第几帧，不是"大概三分钟"`），所以那些位置共用这个函数。
+ * 而 H1 允许出现直引号，所以那些位置共用这个函数。
  */
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

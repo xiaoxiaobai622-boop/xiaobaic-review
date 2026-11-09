@@ -1,11 +1,12 @@
 import { LegalDoc } from '@/components/LegalDoc'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
+import { BrandLd } from '@/components/marketing/BrandLd'
 
 import type { Metadata } from 'next'
 import { JsonLd } from '@/components/marketing/JsonLd'
 
 const TITLE = '用户服务协议：账号、内容与服务责任 | 逐帧审阅'
-const DESCRIPTION = '逐帧审阅用户服务协议：账号注册与登录、上传内容的权利与责任、审片链接使用规则及服务变更说明。'
+const DESCRIPTION = '逐帧审阅用户服务协议：说明账号注册与登录、上传内容的权利与责任、审片链接与分享权限的使用规则、知识产权归属、服务变更与终止条件；继续使用平台即表示同意本协议与隐私政策，注销与咨询可按页面约定联系，注销请求会在 30 日内处理并答复，重要变更会提前公示。协议同时说明个人信息保护、免责声明与账号注销，便于签约前核对。'
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
@@ -32,6 +33,7 @@ export default async function TermsPage() {
   const url = `${site}/terms`
   return (
     <>
+      <BrandLd />
       <JsonLd value={{
         '@context': 'https://schema.org',
         '@type': 'WebPage',
@@ -105,6 +107,10 @@ export default async function TermsPage() {
             '如您对本协议有任何疑问，可通过工作区侧栏的「提交反馈」与我们联系，我们会在同一入口回复。',
           ],
         },
+      ]}
+      related={[
+        { href: '/features', label: '查看视频审片功能总览' },
+        { href: '/guides', label: '了解在线审片流程与工具选型' },
       ]}
     />
     </>

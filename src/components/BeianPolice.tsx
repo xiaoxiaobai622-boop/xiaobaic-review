@@ -8,7 +8,7 @@ export default function BeianPolice({ className }: { className?: string }) {
       target="_blank"
       className={cn('inline-flex items-center gap-1.5', className)}
     >
-      <img src="/beian/police.png" alt="公安备案" width={20} height={22} className="h-[18px] w-auto shrink-0" />
+      <img src="/beian/police.png" alt="公安备案" width={20} height={22} loading="lazy" decoding="async" className="h-[18px] w-auto shrink-0" />
       <span>桂公网安备45010002451490号</span>
     </a>
   )

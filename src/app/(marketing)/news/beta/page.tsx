@@ -5,7 +5,8 @@ import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { JsonLd } from '@/components/marketing/JsonLd'
 import MarketingCta from '@/components/marketing/MarketingCta'
 
-const DESCRIPTION = '逐帧审阅成长计划内测已于 2026 年 10 月 1 日开始，当前提供 10 GB 存储空间和最多 5 个团队席位。额度不足时，可通过工作区帮助面板联系客服申请支持。'
+const DESCRIPTION = '逐帧审阅成长计划内测已于 2026 年 10 月 1 日开始，提供 10 GB 存储空间和最多 5 个团队席位，可体验逐帧批注、版本对比与审片链接等能力。额度不足时，可通过工作区帮助面板联系客服申请支持，公告同时说明额度与后续扩容方式。公告保留原发布日期，文末附常见问题，说明内测时间、额度与扩容申请入口。'
+const INTRO = '逐帧审阅成长计划内测已经开始。当前提供 10 GB 存储空间和最多 5 个团队席位；额度不够时，可以在工作区联系客服申请支持。'
 const UPDATED_ON = '2026-11-07'
 const FAQ = [
   { q: '成长计划内测什么时候开始？', a: '内测已于 2026 年 10 月 1 日正式开始。' },
@@ -53,7 +54,7 @@ export default async function BetaAnnouncementPage() {
           </h1>
 
           <p className="mt-5 max-w-2xl text-base leading-8 text-[#3f4550] sm:text-[17px]">
-            {DESCRIPTION} 感谢每一位参与和支持逐帧审阅的用户，欢迎你和我们一起把产品做得更好。
+            {INTRO} 感谢每一位参与和支持逐帧审阅的用户，欢迎你和我们一起把产品做得更好。
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-[#6f7580]">

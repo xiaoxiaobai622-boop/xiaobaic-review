@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import HomeClient from './home-client'
 import { BrandLd } from '@/components/marketing/BrandLd'
+import { JsonLd } from '@/components/marketing/JsonLd'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 import { BRAND } from '@/lib/marketing/brand'
 
@@ -33,13 +34,35 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default function HomePage() {
+export default async function HomePage() {
   // 首页在 `(marketing)` 之外，拿不到那份 layout 里的品牌节点，而回答引擎做实体消歧
   // 最先看的就是首页。
+  const site = await getSiteUrlFromRequest()
   return (
     <>
+      <link rel="preload" as="image" href="/home/hero-poster.jpg" fetchPriority="high" />
       <BrandLd />
       <HomeClient />
+      {/* 首页首屏有一段真实的产品演示视频（46.79 秒，H.264），与页面上可见的 <video> 同源同封面。
+          时长由 ffprobe 实测，uploadDate 取对象存储的 Last-Modified，缩略图用视频 poster。 */}
+      <JsonLd
+        value={{
+          '@context': 'https://schema.org',
+          '@type': 'VideoObject',
+          '@id': `${site}/#product-demo`,
+          name: '逐帧审阅产品演示：逐帧批注与版本对比',
+          description: '演示在时间轴上按帧号定位批注、圈画画面、切换版本并生成审片链接的操作过程。',
+          thumbnailUrl: `${site}/home/hero-poster.jpg`,
+          contentUrl: 'https://media.vidx.cn/home/hero-b6cc37fa.mp4',
+          duration: 'PT46.79S',
+          uploadDate: '2026-10-23',
+          inLanguage: 'zh-CN',
+          width: 1600,
+          height: 884,
+          publisher: { '@id': `${site}/#organization` },
+          mainEntityOfPage: { '@type': 'WebPage', '@id': site },
+        }}
+      />
     </>
   )
 }

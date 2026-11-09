@@ -380,7 +380,7 @@ export default function HomeClient() {
         <header className={`${styles.header} ${stuck ? styles.headerStuck : ''}`}>
           <div className={styles.headerInner}>
             <Link className={styles.brand} href="/" aria-label="逐帧审阅首页">
-              <span className={styles.brandMark}><Image src="/brand/logo.png" alt="" width={26} height={26} /></span>
+              <span className={styles.brandMark}><Image src="/brand/logo.png" alt="" width={26} height={26} loading="eager" /></span>
               <span>逐帧审阅</span>
             </Link>
             <nav className={styles.headerNav} aria-label="页面导航">
@@ -503,10 +503,11 @@ export default function HomeClient() {
               </div>
               <figure className={styles.rowShot}>
                 <Image
-                  src="/home/review-comments.png"
+                  src="/home/review-comments.webp"
                   alt="审片页：时间轴上排着批注钉，悬停弹出那一帧的画面预览气泡，气泡底部是该帧的时间码"
                   width={1400}
                   height={940}
+                  sizes="(max-width: 900px) 100vw, 900px"
                   quality={90} className={styles.shotImg}
                 />
                 <figcaption>审片页：批注钉落在时间轴上，悬停即出该帧的画面预览</figcaption>
@@ -537,10 +538,11 @@ export default function HomeClient() {
               </div>
               <figure className={styles.rowShot}>
                 <Image
-                  src="/home/versions-grid.png"
+                  src="/home/versions-grid.webp"
                   alt="项目工作区：素材网格里 12 条素材、20 个版本，卡片上标着各自的 v1、v2、v3"
                   width={1400}
                   height={1040}
+                  sizes="(max-width: 900px) 100vw, 900px"
                   quality={90} className={styles.shotImg}
                 />
                 <figcaption>项目工作区：同名素材自动排成 v1、v2、v3，各自带上传者与时间</figcaption>
@@ -638,10 +640,11 @@ export default function HomeClient() {
               </div>
               <figure className={styles.rowShot}>
                 <Image
-                  src="/home/collect-upload.png"
+                  src="/home/collect-upload.webp"
                   alt="收录页：客户不注册也能上传原片，拖放区写着支持的文件类型"
                   width={1600}
                   height={850}
+                  sizes="(max-width: 900px) 100vw, 900px"
                   quality={90} className={styles.shotImg}
                 />
                 <figcaption>收录页：客户不注册也能传原片，传回来的直接进项目排版本</figcaption>

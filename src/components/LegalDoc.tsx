@@ -6,16 +6,20 @@ type LegalSection = {
   paragraphs: string[]
 }
 
+type RelatedLink = { href: string; label: string }
+
 export function LegalDoc({
   title,
   updatedAt,
   intro,
   sections,
+  related = [],
 }: {
   title: string
   updatedAt: string
   intro: string
   sections: LegalSection[]
+  related?: RelatedLink[]
 }) {
   return (
     <div className="min-h-dvh bg-[#f4f5f7] text-[#171a20]">
@@ -44,6 +48,21 @@ export function LegalDoc({
             </section>
           ))}
         </div>
+
+        {related.length > 0 && (
+          <nav aria-label="相关页面" className="mt-10 border-t border-[#dfe2e7] pt-5">
+            <p className="text-sm font-semibold">继续了解</p>
+            <ul className="mt-3 space-y-2">
+              {related.map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="text-[15px] text-[#245fe7] underline underline-offset-2">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
       </div>
 
       <footer className="border-t border-[#dfe2e7] bg-white">
