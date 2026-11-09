@@ -7,7 +7,7 @@ import { hashPassword } from '../src/lib/encryption'
 import { allocateTeamId } from '../src/lib/team-id'
 
 /**
- * 首页那两张配图（public/home/review-ui.png、review-comments.png）是从本地演示数据截的，
+ * 首页那几张配图（scripts/fixtures/home/review-comments.png 等）是从本地演示数据截的，
  * 结果把「百度网盘同步空间」的广告片、PREVIEW-111 水印和 Admin 随手敲的「ces / 1 / 2」
  * 一起烧进了公网营销图。这里造一条干净的替代素材：一支真能播的片子＋五条读得通的中文批注，
  * 停在审片页就能截。

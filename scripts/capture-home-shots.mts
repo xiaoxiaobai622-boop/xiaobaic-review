@@ -8,6 +8,7 @@ import { hashPassword } from '../src/lib/encryption'
 
 /**
  * 给首页三张章节配图重截真图：review-comments.png（4:3）、versions-grid.png、collect-upload.png。
+ * 输出到 scripts/fixtures/home；对外页面读 public/home 的 WebP，转换后再替换。
  * 数据来自 scripts/build-home-demo.mts 造的那条演示素材（屿见 · 城市夜景品牌片）。
  * 首屏那一格 10-08 起换成真录屏，由 scripts/capture-home-movie.mts 出 hero.mp4 ＋ hero-poster.jpg。
  *
@@ -15,13 +16,13 @@ import { hashPassword } from '../src/lib/encryption'
  * 口令：设了 HOME_DEMO_PASSWORD 就用它；没设就当场改一枚随机的、只在本次进程里用，不落文件。
  * CDP 用 Node 内置 WebSocket，零依赖。
  *
- *   npx tsx --env-file=.env scripts/capture-home-shots.mts            # 写进 public/home
+ *   npx tsx --env-file=.env scripts/capture-home-shots.mts            # 写进 scripts/fixtures/home
  *   npx tsx --env-file=.env scripts/capture-home-shots.mts --recon    # 只出 /tmp 试拍＋几何事实
  */
 const BASE = process.env.SHARE_CHECK_BASE || 'http://localhost:3000'
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const RECON = process.argv.includes('--recon')
-const OUT_DIR = RECON ? join(tmpdir(), 'home-shots') : 'public/home'
+const OUT_DIR = RECON ? join(tmpdir(), 'home-shots') : 'scripts/fixtures/home'
 const EMAIL = 'home-demo@xiaobaic.local'
 /** 画面停在这一秒：片头字幕那条批注（00:03:12）刚过，画面里人和监视器都在。 */
 const PARK_AT_SEC = 4.2

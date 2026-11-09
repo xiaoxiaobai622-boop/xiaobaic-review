@@ -351,7 +351,7 @@ try {
 
   // 宽高不许写死在这儿：从首页 markup 里读 <Image> 声明的那一对，再和文件实测比。
   const declared = new Map<string, [number, number]>()
-  for (const m of client.matchAll(/src="\/home\/([\w.-]+\.png)"[\s\S]{0,240}?width=\{(\d+)\}\s*height=\{(\d+)\}/g)) {
+  for (const m of client.matchAll(/src="\/home\/([\w.-]+\.(?:png|webp))"[\s\S]{0,240}?width=\{(\d+)\}\s*height=\{(\d+)\}/g)) {
     declared.set(m[1], [Number(m[2]), Number(m[3])])
   }
   check(declared.size === 3, `H4·b 首页声明了 ${declared.size} 张配图（首屏那张 10-08 换成真视频了，应当剩 3 张）`, [...declared.keys()].join(' '))
@@ -364,9 +364,9 @@ try {
     check(mean < 400, `H6 ${name} 顶栏是深色界面（三通道均值 ${Math.round(mean)}，浅色那套在 1900 上下）`)
     // 画面区按各张图的取景比例取：这三张现在是从界面上裁下来的 1:1 碎片（不再是整屏），
     // 批注那张几乎全是画面，版本那张几乎全是卡片。
-    const frac = name === 'review-comments.png' ? [0.02, 0.05, 0.9, 0.6] : [0.02, 0.08, 0.9, 0.7]
+    const frac = name === 'review-comments.webp' ? [0.02, 0.05, 0.9, 0.6] : [0.02, 0.08, 0.9, 0.7]
     const box = { left: Math.round(meta.width * frac[0]), top: Math.round(meta.height * frac[1]), width: Math.round(meta.width * frac[2]), height: Math.round(meta.height * frac[3]) }
-    if (name === 'collect-upload.png') continue
+    if (name === 'collect-upload.webp') continue
     const detail = await sharp(file).extract(box).stats()
     const sd = detail.channels.slice(0, 3).reduce((a, c) => a + c.stdev, 0)
     check(sd > 60, `H6·b ${name} 画面区是真素材、不是黑块或纯色占位（三通道标准差 ${Math.round(sd)}）`)
