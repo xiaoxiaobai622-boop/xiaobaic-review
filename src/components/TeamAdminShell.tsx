@@ -59,6 +59,7 @@ const tabsBySection: Record<string, { label: string; href: string; value: string
 export default function TeamAdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? ''
   const searchParams = useSearchParams()
+  const isInvitePage = pathname.startsWith('/studio/team/invite')
   const section = pathname === '/studio/team'
     ? sections[0]
     : sections.slice(1).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) || sections[0]
@@ -68,9 +69,15 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
   const { containerRef: tabsRef, rect: tabIndicator } = useSlidingIndicator(Math.max(0, tabs.findIndex((tab) => tab.value === activeTab)))
 
   useLayoutEffect(() => {
+    if (isInvitePage) return
     document.documentElement.classList.add('team-admin-scroll-lock')
     return () => document.documentElement.classList.remove('team-admin-scroll-lock')
-  }, [])
+  }, [isInvitePage])
+
+  // The invite card is a standalone landing page, not a team-admin section.
+  if (isInvitePage) {
+    return <div className="flex min-h-dvh flex-col bg-background">{children}</div>
+  }
 
   // 两块区域各自坐到白色栏面（--popover）上，之间和右/底透画布当 2px 缝、四角 8px 圆角，
   // 与审片工作区同一套；窄屏沿用原来的上下堆叠，不动。

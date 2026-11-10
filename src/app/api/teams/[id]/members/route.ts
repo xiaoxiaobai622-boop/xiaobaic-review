@@ -29,6 +29,9 @@ export async function GET(
         role: true,
         status: true,
         createdAt: true,
+        projectAccessScope: true,
+        defaultProjectRole: true,
+        lastActiveAt: true,
         user: {
           select: { id: true, name: true, email: true, phone: true, avatarUrl: true },
         },
@@ -47,6 +50,9 @@ export async function GET(
         role: true,
         status: true,
         createdAt: true,
+        projectAccessScope: true,
+        defaultProjectRole: true,
+        lastActiveAt: true,
         user: { select: { id: true, name: true, email: true, phone: true, avatarUrl: true } },
       },
     })

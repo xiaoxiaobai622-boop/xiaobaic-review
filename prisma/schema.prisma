@@ -99,6 +99,14 @@ enum ProjectAccessScope {
   ASSIGNED_ONLY
 }
 
+// Project-level capability. Team OWNER/ADMIN are implicit PROJECT_ADMIN;
+// a TeamMember's defaultProjectRole applies when no ProjectMember override exists.
+enum ProjectRole {
+  PROJECT_ADMIN
+  EDITOR
+  REVIEWER
+}
+
 model DurableTask {
   id          String   @id @default(cuid())
   kind        String
@@ -140,6 +148,7 @@ model Team {
   quota           TeamQuota?
   projectGroups   ProjectGroup[]
   orders          Order[]
+  auditEvents     TeamAuditEvent[]
 
   @@index([createdById])
 }
@@ -192,8 +201,25 @@ model TeamQuota {
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
-model TeamActivationCard {
-  id                String    @id @default(cuid())
+// Membership lifecycle audit. actor/target are plain strings so deleting a
+// user does not erase the record of what happened.
+model TeamAuditEvent {
+  id           String   @id @default(cuid())
+  teamId       String
+  actorUserId  String?
+  targetUserId String?
+  action       String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, createdAt])
+  @@index([teamId, action])
+  @@index([targetUserId, createdAt])
+}
+
+model TeamActivationCard {  id                String    @id @default(cuid())
   codeHash          String    @unique
   codeLast4         String
   planKey           String    @default("MONTHLY")
@@ -244,6 +270,11 @@ model TeamMember {
   userId    String
   role      TeamRole         @default(MEMBER)
   status    TeamMemberStatus @default(ACTIVE)
+  // Per-team project visibility. User.projectAccessScope is only the account
+  // default for newly created memberships; this column is the runtime authority.
+  projectAccessScope ProjectAccessScope @default(ALL_PROJECTS)
+  // Used for MEMBER when no ProjectMember override exists. OWNER/ADMIN ignore it.
+  defaultProjectRole ProjectRole        @default(REVIEWER)
   teamNickname   String?
   teamProfession String?
   department     String?
@@ -260,25 +291,32 @@ model TeamMember {
   @@unique([teamId, userId])
   @@index([userId])
   @@index([teamId, lastActiveAt])
+  @@index([teamId, projectAccessScope])
 }
 
 model TeamInvite {
   id          String       @id @default(cuid())
   teamId      String
+  // LINK invitations carry no contact: possession of the token is the invite.
+  method      InviteMethod @default(PHONE)
   email       String?
   phone       String?
   phoneHash     String?
   role        TeamRole     @default(MEMBER)
+  projectAccessScope ProjectAccessScope @default(ALL_PROJECTS)
+  defaultProjectRole ProjectRole        @default(REVIEWER)
   token       String       @unique
   status      InviteStatus @default(PENDING)
   createdById String
   expiresAt   DateTime
   acceptedAt  DateTime?
+  declinedAt  DateTime?
   createdAt   DateTime     @default(now())
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([teamId, status])
+  @@index([teamId, method, status])
   @@index([createdById])
   @@index([expiresAt])
 }
@@ -311,9 +349,15 @@ enum TeamMemberStatus {
   DISABLED
 }
 
+enum InviteMethod {
+  PHONE
+  LINK
+}
+
 enum InviteStatus {
   PENDING
   ACCEPTED
+  DECLINED
   REVOKED
   EXPIRED
 }
@@ -458,12 +502,14 @@ model ProjectMember {
   id        String   @id @default(cuid())
   projectId String
   userId    String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      ProjectRole @default(REVIEWER)
+  createdAt DateTime    @default(now())
 
   @@unique([projectId, userId])
   @@index([userId])
+  @@index([projectId, role])
 }
 
 model Video {

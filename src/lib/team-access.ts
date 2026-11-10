@@ -15,6 +15,8 @@ const TEAM_MEMBERSHIP_SELECT = {
   status: true,
   teamId: true,
   userId: true,
+  projectAccessScope: true,
+  defaultProjectRole: true,
   team: { select: { status: true } },
 } as const
 

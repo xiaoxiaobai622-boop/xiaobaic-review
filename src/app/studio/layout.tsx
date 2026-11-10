@@ -15,6 +15,9 @@ export default function AdminLayout({
   const pathname = usePathname()
   const hideHeader = pathname?.match(/^\/studio\/projects\/[^/]+\/share/)
   const isProjectWorkspace = Boolean(pathname?.match(/^\/studio\/projects\/[^/]+$/))
+  // Invite links must be readable before signing in: the recipient has to see
+  // the team and be able to decline without an account.
+  const isInvitePage = Boolean(pathname?.match(/^\/studio\/team\/invite\//))
 
   // Prevent caching of admin pages
   useEffect(() => {
@@ -44,17 +47,17 @@ export default function AdminLayout({
   }, [])
 
   return (
-    <AuthProvider requireAuth={true}>
+    <AuthProvider requireAuth={!isInvitePage}>
       <div className="flex flex-1 min-h-0 bg-background overflow-x-clip">
         <a href="#main-content" className="skip-link">
           跳到主要内容
         </a>
-        {!hideHeader && <StudioRail />}
+        {!hideHeader && !isInvitePage && <StudioRail />}
         <main id="main-content" tabIndex={-1} className={`flex-1 min-h-0 min-w-0 flex flex-col outline-none ${isProjectWorkspace ? 'lg:overflow-hidden' : ''}`}>
           {children}
         </main>
-        <AnnouncementHost />
-        <SessionMonitor />
+        {!isInvitePage && <AnnouncementHost />}
+        {!isInvitePage && <SessionMonitor />}
         {/* Ko-fi 打赏挂件撤掉了：它是全站唯一还在「要钱」的入口，而没有 ICP 许可证的
             时候付费／募捐类入口不许进生产。组件文件留着，要放回来就重新挂这一行。 */}
       </div>
