@@ -185,7 +185,7 @@ check(!teamPage.includes('5 名成员') && teamPage.includes('team.quota')
     && read('app/api/teams/[id]/route.ts').includes('getTeamQuota'),
   'S4 团队页那句额度不再写死数字，改成从真实 quota 读（运营后台能逐团改额度，写死必变假话）',
   `→ 页面兜底 ${teamPage.includes('5 名成员') ? '还在写死' : '已去掉'}，接口 ${read('app/api/teams/[id]/route.ts').includes('getTeamQuota') ? '带 quota' : '没带'}、team-center ${read('app/api/team-center/route.ts').includes('BETA_QUOTA') ? '还挂着多余的 quota 载荷' : '干净'}`)
-check(membersPage.includes('canManage && <Button onClick={invite}>')
+check(membersPage.includes('canManage && <Button onClick={invite}')
     && membersPage.includes('canManage && <Button variant="outline" size="sm" onClick={bulkRemove}')
     && membersPage.includes('canManage && <Card><CardHeader><CardTitle className="text-base">邀请成员'),
   'S5 席位页对没管理权的人不再画一排用不了的控件（原来是 disabled，看着像坏了）')
