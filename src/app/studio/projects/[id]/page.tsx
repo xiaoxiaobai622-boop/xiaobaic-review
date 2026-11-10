@@ -511,7 +511,10 @@ export default function ProjectPage() {
   }, [])
 
   useEffect(() => {
-    const closeMenu = () => { setContextMenu(null); setFolderMenu(null); setFolderShareMenuId(null) }
+    // Keep the measured anchor until the close animation ends. Clearing it while
+    // the menu is still mounted makes a fixed-position portal fall back to the
+    // viewport's static position (top-left) for a frame.
+    const closeMenu = () => { setContextMenuOpen(false); setFolderMenu(null); setFolderShareMenuId(null) }
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [id])
@@ -1676,7 +1679,7 @@ export default function ProjectPage() {
                 </>)}
                 <div className={MENU_SEPARATOR_CLASS_NAME} />
                 {canAdminister && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>}
-                <button type="button" role="menuitem" disabled={workspaceRefreshing} className={cn(CONTEXT_MENU_ITEM_CLASS_NAME, 'disabled:opacity-60')} onClick={() => { void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
+                <button type="button" role="menuitem" disabled={workspaceRefreshing} className={cn(CONTEXT_MENU_ITEM_CLASS_NAME, 'disabled:opacity-60')} onClick={() => { setContextMenuOpen(false); void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
                 <div className={MENU_SEPARATOR_CLASS_NAME} />
                 {canAdminister && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); openSettings('project-details') }}><Settings className="h-4 w-4" />项目设置</button>}
                 <Link href="/studio/team" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => setContextMenuOpen(false)}><Users className="h-4 w-4" />邀请成员</Link>
