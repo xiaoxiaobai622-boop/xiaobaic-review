@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAdministerProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { getSecuritySettings } from '@/lib/video-access'
 
 export const runtime = 'nodejs'
@@ -13,10 +12,9 @@ export const dynamic = 'force-dynamic'
  * must still exist in this project for the rows to be readable at all.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; linkId: string }> }) {
-  const user = await requireApiAdmin(request)
-  if (user instanceof Response) return user
   const { id, linkId } = await params
-  if (!(await canAdministerProject(prisma, user, id))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, id, 'share')
+  if (access instanceof Response) return access
   const link = await prisma.shareLink.findFirst({ where: { id: linkId, projectId: id }, select: { id: true } })
   if (!link) return NextResponse.json({ error: '分享记录不存在' }, { status: 404 })
 

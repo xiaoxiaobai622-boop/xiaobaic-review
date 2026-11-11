@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, INCLUDE_DELETED, LIVE_VIDEO } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
+import type { ProjectAction } from '@/lib/project-policy'
 import { createRecycleBinItem } from '@/lib/recycle-bin'
 
 export const runtime = 'nodejs'
 
-async function authorize(request: NextRequest, projectId: string) {
-  const auth = await requireApiAdmin(request)
-  if (auth instanceof Response) return auth
-  if (!(await canAccessProject(prisma, auth, projectId))) return new Response('Access denied', { status: 403 })
-  return auth
+async function authorize(request: NextRequest, projectId: string, action: ProjectAction) {
+  return requireProjectAction(request, projectId, action)
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const auth = await authorize(request, id)
+  const auth = await authorize(request, id, 'view')
   if (auth instanceof Response) return auth
   const folders = await prisma.projectFolder.findMany({ where: { projectId: id }, orderBy: { name: 'asc' }, include: { _count: { select: { videos: { where: LIVE_VIDEO } } } } })
   return NextResponse.json({ folders })
@@ -23,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const auth = await authorize(request, id)
+  const auth = await authorize(request, id, 'edit')
   if (auth instanceof Response) return auth
   const body = await request.json().catch(() => ({}))
   const name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -38,7 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const auth = await authorize(request, id)
+  const auth = await authorize(request, id, 'edit')
   if (auth instanceof Response) return auth
   const body = await request.json().catch(() => ({}))
   const folderId = typeof body.folderId === 'string' ? body.folderId : ''
@@ -57,7 +54,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const auth = await authorize(request, id)
+  const auth = await authorize(request, id, 'edit')
   if (auth instanceof Response) return auth
   const folderId = new URL(request.url).searchParams.get('folderId')
   if (!folderId) return NextResponse.json({ error: 'folderId is required' }, { status: 400 })
@@ -74,6 +71,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     video.preview1080Path,
     video.preview720Path,
     video.hlsPath,
+    video.sourceQualityPath,
     video.cleanPreview2160Path,
     video.cleanPreview1080Path,
     video.cleanPreview720Path,
@@ -95,6 +93,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
           { preview1080Path: path },
           { preview720Path: path },
           { hlsPath: path },
+          { sourceQualityPath: path },
           { cleanPreview2160Path: path },
           { cleanPreview1080Path: path },
           { cleanPreview720Path: path },

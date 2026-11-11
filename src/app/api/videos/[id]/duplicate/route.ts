@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, INCLUDE_DELETED } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
 // Move the source video group into another group as its newest versions.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiAdmin(request)
-  if (auth instanceof Response) return auth
   const { id: sourceId } = await params
   const body = await request.json().catch(() => ({}))
   const targetName = typeof body.targetName === 'string' ? body.targetName.trim() : ''
@@ -20,7 +17,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const source = await prisma.video.findUnique({ where: { id: sourceId } })
   if (!source) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
-  if (!(await canAccessProject(prisma, auth, source.projectId))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, source.projectId, 'edit')
+  if (access instanceof Response) return access
   if (source.status !== 'READY') return NextResponse.json({ error: 'Only ready videos can be used as a new version.' }, { status: 400 })
   if (source.name === targetName) return NextResponse.json({ error: 'Choose a different video group.' }, { status: 400 })
 

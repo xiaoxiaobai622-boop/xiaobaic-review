@@ -4,8 +4,7 @@ import { prisma } from '@/lib/db'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
 import { emitApprovalInAppNotification, logInAppEmitResult } from '@/lib/in-app-notifications/emit'
-import { canManageProjectApproval } from '@/lib/project-access'
-import { getCurrentUserFromRequest } from '@/lib/auth'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -33,6 +32,10 @@ export async function POST(
 
   try {
     const { id: projectId } = await params
+    const access = await requireProjectAction(request, projectId, 'approve')
+    if (access instanceof Response) return access
+    const currentUser = access.user
+
     const body = await request.json().catch(() => ({}))
     const parsed = unapproveVideoSchema.safeParse(body)
 
@@ -49,17 +52,6 @@ export async function POST(
 
     if (!project) {
       return NextResponse.json({ error: projectMessages.projectNotFoundApi || 'Project not found' }, { status: 404 })
-    }
-
-    const currentUser = await getCurrentUserFromRequest(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-
-    if (!(await canManageProjectApproval(prisma, currentUser, project.id))) {
-      return NextResponse.json({
-        error: projectMessages.onlyAdminsCanApproveProject || 'Only project managers or the project creator can approve videos',
-      }, { status: 403 })
     }
 
     const { selectedVideoId } = parsed.data

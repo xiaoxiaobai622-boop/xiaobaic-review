@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO, LIVE_COMMENT } from '@/lib/db'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
 import { canAccessProject, canAdministerProject, projectViewersWhere } from '@/lib/project-access'
+import { requireProjectAction, getProjectAccessContext } from '@/lib/project-authorization'
+import { canProject } from '@/lib/project-policy'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { isSmtpConfigured, isSourceQualityPlaybackEnabled } from '@/lib/settings'
 import { flushPendingClientNotifications } from '@/lib/notifications'
@@ -12,6 +14,7 @@ import { updateProjectSchema } from '@/lib/validation'
 import { syncCompanyToDirectory } from '@/lib/client-directory-sync'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
+import { recordTeamAuditEvent } from '@/lib/team-audit'
 import { dispatchDurableTask, recordDurableTask } from '@/lib/durable-tasks'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
 import { hasProgressivePlayback } from '@/lib/video-playback'
@@ -70,7 +73,19 @@ export async function GET(
     // department, bio) is reserved for project administrators, matching what
     // /api/comments already does. The same gate guards the clear-text share
     // password, so it is resolved for every request.
-    const canAdminister = await canAdministerProject(prisma, authResult, id)
+    const accessContext = await getProjectAccessContext(authResult.id, id)
+    const projectRole = accessContext?.role ?? null
+    const capabilities = {
+      canUpload: canProject(projectRole, 'upload'),
+      canEdit: canProject(projectRole, 'edit'),
+      canDeleteContent: canProject(projectRole, 'delete'),
+      canManageSettings: canProject(projectRole, 'manageSettings'),
+      canManageMembers: canProject(projectRole, 'manageMembers'),
+      canShare: canProject(projectRole, 'share'),
+      canApprove: canProject(projectRole, 'approve'),
+      canViewStats: canProject(projectRole, 'viewStats'),
+    }
+    const canAdminister = capabilities.canManageSettings
     const isProjectAdmin = !includeComments || canAdminister
 
     const project = await prisma.project.findUnique({
@@ -172,6 +187,8 @@ export async function GET(
       // whether saving is possible at all. Without it a plain member sees an
       // empty password box and a 保存 button that can only ever answer 403.
       canAdminister,
+      projectRole,
+      capabilities,
       smtpConfigured,
     }
 
@@ -192,10 +209,10 @@ export async function PATCH(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const projectMessages = messages?.projects || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
+  const { id } = await params
+  const access = await requireProjectAction(request, id, 'manageSettings')
+  if (access instanceof Response) return access
+  const authResult = access.user
 
   // Rate limiting: mutation throttle
   const rateLimitResult = await rateLimit(request, {
@@ -206,10 +223,6 @@ export async function PATCH(
   if (rateLimitResult) return rateLimitResult
 
   try {
-    const { id } = await params
-    if (!(await canAdministerProject(prisma, authResult, id))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
     const body = await request.json()
     const parsed = updateProjectSchema.safeParse(body)
     if (!parsed.success) {
@@ -293,7 +306,16 @@ export async function PATCH(
       updateData.groupId = validatedBody.groupId
     }
 
+    if (validatedBody.restricted !== undefined) {
+      updateData.restricted = validatedBody.restricted
+    }
+
     if (validatedBody.status !== undefined) {
+      // Archive/unarchive stays team-level even though the rest of project
+      // settings belongs to PROJECT_ADMIN.
+      if (['ARCHIVED', 'IN_REVIEW'].includes(validatedBody.status) && !['OWNER', 'ADMIN'].includes(authResult.teamRole ?? '')) {
+        return NextResponse.json({ error: 'Administrator permission required' }, { status: 403 })
+      }
       updateData.status = validatedBody.status
 
       if (validatedBody.status === 'APPROVED') {
@@ -485,6 +507,15 @@ export async function PATCH(
       where: { id },
       data: updateData,
     })
+
+    if (validatedBody.restricted !== undefined && authResult.authorizedTeamId) {
+      await recordTeamAuditEvent(prisma, {
+        teamId: authResult.authorizedTeamId,
+        actorUserId: authResult.id,
+        action: 'PROJECT_RESTRICTED_CHANGED',
+        metadata: { projectId: id, restricted: project.restricted },
+      })
+    }
 
     // Flush pending client notifications when schedule changes
     if (previousClientSchedule !== null && validatedBody.clientNotificationSchedule !== previousClientSchedule) {

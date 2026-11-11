@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { z } from 'zod'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -30,13 +29,8 @@ export async function PATCH(
 
   const { id: projectId, albumId } = await params
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-  if (!(await canAccessProject(prisma, authResult, projectId))) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
+  const access = await requireProjectAction(request, projectId, 'edit')
+  if (access instanceof Response) return access
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -105,13 +99,8 @@ export async function DELETE(
 
   const { id: projectId, albumId } = await params
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-  if (!(await canAccessProject(prisma, authResult, projectId))) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
+  const access = await requireProjectAction(request, projectId, 'edit')
+  if (access instanceof Response) return access
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,

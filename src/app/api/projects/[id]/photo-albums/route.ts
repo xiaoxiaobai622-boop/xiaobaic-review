@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getShareContext, requireApiAdmin } from '@/lib/auth'
+import { getShareContext } from '@/lib/auth'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
-import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
+import { verifyProjectAccess } from '@/lib/project-access'
 import { generateAlbumAccessToken } from '@/lib/photo-access'
 import { shareTokenAllowsProjectPhotos } from '@/lib/share-links'
 import { z } from 'zod'
@@ -125,11 +126,6 @@ export async function POST(
 
   const { id: projectId } = await params
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 20,
@@ -138,9 +134,8 @@ export async function POST(
   if (rateLimitResult) return rateLimitResult
 
   try {
-    if (!(await canAdministerProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'edit')
+    if (access instanceof Response) return access
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { ProjectOverlay } from '@/components/ProjectOverlay'
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
-import { apiDelete, apiFetch, apiPost } from '@/lib/api-client'
+import { apiDelete, apiFetch, apiPatch, apiPost } from '@/lib/api-client'
 import { maskPhoneDisplay } from '@/lib/phone-display'
 
 /**
@@ -17,6 +17,13 @@ import { maskPhoneDisplay } from '@/lib/phone-display'
  * 一条「设为受限」开关说的话，本站没有那一列，只能把这三种由来写在每一行脸上）。
  */
 type MemberSource = 'teamAdmin' | 'allProjects' | 'assigned'
+type ProjectRole = 'PROJECT_ADMIN' | 'EDITOR' | 'REVIEWER'
+
+const PROJECT_ROLE_LABELS: Record<ProjectRole, string> = {
+  PROJECT_ADMIN: '项目管理员',
+  EDITOR: '编辑',
+  REVIEWER: '审阅',
+}
 
 interface MemberRow {
   id: string
@@ -25,6 +32,7 @@ interface MemberRow {
   email: string | null
   phone: string | null
   source: MemberSource
+  projectRole: ProjectRole | null
   canRemove: boolean
 }
 
@@ -103,8 +111,21 @@ export function ProjectMembersPanel({ projectId, projectTitle, onClose, onMember
     }
   }
 
-  const removeMember = async (member: MemberRow) => {
+  const changeRole = async (member: MemberRow, role: ProjectRole) => {
     if (busyId) return
+    setBusyId(member.id)
+    try {
+      await apiPatch(`/api/projects/${projectId}/members/${member.id}`, { role })
+      await refresh()
+      setNotice(t('projectMemberRoleChanged', { name: member.name || tc('none') }))
+    } catch {
+      await appAlert({ message: tc('errorTryAgain'), tone: 'error' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const removeMember = async (member: MemberRow) => {    if (busyId) return
     const name = member.name || tc('none')
     const ok = await appConfirm({
       message: t('projectMembersRemoveConfirm', { name }),
@@ -131,6 +152,68 @@ export function ProjectMembersPanel({ projectId, projectTitle, onClose, onMember
 
   const firstLoad = loading && members === null
   const count = members?.length ?? 0
+  const assignedMembers = (members ?? []).filter((member) => member.canRemove)
+  const readOnlyMembers = (members ?? []).filter((member) => !member.canRemove)
+
+  const renderMemberRow = (member: MemberRow, readOnly: boolean) => {
+    const contact = contactOf(member)
+    return (
+      <li key={member.id} data-tutorial="project-member-row" className="flex items-center gap-[10px] py-[7px]">
+        <span className="shrink-0">
+          <InitialsAvatar name={member.name} src={member.avatarUrl} size="sm" isInternal />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14px] font-medium text-foreground">{member.name || tc('none')}</span>
+          {contact ? (
+            <span data-tutorial="project-member-contact" className="block truncate text-[12px] text-muted-foreground">{contact}</span>
+          ) : null}
+        </span>
+        <span data-tutorial="project-member-source" className="shrink-0 text-[12px] text-muted-foreground">
+          {member.source === 'teamAdmin'
+            ? t('projectMembersSourceAdmin')
+            : member.source === 'allProjects'
+              ? t('projectMembersSourceAllProjects')
+              : t('projectMembersSourceAssigned')}
+        </span>
+        {readOnly || member.source === 'teamAdmin' ? (
+          <span className="shrink-0 text-[12px] text-muted-foreground">
+            {member.projectRole ? PROJECT_ROLE_LABELS[member.projectRole] : '—'}
+            {member.source === 'teamAdmin' ? '（团队管理员）' : member.source === 'allProjects' ? '（团队默认）' : ''}
+          </span>
+        ) : canManage ? (
+          <select
+            data-tutorial="project-member-role"
+            aria-label={t('projectMemberRoleLabel')}
+            value={member.projectRole ?? 'REVIEWER'}
+            disabled={busyId !== null}
+            onChange={(event) => void changeRole(member, event.target.value as ProjectRole)}
+            className="h-[30px] shrink-0 rounded-md border border-input bg-background px-1.5 text-[12px]"
+          >
+            <option value="PROJECT_ADMIN">{PROJECT_ROLE_LABELS.PROJECT_ADMIN}</option>
+            <option value="EDITOR">{PROJECT_ROLE_LABELS.EDITOR}</option>
+            <option value="REVIEWER">{PROJECT_ROLE_LABELS.REVIEWER}</option>
+          </select>
+        ) : (
+          <span className="shrink-0 text-[12px] text-muted-foreground">
+            {member.projectRole ? PROJECT_ROLE_LABELS[member.projectRole] : '—'}
+          </span>
+        )}
+        {!readOnly && canManage ? (
+          <button
+            type="button"
+            data-tutorial="project-member-remove"
+            onClick={() => removeMember(member)}
+            disabled={!member.canRemove || busyId !== null}
+            title={member.canRemove ? undefined : t('projectMembersRemoveBlockedHint')}
+            aria-label={tc('remove')}
+            className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent [&_svg]:h-4 [&_svg]:w-4"
+          >
+            <Trash2 aria-hidden="true" />
+          </button>
+        ) : null}
+      </li>
+    )
+  }
 
   return (
     <ProjectOverlay
@@ -150,48 +233,14 @@ export function ProjectMembersPanel({ projectId, projectTitle, onClose, onMember
           </div>
         ) : (
           <>
-            <section aria-label={t('projectMembersSection')}>
-              <h3 className="text-[12px] font-medium text-muted-foreground">{t('projectMembersSection')}</h3>
-              <ul className="mt-1 divide-y divide-border">
-                {(members ?? []).map((member) => {
-                  const contact = contactOf(member)
-                  return (
-                    <li key={member.id} data-tutorial="project-member-row" className="flex items-center gap-[10px] py-[7px]">
-                      <span className="shrink-0">
-                        <InitialsAvatar name={member.name} src={member.avatarUrl} size="sm" isInternal />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[14px] font-medium text-foreground">{member.name || tc('none')}</span>
-                        {contact ? (
-                          <span data-tutorial="project-member-contact" className="block truncate text-[12px] text-muted-foreground">{contact}</span>
-                        ) : null}
-                      </span>
-                      <span data-tutorial="project-member-source" className="shrink-0 text-[12px] text-muted-foreground">
-                        {member.source === 'teamAdmin'
-                          ? t('projectMembersSourceAdmin')
-                          : member.source === 'allProjects'
-                            ? t('projectMembersSourceAllProjects')
-                            : t('projectMembersSourceAssigned')}
-                      </span>
-                      {/* 只有第三种由来撤得动：撤掉授权行才是真的把门关上。前两种给 disabled＋原因，
-                          而不是藏起来——藏起来会让人以为这些人不该在名单上。 */}
-                      {canManage ? (
-                        <button
-                          type="button"
-                          data-tutorial="project-member-remove"
-                          onClick={() => removeMember(member)}
-                          disabled={!member.canRemove || busyId !== null}
-                          title={member.canRemove ? undefined : t('projectMembersRemoveBlockedHint')}
-                          aria-label={tc('remove')}
-                          className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent [&_svg]:h-4 [&_svg]:w-4"
-                        >
-                          <Trash2 aria-hidden="true" />
-                        </button>
-                      ) : null}
-                    </li>
-                  )
-                })}
-              </ul>
+            <section aria-label="project-members">
+              <h3 className="text-[12px] font-medium text-muted-foreground">本项目成员</h3>
+              {assignedMembers.length === 0 ? <p className="py-3 text-[12px] text-muted-foreground">还没有本项目成员。用下方搜索把成员加进来。</p> : <ul className="mt-1 divide-y divide-border">{assignedMembers.map((member) => renderMemberRow(member, false))}</ul>}
+            </section>
+            <section className="mt-3 border-t border-border pt-3" aria-label="team-wide-members">
+              <h3 className="text-[12px] font-medium text-muted-foreground">团队管理员 / 全部项目成员（只读）</h3>
+              <p className="mt-1 text-[12px] text-muted-foreground">团队管理员隐式为项目管理员；全部项目成员通过团队权限访问，不能在这里改项目角色。</p>
+              {readOnlyMembers.length === 0 ? <p className="py-3 text-[12px] text-muted-foreground">暂无团队管理员或全部项目成员。</p> : <ul className="mt-1 divide-y divide-border">{readOnlyMembers.map((member) => renderMemberRow(member, true))}</ul>}
               {notice ? <p className="py-[6px] text-[12px] text-muted-foreground">{notice}</p> : null}
             </section>
 

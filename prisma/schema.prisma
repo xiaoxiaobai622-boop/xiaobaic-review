@@ -217,6 +217,7 @@ model TeamAuditEvent {
   @@index([teamId, createdAt])
   @@index([teamId, action])
   @@index([targetUserId, createdAt])
+  @@index([createdAt])
 }
 
 model TeamActivationCard {  id                String    @id @default(cuid())
@@ -314,11 +315,27 @@ model TeamInvite {
   createdAt   DateTime     @default(now())
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  projects TeamInviteProject[]
 
   @@index([teamId, status])
   @@index([teamId, method, status])
   @@index([createdById])
   @@index([expiresAt])
+}
+
+// Project grants carried by an invite. Accepting the invite writes these rows
+// into ProjectMember; pending invites read them back in the member console.
+model TeamInviteProject {
+  id        String      @id @default(cuid())
+  inviteId  String
+  projectId String
+  role      ProjectRole @default(REVIEWER)
+
+  invite  TeamInvite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  project Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, projectId])
+  @@index([projectId])
 }
 
 model TeamJoinRequest {
@@ -463,6 +480,7 @@ model Project {
   photoAlbums       PhotoAlbum[] // Photo gallery albums
   recycleBinItems   RecycleBinItem[]
   members           ProjectMember[]
+  inviteProjects    TeamInviteProject[]
   feishuNotifications    FeishuNotification[]
 
   @@unique([teamId, projectCode])

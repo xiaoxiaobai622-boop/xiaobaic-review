@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { videoNameSlotTaken } from '@/lib/video-versions'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -16,11 +15,6 @@ export async function PATCH(request: NextRequest) {
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
-
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
 
   // Rate limiting: 60 requests per minute for batch operations
   const rateLimitResult = await rateLimit(request, {
@@ -68,9 +62,8 @@ export async function PATCH(request: NextRequest) {
     }
     const projectIds = [...new Set(targetVideos.map((video) => video.projectId))]
     for (const projectId of projectIds) {
-      if (!(await canAccessProject(prisma, authResult, projectId))) {
-        return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-      }
+      const access = await requireProjectAction(request, projectId, 'edit')
+      if (access instanceof Response) return access
     }
 
     const newName = name.trim()

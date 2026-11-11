@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiUser } from '@/lib/auth'
-import { canAccessProject, canAdministerProject, projectViewersWhere } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
+import { canProject } from '@/lib/project-policy'
+import { projectViewersWhere } from '@/lib/project-access'
 import { requireProjectWritable } from '@/lib/team-writeable'
 import { rateLimit } from '@/lib/rate-limit'
 import { logError } from '@/lib/logging'
@@ -18,26 +19,43 @@ const USER_SELECT = {
   avatarUrl: true,
   email: true,
   phone: true,
-  projectAccessScope: true,
 } as const
 
-const addMemberSchema = z.object({ userId: z.string().min(1) })
+const PROJECT_ROLES = ['PROJECT_ADMIN', 'EDITOR', 'REVIEWER'] as const
+const addMemberSchema = z.object({
+  userId: z.string().min(1),
+  role: z.enum(PROJECT_ROLES).optional(),
+})
 
 /**
  * 「这行的人是凭什么进来的」——三句不同的话，不是三种说法的一个意思：
  * 角色进来的、授权范围进来的、本项目单独授权进来的。撤的权限只有第三种，
  * 前两种撤了这行也不会消失（界面那枚 disabled 按钮就是这么来的）。
  */
-function sourceOf(viewer: { role: string; user: { projectAccessScope: string } }): 'teamAdmin' | 'allProjects' | 'assigned' {
+function sourceOf(viewer: { role: string; projectAccessScope: string }): 'teamAdmin' | 'allProjects' | 'assigned' {
   if (viewer.role !== 'MEMBER') return 'teamAdmin'
-  return viewer.user.projectAccessScope === 'ASSIGNED_ONLY' ? 'assigned' : 'allProjects'
+  return viewer.projectAccessScope === 'ASSIGNED_ONLY' ? 'assigned' : 'allProjects'
 }
 
-async function loadView(projectId: string, teamId: string, canManage: boolean) {
+async function loadView(projectId: string, teamId: string, restricted: boolean, canManage: boolean) {
   const viewers = await prisma.teamMember.findMany({
-    where: projectViewersWhere({ id: projectId, teamId }),
+    where: projectViewersWhere({ id: projectId, teamId, restricted }),
     orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
-    select: { role: true, createdAt: true, user: { select: USER_SELECT } },
+    select: {
+      role: true,
+      createdAt: true,
+      projectAccessScope: true,
+      defaultProjectRole: true,
+      user: {
+        select: {
+          ...USER_SELECT,
+          projectMemberships: {
+            where: { projectId },
+            select: { role: true },
+          },
+        },
+      },
+    },
   })
 
   const members = viewers.map((viewer) => {
@@ -51,7 +69,11 @@ async function loadView(projectId: string, teamId: string, canManage: boolean) {
       // 名单是批量展示，不是联系方式导出：手机号只给掩码。
       phone: canManage ? maskPhone(viewer.user.phone) : null,
       source,
-      canRemove: source === 'assigned',
+      projectRole: viewer.user.projectMemberships[0]?.role
+        ?? (viewer.role !== 'MEMBER'
+          ? 'PROJECT_ADMIN'
+          : viewer.projectAccessScope === 'ASSIGNED_ONLY' ? null : viewer.defaultProjectRole),
+      canRemove: source === 'assigned' || viewer.user.projectMemberships.length > 0,
     }
   })
 
@@ -62,7 +84,8 @@ async function loadView(projectId: string, teamId: string, canManage: boolean) {
           teamId,
           status: 'ACTIVE',
           role: 'MEMBER',
-          user: { projectAccessScope: 'ASSIGNED_ONLY', projectMemberships: { none: { projectId } } },
+          projectAccessScope: restricted ? { in: ['ALL_PROJECTS', 'ASSIGNED_ONLY'] } : 'ASSIGNED_ONLY',
+          user: { projectMemberships: { none: { projectId } } },
         },
         orderBy: { createdAt: 'asc' },
         select: { user: { select: USER_SELECT } },
@@ -87,9 +110,6 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
-
   const limited = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 60,
@@ -99,14 +119,11 @@ export async function GET(
 
   try {
     const { id: projectId } = await params
-    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, teamId: true } })
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'view')
+    if (access instanceof Response) return access
 
-    const canManage = await canAdministerProject(prisma, authResult, projectId)
-    return NextResponse.json(await loadView(projectId, project.teamId, canManage))
+    const canManage = canProject(access.role, 'manageMembers')
+    return NextResponse.json(await loadView(projectId, access.project.teamId, access.project.restricted, canManage))
   } catch (error) {
     logError('[members] Failed to load project members:', error)
     return NextResponse.json({ error: 'Failed to fetch project members' }, { status: 500 })
@@ -117,9 +134,6 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await requireApiUser(request)
-  if (authResult instanceof Response) return authResult
-
   const limited = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 30,
@@ -134,17 +148,15 @@ export async function POST(
       return NextResponse.json({ error: 'userId is required', code: 'INVALID_REQUEST' }, { status: 400 })
     }
 
-    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, teamId: true } })
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-    if (!(await canAdministerProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'manageMembers')
+    if (access instanceof Response) return access
+
     const blocked = await requireProjectWritable(projectId)
     if (blocked) return blocked
 
     // 只授权本团队里在册的人：拿一枚别人的 userId 往自己项目里塞，等于凭空造访问权。
     const membership = await prisma.teamMember.findUnique({
-      where: { teamId_userId: { teamId: project.teamId, userId: parsed.data.userId } },
+      where: { teamId_userId: { teamId: access.project.teamId, userId: parsed.data.userId } },
       select: { status: true },
     })
     if (!membership) {
@@ -154,14 +166,15 @@ export async function POST(
       return NextResponse.json({ error: 'This team member is disabled', code: 'MEMBER_DISABLED' }, { status: 409 })
     }
 
-    // 同一个人在同一条项目上只能有一行授权：唯一键已经在 schema 里，重复提交就当成没发生。
+    const role = parsed.data.role ?? 'REVIEWER'
+    // 同一个人在同一条项目上只能有一行授权；重复提交按本次提交的角色更新。
     await prisma.projectMember.upsert({
       where: { projectId_userId: { projectId, userId: parsed.data.userId } },
-      create: { projectId, userId: parsed.data.userId },
-      update: {},
+      create: { projectId, userId: parsed.data.userId, role },
+      update: { role },
     })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, role })
   } catch (error) {
     logError('[members] Failed to add project member:', error)
     return NextResponse.json({ error: 'Failed to add project member' }, { status: 500 })

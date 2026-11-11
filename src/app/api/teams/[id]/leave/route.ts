@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
+import { recordTeamAuditEvent } from '@/lib/team-audit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,7 +30,20 @@ export async function POST(
     )
   }
 
-  await prisma.teamMember.delete({ where: { id: membership.id } })
+  const projects = await prisma.project.findMany({ where: { teamId: id }, select: { id: true } })
+  await prisma.$transaction(async (tx) => {
+    await tx.projectMember.deleteMany({
+      where: { userId: authResult.id, projectId: { in: projects.map((project) => project.id) } },
+    })
+    await tx.teamMember.delete({ where: { id: membership.id } })
+    await recordTeamAuditEvent(tx, {
+      teamId: id,
+      actorUserId: authResult.id,
+      targetUserId: authResult.id,
+      action: 'MEMBER_LEFT',
+      metadata: { role: membership.role, projectCount: projects.length },
+    })
+  })
 
   const nextMembership = await prisma.teamMember.findFirst({
     where: { userId: authResult.id, status: 'ACTIVE' },

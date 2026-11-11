@@ -50,7 +50,10 @@ export async function POST(
   }, 'team-invite-accept', `${authResult.id}:${id}`)
   if (limited) return limited
 
-  const invite = await prisma.teamInvite.findUnique({ where: { token } })
+  const invite = await prisma.teamInvite.findUnique({
+    where: { token },
+    include: { projects: { select: { projectId: true, role: true } } },
+  })
   if (!invite || invite.teamId !== id) {
     return NextResponse.json({ error: '邀请不存在或已失效', code: 'INVITE_INVALID' }, { status: 404 })
   }
@@ -119,7 +122,10 @@ export async function POST(
       // stable until commit, so two concurrent accepts cannot both pass.
       await lockTeamSeats(tx, invite.teamId)
 
-      const current = await tx.teamInvite.findUnique({ where: { token } })
+      const current = await tx.teamInvite.findUnique({
+        where: { token },
+        include: { projects: { select: { projectId: true, role: true } } },
+      })
       if (!current || current.teamId !== id) {
         throw new InviteAcceptError(404, 'INVITE_INVALID', '邀请不存在或已失效')
       }
@@ -196,11 +202,41 @@ export async function POST(
           },
         })
       }
+
+      if (current.projects.length > 0 && current.projectAccessScope === 'ASSIGNED_ONLY') {
+        for (const grant of current.projects) {
+          const existingGrant = await tx.projectMember.findUnique({
+            where: {
+              projectId_userId: { projectId: grant.projectId, userId: authResult.id },
+            },
+            select: { id: true },
+          })
+          if (!existingGrant) {
+            await tx.projectMember.create({
+              data: { projectId: grant.projectId, userId: authResult.id, role: grant.role },
+            })
+          } else if (!isActive) {
+            // A disabled member comes back on the invite's terms; an active
+            // member keeps any higher role they already had on the project.
+            await tx.projectMember.update({
+              where: { id: existingGrant.id },
+              data: { role: grant.role },
+            })
+          }
+        }
+      }
     })
   } catch (error) {
     if (error instanceof SeatLimitError) {
+      await recordTeamAuditEvent(prisma, {
+        teamId: invite.teamId,
+        actorUserId: authResult.id,
+        targetUserId: authResult.id,
+        action: 'SEAT_LIMIT_HIT',
+        metadata: { source: 'INVITE_ACCEPT' },
+      })
       return NextResponse.json(
-        { error: '当前团队的成员数量已达到配额上限', code: error.code },
+        { error: '成员席位已满，请先停用/移除成员，或升级套餐', code: error.code },
         { status: 403 },
       )
     }
@@ -221,6 +257,7 @@ export async function POST(
         method: invite.method,
         role: acceptedRole,
         projectAccessScope: invite.projectAccessScope,
+        projectCount: invite.projects.length,
       },
     })
   }

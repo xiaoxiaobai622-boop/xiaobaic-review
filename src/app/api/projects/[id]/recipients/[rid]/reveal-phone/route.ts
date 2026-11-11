@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getClientIpAddress } from '@/lib/utils'
 import { revealPhoneNumber } from '@/lib/personal-data-reveal'
@@ -16,20 +15,16 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; rid: string }> },
 ) {
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return authResult
+  const { id: projectId, rid: recipientId } = await params
+  const access = await requireProjectAction(request, projectId, 'share')
+  if (access instanceof Response) return access
 
   const limited = await rateLimit(request, {
     windowMs: 15 * 60 * 1000,
     maxRequests: 20,
     message: '查看次数过多，请稍后再试',
-  }, 'reveal-recipient-phone', authResult.id)
+  }, 'reveal-recipient-phone', access.user.id)
   if (limited) return limited
-
-  const { id: projectId, rid: recipientId } = await params
-  if (!(await canAccessProject(prisma, authResult, projectId))) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
 
   try {
     // 归属校验和 PATCH 一样带 projectId：拿一枚别的项目的 rid 换不到号码。
@@ -45,7 +40,7 @@ export async function POST(
       kind: 'recipient',
       subjectId: recipient.id,
       stored: recipient.phone,
-      actorId: authResult.id,
+      actorId: access.user.id,
       projectId,
       ipAddress: getClientIpAddress(request),
     })

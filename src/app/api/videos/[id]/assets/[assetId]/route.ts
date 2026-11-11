@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAdministerProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getFilePath, deleteFile, isS3Mode, createWebReadableStream } from '@/lib/storage'
 import { contentDispositionAttachment } from '@/lib/download-names'
@@ -183,12 +182,6 @@ export async function DELETE(
 
   const { id: videoId, assetId } = await params
 
-  // Authentication - admin only
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   // Rate limiting
   const rateLimitResult = await rateLimit(
     request,
@@ -214,9 +207,8 @@ export async function DELETE(
   return NextResponse.json({ error: messages?.share?.assetNotFound || 'Asset not found' }, { status: 404 })
     }
 
-    if (!(await canAdministerProject(prisma, authResult, asset.video.projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, asset.video.projectId, 'edit')
+    if (access instanceof Response) return access
 
     if (asset.video.deletedAt) {
       return NextResponse.json(

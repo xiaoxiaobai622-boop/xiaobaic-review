@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { updateRecipient, deleteRecipient } from '@/lib/recipients'
 import { invalidateSessionsByEmail } from '@/lib/session-invalidation'
 import { rateLimit } from '@/lib/rate-limit'
@@ -38,10 +37,9 @@ export async function PATCH(
   const projectMessages = messages?.projects || {}
 
   // 1. Authentication
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
+  const { id: projectId, rid: recipientId } = await params
+  const access = await requireProjectAction(request, projectId, 'share')
+  if (access instanceof Response) return access
 
   // 2. Rate limiting: 30 requests per minute
   const rateLimitResult = await rateLimit(request, {
@@ -59,10 +57,6 @@ export async function PATCH(
   )
 
   try {
-    const { id: projectId, rid: recipientId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
     const body = await request.json()
 
     // Validate input
@@ -124,10 +118,9 @@ export async function DELETE(
   const projectMessages = messages?.projects || {}
 
   // 1. Authentication
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
+  const { id: projectId, rid: recipientId } = await params
+  const access = await requireProjectAction(request, projectId, 'share')
+  if (access instanceof Response) return access
 
   // 2. Rate limiting: 20 requests per minute
   const rateLimitResult = await rateLimit(request, {
@@ -145,11 +138,6 @@ export async function DELETE(
   )
 
   try {
-    const { id: projectId, rid: recipientId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
-
     // Verify the recipient belongs to the project in the URL (prevents cross-project IDOR)
     const recipientToDelete = await prisma.projectRecipient.findFirst({
       where: { id: recipientId, projectId },

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { requireProjectWritable } from '@/lib/team-writeable'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeDisplayFilename, sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
@@ -24,12 +23,6 @@ export async function POST(request: NextRequest) {
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
 
-  // SECURITY: Require admin authentication
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   // Rate limiting: Max 50 video uploads per hour
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 60 * 1000, // 1 hour
@@ -41,9 +34,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { projectId, originalFileName, originalFileSize, name, mimeType } = body
-    if (!projectId || !(await canAccessProject(prisma, authResult, projectId))) {
+    if (!projectId) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
+
+    const access = await requireProjectAction(request, projectId, 'upload')
+    if (access instanceof Response) return access
+    const authResult = access.user
 
     const blocked = await requireProjectWritable(projectId)
     if (blocked) return blocked

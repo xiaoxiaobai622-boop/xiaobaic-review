@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { purgeRecycleBinItems } from '@/lib/recycle-bin'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -18,19 +17,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const locale = await getConfiguredLocale().catch(() => 'en')
   const videoMessages = (await loadLocaleMessages(locale).catch(() => null))?.videos || {}
 
-  const auth = await requireApiAdmin(request)
-  if (auth instanceof Response) return auth
+  const { id: projectId } = await params
+  const access = await requireProjectAction(request, projectId, 'delete')
+  if (access instanceof Response) return access
+
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: videoMessages.tooManyBatchOperations || 'Too many batch operations. Please slow down.',
-  }, 'admin-batch-ops', auth.id)
+  }, 'admin-batch-ops', access.user.id)
   if (rateLimitResult) return rateLimitResult
-
-  const { id: projectId } = await params
-  if (!(await canAccessProject(prisma, auth, projectId))) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
 
   const body = await request.json().catch(() => null)
   const itemIds = body?.itemIds

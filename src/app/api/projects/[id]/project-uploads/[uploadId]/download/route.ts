@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getFilePath, isS3Mode, createWebReadableStream, downloadFile } from '@/lib/storage'
 import { contentDispositionAttachment } from '@/lib/download-names'
@@ -71,12 +70,9 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid or expired download link' }, { status: 403 })
     }
   } else {
-    // Bearer admin path
-    const authResult = await requireApiAdmin(request)
-    if (authResult instanceof Response) return authResult
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    // Bearer path
+    const access = await requireProjectAction(request, projectId, 'share')
+    if (access instanceof Response) return access
 
     const rl = await rateLimit(request, {
       windowMs: 60 * 1000,

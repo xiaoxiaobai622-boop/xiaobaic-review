@@ -80,7 +80,17 @@ export async function resolveProjectViewers(
           ]
         : [
             { role: { in: ['OWNER', 'ADMIN'] } },
-            { user: { projectAccessScope: { not: 'ASSIGNED_ONLY' } } },
+            {
+              user: {
+                teamMemberships: {
+                  some: {
+                    teamId: project.teamId,
+                    status: 'ACTIVE',
+                    projectAccessScope: { not: 'ASSIGNED_ONLY' },
+                  },
+                },
+              },
+            },
             { user: { projectMemberships: { some: { projectId } } } },
           ],
     },

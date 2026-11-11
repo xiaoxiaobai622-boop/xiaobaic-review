@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getCurrentUserFromRequest, getShareContext, requireApiAdmin } from '@/lib/auth'
+import { getShareContext } from '@/lib/auth'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
-import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
+import { verifyProjectAccess } from '@/lib/project-access'
 import { shareTokenAllowsProjectPhotos } from '@/lib/share-links'
 import { validatePhotoFile, sanitizeDisplayFilename, isInvalidFileType } from '@/lib/file-validation'
 import { generateAlbumAccessToken } from '@/lib/photo-access'
@@ -112,11 +113,6 @@ export async function POST(
 
   const { id: projectId, albumId } = await params
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 120,
@@ -125,9 +121,9 @@ export async function POST(
   if (rateLimitResult) return rateLimitResult
 
   try {
-    if (!(await canAdministerProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'edit')
+    if (access instanceof Response) return access
+    const currentUser = access.user
 
     const album = await prisma.photoAlbum.findUnique({
       where: { id: albumId },
@@ -136,11 +132,6 @@ export async function POST(
 
     if (!album || album.projectId !== projectId) {
       return NextResponse.json({ error: photoMessages.albumNotFound || 'Album not found' }, { status: 404 })
-    }
-
-    const currentUser = await getCurrentUserFromRequest(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: photoMessages.unauthorized || 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()

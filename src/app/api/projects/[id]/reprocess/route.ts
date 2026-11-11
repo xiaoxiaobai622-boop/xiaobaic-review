@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { getVideoQueue } from '@/lib/queue'
 import { deleteFile } from '@/lib/storage'
 import { rateLimit } from '@/lib/rate-limit'
@@ -32,12 +31,6 @@ export async function POST(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const projectMessages = messages?.projects || {}
 
-  // Check authentication - only admins can reprocess
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   // Rate limit to avoid enqueue abuse
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -48,9 +41,8 @@ export async function POST(
 
   try {
     const { id: projectId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'manageSettings')
+    if (access instanceof Response) return access
     const body = await request.json().catch(() => ({}))
     const parsed = reprocessSchema.safeParse(body)
     if (!parsed.success) {
@@ -109,6 +101,7 @@ export async function POST(
         (video as any).cleanPreview2160Path,
         video.cleanPreview720Path,
         video.cleanPreview1080Path,
+        (video as any).sourceQualityPath,
         // Only delete system-generated thumbnails; keep custom assets intact
         hasCustomThumbnail ? null : video.thumbnailPath,
       ].filter(Boolean) as string[]
@@ -132,6 +125,8 @@ export async function POST(
           cleanPreview2160Path: null,
           cleanPreview720Path: null,
           cleanPreview1080Path: null,
+          sourceQualityPath: null,
+          sourceQualityError: null,
           // Keep custom thumbnails; regenerate only system thumbnails
           thumbnailPath: hasCustomThumbnail ? video.thumbnailPath : null,
         },

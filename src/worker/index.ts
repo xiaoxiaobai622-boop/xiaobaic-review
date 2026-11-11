@@ -19,6 +19,7 @@ import { logError, logMessage } from '../lib/logging'
 import { dispatchPendingDurableTasks } from '../lib/durable-tasks'
 import { purgeExpiredRecycleBinItems } from '../lib/recycle-bin'
 import { purgeExpiredSupportConversations } from './support-retention'
+import { purgeExpiredTeamAuditEvents } from '../lib/team-audit-retention'
 
 const DEBUG = process.env.DEBUG_WORKER === 'true'
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -285,6 +286,12 @@ async function main() {
   }, 24 * 60 * 60 * 1000)
   await purgeExpiredSupportConversations().catch((err) => logError('Initial support retention cleanup failed', err))
 
+  // Team audit retention: 180 days, 1000 rows per batch, at most 20 batches.
+  const teamAuditRetentionInterval = setInterval(async () => {
+    await purgeExpiredTeamAuditEvents().catch((err) => logError('Scheduled team audit retention cleanup failed', err))
+  }, 24 * 60 * 60 * 1000)
+  await purgeExpiredTeamAuditEvents().catch((err) => logError('Initial team audit retention cleanup failed', err))
+
   // Handle shutdown gracefully
   process.on('SIGTERM', async () => {
     logMessage('SIGTERM received, closing workers...')
@@ -293,6 +300,7 @@ async function main() {
     clearInterval(durableTaskInterval)
     clearInterval(recycleBinInterval)
     clearInterval(supportRetentionInterval)
+    clearInterval(teamAuditRetentionInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),
@@ -313,6 +321,7 @@ async function main() {
     clearInterval(durableTaskInterval)
     clearInterval(recycleBinInterval)
     clearInterval(supportRetentionInterval)
+    clearInterval(teamAuditRetentionInterval)
     await Promise.all([
       worker.close(),
       assetWorker.close(),

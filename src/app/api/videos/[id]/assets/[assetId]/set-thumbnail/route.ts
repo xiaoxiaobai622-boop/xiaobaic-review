@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
@@ -19,11 +18,6 @@ export async function POST(
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
-
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
 
   const rateLimitResult = await rateLimit(
     request,
@@ -50,9 +44,8 @@ export async function POST(
     if (!video) {
       return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
-    if (!(await canAccessProject(prisma, authResult, video.projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, video.projectId, 'edit')
+    if (access instanceof Response) return access
 
     if (action === 'remove') {
       const project = await prisma.project.findUnique({ where: { id: video.projectId }, select: { teamId: true } })

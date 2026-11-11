@@ -32,6 +32,7 @@ interface Project {
   maxRevisions: number
   restrictCommentsToLatestVersion: boolean
   hideFeedback: boolean
+  restricted: boolean
   canAdminister: boolean
   allowAssetDownload: boolean
   allowPhotoDownload: boolean
@@ -75,6 +76,7 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
   const [maxRevisions, setMaxRevisions] = useState<number | ''>('')
   const [restrictCommentsToLatestVersion, setRestrictCommentsToLatestVersion] = useState(false)
   const [hideFeedback, setHideFeedback] = useState(false)
+  const [restricted, setRestricted] = useState(false)
   const [allowAssetDownload, setAllowAssetDownload] = useState(true)
   const [allowPhotoDownload, setAllowPhotoDownload] = useState(true)
   const [allowClientAssetUpload, setAllowClientAssetUpload] = useState(false)
@@ -119,6 +121,7 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
         setMaxRevisions(data.maxRevisions)
         setRestrictCommentsToLatestVersion(data.restrictCommentsToLatestVersion)
         setHideFeedback(data.hideFeedback || false)
+        setRestricted(Boolean(data.restricted))
         setAllowAssetDownload(data.allowAssetDownload ?? true)
         setAllowPhotoDownload(data.allowPhotoDownload ?? true)
         setAllowClientAssetUpload(data.allowClientAssetUpload ?? false)
@@ -175,6 +178,7 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
         maxRevisions: enableRevisions ? finalMaxRevisions : 0,
         restrictCommentsToLatestVersion,
         hideFeedback,
+        restricted,
         allowAssetDownload,
         allowPhotoDownload,
         allowClientAssetUpload,
@@ -384,6 +388,25 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
               {t('clearDueDate')}
             </Button>
           )}
+        </div>
+      </div>
+
+      <div className="space-y-3 border p-4 rounded-lg bg-muted/30">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5 flex-1">
+            <Label htmlFor="restricted">{t('restrictTitle')}</Label>
+            <p className="text-xs text-muted-foreground">
+              {restricted ? t('restrictOnDescription') : t('restrictOffDescription')}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('restrictedProjectHint')}
+            </p>
+          </div>
+          <Switch
+            id="restricted"
+            checked={restricted}
+            onCheckedChange={setRestricted}
+          />
         </div>
       </div>
     </>

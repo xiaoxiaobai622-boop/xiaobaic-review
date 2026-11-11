@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAdministerProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { encrypt } from '@/lib/encryption'
 import { getAppUrl } from '@/lib/url'
 import { ensureProjectMasterLink, sanitizeSharePermissions, formatShareLinkUrl } from '@/lib/share-links'
@@ -75,10 +74,9 @@ async function serializeMasterLink(projectId: string, baseUrl: string, archived:
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireApiAdmin(request)
-  if (user instanceof Response) return user
   const { id } = await params
-  if (!(await canAdministerProject(prisma, user, id))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, id, 'share')
+  if (access instanceof Response) return access
   const baseUrl = await getAppUrl(request)
   const [links, project] = await Promise.all([
     // The master row is shown as its own pinned line, not twice.
@@ -93,10 +91,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireApiAdmin(request)
-  if (user instanceof Response) return user
   const { id } = await params
-  if (!(await canAdministerProject(prisma, user, id))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, id, 'share')
+  if (access instanceof Response) return access
   try {
     const body = await request.json()
     const type = cleanType(body.type)

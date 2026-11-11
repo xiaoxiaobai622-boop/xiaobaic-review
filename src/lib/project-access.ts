@@ -102,24 +102,90 @@ function projectAccessWhereForUser(user: AuthUser, projectId: string): Prisma.Pr
  * 身份块那行人数、成员名单、加人撤人后的可见性都必须从这一枚 where 取。多写一份
  * OR 就是下一次改动的定时炸弹：「人数说能进」和「端点真让进」会各说各话。
  */
-export function projectViewersWhere(project: { id: string; teamId: string }): Prisma.TeamMemberWhereInput {
+export function projectViewersWhere(project: { id: string; teamId: string; restricted?: boolean }): Prisma.TeamMemberWhereInput {
+  const base = { teamId: project.teamId, status: 'ACTIVE' as const }
+
+  // Restricted projects are invisible to MEMBER+ALL_PROJECTS unless they have
+  // an explicit ProjectMember row. The identity count and the member panel must
+  // use this same list, otherwise they count people who get a 403 on open.
+  if (project.restricted) {
+    return {
+      ...base,
+      OR: [
+        { role: { not: 'MEMBER' } },
+        { user: { projectMemberships: { some: { projectId: project.id } } } },
+      ],
+    }
+  }
+
   return {
-    teamId: project.teamId,
-    status: 'ACTIVE',
+    ...base,
     OR: [
       { role: { not: 'MEMBER' } },
-      { user: { projectAccessScope: { not: 'ASSIGNED_ONLY' } } },
+      {
+        user: {
+          teamMemberships: {
+            some: {
+              teamId: project.teamId,
+              status: 'ACTIVE',
+              projectAccessScope: { not: 'ASSIGNED_ONLY' },
+            },
+          },
+        },
+      },
       { user: { projectMemberships: { some: { projectId: project.id } } } },
     ],
   }
 }
 
+/**
+ * Resolve the caller's role/scope from the project's own team. Share-page
+ * callers reach verifyProjectAccess with a bare account user whose
+ * projectAccessScope is only the account default; using that would let a
+ * multi-team user's scope from one team leak into another.
+ */
+async function resolveProjectAuthUser(
+  db: DbClient,
+  user: AuthUser,
+  projectId: string,
+): Promise<AuthUser | null> {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { teamId: true, team: { select: { status: true } } },
+  })
+  if (!project || project.team.status !== 'ACTIVE') return null
+
+  const membership = await db.teamMember.findUnique({
+    where: { teamId_userId: { teamId: project.teamId, userId: user.id } },
+    select: {
+      role: true,
+      status: true,
+      projectAccessScope: true,
+      defaultProjectRole: true,
+    },
+  })
+  if (!membership || membership.status !== 'ACTIVE') return null
+
+  return {
+    ...user,
+    authorizedTeamId: project.teamId,
+    teamRole: membership.role,
+    projectAccessScope: membership.projectAccessScope,
+    defaultProjectRole: membership.defaultProjectRole,
+  }
+}
+
 export async function canAccessProject(db: DbClient, user: AuthUser, projectId: string) {
-  // The request user may not carry the selected team's role (for example on
-  // direct video-token requests). Resolve access from the membership stored on
-  // the project's own team so a member cannot bypass project assignments.
+  // Routes that reach this with a bare getCurrentUserFromRequest user carry the
+  // account-level scope, not the selected team's. Resolve it from the project's
+  // own membership before applying the predicate.
+  const scopedUser = user.authorizedTeamId && user.teamRole
+    ? user
+    : await resolveProjectAuthUser(db, user, projectId)
+  if (!scopedUser) return false
+
   const project = await db.project.findFirst({
-    where: projectAccessWhereForUser(user, projectId),
+    where: projectAccessWhereForUser(scopedUser, projectId),
     select: { id: true },
   })
   return Boolean(project)
@@ -289,7 +355,10 @@ export async function verifyProjectAccess(
   const allowGuest = options?.allowGuest ?? true
 
   // Check if user is admin (admins bypass password protection)
-  const currentUser = await getCurrentUserFromRequest(request)
+  const rawUser = await getCurrentUserFromRequest(request)
+  const currentUser = rawUser
+    ? await resolveProjectAuthUser(prisma, rawUser, projectId)
+    : null
   const isAdmin = Boolean(currentUser)
   const shareAuth = await getShareAuth(request)
   const shareContext = shareAuth.payload

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { getRedis } from '@/lib/redis'
 import { fileExists } from '@/lib/storage'
 import { getLatestVideo } from '@/lib/video-comment-counts'
@@ -10,10 +9,9 @@ import { getLatestVideo } from '@/lib/video-comment-counts'
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiAdmin(request)
-  if (auth instanceof Response) return auth
   const { id: projectId } = await params
-  if (!(await canAccessProject(prisma, auth, projectId))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, projectId, 'download')
+  if (access instanceof Response) return access
 
   const body = await request.json().catch(() => ({}))
   const rawIds: unknown[] = Array.isArray(body?.videoIds) ? body.videoIds : []

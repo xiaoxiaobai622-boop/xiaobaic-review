@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 export const runtime = 'nodejs'
@@ -17,12 +16,6 @@ export async function GET(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const analyticsMessages = messages?.analytics || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
-  // Rate limiting: 100 requests per minute
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 100,
@@ -35,9 +28,8 @@ export async function GET(
 
   try {
     const { id } = await params
-    if (!(await canAccessProject(prisma, authResult, id))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, id, 'viewStats')
+    if (access instanceof Response) return access
 
     const project = await prisma.project.findUnique({
       where: { id },

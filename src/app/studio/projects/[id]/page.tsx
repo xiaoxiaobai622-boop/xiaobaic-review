@@ -1086,9 +1086,24 @@ export default function ProjectPage() {
     || user.teamRole === 'ADMIN'
     || project.createdById === user.id
   ))
-  // 与 requireApiAdmin 同一把尺子：上传/收录/回收站/分享链接/统计这些接口只收团队 OWNER/ADMIN，
-  // 成员看得见按钮只会点出 403。
-  const canAdminister = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'
+  const capabilities = project?.capabilities ?? {
+    canUpload: false,
+    canEdit: false,
+    canDeleteContent: false,
+    canManageSettings: false,
+    canManageMembers: false,
+    canShare: false,
+    canApprove: false,
+    canViewStats: false,
+  }
+  const canUpload = Boolean(capabilities.canUpload)
+  const canEdit = Boolean(capabilities.canEdit)
+  const canManageSettings = Boolean(capabilities.canManageSettings)
+  const canShare = Boolean(capabilities.canShare)
+  const canApprove = Boolean(capabilities.canApprove)
+  const canViewStats = Boolean(capabilities.canViewStats)
+  const canArchiveProject = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'
+  const canDeleteProject = canArchiveProject
   const openRollbackDialog = (video: any) => {
     setRollbackError('')
     setRollbackTarget(video)
@@ -1246,7 +1261,7 @@ export default function ProjectPage() {
     event.stopPropagation()
     setFolderDropTargetId(undefined)
     // 拖入文件会打开上传窗、拖入视频会 PATCH /api/videos，两条都只对 OWNER/ADMIN 开放。
-    if (!canAdminister) return
+    if (!canEdit) return
     const droppedFiles = Array.from(event.dataTransfer.files || []).filter(isVideoCandidate)
     if (droppedFiles.length > 0) {
       if (project.status === 'APPROVED') return
@@ -1569,7 +1584,7 @@ export default function ProjectPage() {
               memberCount={typeof project.memberCount === 'number' ? project.memberCount : 0}
               onOpen={openMembers}
             />
-            {canAdminister && (
+            {canUpload && (
             <Button
               size="default"
               className={projectToolbarButtonClassName}
@@ -1618,8 +1633,10 @@ export default function ProjectPage() {
               {([
                 { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
                 { id: 'photos' as const, label: t('photoAlbums'), count: photoCounts?.albums || 0, icon: Images },
-                ...(canAdminister ? [
+                ...(canShare ? [
                   { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
+                ] : []),
+                ...(canEdit ? [
                   { id: 'trash' as const, label: t('recycleBin'), count: recycleBinCount || 0, icon: Trash2 },
                 ] : []),
               ]).map((item) => {
@@ -1655,7 +1672,7 @@ export default function ProjectPage() {
               <section className="scrollbar-hidden hidden rounded-[8px] bg-popover px-2 lg:mt-[2px] lg:block lg:min-h-0 lg:overflow-y-auto" aria-label={selectedVideoGroup ? tv('versionInfo') : t('projectInfoSection')}>
                 {selectedVideoGroup ? renderVersionInspector(true) : (
                   <div id="project-info-panel" className="px-3 pb-3 pt-3">
-                    <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} />
+                    <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} capabilities={capabilities} canArchiveProject={canArchiveProject} canDeleteProject={canDeleteProject} />
                   </div>
                 )}
               </section>
@@ -1673,15 +1690,15 @@ export default function ProjectPage() {
               onKeyDown={handleContextMenuKeyDown}
               returnFocusRef={workspaceRef}
             >
-                {canAdminister && (<>
+                {canUpload && (<>
                 <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); setUploadRequestFiles(undefined); setUploadRequestFolderId(null); changeWorkspace('videos'); setUploadRequestKey((key) => key + 1) }}><Upload className="h-4 w-4" />上传文件</button>
                 <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); changeWorkspace('videos'); openFolderUpload() }}><FolderUp className="h-4 w-4" />上传文件夹</button>
                 </>)}
                 <div className={MENU_SEPARATOR_CLASS_NAME} />
-                {canAdminister && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>}
+                {canEdit && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); void createProjectFolder() }}><Plus className="h-4 w-4" />新建文件夹</button>}
                 <button type="button" role="menuitem" disabled={workspaceRefreshing} className={cn(CONTEXT_MENU_ITEM_CLASS_NAME, 'disabled:opacity-60')} onClick={() => { setContextMenuOpen(false); void refreshWorkspace() }}>{workspaceRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}{workspaceRefreshing ? '刷新中…' : '刷新'}</button>
                 <div className={MENU_SEPARATOR_CLASS_NAME} />
-                {canAdminister && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); openSettings('project-details') }}><Settings className="h-4 w-4" />项目设置</button>}
+                {canManageSettings && <button type="button" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => { setContextMenuOpen(false); openSettings('project-details') }}><Settings className="h-4 w-4" />项目设置</button>}
                 <Link href="/studio/team" role="menuitem" className={CONTEXT_MENU_ITEM_CLASS_NAME} onClick={() => setContextMenuOpen(false)}><Users className="h-4 w-4" />邀请成员</Link>
             </OverlayMenu>
             <section className={activeWorkspace === 'videos' ? undefined : 'hidden'}>
@@ -1884,7 +1901,7 @@ export default function ProjectPage() {
               <input ref={folderUploadInputRef} type="file" multiple accept={VIDEO_INPUT_ACCEPT} className="hidden" onChange={handleFolderUpload} {...({ webkitdirectory: '', directory: '' } as any)} />
               <AdminVideoManager
                 projectId={project.id}
-                canUpload={canAdminister}
+                canUpload={canUpload}
                 videos={visibleWorkspaceVideos}
                 projectStatus={project.status}
                 restrictToLatestVersion={project.restrictCommentsToLatestVersion}
@@ -1928,7 +1945,7 @@ export default function ProjectPage() {
               <PhotoAlbumsBlock key={`albums-${workspaceRefreshKey}`} projectId={project.id} sortMode={albumSortMode} onCountsChange={handlePhotoCounts} />
             </section>
 
-            {canAdminister && (<>
+            {canShare && (<>
             <section id="collection-inbox" className={activeWorkspace === 'uploads' ? 'scroll-mt-4' : 'hidden'}>
               <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
                 <span className={iconBadgeClassName}><FolderUp className={iconBadgeIconClassName} /></span>
@@ -1998,7 +2015,7 @@ export default function ProjectPage() {
           {/* 宽屏不再占右列：版本信息已搬进左侧项目侧栏的下半区，这块只服务窄屏。 */}
           <aside className="scrollbar-hidden border-t border-border p-3 lg:hidden">
             {selectedVideoGroup ? renderVersionInspector(false) : (
-              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} />
+              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} capabilities={capabilities} canArchiveProject={canArchiveProject} canDeleteProject={canDeleteProject} />
             )}
           </aside>
         </div>

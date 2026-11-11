@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAdministerProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { generateUniqueProjectSlugs } from '@/lib/share-tokens'
 import { invalidateShareTokensByProject } from '@/lib/session-invalidation'
 import { formatShareLinkUrl, rotateProjectMasterToken } from '@/lib/share-links'
@@ -19,12 +18,9 @@ export const dynamic = 'force-dynamic'
 // old addresses stop resolving immediately, and viewers holding a session for them
 // are dropped.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireApiAdmin(request)
-  if (user instanceof Response) return user
   const { id } = await params
-  if (!(await canAdministerProject(prisma, user, id))) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-  }
+  const access = await requireProjectAction(request, id, 'share')
+  if (access instanceof Response) return access
 
   const rateLimitResult = await rateLimit(
     request,

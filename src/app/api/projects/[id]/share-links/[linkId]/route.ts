@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAdministerProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { encrypt } from '@/lib/encryption'
 import { getAppUrl } from '@/lib/url'
 import { sanitizeSharePermissions, formatShareLinkUrl, isShareLinkActive } from '@/lib/share-links'
@@ -10,10 +9,9 @@ import { revokeShareLinkAccess, clearShareLinkRevocation } from '@/lib/session-i
 export const runtime = 'nodejs'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; linkId: string }> }) {
-  const user = await requireApiAdmin(request)
-  if (user instanceof Response) return user
   const { id, linkId } = await params
-  if (!(await canAdministerProject(prisma, user, id))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, id, 'share')
+  if (access instanceof Response) return access
   const current = await prisma.shareLink.findFirst({ where: { id: linkId, projectId: id } })
   if (!current) return NextResponse.json({ error: '分享记录不存在' }, { status: 404 })
   const body = await request.json()
@@ -35,10 +33,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; linkId: string }> }) {
-  const user = await requireApiAdmin(request)
-  if (user instanceof Response) return user
   const { id, linkId } = await params
-  if (!(await canAdministerProject(prisma, user, id))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, id, 'share')
+  if (access instanceof Response) return access
   const current = await prisma.shareLink.findFirst({ where: { id: linkId, projectId: id }, select: { token: true } })
   if (!current) return NextResponse.json({ error: '分享记录不存在' }, { status: 404 })
   await revokeShareLinkAccess(current.token)

@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { permanentlyDeleteRecycleBinItem, purgeExpiredRecycleBinItems, restoreRecycleBinItem } from '@/lib/recycle-bin'
 
 export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiAdmin(request)
-  if (auth instanceof Response) return auth
   const { id: projectId } = await params
-  if (!(await canAccessProject(prisma, auth, projectId))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, projectId, 'edit')
+  if (access instanceof Response) return access
   await purgeExpiredRecycleBinItems().catch(() => undefined)
 
   const [items, restorable] = await Promise.all([
@@ -44,10 +42,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiAdmin(request)
-  if (auth instanceof Response) return auth
   const { id: projectId } = await params
-  if (!(await canAccessProject(prisma, auth, projectId))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, projectId, 'edit')
+  if (access instanceof Response) return access
   const body = await request.json().catch(() => null)
   const itemId = typeof body?.itemId === 'string' ? body.itemId : null
   if (!itemId) return NextResponse.json({ error: 'itemId is required' }, { status: 400 })
@@ -66,10 +63,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiAdmin(request)
-  if (auth instanceof Response) return auth
   const { id: projectId } = await params
-  if (!(await canAccessProject(prisma, auth, projectId))) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  const access = await requireProjectAction(request, projectId, 'delete')
+  if (access instanceof Response) return access
   const itemId = new URL(request.url).searchParams.get('itemId')
   if (!itemId) return NextResponse.json({ error: 'itemId is required' }, { status: 400 })
   try {

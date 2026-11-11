@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getRedis } from '@/lib/redis'
 import { getClientIpAddress } from '@/lib/utils'
@@ -24,22 +23,18 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; uploadId: string }> }
 ) {
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return authResult
+  const { id: projectId, uploadId } = await params
+  const access = await requireProjectAction(request, projectId, 'share')
+  if (access instanceof Response) return access
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 60,
     message: 'Too many requests. Please slow down.',
-  }, 'project-upload-download-token', authResult.id)
+  }, 'project-upload-download-token', access.user.id)
   if (rateLimitResult) return rateLimitResult
 
   try {
-    const { id: projectId, uploadId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
-
     const upload = await prisma.projectUpload.findFirst({
       where: { id: uploadId, projectId },
       select: { id: true },

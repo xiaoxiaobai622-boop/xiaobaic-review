@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canManageProjectApproval } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
@@ -25,12 +24,6 @@ export async function POST(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const projectMessages = messages?.projects || {}
 
-  // SECURITY: Require admin authentication
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   // Rate limiting: 20 unapproval actions per minute
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -44,9 +37,9 @@ export async function POST(
 
   try {
     const { id: projectId } = await params
-    if (!(await canManageProjectApproval(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'approve')
+    if (access instanceof Response) return access
+    const authResult = access.user
 
     // Parse request body to get unapprove options
     const body = await request.json().catch(() => ({}))

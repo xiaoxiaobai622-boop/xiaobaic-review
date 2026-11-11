@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { handleApprovalNotification } from '@/lib/notifications'
 import { getAutoApproveProject, isSmtpConfigured } from '@/lib/settings'
-import { canManageProjectApproval } from '@/lib/project-access'
-import { getCurrentUserFromRequest } from '@/lib/auth'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
@@ -39,6 +38,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const { id: projectId } = await params
+    const access = await requireProjectAction(request, projectId, 'approve')
+    if (access instanceof Response) return access
+    const currentUser = access.user
+
     // Parse body defensively: an empty/malformed body should fail validation
     // (400) instead of throwing and returning a generic 500.
     const body = await request.json().catch(() => ({}))
@@ -62,17 +65,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!project) {
       return NextResponse.json({ error: projectMessages.projectNotFoundApi || 'Project not found' }, { status: 404 })
-    }
-
-    const currentUser = await getCurrentUserFromRequest(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-
-    if (!(await canManageProjectApproval(prisma, currentUser, project.id))) {
-      return NextResponse.json({
-        error: projectMessages.onlyAdminsCanApproveProject || 'Only project managers or the project creator can approve videos'
-      }, { status: 403 })
     }
 
     const selectedVideo = project.videos.find(v => v.id === selectedVideoId)

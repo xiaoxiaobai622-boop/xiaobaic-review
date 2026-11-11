@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, INCLUDE_DELETED } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { logError } from '@/lib/logging'
 import { createRecycleBinItem } from '@/lib/recycle-bin'
@@ -13,9 +12,6 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return authResult
-
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 60,
@@ -25,9 +21,8 @@ export async function GET(
 
   try {
     const { id: projectId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'share')
+    if (access instanceof Response) return access
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -71,9 +66,6 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return authResult
-
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 30,
@@ -83,9 +75,8 @@ export async function DELETE(
 
   try {
     const { id: projectId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'share')
+    if (access instanceof Response) return access
     const { searchParams } = new URL(request.url)
     const uploadId = searchParams.get('uploadId') ?? ''
 
@@ -125,6 +116,7 @@ export async function DELETE(
         video.cleanPreview2160Path,
         video.cleanPreview1080Path,
         video.cleanPreview720Path,
+        video.sourceQualityPath,
       ].filter((value): value is string => Boolean(value))
 
       for (const asset of video.assets) {

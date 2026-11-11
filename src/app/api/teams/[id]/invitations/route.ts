@@ -14,6 +14,12 @@ export const dynamic = 'force-dynamic'
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const INVITE_METHODS = new Set(['PHONE', 'LINK'])
+const INVITE_PROJECT_ROLES = new Set(['PROJECT_ADMIN', 'EDITOR', 'REVIEWER'])
+
+type InviteProjectGrant = {
+  projectId: string
+  role: 'PROJECT_ADMIN' | 'EDITOR' | 'REVIEWER'
+}
 
 class RegenerateConflictError extends Error {}
 
@@ -56,6 +62,13 @@ export async function GET(
       acceptedAt: true,
       declinedAt: true,
       createdAt: true,
+      projects: {
+        select: {
+          projectId: true,
+          role: true,
+          project: { select: { title: true } },
+        },
+      },
     },
   })
   // Read paths do not write. A pending row past its deadline is shown as EXPIRED;
@@ -98,6 +111,7 @@ export async function POST(
   let role: 'ADMIN' | 'MEMBER'
   let projectAccessScope: 'ALL_PROJECTS' | 'ASSIGNED_ONLY'
   let defaultProjectRole: 'REVIEWER' | 'EDITOR'
+  let inviteProjects: InviteProjectGrant[] = []
 
   if (regenerateFromId) {
     // Re-generating must copy the stored contact server-side. The list endpoint
@@ -113,6 +127,7 @@ export async function POST(
         projectAccessScope: true,
         defaultProjectRole: true,
         status: true,
+        projects: { select: { projectId: true, role: true } },
       },
     })
     if (!source) {
@@ -131,6 +146,10 @@ export async function POST(
     role = source.role === 'ADMIN' ? 'ADMIN' : 'MEMBER'
     projectAccessScope = source.projectAccessScope
     defaultProjectRole = source.defaultProjectRole === 'EDITOR' ? 'EDITOR' : 'REVIEWER'
+    inviteProjects = source.projects.map((project) => ({
+      projectId: project.projectId,
+      role: project.role,
+    }))
   } else {
     const requestedMethod = body?.method
     if (requestedMethod !== undefined && !INVITE_METHODS.has(requestedMethod)) {
@@ -153,6 +172,39 @@ export async function POST(
       : body?.defaultProjectRole === 'EDITOR'
         ? 'EDITOR'
         : projectAccessScope === 'ASSIGNED_ONLY' ? 'REVIEWER' : 'EDITOR'
+
+    if (body?.projects !== undefined) {
+      if (projectAccessScope !== 'ASSIGNED_ONLY') {
+        return NextResponse.json(
+          { error: '只有“指定项目”的邀请可以携带项目', code: 'INVITE_PROJECTS_REQUIRE_ASSIGNED' },
+          { status: 400 },
+        )
+      }
+      if (!Array.isArray(body.projects) || body.projects.length > 100) {
+        return NextResponse.json({ error: '项目列表格式无效', code: 'INVITE_PROJECTS_INVALID' }, { status: 400 })
+      }
+      const seen = new Set<string>()
+      const parsedProjects: InviteProjectGrant[] = []
+      for (const raw of body.projects) {
+        const projectId = typeof raw?.projectId === 'string' ? raw.projectId : ''
+        const projectRole = raw?.role
+        if (!projectId || !INVITE_PROJECT_ROLES.has(projectRole) || seen.has(projectId)) {
+          return NextResponse.json({ error: '项目或角色格式无效', code: 'INVITE_PROJECTS_INVALID' }, { status: 400 })
+        }
+        seen.add(projectId)
+        parsedProjects.push({ projectId, role: projectRole })
+      }
+      if (parsedProjects.length > 0) {
+        const owned = await prisma.project.findMany({
+          where: { teamId: id, id: { in: parsedProjects.map((project) => project.projectId) } },
+          select: { id: true },
+        })
+        if (owned.length !== parsedProjects.length) {
+          return NextResponse.json({ error: '包含不属于本团队的项目', code: 'INVITE_PROJECT_NOT_IN_TEAM' }, { status: 400 })
+        }
+      }
+      inviteProjects = parsedProjects
+    }
 
     if (method === 'LINK') {
       // Possession of the token is the whole authorization; no contact is stored.
@@ -193,6 +245,9 @@ export async function POST(
           createdById: authResult.id,
           token: randomBytes(24).toString('base64url'),
           expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+          ...(inviteProjects.length > 0
+            ? { projects: { create: inviteProjects } }
+            : {}),
         },
       })
 
@@ -206,6 +261,7 @@ export async function POST(
           role,
           projectAccessScope,
           defaultProjectRole,
+          projectCount: inviteProjects.length,
           ...(regenerateFromId ? { regeneratedFrom: regenerateFromId } : {}),
         },
       })
@@ -221,8 +277,14 @@ export async function POST(
     })
   } catch (error) {
     if (error instanceof SeatLimitError) {
+      await recordTeamAuditEvent(prisma, {
+        teamId: id,
+        actorUserId: authResult.id,
+        action: 'SEAT_LIMIT_HIT',
+        metadata: { source: 'INVITE_CREATED' },
+      })
       return NextResponse.json(
-        { error: '当前团队的成员数量已达到配额上限', code: error.code },
+        { error: '成员席位已满，请先停用/移除成员，或升级套餐', code: error.code },
         { status: 403 },
       )
     }
@@ -235,5 +297,5 @@ export async function POST(
     throw error
   }
 
-  return NextResponse.json({ invite: withMaskedPhone(invite) }, { status: 201 })
+  return NextResponse.json({ invite: { ...withMaskedPhone(invite), projects: inviteProjects } }, { status: 201 })
 }

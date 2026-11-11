@@ -14,7 +14,13 @@ import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
 import { apiPost, apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
 import { copyTextToClipboard } from '@/lib/clipboard'
-import { useAuth } from '@/components/AuthProvider'
+
+interface ProjectCapabilities {
+  canManageSettings: boolean
+  canShare: boolean
+  canApprove: boolean
+  canViewStats: boolean
+}
 
 interface Video {
   id: string
@@ -53,14 +59,16 @@ interface ProjectActionsProps {
   onOpenMembers: () => void
   /** 「分享」从上面那张导航卡挪下来的一行：它切的是工作区（不是动作），所以带 active 与条数。 */
   shares?: { count: number; active: boolean; onOpen: () => void }
+  capabilities: ProjectCapabilities
+  canArchiveProject: boolean
+  canDeleteProject: boolean
 }
 
-export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings, onOpenMembers, shares }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings, onOpenMembers, shares, capabilities, canArchiveProject, canDeleteProject }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
   const router = useRouter()
-  const { user } = useAuth()
   const [isDeleting, setIsDeleting] = useState(false)
   const [isTogglingApproval, setIsTogglingApproval] = useState(false)
   const [isArchiving, setIsArchiving] = useState(false)
@@ -114,9 +122,6 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
   }
 
   // Check if user has admin privileges (ADMIN or SUPER_ADMIN)
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
-
-  // Filter only ready videos
   const readyVideos = videos.filter(v => v.status === 'READY')
 
   // Check if all unique videos have at least one approved version
@@ -345,7 +350,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                   items[next].focus()
                 }}
               >
-                {isAdmin && (<>
+                {capabilities.canManageSettings && (<>
                 <MenuItem
                   icon={<FileText className="h-4 w-4 shrink-0" />}
                   label={t('projectDetails')}
@@ -411,13 +416,15 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               横向要拉回 -mx-3：上面那张卡的导航是「栏 p-2 + 行 px-3」，这张卡外面是「section px-2
               + 信息区 px-3」，不抵掉这层，整组会比导航右移 11.25px（只抵 px-2 的那个差是上一版）。 */}
           <div data-project-actions className="-mx-3 flex flex-col gap-1">
+            {capabilities.canShare && (
             <button type="button" onClick={onShareReview} className={ACTION_ROW}>
               <Link2 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
               {t('shareReviewLink')}
             </button>
+            )}
 
             {/* 上传接口在项目没开「允许客户提交素材」时一律 403，所以入口照分享记录面板的规矩只在开着时给。 */}
-            {isAdmin && project.allowReverseShare && (
+            {capabilities.canShare && project.allowReverseShare && (
               <button
                 type="button"
                 data-tutorial="copy-collect-link"
@@ -432,7 +439,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               </button>
             )}
 
-            {isAdmin && shares && (
+            {capabilities.canShare && shares && (
               <button
                 type="button"
                 onClick={shares.onOpen}
@@ -447,7 +454,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               </button>
             )}
 
-            {isAdmin && (
+            {capabilities.canViewStats && (
             <button type="button" onClick={() => router.push(`/studio/projects/${project.id}/analytics`)} className={ACTION_ROW}>
               <BarChart3 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
               {t('viewAnalytics')}
@@ -455,7 +462,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
             )}
 
             {/* Push Project Button - only for ADMIN and SUPER_ADMIN */}
-            {isAdmin && (
+            {capabilities.canShare && (
               <FeishuPushButton
                 projectId={project.id}
                 variant="ghost"
@@ -465,7 +472,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
             )}
 
             {/* Approve/Unapprove Toggle Button - hidden when archived */}
-            {isAdmin && project.status !== 'ARCHIVED' && (
+            {capabilities.canApprove && project.status !== 'ARCHIVED' && (
               <button
                 type="button"
                 onClick={handleToggleApproval}
@@ -486,7 +493,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               </button>
             )}
 
-            {isAdmin && (<>
+            {canArchiveProject && (
             <button
               type="button"
               onClick={handleToggleArchive}
@@ -500,7 +507,9 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                 ? (project.status === 'ARCHIVED' ? t('unarchiving') : t('archiving'))
                 : (project.status === 'ARCHIVED' ? t('unarchiveProject') : t('archiveProject'))}
             </button>
+            )}
 
+            {canDeleteProject && (<>
             <div className="my-1 border-t border-border" />
 
             <button

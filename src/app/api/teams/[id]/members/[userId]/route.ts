@@ -68,7 +68,14 @@ export async function PATCH(
         })
       } catch (error) {
         if (error instanceof SeatLimitError) {
-          return NextResponse.json({ error: '当前团队的成员数量已达到配额上限', code: error.code }, { status: 403 })
+          await recordTeamAuditEvent(prisma, {
+            teamId: id,
+            actorUserId: authResult.id,
+            targetUserId: userId,
+            action: 'SEAT_LIMIT_HIT',
+            metadata: { source: 'MEMBER_ENABLE' },
+          })
+          return NextResponse.json({ error: '成员席位已满，请先停用/移除成员，或升级套餐', code: error.code }, { status: 403 })
         }
         throw error
       }

@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { sendNewVersionEmail, sendProjectGeneralNotificationEmail, sendPasswordEmail, getRecipientLocale } from '@/lib/email'
 import { generateProjectShareUrlById } from '@/lib/url'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { decrypt } from '@/lib/encryption'
 import { getProjectRecipients, type Recipient } from '@/lib/recipients'
 import { rateLimit } from '@/lib/rate-limit'
@@ -20,12 +19,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const locale = await getConfiguredLocale()
     const messages = await loadLocaleMessages(locale)
     const projectMessages = messages?.projects || {}
-
-    // Require admin
-    const authResult = await requireApiAdmin(request)
-    if (authResult instanceof Response) {
-      return authResult
-    }
 
     // Throttle to prevent email spam
     const rateLimitResult = await rateLimit(request, {
@@ -45,9 +38,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const { id: projectId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'share')
+    if (access instanceof Response) return access
     const body = await request.json()
     const { videoId, notifyEntireProject, sendPasswordSeparately } = body
 

@@ -4,7 +4,8 @@ import { useSlidingIndicator } from '@/hooks/useSlidingIndicator'
 import { useLayoutEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Building2, FolderKanban, GitBranch, HardDrive, LayoutDashboard, Users, type LucideIcon } from 'lucide-react'
+import { Building2, FolderKanban, GitBranch, HardDrive, LayoutDashboard, ScrollText, Users, type LucideIcon } from 'lucide-react'
+import { useAuth } from '@/components/AuthProvider'
 
 type TeamAdminSection = {
   key: string
@@ -20,6 +21,7 @@ const sections: TeamAdminSection[] = [
   { key: 'storage', label: '容量管理', href: '/studio/team/storage', icon: HardDrive },
   { key: 'projects', label: '项目管理', href: '/studio/team/projects', icon: FolderKanban },
   { key: 'workflow', label: '流程管理', href: '/studio/team/workflow', icon: GitBranch },
+  { key: 'audit', label: '操作日志', href: '/studio/team/audit', icon: ScrollText },
 ]
 
 const overviewTabs = [
@@ -59,10 +61,13 @@ const tabsBySection: Record<string, { label: string; href: string; value: string
 export default function TeamAdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? ''
   const searchParams = useSearchParams()
+  const { user } = useAuth()
   const isInvitePage = pathname.startsWith('/studio/team/invite')
+  const canViewAudit = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'
+  const visibleSections = canViewAudit ? sections : sections.filter((item) => item.key !== 'audit')
   const section = pathname === '/studio/team'
-    ? sections[0]
-    : sections.slice(1).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) || sections[0]
+    ? visibleSections[0]
+    : visibleSections.slice(1).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) || visibleSections[0]
   const auxiliaryPage = pathname.startsWith('/studio/team/invite') || pathname.startsWith('/studio/team/join')
   const tabs = auxiliaryPage ? [] : tabsBySection[section.key] ?? []
   const activeTab = searchParams?.get('tab') || tabs[0]?.value
@@ -89,7 +94,7 @@ export default function TeamAdminShell({ children }: { children: React.ReactNode
             <p className="text-base font-semibold">团队管理</p>
           </div>
           <nav aria-label="团队管理菜单" className="grid min-w-0 grid-cols-2 gap-1 px-3 pb-3 lg:block lg:space-y-1 lg:px-3 lg:pb-0">
-            {sections.map(({ key, label, href, icon: Icon }) => {
+            {visibleSections.map(({ key, label, href, icon: Icon }) => {
               const active = key === section.key
               return (
                 <Link

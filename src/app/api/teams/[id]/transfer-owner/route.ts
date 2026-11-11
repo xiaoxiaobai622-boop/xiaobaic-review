@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getTeamMember } from '@/lib/team-access'
+import { recordTeamAuditEvent } from '@/lib/team-audit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,6 +45,14 @@ export async function POST(
       data: { createdById: targetUserId },
     }),
   ])
+
+  await recordTeamAuditEvent(prisma, {
+    teamId: id,
+    actorUserId: authResult.id,
+    targetUserId: targetUserId,
+    action: 'OWNER_TRANSFERRED',
+    metadata: { from: authResult.id, to: targetUserId },
+  })
 
   return NextResponse.json({ success: true, newOwnerId: targetUserId })
 }

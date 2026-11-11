@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
+import { requireProjectAction } from '@/lib/project-authorization'
+import { canProject } from '@/lib/project-policy'
 import { recomputeProjectApprovalStatus } from '@/lib/project-approval'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError, logMessage } from '@/lib/logging'
-import { canAccessProject, canManageProjectApproval } from '@/lib/project-access'
 import { createRecycleBinItem } from '@/lib/recycle-bin'
 import { parentDirectory, referencedStoragePaths } from '@/lib/video-storage-paths'
 import { rollbackLatestVideoVersion } from '@/lib/video-version-rollback'
@@ -39,11 +39,6 @@ export async function GET(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
     maxRequests: 120, // Allow 2 requests per second for polling
@@ -73,9 +68,8 @@ export async function GET(
   return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
 
-    if (!(await canAccessProject(prisma, authResult, video.projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, video.projectId, 'view')
+    if (access instanceof Response) return access
 
     return NextResponse.json(video)
   } catch (error) {
@@ -94,11 +88,6 @@ export async function PATCH(
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
-
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -166,16 +155,15 @@ export async function PATCH(
   return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
 
-    if (!(await canAccessProject(prisma, authResult, video.projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, video.projectId, 'edit')
+    if (access instanceof Response) return access
 
     if (folderId !== undefined && folderId !== null) {
       const folder = await prisma.projectFolder.findFirst({ where: { id: folderId, projectId: video.projectId } })
       if (!folder) return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
     }
 
-    if (approved !== undefined && !(await canManageProjectApproval(prisma, authResult, video.projectId))) {
+    if (approved !== undefined && !canProject(access.role, 'approve')) {
       return NextResponse.json(
         { error: 'Only project managers or the project creator can approve videos' },
         { status: 403 }
@@ -260,10 +248,8 @@ export async function DELETE(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
+  const access = await requireProjectAction(request, (await params).id, 'delete')
+  if (access instanceof Response) return access
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -285,10 +271,6 @@ export async function DELETE(
     })
     if (!video) {
       return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
-    }
-
-    if (!(await canAccessProject(prisma, authResult, video.project.id))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
     // Everything this row names, co-owners included. Whether an object may go is

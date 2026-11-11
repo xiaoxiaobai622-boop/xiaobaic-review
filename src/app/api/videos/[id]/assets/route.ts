@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getCurrentUserFromRequest, requireApiAdmin } from '@/lib/auth'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
-import { verifyProjectAccess, canAdministerProject } from '@/lib/project-access'
+import { verifyProjectAccess } from '@/lib/project-access'
 import { enforceShareVideoScope } from '@/lib/share-scope'
 import { validateAssetFile, sanitizeDisplayFilename, isInvalidFileType } from '@/lib/file-validation'
 import { z } from 'zod'
@@ -154,12 +154,6 @@ export async function POST(
 
   const { id: videoId } = await params
 
-  // Authentication
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   // Rate limiting
   const rateLimitResult = await rateLimit(
     request,
@@ -185,15 +179,9 @@ export async function POST(
   return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
 
-    if (!(await canAdministerProject(prisma, authResult, video.projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
-
-    // Get current user for tracking
-    const currentUser = await getCurrentUserFromRequest(request)
-    if (!currentUser) {
-  return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 401 })
-    }
+    const access = await requireProjectAction(request, video.projectId, 'edit')
+    if (access instanceof Response) return access
+    const currentUser = access.user
 
     // Parse request body
     const body = await request.json()

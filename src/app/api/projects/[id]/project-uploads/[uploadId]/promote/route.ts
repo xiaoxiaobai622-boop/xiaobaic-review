@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { requireProjectWritable } from '@/lib/team-writeable'
 import { rateLimit } from '@/lib/rate-limit'
 import { sanitizeFilename, validateUploadedFile } from '@/lib/file-validation'
@@ -18,24 +17,21 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; uploadId: string }> }
 ) {
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) return authResult
+  const { id: projectId, uploadId } = await params
+  const access = await requireProjectAction(request, projectId, 'edit')
+  if (access instanceof Response) return access
 
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 60 * 1000,
     maxRequests: 50,
     message: 'Too many video promotions. Please try again later.',
-  }, 'promote-project-upload', authResult.id)
+  }, 'promote-project-upload', access.user.id)
   if (rateLimitResult) return rateLimitResult
 
   let moved = false
   let movedStoragePath = ''
   let sourceStoragePath = ''
   try {
-    const { id: projectId, uploadId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
     const blocked = await requireProjectWritable(projectId)
     if (blocked) return blocked
     const body = await request.json().catch(() => ({}))
@@ -183,10 +179,10 @@ export async function POST(
           originalFileSize: upload.fileSize,
           originalStoragePath,
           fileType: normalizedMimeType,
-          uploadedBy: isClientUpload ? 'client' : authResult.id,
+          uploadedBy: isClientUpload ? 'client' : access.user.id,
           uploadedByName: isClientUpload
             ? (upload.uploadedByName || upload.uploadedByEmail)
-            : (upload.uploadedByName || upload.uploadedByEmail || authResult.name || authResult.email),
+            : (upload.uploadedByName || upload.uploadedByEmail || access.user.name || access.user.email),
           status: 'PROCESSING',
           processingProgress: 0,
           duration: 0,

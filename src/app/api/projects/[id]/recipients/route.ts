@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { getProjectRecipients, addRecipient } from '@/lib/recipients'
 import { withMaskedPhone } from '@/lib/phone-field'
 import { z } from 'zod'
@@ -29,11 +28,6 @@ export async function GET(
   const recipientMessages = messages?.recipients || {}
   const projectMessages = messages?.projects || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   // Rate limiting: 60 requests per minute
   const rateLimitResult = await rateLimit(request, {
     windowMs: 60 * 1000,
@@ -47,9 +41,8 @@ export async function GET(
 
   try {
     const { id: projectId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'share')
+    if (access instanceof Response) return access
     const recipients = await getProjectRecipients(projectId)
 
     return NextResponse.json({ recipients: recipients.map(withMaskedPhone) })
@@ -70,16 +63,10 @@ export async function POST(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const recipientMessages = messages?.recipients || {}
 
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
-
   try {
     const { id: projectId } = await params
-    if (!(await canAccessProject(prisma, authResult, projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, projectId, 'share')
+    if (access instanceof Response) return access
     const body = await request.json()
 
     // Validate input

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireApiAdmin } from '@/lib/auth'
-import { canAccessProject } from '@/lib/project-access'
+import { requireProjectAction } from '@/lib/project-authorization'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { z } from 'zod'
@@ -25,12 +24,6 @@ export async function POST(
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
-
-  // 1. AUTHENTICATION
-  const authResult = await requireApiAdmin(request)
-  if (authResult instanceof Response) {
-    return authResult
-  }
 
   // 3. RATE LIMITING
   const rateLimitResult = await rateLimit(
@@ -65,9 +58,8 @@ export async function POST(
     if (!sourceVideo) {
       return NextResponse.json({ error: videoMessages.sourceVideoNotFound || 'Source video not found' }, { status: 404 })
     }
-    if (!(await canAccessProject(prisma, authResult, sourceVideo.projectId))) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const access = await requireProjectAction(request, sourceVideo.projectId, 'edit')
+    if (access instanceof Response) return access
 
     // Verify target video exists and is in same project
     const targetVideo = await prisma.video.findUnique({

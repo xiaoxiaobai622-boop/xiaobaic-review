@@ -1,3 +1,4 @@
+import type { ProjectRole } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
@@ -37,6 +38,7 @@ export interface AuthUser {
   role: string
   isPlatformAdmin?: boolean
   projectAccessScope?: string
+  defaultProjectRole?: ProjectRole
   sessionId?: string
   authorizedTeamId?: string
   teamRole?: 'OWNER' | 'ADMIN' | 'MEMBER'
@@ -732,7 +734,7 @@ export async function requireApiAdmin(request: NextRequest): Promise<AuthUser | 
   const membership = requestedTeamId
     ? await prisma.teamMember.findUnique({
         where: { teamId_userId: { teamId: requestedTeamId, userId: user.id } },
-        select: { teamId: true, role: true, status: true, team: { select: { status: true } } },
+        select: { teamId: true, role: true, status: true, projectAccessScope: true, defaultProjectRole: true, team: { select: { status: true } } },
       })
     : await prisma.teamMember.findFirst({
         where: {
@@ -741,7 +743,7 @@ export async function requireApiAdmin(request: NextRequest): Promise<AuthUser | 
           team: { status: 'ACTIVE' },
         },
         orderBy: { createdAt: 'asc' },
-        select: { teamId: true, role: true, status: true, team: { select: { status: true } } },
+        select: { teamId: true, role: true, status: true, projectAccessScope: true, defaultProjectRole: true, team: { select: { status: true } } },
       })
   if (
     !membership ||
@@ -754,7 +756,13 @@ export async function requireApiAdmin(request: NextRequest): Promise<AuthUser | 
   if (!user.phone) {
     return NextResponse.json({ error: '进入团队后台前请先绑定手机号', code: 'PHONE_REQUIRED' }, { status: 403 })
   }
-  return { ...user, authorizedTeamId: membership.teamId, teamRole: membership.role }
+  return {
+    ...user,
+    authorizedTeamId: membership.teamId,
+    teamRole: membership.role,
+    projectAccessScope: membership.projectAccessScope,
+    defaultProjectRole: membership.defaultProjectRole,
+  }
 }
 
 export async function requirePlatformAdmin(request: NextRequest): Promise<AuthUser | Response> {
@@ -786,7 +794,7 @@ export async function requireApiUser(request: NextRequest): Promise<AuthUser | R
   const firstMembership = requestedTeamId
     ? await prisma.teamMember.findUnique({
         where: { teamId_userId: { teamId: requestedTeamId, userId: user.id } },
-        select: { id: true, teamId: true, role: true, status: true, team: { select: { status: true } } },
+        select: { id: true, teamId: true, role: true, status: true, projectAccessScope: true, defaultProjectRole: true, team: { select: { status: true } } },
       })
     : await prisma.teamMember.findFirst({
         where: {
@@ -794,7 +802,7 @@ export async function requireApiUser(request: NextRequest): Promise<AuthUser | R
           status: 'ACTIVE',
           team: { status: 'ACTIVE' },
         },
-        select: { id: true, teamId: true, role: true, status: true, team: { select: { status: true } } },
+        select: { id: true, teamId: true, role: true, status: true, projectAccessScope: true, defaultProjectRole: true, team: { select: { status: true } } },
       })
   if (
     !firstMembership ||
@@ -806,7 +814,13 @@ export async function requireApiUser(request: NextRequest): Promise<AuthUser | R
   if (!user.phone) {
     return NextResponse.json({ error: '进入团队前请先绑定手机号', code: 'PHONE_REQUIRED' }, { status: 403 })
   }
-  return { ...user, authorizedTeamId: firstMembership.teamId, teamRole: firstMembership.role }
+  return {
+    ...user,
+    authorizedTeamId: firstMembership.teamId,
+    teamRole: firstMembership.role,
+    projectAccessScope: firstMembership.projectAccessScope,
+    defaultProjectRole: firstMembership.defaultProjectRole,
+  }
 }
 
 export async function getShareContext(request: NextRequest): Promise<SharePayload | null> {
