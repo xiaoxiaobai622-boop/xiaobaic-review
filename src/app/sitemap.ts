@@ -13,7 +13,7 @@ import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = await getSiteUrlFromRequest()
   // 固定核稿日；不得把每次请求/构建时间冒充内容更新。
-  const reviewedOn = '2026-11-07'
+  const reviewedOn = '2026-11-11'
 
   // 首页这条**不带尾斜杠**：Next 渲染根路径 canonical 时会把 `https://vidx.cn/` 归一成
   // `https://vidx.cn`（10-09 线上实测），两边不一致就等于给同一个页面两个地址。

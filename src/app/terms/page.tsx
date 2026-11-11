@@ -6,7 +6,7 @@ import type { Metadata } from 'next'
 import { JsonLd } from '@/components/marketing/JsonLd'
 
 const TITLE = '用户服务协议：账号、内容与服务责任 | 逐帧审阅'
-const DESCRIPTION = '逐帧审阅用户服务协议：说明账号注册与登录、上传内容的权利与责任、审片链接与分享权限的使用规则、知识产权归属、服务变更与终止条件；继续使用平台即表示同意本协议与隐私政策，注销与咨询可按页面约定联系，注销请求会在 30 日内处理并答复，重要变更会提前公示。协议同时说明个人信息保护、免责声明与账号注销，便于签约前核对。'
+const DESCRIPTION = '逐帧审阅用户服务协议：说明账号注册与登录、上传内容的权利与责任、审片链接与分享权限的使用规则、知识产权归属、服务变更与终止条件。继续使用平台即表示同意本协议与隐私政策；注销请求会在 30 日内处理并答复，重要变更提前公示，并附个人信息保护与免责声明。'
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()

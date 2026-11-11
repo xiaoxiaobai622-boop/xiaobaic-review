@@ -6,7 +6,7 @@ import type { Metadata } from 'next'
 import { JsonLd } from '@/components/marketing/JsonLd'
 
 const TITLE = '隐私政策：个人信息收集、使用与保护 | 逐帧审阅'
-const DESCRIPTION = '逐帧审阅隐私政策：说明在线审片平台收集的账号信息、上传内容、设备与日志信息，分别用于登录验证、视频转码与审片协作、安全防护和服务改进；数据存储于中国大陆服务器，您可查询、更正、删除个人信息或申请注销账号，我们会在 30 日内答复。本政策同时说明 Cookie 与本地存储的用途、未成年人保护、政策更新方式与联系我们。'
+const DESCRIPTION = '逐帧审阅隐私政策：说明平台收集的账号信息、上传内容、设备与日志信息，用于登录验证、视频转码与审片协作、安全防护和服务改进；数据存储于中国大陆服务器，您可查询、更正、删除个人信息或申请注销账号，我们会在 30 日内答复。政策同时说明 Cookie 用途、未成年人保护与更新方式。'
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()

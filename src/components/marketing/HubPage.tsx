@@ -68,6 +68,21 @@ export async function HubPage({ group }: { group: HubGroup }) {
         ))}
       </ul>
 
+      {hub.extraLinks && hub.extraLinks.length > 0 && (
+        <nav aria-label="延伸阅读" className="mt-8 border-t border-[#dfe2e7] pt-5">
+          <p className="text-xs font-semibold text-[#6f7580]">延伸阅读</p>
+          <ul className="mt-3 space-y-2">
+            {hub.extraLinks.map((l) => (
+              <li key={l.href}>
+                <Link href={l.href} className="text-[15px] text-[#245fe7] hover:underline">
+                  {l.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
+
       <p className="mt-9">
         <MarketingCta href="/login" label={CTA_LABEL} />
       </p>

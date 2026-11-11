@@ -6,7 +6,7 @@
   "seoTitle": "Frame.io 替代：中文审片平台对比",
   "description": "Frame.io 有简体中文站，也有逐帧批注和免注册分享链接。这一页只写国内团队确实能对上的几处摩擦：带宽、登录、中文程度、意见落点，以及什么时候还是该选它。同时交代数据存放位置、中文界面与通知语言，方便按项目所在地和客户访问方式做取舍；文中也给出仍应选择 Frame.io 的场景，避免为了替换而替换。",
   "h1": "Frame.io 在国内用起来别扭的地方",
-  "updatedOn": "2026-11-07",
+  "updatedOn": "2026-11-11",
   "sections": [
     "访问与上传",
     "登录方式",
@@ -21,7 +21,8 @@
   },
   "related": [
     "compare/netdisk-wechat",
-    "compare/fenzhen"
+    "compare/fenzhen",
+    "guides/online-video-review-tools"
   ],
   "faq": [
     {
