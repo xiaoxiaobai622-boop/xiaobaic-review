@@ -1080,6 +1080,30 @@ export default function ProjectPage() {
           .sort((a: any, b: any) => b.version - a.version),
       }
     : null
+  const selectedVersionVisibility = (() => {
+    if (!selectedVideoGroupName) return null
+    const liveVideos = ((project?.videos as any[]) || []).filter((video: any) => video.name === selectedVideoGroupName)
+    const visibleIds = new Set((selectedVideoGroup?.videos || []).map((video: any) => video.id))
+    const otherFolderCount = liveVideos.filter((video: any) =>
+      !visibleIds.has(video.id)
+      && (activeFolderId ? video.folderId !== activeFolderId : Boolean(video.folderId))
+    ).length
+    const history = ((project?.versionHistory as any[]) || []).find((entry: any) => entry.name === selectedVideoGroupName)
+    const deletedVersions = history?.deletedVersions || []
+    const rolledBackVersions = history?.rolledBackVersions || []
+    const knownVersions = new Set<number>()
+    for (const video of liveVideos) knownVersions.add(Number(video.version))
+    for (const version of deletedVersions) knownVersions.add(Number(version))
+    for (const version of rolledBackVersions) knownVersions.add(Number(version))
+    const maxVersion = knownVersions.size > 0 ? Math.max(...knownVersions) : 0
+    return {
+      visibleCount: selectedVideoGroup?.videos.length || 0,
+      deletedCount: deletedVersions.length,
+      rolledBackCount: rolledBackVersions.length,
+      otherFolderCount,
+      missingCount: Math.max(0, maxVersion - knownVersions.size),
+    }
+  })()
   const canRollbackVersion = Boolean(user && (
     user.role === 'ADMIN'
     || user.teamRole === 'OWNER'
@@ -1098,6 +1122,7 @@ export default function ProjectPage() {
   }
   const canUpload = Boolean(capabilities.canUpload)
   const canEdit = Boolean(capabilities.canEdit)
+  const canDeleteContent = Boolean(capabilities.canDeleteContent)
   const canManageSettings = Boolean(capabilities.canManageSettings)
   const canShare = Boolean(capabilities.canShare)
   const canApprove = Boolean(capabilities.canApprove)
@@ -1353,6 +1378,20 @@ export default function ProjectPage() {
   // 窄屏仍走右列的卡片。两处共用同一份结构，只换外壳与内边距。
   const renderVersionInspector = (bare: boolean) => {
     if (!selectedVideoGroup) return null
+    const hiddenParts: string[] = []
+    if (selectedVersionVisibility?.deletedCount) {
+      hiddenParts.push(t('versionHiddenDeleted', { count: selectedVersionVisibility.deletedCount }))
+    }
+    if (selectedVersionVisibility?.rolledBackCount) {
+      hiddenParts.push(t('versionHiddenRolledBack', { count: selectedVersionVisibility.rolledBackCount }))
+    }
+    if (selectedVersionVisibility?.otherFolderCount) {
+      hiddenParts.push(t('versionHiddenOtherFolder', { count: selectedVersionVisibility.otherFolderCount }))
+    }
+    if (selectedVersionVisibility?.missingCount) {
+      hiddenParts.push(t('versionMissingHistory', { count: selectedVersionVisibility.missingCount }))
+    }
+    const hiddenSummary = hiddenParts.join(' · ')
     const Shell: ElementType = bare ? 'div' : Card
     const ShellBody: ElementType = bare ? 'div' : CardContent
     return (
@@ -1364,7 +1403,14 @@ export default function ProjectPage() {
             </span>
             <div className="min-w-0 flex-1">
               <h3 className="truncate font-semibold">{selectedVideoGroup.name}</h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">{t('versionCount', { count: selectedVideoGroup.videos.length })}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('versionVisibleCount', { count: selectedVersionVisibility?.visibleCount ?? selectedVideoGroup.videos.length })}
+              </p>
+              {hiddenSummary && (
+                <p className="mt-0.5 break-words text-[11px] leading-4 text-muted-foreground/80">
+                  {hiddenSummary}
+                </p>
+              )}
             </div>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setSelectedVideoGroupName(null)} title={tc('close')} aria-label={tc('close')}>
               <X className="h-4 w-4" />
@@ -1430,17 +1476,19 @@ export default function ProjectPage() {
                     {t('rollbackVersion')}
                   </Button>
                 )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 h-8 w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  disabled={deletingVersionId === video.id}
-                  onClick={() => void deleteVideoVersion(video)}
-                >
-                  {deletingVersionId === video.id ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
-                  {tv('deleteVideoVersion')}
-                </Button>
+                {canDeleteContent && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-8 w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={deletingVersionId === video.id}
+                    onClick={() => void deleteVideoVersion(video)}
+                  >
+                    {deletingVersionId === video.id ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
+                    {tv('deleteVideoVersion')}
+                  </Button>
+                )}
               </div>
             )
           })}
@@ -1888,13 +1936,17 @@ export default function ProjectPage() {
                     <button type="button" role="menuitem" className={menuItemClass} onClick={() => void downloadFolderOriginals(folder.id)}>
                       <Download className="h-4 w-4" />下载原文件
                     </button>
-                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => void renameProjectFolder(folder)}>
-                      <Pencil className="h-4 w-4" />重命名
-                    </button>
-                    <div className={MENU_SEPARATOR_CLASS_NAME} />
-                    <button type="button" role="menuitem" className={cn(menuItemClass, 'text-destructive hover:bg-destructive/10')} onClick={() => void deleteProjectFolder(folder.id)}>
-                      <Trash2 className="h-4 w-4" />放入回收站
-                    </button>
+                    {canEdit && (
+                      <>
+                        <button type="button" role="menuitem" className={menuItemClass} onClick={() => void renameProjectFolder(folder)}>
+                          <Pencil className="h-4 w-4" />重命名
+                        </button>
+                        <div className={MENU_SEPARATOR_CLASS_NAME} />
+                        <button type="button" role="menuitem" className={cn(menuItemClass, 'text-destructive hover:bg-destructive/10')} onClick={() => void deleteProjectFolder(folder.id)}>
+                          <Trash2 className="h-4 w-4" />放入回收站
+                        </button>
+                      </>
+                    )}
                   </OverlayMenu>
                 )
               })()}
@@ -1902,6 +1954,7 @@ export default function ProjectPage() {
               <AdminVideoManager
                 projectId={project.id}
                 canUpload={canUpload}
+                canDelete={canDeleteContent}
                 videos={visibleWorkspaceVideos}
                 projectStatus={project.status}
                 restrictToLatestVersion={project.restrictCommentsToLatestVersion}

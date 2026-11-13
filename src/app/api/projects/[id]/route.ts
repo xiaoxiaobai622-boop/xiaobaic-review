@@ -132,6 +132,34 @@ export async function GET(
       return NextResponse.json({ error: projectMessages.projectNotFoundApi || 'Project not found' }, { status: 404 })
     }
 
+    // The project payload only carries live, non-rolled-back videos. The version
+    // panel still has to explain versions the user cannot see, so send back just
+    // the version numbers and why they are hidden — never the deleted rows.
+    const [deletedVersionRows, rolledBackVersionRows] = await Promise.all([
+      prisma.video.findMany({
+        where: { projectId: id, deletedAt: { not: null } },
+        select: { name: true, version: true },
+        orderBy: [{ name: 'asc' }, { version: 'asc' }],
+      }),
+      prisma.video.findMany({
+        where: { projectId: id, status: 'ROLLED_BACK', deletedAt: null },
+        select: { name: true, version: true },
+        orderBy: [{ name: 'asc' }, { version: 'asc' }],
+      }),
+    ])
+    const versionHistoryByName = new Map<string, { deletedVersions: number[]; rolledBackVersions: number[] }>()
+    const versionHistoryFor = (name: string) => {
+      let entry = versionHistoryByName.get(name)
+      if (!entry) {
+        entry = { deletedVersions: [], rolledBackVersions: [] }
+        versionHistoryByName.set(name, entry)
+      }
+      return entry
+    }
+    for (const row of deletedVersionRows) versionHistoryFor(row.name).deletedVersions.push(row.version)
+    for (const row of rolledBackVersionRows) versionHistoryFor(row.name).rolledBackVersions.push(row.version)
+    const versionHistory = Array.from(versionHistoryByName, ([name, entry]) => ({ name, ...entry }))
+
     // Check SMTP configuration status
     const smtpConfigured = await isSmtpConfigured()
 
@@ -189,6 +217,7 @@ export async function GET(
       canAdminister,
       projectRole,
       capabilities,
+      versionHistory,
       smtpConfigured,
     }
 

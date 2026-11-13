@@ -111,6 +111,7 @@ interface AdminVideoManagerProps {
   videos: any[]
   projectStatus: string
   canUpload?: boolean
+  canDelete?: boolean
   restrictToLatestVersion?: boolean
   companyName?: string
   onRefresh?: () => void | Promise<void>
@@ -174,6 +175,7 @@ export default function AdminVideoManager({
   onCreateShare,
   selectionToolbarTargetId,
   canUpload = true,
+  canDelete = true,
 }: AdminVideoManagerProps) {
   const t = useTranslations('videos')
   const tc = useTranslations('common')
@@ -881,19 +883,21 @@ export default function AdminVideoManager({
 
     setDeletingGroup(groupName)
     let failed = false
+    let failureMessage = ''
     try {
       for (const video of videoGroups[groupName]) {
         await apiDelete(`/api/videos/${video.id}`)
       }
-    } catch {
+    } catch (error) {
       failed = true
+      failureMessage = error instanceof Error && error.message ? error.message : ''
     } finally {
       setDeletingGroup(null)
       // Deleting stops at the first failure, so refresh even then: without it
       // the versions already removed on the server stayed on screen as ghosts.
       router.refresh()
       onRefresh?.()
-      if (failed) appAlert(t('deleteGroupFailed'))
+      if (failed) appAlert(failureMessage || t('deleteGroupFailed'))
     }
   }
 
@@ -1028,13 +1032,17 @@ export default function AdminVideoManager({
     if (!await appConfirm(tu('deleteSelectionConfirm', { count: selectedGroups.size }))) return
     setBulkDeleting(true)
     let failed = false
+    let failureMessage = ''
     try {
       for (const groupName of [...selectedGroups]) {
         for (const video of videoGroups[groupName] || []) {
           try {
             await apiDelete(`/api/videos/${video.id}`)
-          } catch {
+          } catch (error) {
             failed = true
+            if (!failureMessage) {
+              failureMessage = error instanceof Error && error.message ? error.message : ''
+            }
           }
         }
       }
@@ -1043,7 +1051,7 @@ export default function AdminVideoManager({
       router.refresh()
     } finally {
       setBulkDeleting(false)
-      if (failed) appAlert(t('deleteGroupFailed'))
+      if (failed) appAlert(failureMessage || t('deleteGroupFailed'))
     }
   }
 
@@ -1154,17 +1162,19 @@ export default function AdminVideoManager({
           : <Download className="h-4 w-4" />}
         {tc('download')}
       </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8 text-destructive hover:text-destructive"
-        onClick={() => void handleBulkDelete()}
-        disabled={bulkDeleting || downloadingSelection}
-      >
-        {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-        {tc('delete')}
-      </Button>
+      {canDelete && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 text-destructive hover:text-destructive"
+          onClick={() => void handleBulkDelete()}
+          disabled={bulkDeleting || downloadingSelection}
+        >
+          {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          {tc('delete')}
+        </Button>
+      )}
     </div>
   ) : null
 
@@ -1440,10 +1450,14 @@ export default function AdminVideoManager({
                 <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleStartEditGroupName(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
                   <Pencil className="h-4 w-4" />{t('editVideoName')}
                 </button>
-                <div className="my-1 border-t border-border" />
-                <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleDeleteGroup(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
-                  <Trash2 className="h-4 w-4" />{t('deleteVideo')}
-                </button>
+                {canDelete && (
+                  <>
+                    <div className="my-1 border-t border-border" />
+                    <button type="button" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handleDeleteGroup(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10">
+                      <Trash2 className="h-4 w-4" />{t('deleteVideo')}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </>
@@ -1578,18 +1592,20 @@ export default function AdminVideoManager({
                             >
                               <Pencil className="w-3 h-3" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive-visible flex-shrink-0"
-                              onClick={(e) => handleDeleteGroup(groupName, e)}
-                              disabled={deletingGroup === groupName}
-                              title={t('deleteVideo')}
-                            >
-                              {deletingGroup === groupName
-                                ? <Loader2 className="w-3 h-3 animate-spin" />
-                                : <Trash2 className="w-3 h-3" />}
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive-visible flex-shrink-0"
+                                onClick={(e) => handleDeleteGroup(groupName, e)}
+                                disabled={deletingGroup === groupName}
+                                title={t('deleteVideo')}
+                              >
+                                {deletingGroup === groupName
+                                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                                  : <Trash2 className="w-3 h-3" />}
+                              </Button>
+                            )}
                           </>
                         )}
                         {isExpanded && groupVideos.filter(v => v.status === 'READY').length > 1 && (
@@ -1778,6 +1794,7 @@ export default function AdminVideoManager({
                   <h4 className="text-sm font-medium mb-3">{t('allVersions')}</h4>
                   <VideoList
                     videos={groupVideos}
+                    canDelete={canDelete}
                     onRefresh={onRefresh}
                   />
                 </div>

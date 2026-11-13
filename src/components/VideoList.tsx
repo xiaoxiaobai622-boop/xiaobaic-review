@@ -16,6 +16,7 @@ import { logError } from '@/lib/logging'
 interface VideoListProps {
   videos: Video[]
   isAdmin?: boolean
+  canDelete?: boolean
   onRefresh?: () => void
 }
 
@@ -24,7 +25,7 @@ function expandNewestOnly(videos: Video[]) {
   return new Set(sorted[0]?.id ? [sorted[0].id] : [])
 }
 
-export default function VideoList({ videos: initialVideos, isAdmin = true, onRefresh }: VideoListProps) {
+export default function VideoList({ videos: initialVideos, isAdmin = true, canDelete = true, onRefresh }: VideoListProps) {
   const t = useTranslations('videos')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
@@ -231,7 +232,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
             )}
           </Button>
         )}
-        {isAdmin && (
+        {canDelete && (
           <Button
             variant="ghost"
             size="icon"
@@ -337,7 +338,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, onRef
                 <Download className="w-3.5 h-3.5" />
               </Button>
             )}
-            {isAdmin && (
+            {canDelete && (
               <Button
                 variant="ghost"
                 size="icon"

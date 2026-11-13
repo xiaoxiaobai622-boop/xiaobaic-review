@@ -248,16 +248,6 @@ export async function DELETE(
   const messages = await loadLocaleMessages(locale).catch(() => null)
   const videoMessages = messages?.videos || {}
 
-  const access = await requireProjectAction(request, (await params).id, 'delete')
-  if (access instanceof Response) return access
-
-  const rateLimitResult = await rateLimit(request, {
-    windowMs: 60 * 1000,
-    maxRequests: 30,
-    message: videoMessages.tooManyVideoDeleteRequests || 'Too many video delete requests. Please slow down.',
-  }, 'video-delete')
-  if (rateLimitResult) return rateLimitResult
-
   try {
     const { id } = await params
     const video = await prisma.video.findUnique({
@@ -273,6 +263,16 @@ export async function DELETE(
       return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
     }
 
+    const access = await requireProjectAction(request, video.projectId, 'delete')
+    if (access instanceof Response) return access
+
+    const rateLimitResult = await rateLimit(request, {
+      windowMs: 60 * 1000,
+      maxRequests: 30,
+      message: videoMessages.tooManyVideoDeleteRequests || 'Too many video delete requests. Please slow down.',
+    }, 'video-delete')
+    if (rateLimitResult) return rateLimitResult
+
     // Everything this row names, co-owners included. Whether an object may go is
     // decided when the record is purged, not here: another version, a video still
     // sitting in the bin, or the collected upload this original came from can all
@@ -280,7 +280,20 @@ export async function DELETE(
     const paths = referencedStoragePaths(video, video.assets)
     const mpsDirectory = parentDirectory(video.hlsPath)
 
-    await prisma.$transaction(async (tx) => {
+    const claimed = await prisma.$transaction(async (tx) => {
+      // Both requests in a double-click can pass the read above. The conditional
+      // update is the claim: only the request that flips deletedAt from NULL may
+      // create the recycle-bin row, so a concurrent second delete cannot add one.
+      // The row survives so restore can bring back the comments/analytics that a
+      // hard delete cascades away. Versions are deliberately not renumbered: the
+      // tombstone still owns its (projectId, name, version) slot, and shifting the
+      // later versions down would make that slot impossible to restore into.
+      const update = await tx.video.updateMany({
+        where: { id, deletedAt: null },
+        data: { deletedAt: new Date() },
+      })
+      if (update.count === 0) return false
+
       await createRecycleBinItem(tx, video.project.id, {
         itemType: 'VIDEO',
         itemName: `${video.name} ${video.versionLabel}`,
@@ -288,12 +301,11 @@ export async function DELETE(
         paths,
         directories: mpsDirectory ? [mpsDirectory] : [],
       })
-      // The row survives so restore can bring back the comments/analytics that a
-      // hard delete cascades away. Versions are deliberately not renumbered: the
-      // tombstone still owns its (projectId, name, version) slot, and shifting the
-      // later versions down would make that slot impossible to restore into.
-      await tx.video.update({ where: { id }, data: { deletedAt: new Date() } })
+      return true
     })
+    if (!claimed) {
+      return NextResponse.json({ error: videoMessages.videoNotFoundApi || 'Video not found' }, { status: 404 })
+    }
 
     // Losing a version can remove the only approved cut of its group, which makes
     // the project's APPROVED badge a lie until this runs.
