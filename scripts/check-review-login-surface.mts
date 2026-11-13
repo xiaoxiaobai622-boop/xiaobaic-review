@@ -187,7 +187,7 @@ check(!teamPage.includes('5 名成员') && teamPage.includes('team.quota')
   `→ 页面兜底 ${teamPage.includes('5 名成员') ? '还在写死' : '已去掉'}，接口 ${read('app/api/teams/[id]/route.ts').includes('getTeamQuota') ? '带 quota' : '没带'}、team-center ${read('app/api/team-center/route.ts').includes('BETA_QUOTA') ? '还挂着多余的 quota 载荷' : '干净'}`)
 check(membersPage.includes('canManage && <Button onClick={invite}')
     && /canManage && <div[^>]*>[\s\S]{0,600}?onClick=\{bulkRemove\}/.test(membersPage)
-    && membersPage.includes('canManage && <Card><CardHeader><CardTitle className="text-base">邀请成员'),
+    && /canManage && <Card[^>]*><CardHeader><CardTitle className="text-base">邀请成员/.test(membersPage),
   'S5 席位页对没管理权的人不再画一排用不了的控件（原来是 disabled，看着像坏了）')
 check(membersPage.includes("canManage ? '成员管理' : '团队成员'"),
   'S5b 同一页的副标题按角色说实话（非管理员看到的是「查看团队里有谁」而不是「管理…」）')
