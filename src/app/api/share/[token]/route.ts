@@ -293,7 +293,7 @@ export async function GET(
     const sortedVideosByName: Record<string, any[]> = videosByName
 
     const photosVisible = shareAllowsProjectPhotos(policy) && (!isGuest || project.guestShowPhotos)
-    const [smtpConfigured, globalSettings, primaryRecipient, photoAlbumCount] = await Promise.all([
+    const [smtpConfigured, globalSettings, primaryRecipient, photoAlbumCount, projectTeam] = await Promise.all([
       isSmtpConfigured(),
       prisma.settings.findUnique({
         where: { id: 'default' },
@@ -312,7 +312,13 @@ export async function GET(
           projectId: project.id,
           photos: { some: { uploadCompletedAt: { not: null } } },
         },
-      }) : Promise.resolve(0)
+      }) : Promise.resolve(0),
+      capabilityProject
+        ? prisma.team.findUnique({
+            where: { id: capabilityProject.teamId },
+            select: { id: true, name: true, avatarUrl: true },
+          })
+        : Promise.resolve(null),
     ])
 
     let allRecipients: Array<{id: string, name: string | null, email: string | null}> = []
@@ -402,6 +408,7 @@ export async function GET(
 
       title: project.title,
       description: project.description,
+      team: projectTeam,
 
       ...(isGuest ? {} : { status: project.status }),
 

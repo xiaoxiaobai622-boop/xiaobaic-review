@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { CheckCircle2, ChevronLeft, ChevronRight, Film, ArrowLeft, GitCompareArrows, MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import { countCommentsByLatestVideoName, getLatestVideo } from '@/lib/video-comment-counts'
@@ -184,7 +185,7 @@ export default function ThumbnailReel({
                 variant="ghost"
                 size="icon"
                 onClick={onBackToGrid}
-                className="h-8 w-8 shrink-0 sm:h-[32px] sm:w-[32px] sm:rounded-[8px]"
+                className="h-[28px] w-[28px] shrink-0 sm:rounded-[8px]"
                 title={backButtonLabel || tShare('backToOverview')}
                 aria-label={backButtonLabel || tShare('backToOverview')}
               >
@@ -207,7 +208,7 @@ export default function ThumbnailReel({
                   setSelectedVersionId(event.target.value)
                   window.dispatchEvent(new CustomEvent('selectReviewVersion', { detail: { videoId: event.target.value } }))
                 }}
-                className="h-8 min-w-[46px] max-w-[72px] shrink-0 rounded-[6px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[32px] sm:rounded-[8px] sm:text-[13px]"
+                className="h-[28px] min-w-[46px] max-w-[72px] shrink-0 rounded-[6px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring sm:rounded-[8px] sm:text-[13px]"
               >
                 {playableVideos.map((video: any) => (
                   <option key={video.id} value={video.id}>{video.versionLabel || `v${video.version}`}</option>
@@ -221,7 +222,7 @@ export default function ThumbnailReel({
                   setSelectedVersionId(newerVersion.id)
                   window.dispatchEvent(new CustomEvent('selectReviewVersion', { detail: { videoId: newerVersion.id } }))
                 }}
-                className="flex h-8 shrink-0 items-center gap-1 rounded-[6px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums text-foreground outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring sm:h-[32px] sm:rounded-[8px] sm:text-[13px]"
+                className="flex h-[28px] shrink-0 items-center gap-1 rounded-[6px] border border-border bg-background px-1.5 text-xs font-medium tabular-nums text-foreground outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring sm:rounded-[8px] sm:text-[13px]"
                 title={`${tc('version')} ${newerVersion.versionLabel || `v${newerVersion.version}`}`}
               >
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
@@ -229,9 +230,9 @@ export default function ThumbnailReel({
               </button>
             )}
             <div className="hidden items-center gap-0.5 sm:flex sm:gap-0 sm:rounded-[6px] sm:bg-[hsl(var(--secondary))]">
-              <Button variant="ghost" size="icon" onClick={handlePrevVideo} disabled={activeIndex <= 0} className="h-7 w-7 sm:h-[32px] sm:w-[32px] sm:rounded-[8px]" title={tShare('previousVideo')}><ChevronLeft className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" onClick={handlePrevVideo} disabled={activeIndex <= 0} className="h-[28px] w-[28px] sm:rounded-[8px]" title={tShare('previousVideo')}><ChevronLeft className="h-4 w-4" /></Button>
               <span className="min-w-9 text-center text-xs text-muted-foreground tabular-nums sm:min-w-[26px] sm:text-[12px] sm:text-foreground">{activeIndex + 1}/{totalVideos}</span>
-              <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-7 w-7 sm:h-[32px] sm:w-[32px] sm:rounded-[8px]" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-[28px] w-[28px] sm:rounded-[8px]" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
             </div>
           </div>
 
@@ -240,7 +241,7 @@ export default function ThumbnailReel({
               <Button
                 variant="outline"
                 size="sm"
-                className="flex h-8 gap-1.5 px-2 sm:h-[32px] sm:rounded-[8px] sm:px-3 sm:text-[13px]"
+                className="flex h-[28px] gap-1.5 px-2 sm:rounded-[8px] sm:px-3 sm:text-[13px]"
                 onClick={() => window.dispatchEvent(new CustomEvent('openReviewComparison'))}
               >
                 <GitCompareArrows className="h-4 w-4" />
@@ -254,6 +255,38 @@ export default function ThumbnailReel({
             {showLanguageToggle && <LanguageToggle className="h-8 shadow-none" />}
             {showThemeToggle && <ThemeToggle />}
             {trailingAction}
+            {showCommentToggle && onToggleCommentPanel && (
+              <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[8px] bg-secondary">
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={onToggleCommentPanel}
+                        aria-label={isCommentPanelVisible ? tShare('hideAssetInfo') : tShare('showAssetInfo')}
+                        aria-pressed={isCommentPanelVisible}
+                        className={cn(
+                          'h-[28px] w-[28px] shrink-0 rounded-[6px] bg-transparent hover:bg-accent',
+                          isCommentPanelVisible
+                            ? 'text-primary hover:text-primary'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ width: 22, height: 22 }}>
+                          <rect x="3.75" y="3.75" width="16.5" height="16.5" rx="2.75" stroke="currentColor" strokeWidth="1.75" />
+                          <rect x="15" y="6.25" width="5" height="11.5" rx="1" fill="currentColor" />
+                        </svg>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isCommentPanelVisible ? tShare('hideAssetInfo') : tShare('showAssetInfo')}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </span>
+            )}
           </div>
         </div>
       </div>

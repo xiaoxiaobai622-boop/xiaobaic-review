@@ -1135,6 +1135,14 @@
 
   "comments": {
     "feedbackAndDiscussion": "Feedback & Discussion",
+    "discussion": "Discussion",
+    "info": "Info",
+    "allComments": "All comments",
+    "filter": "Filter",
+    "filterAll": "All",
+    "filterUnresolved": "Unresolved",
+    "filterResolved": "Resolved",
+    "more": "More",
     "tapToExpand": "Tap to expand",
     "hideFeedback": "Hide Feedback Section",
     "showFeedback": "Show Feedback",
@@ -1337,6 +1345,8 @@
     "gridView": "Grid view",
     "listView": "List view",
     "backToOverview": "Back to overview",
+    "hideAssetInfo": "Hide asset info",
+    "showAssetInfo": "Show asset info",
     "includesAssets": "Includes downloadable assets",
     "backToAllVideos": "Back to all videos",
     "allVideos": "All Videos",

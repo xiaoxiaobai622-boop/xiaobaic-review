@@ -172,7 +172,7 @@ function MessageBubble({
   ), [threadReplies])
 
   return (
-    <div className="w-full">
+    <div className="relative z-10 w-full">
       <div
         className={cn(
           'relative rounded-[8px] px-[12px] py-[12px] transition-[transform,box-shadow,background-color] duration-150 ease-[var(--ease-standard)] motion-reduce:transition-none',
@@ -229,16 +229,21 @@ function MessageBubble({
                   event.stopPropagation()
                   onToggleResolved(!(comment as any).resolved)
                 }}
-                className={cn(
-                  'absolute right-4 top-3.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border transition-[border-color,background-color,transform,opacity] duration-150 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100',
-                  (comment as any).resolved
-                    ? 'border-success bg-success text-success-foreground hover:opacity-90'
-                    : 'border-muted-foreground/50 bg-card text-transparent hover:border-primary hover:bg-primary/5',
-                )}
+                onPointerDown={(event) => event.stopPropagation()}
+                className="group absolute right-[13px] top-[11px] flex h-[28px] w-[28px] items-center justify-center rounded-full outline-none transition-transform duration-150 active:scale-90 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100"
                 aria-label={(comment as any).resolved ? '标记为未完成' : '标记为已完成'}
                 aria-pressed={(comment as any).resolved === true}
               >
-                <Check className="h-3.5 w-3.5" />
+                <span
+                  className={cn(
+                    'flex h-[22px] w-[22px] items-center justify-center rounded-full border transition-[border-color,background-color,color,opacity] duration-150 motion-reduce:transition-none',
+                    (comment as any).resolved
+                      ? 'border-success bg-success text-success-foreground group-hover:opacity-90'
+                      : 'border-muted-foreground/50 bg-card text-transparent group-hover:border-primary group-hover:bg-primary/5',
+                  )}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </span>
               </button>
             )}
 
@@ -265,7 +270,7 @@ function MessageBubble({
             <div
               className={`break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap ${
                 comment.timecode && onSeekToTimecode
-                  ? 'cursor-pointer rounded-md -mx-2 px-2 py-1 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+                  ? 'cursor-pointer rounded-md -mx-2 px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
                   : ''
               }`}
             >

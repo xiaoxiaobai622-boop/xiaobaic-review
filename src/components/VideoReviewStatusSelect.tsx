@@ -73,7 +73,7 @@ export function VideoReviewStatusControl({
         aria-label={t('setReviewStatus')}
         title={loading ? t('updatingReviewStatus') : t('setReviewStatus')}
         className={cn(
-          'h-8 w-auto min-w-[132px] shrink-0 gap-2 border-0 bg-secondary px-2.5 py-0 text-xs font-medium text-foreground shadow-none transition-colors hover:bg-accent focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 sm:h-[32px] sm:min-w-[132px] sm:rounded-[8px] sm:gap-2 sm:px-2.5 sm:text-[13px]',
+          'h-[28px] w-auto min-w-[132px] shrink-0 gap-2 border-0 bg-secondary px-2.5 py-0 text-xs font-medium text-foreground shadow-none transition-colors hover:bg-accent focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 sm:min-w-[132px] sm:rounded-[8px] sm:gap-2 sm:px-2.5 sm:text-[13px]',
           className
         )}
       >

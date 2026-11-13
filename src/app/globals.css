@@ -316,10 +316,12 @@
     --review-tint-layer: 1; /* 没有消费者，只是让这层在 DOM 里量得到、在仓库里 grep 得到 */
     --review-canvas: var(--background);
     --review-gutter: var(--background);
+    /* 调色面板导出 2026-11-13：审片表面卡面纯白。 */
+    --card: 0 0% 100%; /* #ffffff */
   }
 
   .dark [data-review-surface] {
-    --background: 0 0% 0%;
+    --background: 230 25% 9.4%; /* #12141e */
     --review-chrome: 230 25% 9.41176%;
     --review-canvas: 0 0% 0%;
     --review-gutter: 0 0% 0%;
@@ -397,6 +399,112 @@
     box-shadow: 0 1px 16px rgb(0 0 0 / 0.12), 0 8px 12px rgb(0 0 0 / 0.16), 0 4px 8px rgb(0 0 0 / 0.2);
     --muted-foreground: 232 12.2% 64.7%;
   }
+}
+
+/* 右侧批注栏：宽度收缩由外壳负责，内层保持固定宽度，内容跟着整列滑出而不是逐帧重排。 */
+[data-comment-panel] {
+  transition:
+    width var(--motion-slow) var(--ease-emphasis),
+    opacity 180ms var(--ease-standard);
+}
+
+/* 「讨论 / 信息」分段控件的白色滑块。 */
+[data-panel-tab-thumb] {
+  transition: transform var(--motion-base) var(--ease-standard);
+}
+
+/* 批注完成态的浅绿底色：从勾选按钮圆心向外铺开，取消时沿同一圆心收回。 */
+[data-resolve-fill] {
+  clip-path: circle(0% at calc(100% - 27px) 25px);
+  transition: clip-path var(--motion-slow) var(--ease-emphasis);
+}
+
+[data-comment-resolved] [data-resolve-fill] {
+  clip-path: circle(200% at calc(100% - 27px) 25px);
+}
+
+/* 批注搜索框：展开时整行增高，收起时连同输入框一起折回，避免内容瞬移。 */
+[data-comment-search] {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--motion-slow) var(--ease-emphasis),
+    opacity 160ms var(--ease-standard);
+}
+
+[data-comment-search][data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+[data-comment-search] > * {
+  min-height: 0;
+  overflow: hidden;
+  transform: translateY(-4px);
+  transition: transform var(--motion-slow) var(--ease-emphasis);
+}
+
+[data-comment-search][data-open='true'] > * {
+  transform: translateY(0);
+}
+
+/* 底部输入框跟着批注栏一起收起：折叠 grid 行高，保留已输入的内容和附件。 */
+[data-comment-composer] {
+  transition:
+    grid-template-rows var(--motion-slow) var(--ease-emphasis),
+    opacity 180ms var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-comment-panel],
+  [data-comment-composer] { transition: none }
+  [data-panel-tab-thumb] { transition: none }
+  [data-resolve-fill] { transition: none }
+  [data-comment-search],
+  [data-comment-search] > * { transition: none }
+  .share-video-card,
+  .share-video-card:active { transition: none; transform: none }
+  .share-video-card[data-activating='true'] { animation: none }
+}
+
+/* 右栏滚动容器：隐藏滚动条视觉，但保留滚轮/触控板/键盘滚动。 */
+[data-hide-scrollbar] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-hide-scrollbar]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* 分享页视频卡片：按下缩小，松开后带一点过冲回弹，再进入播放器。 */
+.share-video-card {
+  transform-origin: center;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 160ms var(--ease-standard),
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard),
+    background-color var(--motion-base) var(--ease-standard);
+}
+
+.share-video-card:active {
+  transform: scale(0.965);
+  transition-duration: 80ms, var(--motion-base), var(--motion-base), var(--motion-base);
+}
+
+.share-video-card[data-activating='true'] {
+  animation: share-video-card-press 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes share-video-card-press {
+  0% { transform: scale(0.965) }
+  55% { transform: scale(1.012) }
+  80% { transform: scale(0.998) }
+  100% { transform: scale(1) }
 }
 
 /* 「发表评论…」占位文字的扫光：逐字照搬对标站

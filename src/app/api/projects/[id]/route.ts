@@ -168,7 +168,13 @@ export async function GET(
      * （src/lib/project-access.ts），成员名单走的是同一枚 where，所以「人数说能进」
      * 和「名单列得见人」不会各说各话。
      */
-    const memberCount = await prisma.teamMember.count({ where: projectViewersWhere(project) })
+    const [memberCount, projectTeam] = await Promise.all([
+      prisma.teamMember.count({ where: projectViewersWhere(project) }),
+      prisma.team.findUnique({
+        where: { id: project.teamId },
+        select: { id: true, name: true, avatarUrl: true },
+      }),
+    ])
 
     const primaryRecipient = project.recipients?.find((r: any) => r.isPrimary) || project.recipients?.[0]
     const fallbackName = project.companyName || primaryRecipient?.name || 'Client'
@@ -190,6 +196,7 @@ export async function GET(
     const sourceQualityEnabled = await isSourceQualityPlaybackEnabled()
     const projectData = {
       ...project,
+      team: projectTeam,
       sourceQualityEnabled,
       memberCount,
       videos: project.videos.map((video: any) => ({

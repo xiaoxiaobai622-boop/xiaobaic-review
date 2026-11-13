@@ -16,6 +16,7 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
+import { InitialsAvatar } from '@/components/InitialsAvatar'
 import ReviewWorkspace from '@/components/review/ReviewWorkspace'
 import { getReviewCapabilities, viewerFromAdminUser } from '@/lib/review-capabilities'
 import SharePhotoSection from '@/components/SharePhotoSection'
@@ -984,6 +985,8 @@ export default function AdminSharePage() {
 
   const primaryRecipient = project.recipients?.find((r: any) => r.isPrimary) || project.recipients?.[0]
   const clientDisplayName = project.companyName || primaryRecipient?.name || primaryRecipient?.email || t('client')
+  const teamDisplayName = String(project.team?.name || project.settings?.companyName || 'Studio').trim() || 'Studio'
+  const teamAvatarUrl = project.team?.avatarUrl || null
 
   const showCommentPanel = !project.hideFeedback
   const timestampDisplayMode = project.timestampDisplay === 'AUTO' ? 'AUTO' : 'TIMECODE'
@@ -1011,23 +1014,29 @@ export default function AdminSharePage() {
       <div data-review-surface className="fixed inset-0 bg-background flex flex-col overflow-hidden">
         <ReviewBetaBanner />
         {/* Grid view toolbar */}
-        <div className="flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 z-20 flex-shrink-0">
+        <div className="relative flex items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.08)] sm:px-4 z-20 flex-shrink-0 dark:shadow-[0_1px_3px_rgba(0,0,0,0.5)]">
           {/* Left: back to project */}
-          {canManageApproval && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              onClick={handleReturnToSource}
-              title={tc('back')}
-              aria-label={tc('back')}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          )}
+          <div className="relative z-10 flex min-w-0 flex-1 items-center gap-2">
+            {canManageApproval && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={handleReturnToSource}
+                title={tc('back')}
+                aria-label={tc('back')}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <InitialsAvatar name={teamDisplayName} src={teamAvatarUrl} size="sm" isInternal />
+            <span className="min-w-0 truncate text-sm font-medium text-foreground" title={teamDisplayName}>
+              {teamDisplayName}
+            </span>
+          </div>
 
           {/* Right: view toggle + theme */}
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="relative z-10 ml-auto flex shrink-0 items-center gap-2">
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
             <ReviewLoginActions
               compact
@@ -1042,26 +1051,36 @@ export default function AdminSharePage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-            <ThumbnailGrid
-              videosByName={project.videosByName}
-              thumbnailsByName={thumbnailsByName}
-              thumbnailsLoading={thumbnailsLoading}
-              onVideoSelect={handleGridVideoSelect}
-              projectTitle={project.title}
-              projectDescription={project.description}
-              clientName={clientDisplayName}
-              viewMode={viewMode}
-              albumCount={albumCount}
-            />
-            <SharePhotoSection
-              projectId={id}
-              allowPhotoDownload={project.allowPhotoDownload ?? true}
-              viewMode={viewMode}
-              onAlbumCount={setAlbumCount}
-            />
-          </div>
+        <div className="flex-1 overflow-y-auto" data-hide-scrollbar>
+            <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+              <div className="relative mb-4 sm:mb-6">
+                <div
+                  aria-hidden="true"
+                  data-title-glow
+                  className="pointer-events-none absolute inset-x-0 -top-8 h-28"
+                  style={{ background: 'radial-gradient(ellipse 55% 70% at 50% 0%, hsl(var(--primary) / 0.08), transparent 70%)' }}
+                />
+                <h1 className="relative break-words text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                  {project.title}
+                </h1>
+              </div>
+              <ThumbnailGrid
+                videosByName={project.videosByName}
+                thumbnailsByName={thumbnailsByName}
+                thumbnailsLoading={thumbnailsLoading}
+                onVideoSelect={handleGridVideoSelect}
+                projectDescription={project.description}
+                clientName={clientDisplayName}
+                viewMode={viewMode}
+                albumCount={albumCount}
+              />
+              <SharePhotoSection
+                projectId={id}
+                allowPhotoDownload={project.allowPhotoDownload ?? true}
+                viewMode={viewMode}
+                onAlbumCount={setAlbumCount}
+              />
+            </div>
         </div>
       </div>
     )
@@ -1102,6 +1121,7 @@ export default function AdminSharePage() {
         onShareLink: copyShareLink,
         shareCopied,
         onCommentFocus: setFocusCommentId,
+        onToggleComments: showCommentPanel ? () => setHideComments(value => !value) : undefined,
       }}
       slots={{
         menuExtra: activeVideoState?.selectedVideo && isAdmin ? (
@@ -1139,6 +1159,8 @@ export default function AdminSharePage() {
       restrictCommentsToLatestVersion={project.restrictCommentsToLatestVersion}
       smtpConfigured={project.smtpConfigured}
       hidePlayerDownload
+      hideComments={!showCommentPanel || hideComments}
+      commentPanelAvailable={showCommentPanel}
       timestampDisplayMode={timestampDisplayMode}
       usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
     />

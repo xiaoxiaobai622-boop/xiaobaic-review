@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Film, Files, Download, Loader2, ChevronRight, MessageSquare } from 'lucide-react'
 import { Button } from './ui/button'
@@ -83,6 +83,32 @@ export default function ThumbnailGrid({
 
   const [showApproveHint, setShowApproveHint] = useState(false)
   const approveHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [activatingName, setActivatingName] = useState<string | null>(null)
+  const activationLockRef = useRef(false)
+  const activationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (approveHintTimer.current) clearTimeout(approveHintTimer.current)
+      if (activationTimerRef.current) clearTimeout(activationTimerRef.current)
+    }
+  }, [])
+
+  const activateVideo = (name: string) => {
+    if (activationLockRef.current) return
+    const reducedMotion = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reducedMotion) {
+      onVideoSelect(name)
+      return
+    }
+    activationLockRef.current = true
+    setActivatingName(name)
+    activationTimerRef.current = setTimeout(() => {
+      activationLockRef.current = false
+      onVideoSelect(name)
+    }, 160)
+  }
 
   // Keep the project order stable; approval is a state, not a sort priority.
   const videoNames = useMemo(() => {
@@ -110,22 +136,23 @@ export default function ThumbnailGrid({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* Hero — cinematic title block with a faint accent glow */}
-      <div className="relative text-center mb-10 sm:mb-14 pt-10 px-4">
-        <div
-          className="absolute -top-10 inset-x-0 bottom-0 pointer-events-none"
-          style={{ background: 'radial-gradient(ellipse 55% 70% at 50% 0%, hsl(var(--primary) / 0.08), transparent 70%)' }}
-        />
-        {projectTitle && (
+      {/* Hero — cinematic title block with a faint accent glow; the share pages move the
+          project name into the top toolbar, so it only renders when a caller asks for it. */}
+      {projectTitle && (
+        <div className="relative text-center mb-10 sm:mb-14 pt-10 px-4">
+          <div
+            className="absolute -top-10 inset-x-0 bottom-0 pointer-events-none"
+            style={{ background: 'radial-gradient(ellipse 55% 70% at 50% 0%, hsl(var(--primary) / 0.08), transparent 70%)' }}
+          />
           <h1 className="relative text-3xl sm:text-4xl font-semibold tracking-tight text-foreground max-w-3xl mx-auto mb-4">
             {projectTitle}
           </h1>
-        )}
-        <div
-          className="relative w-14 h-0.5 mx-auto mb-4 rounded-full"
-          style={{ background: 'linear-gradient(90deg, transparent, hsl(var(--primary)), transparent)' }}
-        />
-      </div>
+          <div
+            className="relative w-14 h-0.5 mx-auto mb-4 rounded-full"
+            style={{ background: 'linear-gradient(90deg, transparent, hsl(var(--primary)), transparent)' }}
+          />
+        </div>
+      )}
 
       <div data-tutorial="video-grid">
         {/* Section header — icon badge + title + count, actions right (same anatomy as admin) */}
@@ -176,8 +203,9 @@ export default function ThumbnailGrid({
               return (
                 <button
                   key={name}
-                  onClick={() => onVideoSelect(name)}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/70 bg-card shadow-elevation-md hover:border-primary/50 transition-colors duration-[var(--motion-base)] text-left"
+                  onClick={() => activateVideo(name)}
+                  data-activating={activatingName === name || undefined}
+                  className="share-video-card w-full flex items-center gap-3 p-3 rounded-lg border border-border/70 bg-card shadow-elevation-md hover:border-primary/50 text-left"
                 >
                   <div className="relative w-20 h-12 rounded-md overflow-hidden bg-black border border-border flex-shrink-0">
                     {thumbnailUrl ? (
@@ -234,13 +262,13 @@ export default function ThumbnailGrid({
             return (
               <button
                 key={name}
-                onClick={() => onVideoSelect(name)}
+                onClick={() => activateVideo(name)}
+                data-activating={activatingName === name || undefined}
                 className={cn(
-                  'group relative overflow-hidden rounded-md text-left',
+                  'share-video-card group relative overflow-hidden rounded-md text-left',
                   'bg-card border border-border/70 shadow-elevation-md',
                   'hover:border-primary/50',
-                  'transition-colors duration-150',
-                  'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background'
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background'
                 )}
               >
                 {/* Thumbnail */}

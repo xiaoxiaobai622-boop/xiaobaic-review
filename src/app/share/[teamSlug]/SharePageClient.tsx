@@ -12,6 +12,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Button } from '@/components/ui/button'
 import { Lock, Check, Mail, KeyRound } from 'lucide-react'
 import BrandLogo from '@/components/BrandLogo'
+import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { loadShareToken, saveShareToken, shareFetch, subscribeShareToken, renewShareToken, notifyShareSessionExpired, readShareTokenRaw } from '@/lib/share-token-store'
 import { appAlert } from '@/components/AppDialogProvider'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -1530,6 +1531,8 @@ export default function SharePageClient({ token }: SharePageClientProps) {
   const displayClientName = project.clientName?.trim().toLowerCase() === 'client'
     ? t('clientFallback')
     : project.clientName
+  const teamDisplayName = String(project.team?.name || project.settings?.companyName || 'Studio').trim() || 'Studio'
+  const teamAvatarUrl = project.team?.avatarUrl || null
 
   // Whether to show comment panel
   const showCommentPanel = !project.hideFeedback && canComment
@@ -1539,12 +1542,16 @@ export default function SharePageClient({ token }: SharePageClientProps) {
       <>
       <div data-review-surface className="fixed inset-0 bg-background flex flex-col overflow-hidden">
         <ReviewBetaBanner />
-        <div className="flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 z-20 flex-shrink-0">
-          <div className="flex items-center gap-2" data-tutorial="grid-actions">
+        <div className="relative flex items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.08)] sm:px-4 z-20 flex-shrink-0 dark:shadow-[0_1px_3px_rgba(0,0,0,0.5)]">
+          <div className="relative z-10 flex min-w-0 flex-1 items-center gap-2" data-tutorial="grid-actions">
+            <InitialsAvatar name={teamDisplayName} src={teamAvatarUrl} size="sm" isInternal />
+            <span className="min-w-0 truncate text-sm font-medium text-foreground" title={teamDisplayName}>
+              {teamDisplayName}
+            </span>
             <ShareExpiryNote expiresAt={project.shareExpiresAt ?? null} viewsRemaining={project.shareViewsRemaining ?? null} />
           </div>
 
-          <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
+          <div className="relative z-10 ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
             {project.allowReverseShare && project.shareType !== 'DELIVERY' && shareToken && (
               <ReverseShareUploadPanel
                 shareToken={shareToken}
@@ -1575,30 +1582,40 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-            <ThumbnailGrid
-              videosByName={project.videosByName}
-              thumbnailsByName={thumbnailsByName}
-              thumbnailsLoading={thumbnailsLoading}
-              onVideoSelect={handleVideoSelect}
-              projectTitle={project.title}
-              projectDescription={isGuest ? undefined : project.description}
-              allowAssetDownload={canDownload}
-              viewMode={viewMode}
-              albumCount={albumCount}
-              comments={comments}
-            />
-            {project.hasPhotos && project.id && shareToken && (
-              <SharePhotoSection
-                projectId={project.id}
-                shareToken={shareToken}
-                allowPhotoDownload={project.allowPhotoDownload && canDownload}
+        <div className="flex-1 overflow-y-auto" data-hide-scrollbar>
+            <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+              <div className="relative mb-4 sm:mb-6">
+                <div
+                  aria-hidden="true"
+                  data-title-glow
+                  className="pointer-events-none absolute inset-x-0 -top-8 h-28"
+                  style={{ background: 'radial-gradient(ellipse 55% 70% at 50% 0%, hsl(var(--primary) / 0.08), transparent 70%)' }}
+                />
+                <h1 className="relative break-words text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                  {project.title}
+                </h1>
+              </div>
+              <ThumbnailGrid
+                videosByName={project.videosByName}
+                thumbnailsByName={thumbnailsByName}
+                thumbnailsLoading={thumbnailsLoading}
+                onVideoSelect={handleVideoSelect}
+                projectDescription={isGuest ? undefined : project.description}
+                allowAssetDownload={canDownload}
                 viewMode={viewMode}
-                onAlbumCount={setAlbumCount}
+                albumCount={albumCount}
+                comments={comments}
               />
-            )}
-          </div>
+              {project.hasPhotos && project.id && shareToken && (
+                <SharePhotoSection
+                  projectId={project.id}
+                  shareToken={shareToken}
+                  allowPhotoDownload={project.allowPhotoDownload && canDownload}
+                  viewMode={viewMode}
+                  onAlbumCount={setAlbumCount}
+                />
+              )}
+            </div>
         </div>
       </div>
 
@@ -1681,6 +1698,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           onToggleComments: () => setHideComments((value) => !value),
         }}
         hideComments={!showCommentPanel || hideComments}
+        commentPanelAvailable={showCommentPanel}
         slots={{
           toolbarMeta: (
             <ShareExpiryNote

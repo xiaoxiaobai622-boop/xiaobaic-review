@@ -28,7 +28,7 @@ export default function ReviewBetaBanner({ className }: { className?: string }) 
   }
 
   return (
-    <div className={cn('relative shrink-0 border-b border-border bg-muted/60 px-3 py-[7px] pr-10 text-xs text-muted-foreground', className)}>
+    <div className={cn('relative shrink-0 bg-muted/60 px-3 py-[7px] pr-10 text-xs text-muted-foreground', className)}>
       <div className="flex min-w-0 items-center justify-center gap-2">
         <span className="min-w-0 truncate">{t('betaBannerText')}</span>
         <Link

@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import ThumbnailReel from '@/components/ThumbnailReel'
 import VideoPlayer from '@/components/VideoPlayer'
 import CommentSection from '@/components/CommentSection'
+import ReviewInfoPanel from '@/components/review/ReviewInfoPanel'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
 import LanguageToggle from '@/components/LanguageToggle'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -75,6 +76,8 @@ export interface ReviewWorkspaceProps {
     onToggleComments?: () => void
   }
   hideComments?: boolean
+  /** 当前入口是否允许出现批注栏（权限/反馈开关）；和用户手动收起区分，收起时保留输入状态。 */
+  commentPanelAvailable?: boolean
   focusCommentId?: string | null
   restrictCommentsToLatestVersion?: boolean
   smtpConfigured?: boolean
@@ -111,7 +114,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
     project, videos, videosByName, thumbnailsByName, activeVideoName, comments,
     capabilities, source, shareToken = null, projectSlug = null, isGuest = false, defaultQuality = '720p',
     clientName = '', clientEmail = null, adminUser = null, recipients = [], allowClientAssetUpload = false,
-    isPasswordProtected = false, identity, actions, hideComments = false, slots,
+    isPasswordProtected = false, identity, actions, hideComments = false, commentPanelAvailable = true, slots,
     initialSeekTime, initialVideoIndex, followLatestVersion = true, focusCommentId = null, restrictCommentsToLatestVersion = false, smtpConfigured = false, hidePlayerDownload = false,
     usePreviewForApprovedPlayback = false, timestampDisplayMode,
   } = props
@@ -185,7 +188,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const previousVideoName = activeIndex > 0 ? playableNames[activeIndex - 1] : null
   const nextVideoName = activeIndex >= 0 && activeIndex < playableNames.length - 1 ? playableNames[activeIndex + 1] : null
   const selectedVideo = pinnedVideo ?? latestByName(videos, activeVideoName)
-  const showCommentPanel = !hideComments
+  const showCommentPanel = commentPanelAvailable && !hideComments
   const canCompare = capabilities.canCompareVersions && playableNames.length > 1
   const menuExtra = (
     <>
@@ -201,7 +204,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   )
 
   return (
-    <div data-review-surface data-review-shell className="min-h-screen lg:fixed lg:inset-0 bg-background flex flex-col lg:overflow-hidden">
+    <div data-review-surface data-review-shell className="min-h-screen sm:fixed sm:inset-0 bg-background flex flex-col sm:overflow-hidden">
       <ThumbnailReel
         videosByName={videosByName}
         thumbnailsByName={thumbnailsByName}
@@ -212,7 +215,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
         showComparisonAction={canCompare}
         showLanguageToggle={false}
         showThemeToggle={false}
-        showCommentToggle={Boolean(actions.onToggleComments)}
+        showCommentToggle={commentPanelAvailable && Boolean(actions.onToggleComments)}
         isCommentPanelVisible={showCommentPanel}
         onToggleCommentPanel={actions.onToggleComments}
         comments={comments}
@@ -224,11 +227,10 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 projectId={project.id}
                 video={selectedVideo}
                 onUpdated={actions.onRefresh}
-                className="h-8 sm:h-[32px]"
               />
             )}
             {capabilities.canShareLink && actions.onShareLink && (
-              <Button type="button" variant="default" size="sm" className="h-8 shrink-0 gap-2 rounded-[8px] px-3 text-[13px] shadow-none sm:h-[32px] sm:px-3" onClick={() => void actions.onShareLink?.()}>
+              <Button type="button" variant="default" size="sm" className="h-[28px] shrink-0 gap-2 rounded-[8px] px-3 text-[13px] shadow-none sm:px-3" onClick={() => void actions.onShareLink?.()}>
                 {actions.shareCopied ? <Check className="mr-1.5 h-4 w-4" /> : <Share2 className="mr-1.5 h-4 w-4" />}
                 <span className="hidden sm:inline">{actions.shareCopied ? tu('copied') : tu('share')}</span>
               </Button>
@@ -249,7 +251,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
         }
       />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3 lg:flex-row lg:gap-0 lg:p-0">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:flex-row sm:gap-0 sm:p-0">
         {videos.length === 0 ? (
           slots?.emptyState ?? (
             <div className="flex-1 flex items-center justify-center p-4">
@@ -262,7 +264,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
           )
         ) : (
           <>
-            <div className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] lg:h-full lg:min-h-0 lg:flex-1 lg:p-[2px] lg:pb-[2px] ${showCommentPanel ? 'lg:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] sm:h-full sm:min-h-0 sm:flex-1 sm:p-[2px] sm:pb-[2px] ${showCommentPanel ? 'sm:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={stableVideos}
                 projectId={project.id}
@@ -308,40 +310,64 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
               <div id="review-comment-composer" className="pt-[2px] lg:mt-auto" />
             </div>
 
-            {showCommentPanel && (
-              <div className="flex max-h-[calc(100vh-56px)] flex-col overflow-hidden rounded-[8px] bg-card lg:max-h-full lg:w-[360px] lg:flex-none">
-                <div aria-hidden="true" className="hidden h-[2px] shrink-0 bg-[hsl(var(--review-gutter))] lg:block" />
-                <CommentSection
-                  projectId={project.id}
-                  projectSlug={projectSlug}
-                  comments={comments}
-                  focusCommentId={focusCommentId}
-                  clientName={clientName}
-                  clientEmail={clientEmail ?? undefined}
-                  isApproved={project.status === 'APPROVED'}
-                  restrictToLatestVersion={restrictCommentsToLatestVersion}
-                  videos={videos}
-                  isAdminView={source === 'admin'}
-                  adminUser={adminUser}
-                  smtpConfigured={smtpConfigured}
-                  isPasswordProtected={isPasswordProtected}
-                  recipients={recipients}
-                  shareToken={shareToken}
-                  showShortcutsButton={true}
-                  sendInsideComposer={true}
-                  timestampDisplayMode={timestampDisplayMode}
-                  mobileCollapsible={true}
-                  initialMobileCollapsed={true}
-                  authenticatedEmail={identity?.email ?? null}
-                  authenticatedName={identity?.name ?? null}
-                  allowClientAssetUpload={allowClientAssetUpload}
-                  maxCommentAttachments={project.settings?.maxCommentAttachments ?? 10}
-                  onToggleVisibility={actions.onToggleComments}
-                  showToggleButton={false}
-                  showVisibilitySelector={capabilities.canSetCommentVisibility}
-                  isReviewAuthenticated={identity?.isReviewAuthenticated}
-                  onRequireLogin={identity?.onRequireLogin}
-                />
+            {commentPanelAvailable && (
+              <div
+                data-comment-panel
+                aria-hidden={!showCommentPanel ? true : undefined}
+                inert={!showCommentPanel ? true : undefined}
+                className={`max-h-[calc(100vh-56px)] overflow-hidden rounded-[8px] bg-card sm:h-full sm:max-h-full sm:flex-none ${
+                  showCommentPanel
+                    ? 'flex w-full opacity-100 sm:w-[320px] lg:w-[360px]'
+                    : 'hidden opacity-0 sm:flex sm:w-0'
+                }`}
+              >
+                <div className="flex h-full w-full min-w-0 flex-col sm:w-[320px] sm:min-w-[320px] lg:w-[360px] lg:min-w-[360px]">
+                  <div aria-hidden="true" className="hidden h-[2px] shrink-0 bg-[hsl(var(--review-gutter))] sm:block" />
+                  <CommentSection
+                    projectId={project.id}
+                    projectSlug={projectSlug}
+                    comments={comments}
+                    focusCommentId={focusCommentId}
+                    clientName={clientName}
+                    clientEmail={clientEmail ?? undefined}
+                    isApproved={project.status === 'APPROVED'}
+                    restrictToLatestVersion={restrictCommentsToLatestVersion}
+                    videos={videos}
+                    isAdminView={source === 'admin'}
+                    adminUser={adminUser}
+                    smtpConfigured={smtpConfigured}
+                    isPasswordProtected={isPasswordProtected}
+                    recipients={recipients}
+                    shareToken={shareToken}
+                    showShortcutsButton={true}
+                    sendInsideComposer={true}
+                    timestampDisplayMode={timestampDisplayMode}
+                    mobileCollapsible={true}
+                    initialMobileCollapsed={true}
+                    authenticatedEmail={identity?.email ?? null}
+                    authenticatedName={identity?.name ?? null}
+                    allowClientAssetUpload={allowClientAssetUpload}
+                    maxCommentAttachments={project.settings?.maxCommentAttachments ?? 10}
+                    onToggleVisibility={actions.onToggleComments}
+                    showToggleButton={false}
+                    showVisibilitySelector={capabilities.canSetCommentVisibility}
+                    showComposer={showCommentPanel}
+                    infoContent={(
+                      <ReviewInfoPanel
+                        video={selectedVideo}
+                        projectTitle={project.title}
+                        projectDescription={project.description}
+                        clientName={clientName}
+                        isPasswordProtected={isPasswordProtected}
+                        isVideoApproved={Boolean((selectedVideo as any)?.approved)}
+                        defaultQuality={defaultQuality}
+                        usePreviewForApprovedPlayback={usePreviewForApprovedPlayback}
+                      />
+                    )}
+                    isReviewAuthenticated={identity?.isReviewAuthenticated}
+                    onRequireLogin={identity?.onRequireLogin}
+                  />
+                </div>
               </div>
             )}
           </>
