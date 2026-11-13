@@ -103,6 +103,7 @@ export async function ensureDefaultAdmin() {
         username: adminUsername,
         email: adminEmail,
         password: hashedPassword,
+        passwordSetAt: new Date(),
         name: process.env.ADMIN_NAME || 'Admin',
         role: 'ADMIN',
         isPlatformAdmin: true,

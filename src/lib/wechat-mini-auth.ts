@@ -61,6 +61,9 @@ export async function findOrCreateUserFromWechat(identity: MiniWechatIdentity) {
 
   const email = localEmailForOpenid(identity.openid)
   const username = localUsernameForOpenid(identity.openid)
+  // Placeholder only: the user never knows this hash. passwordSetAt stays null so the
+  // profile offers "set a password" without asking for a current password, and password
+  // login is refused until a real one is chosen.
   const password = await hashPassword(randomBytes(24).toString('hex'))
 
   const user = await prisma.$transaction(async (tx) => {

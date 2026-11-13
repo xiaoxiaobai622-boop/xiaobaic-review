@@ -16,6 +16,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { apiFetch, apiPatch } from '@/lib/api-client'
 import { clearTokens } from '@/lib/token-store'
 import { maskPhoneDisplay } from '@/lib/phone-display'
+import { getContactEmail } from '@/lib/user-contact'
+import { useActionFeedback, ActionFeedback, FeedbackSlot } from '@/components/ActionFeedback'
 import { useTranslations } from 'next-intl'
 import { validateAccountPassword } from '@/lib/password-policy'
 import Link from 'next/link'
@@ -51,7 +53,13 @@ function ProfileContent() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' })
+  // null = 仍在加载；false = 随机占位密码（微信/短信建号），走「设置密码」；true = 走「修改密码」。
+  const [passwordSet, setPasswordSet] = useState<boolean | null>(null)
+  const [contactEmail, setContactEmail] = useState('')
   const [phoneDialogOpen, setPhoneDialogOpen] = useState(false)
+  // change = 已有号码换号（双验证）；bind = 还没有号码，短信验证后首次绑定。
+  const [phoneMode, setPhoneMode] = useState<'change' | 'bind'>('change')
+  const [phoneError, setPhoneError] = useState('')
   const [phoneStep, setPhoneStep] = useState<'method' | 'verify' | 'new' | 'confirm'>('method')
   const [phoneMethod, setPhoneMethod] = useState<'password' | 'sms' | null>(null)
   const [phoneCredential, setPhoneCredential] = useState('')
@@ -61,6 +69,12 @@ function ProfileContent() {
   const [phoneSubmitting, setPhoneSubmitting] = useState(false)
   const [phoneCodeCooldown, setPhoneCodeCooldown] = useState(0)
   const [newPhoneCodeCooldown, setNewPhoneCodeCooldown] = useState(0)
+
+  // 每个动作区一枚独立反馈位：提示贴着所属按钮，不再堆到页面顶部。
+  const profileSaveFeedback = useActionFeedback()
+  const phoneFeedback = useActionFeedback()
+  const connectionsFeedback = useActionFeedback()
+  const passwordFeedback = useActionFeedback()
 
   useEffect(() => {
     if (phoneCodeCooldown <= 0) return
@@ -84,19 +98,25 @@ function ProfileContent() {
     setPhoneSubmitting(false)
     setPhoneCodeCooldown(0)
     setNewPhoneCodeCooldown(0)
+    setPhoneError('')
   }
 
   function changePhone() {
-    setError('')
-    setMessage('')
-    setPhoneDialogOpen(true)
     resetPhoneDialog()
+    if (!form.phone) {
+      // 还没有号码：跳过旧号验证，直接「填新号 + 短信验证码」首次绑定（复用登录短信接口 intent=bind）。
+      setPhoneMode('bind')
+      setPhoneStep('new')
+    } else {
+      setPhoneMode('change')
+    }
+    setPhoneDialogOpen(true)
   }
 
   async function selectPhoneMethod(method: 'password' | 'sms') {
     setPhoneMethod(method)
     setPhoneCredential('')
-    setError('')
+    setPhoneError('')
     setPhoneStep('verify')
     if (method !== 'sms') return
 
@@ -111,7 +131,7 @@ function ProfileContent() {
       if (!response.ok) throw new Error(data.error || ta('smsSendFailed'))
       setPhoneCodeCooldown(60)
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : ta('smsSendFailed'))
+      setPhoneError(sendError instanceof Error ? sendError.message : ta('smsSendFailed'))
       setPhoneStep('method')
     } finally {
       setPhoneSubmitting(false)
@@ -122,16 +142,16 @@ function ProfileContent() {
     event.preventDefault()
     if (!phoneMethod) return
     if (phoneMethod === 'password' && !phoneCredential) {
-      setError(t('enterCurrentPassword'))
+      setPhoneError(t('enterCurrentPassword'))
       return
     }
     if (phoneMethod === 'sms' && !/^\d{6}$/.test(phoneCredential)) {
-      setError(ta('invalidCode'))
+      setPhoneError(ta('invalidCode'))
       return
     }
 
     setPhoneSubmitting(true)
-    setError('')
+    setPhoneError('')
     try {
       const response = await apiFetch('/api/account/phone', {
         method: 'POST',
@@ -148,7 +168,7 @@ function ProfileContent() {
       setPhoneCredential('')
       setPhoneStep('new')
     } catch (verifyError) {
-      setError(verifyError instanceof Error ? verifyError.message : t('verifyFailed'))
+      setPhoneError(verifyError instanceof Error ? verifyError.message : t('verifyFailed'))
     } finally {
       setPhoneSubmitting(false)
     }
@@ -157,25 +177,31 @@ function ProfileContent() {
   async function sendNewPhone(event: React.FormEvent) {
     event.preventDefault()
     if (!/^1[3-9]\d{9}$/.test(newPhone)) {
-      setError(ta('invalidPhone'))
+      setPhoneError(ta('invalidPhone'))
       return
     }
 
     setPhoneSubmitting(true)
-    setError('')
+    setPhoneError('')
     try {
-      const response = await apiFetch('/api/account/phone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send-new', token: phoneGrantToken, phone: newPhone }),
-      })
+      const response = phoneMode === 'bind'
+        ? await apiFetch('/api/auth/sms/send-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: newPhone }),
+          })
+        : await apiFetch('/api/account/phone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'send-new', token: phoneGrantToken, phone: newPhone }),
+          })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || ta('smsSendFailed'))
       setNewPhoneCode('')
       setNewPhoneCodeCooldown(60)
       setPhoneStep('confirm')
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : ta('smsSendFailed'))
+      setPhoneError(sendError instanceof Error ? sendError.message : ta('smsSendFailed'))
     } finally {
       setPhoneSubmitting(false)
     }
@@ -184,18 +210,24 @@ function ProfileContent() {
   async function resendNewPhoneCode() {
     if (newPhoneCodeCooldown > 0 || phoneSubmitting) return
     setPhoneSubmitting(true)
-    setError('')
+    setPhoneError('')
     try {
-      const response = await apiFetch('/api/account/phone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send-new', token: phoneGrantToken, phone: newPhone }),
-      })
+      const response = phoneMode === 'bind'
+        ? await apiFetch('/api/auth/sms/send-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: newPhone }),
+          })
+        : await apiFetch('/api/account/phone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'send-new', token: phoneGrantToken, phone: newPhone }),
+          })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || ta('smsSendFailed'))
       setNewPhoneCodeCooldown(60)
     } catch (resendError) {
-      setError(resendError instanceof Error ? resendError.message : ta('smsSendFailed'))
+      setPhoneError(resendError instanceof Error ? resendError.message : ta('smsSendFailed'))
     } finally {
       setPhoneSubmitting(false)
     }
@@ -204,26 +236,33 @@ function ProfileContent() {
   async function confirmNewPhone(event: React.FormEvent) {
     event.preventDefault()
     if (!/^\d{6}$/.test(newPhoneCode)) {
-      setError(ta('invalidCode'))
+      setPhoneError(ta('invalidCode'))
       return
     }
 
+    const wasBind = phoneMode === 'bind'
     setPhoneSubmitting(true)
-    setError('')
+    setPhoneError('')
     try {
-      const response = await apiFetch('/api/account/phone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'confirm', token: phoneGrantToken, phone: newPhone, code: newPhoneCode }),
-      })
+      const response = wasBind
+        ? await apiFetch('/api/auth/sms/verify-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: newPhone, code: newPhoneCode, intent: 'bind' }),
+          })
+        : await apiFetch('/api/account/phone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'confirm', token: phoneGrantToken, phone: newPhone, code: newPhoneCode }),
+          })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || t('phoneChangeFailed'))
-      setForm(current => ({ ...current, phone: data.phone || newPhone }))
+      if (!response.ok) throw new Error(data.error || (wasBind ? t('phoneBindFailed') : t('phoneChangeFailed')))
+      setForm(current => ({ ...current, phone: data.phone || data.user?.phone || newPhone }))
       setPhoneDialogOpen(false)
       resetPhoneDialog()
-      setMessage(t('phoneChanged'))
+      phoneFeedback.show('success', wasBind ? t('phoneBound') : t('phoneChanged'))
     } catch (confirmError) {
-      setError(confirmError instanceof Error ? confirmError.message : t('phoneChangeFailed'))
+      setPhoneError(confirmError instanceof Error ? confirmError.message : (wasBind ? t('phoneBindFailed') : t('phoneChangeFailed')))
     } finally {
       setPhoneSubmitting(false)
     }
@@ -309,6 +348,8 @@ function ProfileContent() {
             phone: data.user.phone || '',
           })
           setAvatarUrl(data.user.avatarUrl || null)
+          setPasswordSet(Boolean(data.user.passwordSet))
+          setContactEmail(getContactEmail(data.user.email))
         }
       })
       .catch(fetchError => active && setError(fetchError instanceof Error ? fetchError.message : t('profileLoadFailed')))
@@ -319,6 +360,8 @@ function ProfileContent() {
   }, [user?.id])
 
   const displayName = form.name || maskPhoneDisplay(form.phone) || t('roleMember')
+  // 密码登录要有可输入的标识：真实手机号或真实邮箱（占位邮箱 phone.local/wechat.local 不算）。
+  const canPasswordLogin = Boolean(form.phone) || Boolean(contactEmail)
   const visibleReturnUrl = returnUrl?.startsWith('/studio/') && user?.role !== 'ADMIN'
     ? null
     : returnUrl
@@ -327,13 +370,12 @@ function ProfileContent() {
     event.preventDefault()
     if (!user?.id) return
     if (form.phone && !/^1\d{10}$/.test(form.phone)) {
-      setError(ta('invalidPhone'))
+      profileSaveFeedback.show('error', ta('invalidPhone'))
       return
     }
 
     setSaving(true)
-    setError('')
-    setMessage('')
+    profileSaveFeedback.clear()
     try {
       await apiPatch(`/api/users/${user.id}`, {
         name: form.name.trim() || null,
@@ -343,9 +385,9 @@ function ProfileContent() {
         window.location.href = phoneReturnUrl
         return
       }
-      setMessage(t('profileSaved'))
+      profileSaveFeedback.show('success', t('profileSaved'))
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : t('saveFailed'))
+      profileSaveFeedback.show('error', saveError instanceof Error ? saveError.message : t('saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -354,15 +396,15 @@ function ProfileContent() {
   async function handleAvatarChange(file: File | null) {
     if (!user?.id || !file) return
     if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'].includes(file.type)) {
-      setError(t('avatarFormatError'))
+      profileSaveFeedback.show('error', t('avatarFormatError'))
       return
     }
     if (file.size > 2 * 1024 * 1024) {
-      setError(t('avatarSizeError'))
+      profileSaveFeedback.show('error', t('avatarSizeError'))
       return
     }
 
-    setError('')
+    profileSaveFeedback.clear()
     setAvatarUploading(true)
     try {
       const response = await apiFetch(`/api/users/${user.id}/avatar`, {
@@ -374,15 +416,14 @@ function ProfileContent() {
       if (!response.ok) throw new Error(data.error || t('avatarUploadFailed'))
       setAvatarUrl(data.avatarUrl || null)
     } catch (avatarError) {
-      setError(avatarError instanceof Error ? avatarError.message : t('avatarUploadFailed'))
+      profileSaveFeedback.show('error', avatarError instanceof Error ? avatarError.message : t('avatarUploadFailed'))
     } finally {
       setAvatarUploading(false)
     }
   }
 
   async function bindFeishu() {
-    setError('')
-    setMessage('')
+    connectionsFeedback.clear()
     try {
       const response = await apiFetch('/api/auth/feishu/authorize', { cache: 'no-store' })
       const data = await response.json().catch(() => ({}))
@@ -391,7 +432,7 @@ function ProfileContent() {
       }
       window.location.href = data.authUrl
     } catch (bindError) {
-      setError(bindError instanceof Error ? bindError.message : t('feishuLinkFailed'))
+      connectionsFeedback.show('error', bindError instanceof Error ? bindError.message : t('feishuLinkFailed'))
     }
   }
 
@@ -400,8 +441,7 @@ function ProfileContent() {
       return
     }
     setFeishuLoading(true)
-    setError('')
-    setMessage('')
+    connectionsFeedback.clear()
     try {
       const response = await apiFetch('/api/feishu/unbind', {
         method: 'POST',
@@ -411,9 +451,9 @@ function ProfileContent() {
         throw new Error(t('unlinkFailed'))
       }
       setFeishuBinding({ bound: false, nickname: null, avatarUrl: null })
-      setMessage(t('feishuUnlinked'))
+      connectionsFeedback.show('success', t('feishuUnlinked'))
     } catch (unbindError) {
-      setError(unbindError instanceof Error ? unbindError.message : t('unlinkFailedRetry'))
+      connectionsFeedback.show('error', unbindError instanceof Error ? unbindError.message : t('unlinkFailedRetry'))
     } finally {
       setFeishuLoading(false)
     }
@@ -421,17 +461,16 @@ function ProfileContent() {
 
   async function refreshFeishuProfile() {
     setFeishuRefreshing(true)
-    setError('')
-    setMessage('')
+    connectionsFeedback.clear()
     try {
       const response = await apiFetch('/api/feishu/binding?refresh=1', { cache: 'no-store' })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.bound) throw new Error(data.error || t('feishuSyncFailed'))
       setFeishuBinding({ bound: true, nickname: data.nickname || null, avatarUrl: data.avatarUrl || null, profileSyncError: data.profileSyncError })
-      setMessage(data.profileSyncError ? '' : t('feishuSynced'))
-      if (data.profileSyncError) setError(data.profileSyncError)
+      if (data.profileSyncError) connectionsFeedback.show('error', data.profileSyncError)
+      else connectionsFeedback.show('success', t('feishuSynced'))
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : t('feishuSyncFailed'))
+      connectionsFeedback.show('error', refreshError instanceof Error ? refreshError.message : t('feishuSyncFailed'))
     } finally {
       setFeishuRefreshing(false)
     }
@@ -441,27 +480,34 @@ function ProfileContent() {
     event.preventDefault()
     if (!user?.id) return
     if (!validateAccountPassword(passwordForm.next).isValid) {
-      setError(t('passwordRuleUnmet', { hint: t('passwordRule') }))
+      passwordFeedback.show('error', t('passwordRuleUnmet', { hint: t('passwordRule') }))
       return
     }
     if (passwordForm.next !== passwordForm.confirm) {
-      setError(t('passwordMismatch'))
+      passwordFeedback.show('error', t('passwordMismatch'))
       return
     }
 
+    const isFirstSet = passwordSet === false
     setPasswordSaving(true)
-    setError('')
-    setMessage('')
+    passwordFeedback.clear()
     try {
-      await apiPatch(`/api/users/${user.id}`, {
-        oldPassword: passwordForm.current,
-        password: passwordForm.next,
-      })
+      await apiPatch(`/api/users/${user.id}`, isFirstSet
+        ? { password: passwordForm.next }
+        : { oldPassword: passwordForm.current, password: passwordForm.next })
+      if (isFirstSet) {
+        // 首次设置：服务端不吊销当前会话，留在本页把状态翻成「已设置」，不强制跳登录。
+        setPasswordSet(true)
+        setPasswordForm({ current: '', next: '', confirm: '' })
+        passwordFeedback.show('success', t('passwordSetSuccess'))
+        setPasswordSaving(false)
+        return
+      }
       clearTokens()
       const destination = visibleReturnUrl || (user.role === 'ADMIN' ? '/studio/projects' : '/profile')
       window.location.href = `/login?returnUrl=${encodeURIComponent(destination)}`
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : t('passwordChangeFailed'))
+      passwordFeedback.show('error', saveError instanceof Error ? saveError.message : (isFirstSet ? t('passwordSetFailed') : t('passwordChangeFailed')))
       setPasswordSaving(false)
     }
   }
@@ -581,6 +627,11 @@ function ProfileContent() {
                   <Button type="submit" disabled={saving} size="sm" className="gap-2">{saving ? tc('saving') : tc('save')}</Button>
                 </div>
               </form>
+              {profileSaveFeedback.feedback && (
+                <div className="px-5 pb-3">
+                  <ActionFeedback feedback={profileSaveFeedback.feedback} onDismiss={profileSaveFeedback.clear} />
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-5 py-4">
                 <div>
                   <p className="text-sm font-medium">{ta('phone')}</p>
@@ -588,9 +639,14 @@ function ProfileContent() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-muted-foreground">{maskPhoneDisplay(form.phone) || t('notLinked')}</span>
-                  <Button type="button" variant="outline" size="sm" onClick={() => void changePhone()}>{t('changePhone')}</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void changePhone()}>{form.phone ? t('changePhone') : t('bindPhone')}</Button>
                 </div>
               </div>
+              {phoneFeedback.feedback && (
+                <div className="px-5 pb-3">
+                  <ActionFeedback feedback={phoneFeedback.feedback} onDismiss={phoneFeedback.clear} />
+                </div>
+              )}
             </div>
           </section>
 
@@ -603,7 +659,7 @@ function ProfileContent() {
                   <p className="text-sm font-medium">{t('wechatAccount')}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">{t('wechatLinkHint')}</p>
                 </div>
-                <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => setMessage(ta('wechatBindSuccess'))}>{t('linkNow')}</WechatMiniQrLogin>
+                <WechatMiniQrLogin mode="bind" returnUrl="/profile" onBound={() => connectionsFeedback.show('success', ta('wechatBindSuccess'))}>{t('linkNow')}</WechatMiniQrLogin>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-5 py-4">
                 <div className="flex min-w-0 items-center gap-3">
@@ -650,18 +706,31 @@ function ProfileContent() {
               {feishuBinding?.profileSyncError && (
                 <p className="border-t border-border/60 px-5 py-3 text-xs leading-5 text-warning">{feishuBinding.profileSyncError}</p>
               )}
+              {connectionsFeedback.feedback && (
+                <div className="px-5 pb-3">
+                  <ActionFeedback feedback={connectionsFeedback.feedback} onDismiss={connectionsFeedback.clear} />
+                </div>
+              )}
             </div>
           </section>
 
           <section aria-labelledby="password-title" className="scroll-mt-10">
             <h2 id="password-title" className="text-base font-semibold">{t('sectionSecurity')}</h2>
-            <p className="mb-5 mt-1 text-sm text-muted-foreground">{t('securityDescription')}</p>
+            <p className="mb-5 mt-1 text-sm text-muted-foreground">{passwordSet === false ? t('securityDescriptionUnset') : t('securityDescription')}</p>
             <form onSubmit={changePassword} className="rounded-xl bg-muted/70 p-5">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="current-password">{ta('currentPassword')}</Label>
-                  <PasswordInput id="current-password" value={passwordForm.current} onChange={event => setPasswordForm(current => ({ ...current, current: event.target.value }))} required className="bg-background" />
+              {passwordSet === false && !canPasswordLogin && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning-visible bg-warning-visible px-3 py-2.5">
+                  <p className="min-w-0 flex-1 text-xs leading-5 text-warning">{t('bindContactFirst')}</p>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => void changePhone()}>{t('bindPhone')}</Button>
                 </div>
+              )}
+              <div className={`grid gap-4 ${passwordSet === false ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+                {passwordSet !== false && (
+                  <div className="space-y-2">
+                    <Label htmlFor="current-password">{ta('currentPassword')}</Label>
+                    <PasswordInput id="current-password" value={passwordForm.current} onChange={event => setPasswordForm(current => ({ ...current, current: event.target.value }))} required className="bg-background" />
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="new-password">{ta('newPassword')}</Label>
                   <PasswordInput id="new-password" maxLength={128} value={passwordForm.next} onChange={event => setPasswordForm(current => ({ ...current, next: event.target.value }))} required className="bg-background" />
@@ -673,8 +742,9 @@ function ProfileContent() {
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />{t('passwordRule')}</p>
-                <Button type="submit" variant="outline" size="sm" disabled={passwordSaving} className="gap-2"><KeyRound className="h-4 w-4" />{passwordSaving ? t('changingPassword') : ta('changePassword')}</Button>
+                <Button type="submit" variant="outline" size="sm" disabled={passwordSaving || passwordSet === null} className="gap-2"><KeyRound className="h-4 w-4" />{passwordSaving ? (passwordSet === false ? t('settingPassword') : t('changingPassword')) : (passwordSet === false ? t('setPassword') : ta('changePassword'))}</Button>
               </div>
+              <FeedbackSlot feedback={passwordFeedback.feedback} onDismiss={passwordFeedback.clear} className="mt-3" />
             </form>
           </section>
 
@@ -687,11 +757,11 @@ function ProfileContent() {
           >
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>{t('changePhone')}</DialogTitle>
+                <DialogTitle>{phoneMode === 'bind' ? t('bindPhoneTitle') : t('changePhone')}</DialogTitle>
                 <DialogDescription>
                   {phoneStep === 'method' && t('verifyCurrentFirst')}
                   {phoneStep === 'verify' && (phoneMethod === 'sms' ? t('codeSentToCurrent') : t('enterPasswordToVerify'))}
-                  {phoneStep === 'new' && t('enterNewPhoneNext')}
+                  {phoneStep === 'new' && (phoneMode === 'bind' ? t('bindPhoneNewHint') : t('enterNewPhoneNext'))}
                   {phoneStep === 'confirm' && t('codeSentToNew', { phone: newPhone })}
                 </DialogDescription>
               </DialogHeader>
@@ -736,9 +806,9 @@ function ProfileContent() {
                       )}
                     </div>
                   </div>
-                  {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+                  {phoneError && <p className="text-sm text-destructive" role="alert">{phoneError}</p>}
                   <DialogFooter>
-                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('method'); setPhoneMethod(null); setPhoneCredential(''); setError('') }} disabled={phoneSubmitting}>{tc('back')}</Button>
+                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('method'); setPhoneMethod(null); setPhoneCredential(''); setPhoneError('') }} disabled={phoneSubmitting}>{tc('back')}</Button>
                     <Button type="submit" disabled={phoneSubmitting}>{phoneSubmitting ? t('verifyingStep') : tc('next')}</Button>
                   </DialogFooter>
                 </form>
@@ -750,9 +820,9 @@ function ProfileContent() {
                     <Label htmlFor="phone-new-number">{t('newPhone')}</Label>
                     <Input id="phone-new-number" type="tel" inputMode="numeric" maxLength={11} autoComplete="tel" value={newPhone} onChange={(event) => setNewPhone(event.target.value.replace(/\D/g, ''))} placeholder={t('enterNewPhone')} autoFocus />
                   </div>
-                  {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+                  {phoneError && <p className="text-sm text-destructive" role="alert">{phoneError}</p>}
                   <DialogFooter>
-                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('verify'); setError('') }} disabled={phoneSubmitting}>{tc('back')}</Button>
+                    <Button type="button" variant="ghost" onClick={() => { if (phoneMode === 'bind') { setPhoneDialogOpen(false) } else { setPhoneStep('verify') } setPhoneError('') }} disabled={phoneSubmitting}>{tc('back')}</Button>
                     <Button type="submit" disabled={phoneSubmitting}>{phoneSubmitting ? ta('sendingCode') : ta('sendCode')}</Button>
                   </DialogFooter>
                 </form>
@@ -769,16 +839,17 @@ function ProfileContent() {
                       </Button>
                     </div>
                   </div>
-                  {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+                  {phoneError && <p className="text-sm text-destructive" role="alert">{phoneError}</p>}
                   <DialogFooter>
-                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('new'); setNewPhoneCode(''); setError('') }} disabled={phoneSubmitting}>{tc('back')}</Button>
-                    <Button type="submit" disabled={phoneSubmitting}>{phoneSubmitting ? t('confirming') : t('confirmChange')}</Button>
+                    <Button type="button" variant="ghost" onClick={() => { setPhoneStep('new'); setNewPhoneCode(''); setPhoneError('') }} disabled={phoneSubmitting}>{tc('back')}</Button>
+                    <Button type="submit" disabled={phoneSubmitting}>{phoneSubmitting ? t('confirming') : (phoneMode === 'bind' ? t('confirmBind') : t('confirmChange'))}</Button>
                   </DialogFooter>
                 </form>
               )}
             </DialogContent>
           </Dialog>
 
+          {/* 仅页面级反馈：资料加载失败、飞书 OAuth 回调结果。各动作的成功/错误已就近显示在所属卡片。 */}
           {(error || message) && (
             <div className={`max-w-xl rounded-md px-3 py-2 text-sm ${error ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success'}`} role="status">
               {error || message}

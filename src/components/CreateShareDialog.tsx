@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from 'react'
 import Image from 'next/image'
 import QRCode from 'qrcode'
-import { Check, Copy, Download, Link2, Loader2, MessageSquare, QrCode, ShieldCheck } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, Link2, Loader2, MessageSquare, QrCode, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api-client'
@@ -54,6 +54,13 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
   const [submitting, setSubmitting] = useState<'link' | 'qr' | null>(null)
   const [error, setError] = useState('')
   const [created, setCreated] = useState<{ url: string; copyText: string; qrImage?: string } | null>(null)
+  // 现成的有效链接：紧凑列表供挑选复制，避免重复创建；列表限高内滚，不把弹窗撑长。
+  const [existingLinks, setExistingLinks] = useState<{ id: string; name: string; url: string; createdAt: string }[]>([])
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  // 两个视图：create=新建表单（图2），copy=旧链接列表（复制）。底部两按钮切换。
+  const [mode, setMode] = useState<'create' | 'copy'>('create')
+
+  const label = preset === 'COLLECT' ? '收录' : preset === 'DELIVERY' ? '交付' : '审阅'
 
   useEffect(() => {
     if (!open || !target) return
@@ -72,7 +79,35 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
     setSubmitting(null)
     setError('')
     setCreated(null)
+    setCopiedId(null)
+    setMode('create')
   }, [open, preset, target])
+
+  useEffect(() => {
+    if (!open || !target) { setExistingLinks([]); return }
+    let active = true
+    apiFetch(`/api/projects/${projectId}/share-links`, { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) return
+        const data = await response.json()
+        const candidates = (Array.isArray(data.shareLinks) ? data.shareLinks : [])
+          .filter((link: any) => link.type === preset && link.status === 'ACTIVE')
+          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        // 同范围的排前面，方便优先复用当前目标的那条。
+        const sameScope = candidates.filter((link: any) => link.scopeType === target.scopeType && (target.scopeType === 'PROJECT' || link.scopeId === target.scopeId))
+        const rest = candidates.filter((link: any) => !sameScope.includes(link))
+        if (active) setExistingLinks([...sameScope, ...rest].map((link: any) => ({ id: link.id, name: link.name, url: link.url, createdAt: link.createdAt })))
+      })
+      .catch(() => { if (active) setExistingLinks([]) })
+    return () => { active = false }
+  }, [open, preset, target, projectId, created])
+
+  const copyLink = async (link: { id: string; url: string }) => {
+    if (await copyTextToClipboard(link.url)) {
+      setCopiedId(link.id)
+      window.setTimeout(() => setCopiedId(current => current === link.id ? null : current), 1500)
+    }
+  }
 
   const create = async (method: 'link' | 'qr') => {
     if (!target || !name.trim()) { setError('请输入分享名称'); return }
@@ -122,23 +157,69 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
         {created.qrImage ? <div className="mt-1 flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2"><Link2 className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-xs">{created.url}</span><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void copy(created.url)} title="复制链接" aria-label="复制链接"><Copy className="h-4 w-4" /></Button></div> : <div className="mt-1 rounded-md border border-border bg-background p-3"><p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{created.copyText}</p><Button className="mt-3 h-9 w-full" onClick={() => void copy(created.copyText)}><Copy className="mr-2 h-4 w-4" />复制</Button></div>}
         <Button variant="outline" className="mt-4 w-full" onClick={() => onOpenChange(false)}>完成</Button>
       </div> : <>
-        <div className="max-h-[calc(100vh-12rem)] overflow-y-auto px-6 py-5">
-          <label className="block text-sm font-medium">分享名称 <span className="text-destructive">*</span><input value={name} maxLength={100} onChange={event => setName(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" /></label>
-          {versions.length > 1 && <label className="mt-4 block text-sm font-medium">分享范围<select value={versionScope} onChange={event => setVersionScope(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"><option value="all">全部 {versions.length} 个版本（以后上传的新版本也算在内）</option>{versions.map((item, index) => <option key={item.id} value={item.id}>仅 {versionName(item)}{index === 0 ? '（最新）' : ''}</option>)}</select></label>}
-          <div className="mt-5 divide-y divide-border border-y border-border">
-            {/* 收录链接只带 upload 一条权限，服务端也会这样落库，所以这两个开关不能出现。 */}
-            {preset !== 'COLLECT' && <>
-              <ToggleRow checked={allowDownload} onChange={setAllowDownload} icon={Download} title="允许下载" description={preset === 'DELIVERY' ? '接收方可以下载交付文件' : '审阅者可以下载视频文件'} />
-              <ToggleRow checked={allowComment} onChange={setAllowComment} icon={MessageSquare} title="允许批注" description="接收方可以添加时间点和画面批注" />
-            </>}
-            <ToggleRow checked={passwordEnabled} onChange={(value) => { setPasswordEnabled(value); setPassword(value ? (password || generateSharePasscode()) : '') }} icon={ShieldCheck} title="密码保护" description="打开链接时需要输入访问密码" />
+        <div className="border-b border-border px-6 py-3">
+          <div role="tablist" aria-label="分享方式" className="relative grid h-9 grid-cols-2 rounded-lg bg-muted p-1">
+            <span aria-hidden className={`absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-md bg-background shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none ${mode === 'copy' ? 'translate-x-full' : ''}`} />
+            <button type="button" role="tab" aria-selected={mode === 'create'} onClick={() => setMode('create')} className={`relative z-10 inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${mode === 'create' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              <Link2 className="h-4 w-4" />创建{label}链接
+            </button>
+            <button type="button" role="tab" aria-selected={mode === 'copy'} onClick={() => setMode('copy')} className={`relative z-10 inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors duration-200 ${mode === 'copy' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              <Copy className="h-4 w-4" />复制{label}链接
+            </button>
           </div>
-          {passwordEnabled && <label className="mt-4 block text-sm font-medium">密码<input type="text" value={password} onChange={event => setPassword(event.target.value)} placeholder="输入访问密码" className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" /></label>}
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={expiryEnabled} onChange={event => setExpiryEnabled(event.target.checked)} />过期时间</span><input type="datetime-local" disabled={!expiryEnabled} value={expiresAt} onChange={event => setExpiresAt(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-45" /></label>
-            <label className="text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={limitEnabled} onChange={event => setLimitEnabled(event.target.checked)} />限制次数</span><input type="number" min="1" disabled={!limitEnabled} value={maxViews} onChange={event => setMaxViews(event.target.value)} placeholder="无限制" className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-45" /></label>
+        </div>
+        <div className="scrollbar-slim h-[min(430px,58vh)] overflow-y-auto">
+          <div key={mode} className="animate-share-panel px-6 py-5">
+          {mode === 'copy' ? (
+            existingLinks.length > 0 ? (
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">已有{label}链接（{existingLinks.length}）</span>
+                  <span className="text-[11px] text-muted-foreground">点右侧按钮复制 / 打开</span>
+                </div>
+                <ul className="scrollbar-slim max-h-[320px] divide-y divide-border overflow-y-auto rounded-md border border-border bg-muted/20">
+                  {existingLinks.map(link => (
+                    <li key={link.id} className="flex items-center gap-2 px-3 py-2.5">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium" title={link.name}>{link.name}</div>
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">{new Date(link.createdAt).toLocaleString()}</div>
+                      </div>
+                      <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5 text-xs" onClick={() => void copyLink(link)}>
+                        {copiedId === link.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}复制
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" title="打开链接" aria-label={`打开 ${link.name}`} onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}>
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed border-border px-4 py-10 text-center">
+                <p className="text-sm text-muted-foreground">还没有{label}链接</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => setMode('create')}>去创建</Button>
+              </div>
+            )
+          ) : (<>
+            <label className="block text-sm font-medium">分享名称 <span className="text-destructive">*</span><input value={name} maxLength={100} onChange={event => setName(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" /></label>
+            {versions.length > 1 && <label className="mt-4 block text-sm font-medium">分享范围<select value={versionScope} onChange={event => setVersionScope(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"><option value="all">全部 {versions.length} 个版本（以后上传的新版本也算在内）</option>{versions.map((item, index) => <option key={item.id} value={item.id}>仅 {versionName(item)}{index === 0 ? '（最新）' : ''}</option>)}</select></label>}
+            <div className="mt-5 divide-y divide-border border-y border-border">
+              {/* 收录链接只带 upload 一条权限，服务端也会这样落库，所以这两个开关不能出现。 */}
+              {preset !== 'COLLECT' && <>
+                <ToggleRow checked={allowDownload} onChange={setAllowDownload} icon={Download} title="允许下载" description={preset === 'DELIVERY' ? '接收方可以下载交付文件' : '审阅者可以下载视频文件'} />
+                <ToggleRow checked={allowComment} onChange={setAllowComment} icon={MessageSquare} title="允许批注" description="接收方可以添加时间点和画面批注" />
+              </>}
+              <ToggleRow checked={passwordEnabled} onChange={(value) => { setPasswordEnabled(value); setPassword(value ? (password || generateSharePasscode()) : '') }} icon={ShieldCheck} title="密码保护" description="打开链接时需要输入访问密码" />
+            </div>
+            {passwordEnabled && <label className="mt-4 block text-sm font-medium">密码<input type="text" value={password} onChange={event => setPassword(event.target.value)} placeholder="输入访问密码" className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" /></label>}
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={expiryEnabled} onChange={event => setExpiryEnabled(event.target.checked)} />过期时间</span><input type="datetime-local" disabled={!expiryEnabled} value={expiresAt} onChange={event => setExpiresAt(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-45" /></label>
+              <label className="text-sm font-medium"><span className="flex items-center gap-2"><input type="checkbox" checked={limitEnabled} onChange={event => setLimitEnabled(event.target.checked)} />限制次数</span><input type="number" min="1" disabled={!limitEnabled} value={maxViews} onChange={event => setMaxViews(event.target.value)} placeholder="无限制" className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-45" /></label>
+            </div>
+            {error && <p role="alert" className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+          </>)}
           </div>
-          {error && <p role="alert" className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter className="grid grid-cols-2 gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:grid-cols-2">
           <Button variant="outline" disabled={Boolean(submitting)} onClick={() => void create('qr')}>{submitting === 'qr' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}扫码分享</Button>

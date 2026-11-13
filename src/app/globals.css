@@ -1010,6 +1010,46 @@
     display: none;
   }
 
+  /* 紧凑列表用的细滚动条：颜色取自主题，避免浏览器默认灰条破坏面板观感。 */
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: hsl(var(--muted-foreground) / 0.3);
+  }
+
+  .scrollbar-slim::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* 分享弹窗「创建/复制」切换：内容淡入+轻微位移，配合固定高度让窗口不跳、切换不硬。 */
+  @keyframes share-panel-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-share-panel {
+    animation: share-panel-in 200ms var(--ease-standard) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-share-panel {
+      animation: none;
+    }
+  }
+
   /* Elevation shadow utilities */
   .shadow-elevation-sm {
     box-shadow: var(--shadow-sm);

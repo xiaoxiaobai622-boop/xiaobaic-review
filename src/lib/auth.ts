@@ -637,10 +637,19 @@ export async function verifyCredentials(usernameOrEmail: string, password: strin
         isPlatformAdmin: true,
         projectAccessScope: true,
         password: true,
+        passwordSetAt: true,
       },
     })
 
     if (!user) {
+      await verifyPassword(password, DUMMY_BCRYPT_HASH)
+      return null
+    }
+
+    // Accounts whose hash is a random placeholder (WeChat / SMS auto-registration)
+    // have no password to verify against; burn the same dummy cost so the response
+    // time does not reveal which accounts exist.
+    if (!user.passwordSetAt) {
       await verifyPassword(password, DUMMY_BCRYPT_HASH)
       return null
     }

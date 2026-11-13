@@ -801,7 +801,10 @@ export default function AdminPage() {
   const folderTree = renderFolderTree(false)
 
   return (
-    <div className="flex-1 min-h-0 bg-background lg:h-[calc(100dvh-var(--admin-header-height))] lg:overflow-hidden">
+    // lg:flex-none 不能省：flex-1 的 flex-basis:0% 会在列向父容器里盖掉下面的 lg:h-[calc(100dvh…)]，
+    // 外壳被撑到内容高、overflow-hidden 形同虚设，网格最后一排在矮视口/缩放下滚不到。
+    // 固定外壳高度后，滚动交给内容列的 lg:overflow-y-auto，工具栏与侧栏保持不动。
+    <div className="flex-1 min-h-0 bg-background lg:flex-none lg:h-[calc(100dvh-var(--admin-header-height))] lg:overflow-hidden">
       <div className="w-full px-3 py-3 sm:px-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-0 lg:pr-[2px] lg:pt-0 lg:pb-[2px]">
         <div className={`flex justify-between items-center gap-4 border-b border-border pb-3 mb-3 ${STUDIO_HEADER_SHELL_CLASS}`}>
           <div>

@@ -9,6 +9,8 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { isPhoneOnlyEmail } from '@/lib/user-contact'
+import { logSecurityEvent } from '@/lib/video-access'
+import { getClientIpAddress } from '@/lib/utils'
 import {
   checkWechatText,
   CONTENT_VIOLATION_MESSAGE,
@@ -28,6 +30,7 @@ const USER_PROFILE_SELECT = {
   name: true,
   avatarUrl: true,
   onboardingCompleted: true,
+  passwordSetAt: true,
   role: true,
   isPlatformAdmin: true,
   projectAccessScope: true,
@@ -37,6 +40,13 @@ const USER_PROFILE_SELECT = {
   createdAt: true,
   updatedAt: true,
 } as const
+
+// The timestamp itself stays server-side; clients only get the boolean they need to
+// choose between "set a password" and "change password".
+function withPasswordSet<T extends { passwordSetAt: Date | null }>(user: T) {
+  const { passwordSetAt, ...rest } = user
+  return { ...rest, passwordSet: Boolean(passwordSetAt) }
+}
 
 // GET /api/users/[id] - Get user by ID
 export async function GET(
@@ -79,7 +89,7 @@ export async function GET(
     }
 
     // 自己的档案给明文，管理员看别人只给掩码：全号要走留痕的查看接口。
-    return NextResponse.json({ user: authResult.id === id ? user : withMaskedPhone(user) })
+    return NextResponse.json({ user: withPasswordSet(authResult.id === id ? user : withMaskedPhone(user)) })
   } catch (error) {
     logError('Error fetching user:', error)
     // SECURITY: Generic message
@@ -260,6 +270,7 @@ export async function PATCH(
     }
 
     let passwordChanged = false
+    let isFirstPasswordSet = false
 
     const newPassword = typeof password === 'string' ? password.trim() : ''
     const oldPasswordStr = typeof oldPassword === 'string' ? oldPassword : ''
@@ -272,7 +283,7 @@ export async function PATCH(
     if (password !== undefined && passwordValidation.isValid) {
       const userWithPassword = await prisma.user.findUnique({
         where: { id },
-        select: { password: true, onboardingCompleted: true },
+        select: { password: true, passwordSetAt: true, onboardingCompleted: true },
       })
 
       if (!userWithPassword) {
@@ -282,11 +293,23 @@ export async function PATCH(
         )
       }
 
-      // SECURITY: New SMS users must set their first password during onboarding.
-      // Existing users must prove the current password before changing it.
+      // SECURITY: WeChat/SMS auto-created accounts hold a random placeholder hash the
+      // user never knew — setting their first password must not ask for a "current
+      // password". Only the account owner gets this skip; admins editing someone else
+      // still prove the current password. New SMS users completing onboarding keep
+      // their existing escape hatch.
+      const hasRealPassword = Boolean(userWithPassword.passwordSetAt)
+      isFirstPasswordSet = !hasRealPassword && authResult.id === id
       const isCompletingOnboarding = currentAccess.onboardingCompleted === false && authResult.id === id
-      const isOldPasswordValid = await verifyPassword(oldPasswordStr, userWithPassword.password)
-      if (!isCompletingOnboarding && !isOldPasswordValid) {
+      const isOldPasswordValid = hasRealPassword && await verifyPassword(oldPasswordStr, userWithPassword.password)
+      if (!isFirstPasswordSet && !isCompletingOnboarding && !isOldPasswordValid) {
+        await logSecurityEvent({
+          type: 'ACCOUNT_PASSWORD_CHANGE_DENIED',
+          severity: 'WARNING',
+          userId: id,
+          ipAddress: getClientIpAddress(request),
+          details: { actorUserId: authResult.id, reason: 'current_password_mismatch' },
+        })
         return NextResponse.json(
           { error: usersMessages.currentPasswordIncorrect || 'Current password is incorrect' },
           { status: 401 }
@@ -294,6 +317,7 @@ export async function PATCH(
       }
 
       updateData.password = await hashPassword(newPassword)
+      updateData.passwordSetAt = new Date()
       if (isCompletingOnboarding) updateData.onboardingCompleted = true
       passwordChanged = true
     }
@@ -319,9 +343,20 @@ export async function PATCH(
     let securityMessage = ''
 
     if (passwordChanged) {
-      await revokeAllUserTokens(user.id)
-
-      securityMessage = usersMessages.allSessionsInvalidatedUserMustLoginAgain || 'All sessions have been invalidated - user will need to log in again.'
+      // Choosing a first password leaks no previously-known credential, so the owner's
+      // current session survives and the profile can flip to "已设置" in place. Changing
+      // an existing password still invalidates every session.
+      if (!isFirstPasswordSet) {
+        await revokeAllUserTokens(user.id)
+        securityMessage = usersMessages.allSessionsInvalidatedUserMustLoginAgain || 'All sessions have been invalidated - user will need to log in again.'
+      }
+      await logSecurityEvent({
+        type: isFirstPasswordSet ? 'ACCOUNT_PASSWORD_SET' : 'ACCOUNT_PASSWORD_CHANGED',
+        severity: 'INFO',
+        userId: user.id,
+        ipAddress: getClientIpAddress(request),
+        details: { actorUserId: authResult.id, self: authResult.id === user.id },
+      })
     }
 
     if (roleChanged || (isPlatformAdmin !== undefined && isPlatformAdmin !== currentAccess.isPlatformAdmin)) {
@@ -339,7 +374,7 @@ export async function PATCH(
     }
 
     return NextResponse.json({
-      user: authResult.id === id ? user : withMaskedPhone(user),
+      user: withPasswordSet(authResult.id === id ? user : withMaskedPhone(user)),
       message: securityMessage || usersMessages.userUpdatedSuccessfully || 'User updated successfully'
     })
   } catch (error) {

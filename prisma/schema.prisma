@@ -18,6 +18,9 @@ model User {
   phoneHash           String?            @unique
   username            String?            @unique
   password            String
+  // Null = the stored hash is a random placeholder the user never knew (WeChat / SMS
+  // auto-registration). Set when a real password is chosen via register/set/change/reset.
+  passwordSetAt       DateTime?
   name                String?
   avatarUrl           String?
   onboardingCompleted Boolean            @default(true)

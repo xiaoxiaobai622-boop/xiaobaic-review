@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { password: hashedPassword },
+      data: { password: hashedPassword, passwordSetAt: new Date() },
     })
 
     // Invalidate all sessions (force re-login everywhere)

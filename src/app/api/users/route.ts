@@ -178,6 +178,7 @@ export async function POST(request: NextRequest) {
         phoneHash: hashPhone(phone),
         username: username || null,
         password: hashedPassword,
+        passwordSetAt: new Date(),
         name: name || null,
         role,
         isPlatformAdmin,

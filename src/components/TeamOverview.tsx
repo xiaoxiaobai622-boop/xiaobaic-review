@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Activity, Check, CircleDot, FolderKanban, HardDrive, Users } from 'lucide-react'
+import { Activity, Check, FolderKanban, HardDrive, Users } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiFetch } from '@/lib/api-client'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
@@ -41,8 +41,6 @@ function formatSubscription(team: OverviewData['team']) {
   if (team.status !== 'ACTIVE') return '已停用'
   return '长期有效'
 }
-
-const WORKFLOW_STEPS = ['待审阅', '审阅中', '意见汇总完毕', '通过']
 
 function DonutChart({ percent }: { percent: number }) {
   const radius = 45
@@ -144,9 +142,7 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
             <CardHeader className="pb-3"><CardTitle className="text-base">团队信息</CardTitle></CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-[minmax(220px,1.15fr)_repeat(5,minmax(120px,1fr))] sm:items-center">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-primary text-2xl font-semibold text-primary-foreground">
-                  <InitialsAvatar name={data.team.name} src={data.team.avatarUrl} size="lg" isInternal />
-                </div>
+                <InitialsAvatar name={data.team.name} src={data.team.avatarUrl} size="lg" isInternal className="h-14 w-14 shrink-0 rounded-lg text-xl" />
                 <div className="min-w-0"><p className="truncate text-base font-semibold">{data.team.name}</p><p className="mt-1 text-xs text-muted-foreground">当前团队</p></div>
               </div>
               {stats.map(({ label, value, icon: Icon }) => (
@@ -177,26 +173,6 @@ export default function TeamOverview({ teamId, showHeading = true }: { teamId: s
               <CardContent>{data.projects.length === 0 ? <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">暂无活跃项目</div> : <div className="divide-y divide-border">{data.projects.map((project) => <div key={project.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 first:pt-1 last:pb-1"><div className="min-w-0"><p className="truncate text-sm font-medium">{project.title}</p><p className="mt-1 text-xs text-muted-foreground">{project._count.videos} 个视频 · {project._count.members} 位成员</p></div><time className="text-xs tabular-nums text-muted-foreground" dateTime={project.updatedAt}>{formatDate(project.updatedAt)}</time></div>)}</div>}</CardContent>
             </Card>
           </div>
-
-          <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">流程管理</CardTitle></CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-0" aria-label="默认审阅流程">
-                {WORKFLOW_STEPS.map((step, index) => (
-                  <div key={step} className="flex min-w-0 flex-1 items-center gap-2 md:gap-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${index === WORKFLOW_STEPS.length - 1 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600' : 'border-primary/30 bg-primary-visible text-primary'}`}>
-                        {index === WORKFLOW_STEPS.length - 1 ? <Check className="h-4 w-4" /> : <CircleDot className="h-4 w-4" />}
-                      </span>
-                      <span className="truncate text-sm font-medium">{step}</span>
-                    </div>
-                    {index < WORKFLOW_STEPS.length - 1 && <span className="mx-3 h-px flex-1 bg-border md:min-w-8" aria-hidden="true" />}
-                  </div>
-                ))}
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">团队项目默认使用此审阅流程，项目内可继续按视频设置具体状态。</p>
-            </CardContent>
-          </Card>
         </>
       )}
     </section>

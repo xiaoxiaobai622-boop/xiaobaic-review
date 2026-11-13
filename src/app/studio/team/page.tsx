@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Building2, CheckCircle2, Pencil, Plus, UserRound } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
@@ -16,6 +16,7 @@ import { apiFetch, apiPatch, apiPost } from '@/lib/api-client'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
 import { maskPhoneDisplay } from '@/lib/phone-display'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
+import { useActionFeedback, ActionFeedback } from '@/components/ActionFeedback'
 
 type TeamRole = 'OWNER' | 'ADMIN' | 'MEMBER'
 type TeamCenterItem = {
@@ -34,7 +35,6 @@ type TeamData = TeamCenterItem['team'] & {
 }
 type TeamMemberProfile = {
   id: string
-  userId: string
   role: TeamRole
   status: string
   teamNickname: string | null
@@ -67,20 +67,25 @@ function describeSubscriptionPlan(team: Pick<TeamData, 'status'>) {
   return '当前为免费内测'
 }
 
-function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }) {
+function TeamInfoPanel({ team, role, onSaved }: { team: TeamData; role: TeamRole | null; onSaved?: () => void }) {
   const [name, setName] = useState(team.name)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
+  const nameFeedback = useActionFeedback()
   useEffect(() => setName(team.name), [team.name])
 
   const save = async () => {
     if (!name.trim() || saving) return
     setSaving(true)
+    nameFeedback.clear()
     try {
       await apiPatch(`/api/teams/${team.id}`, { name: name.trim() })
       setEditing(false)
-      window.location.reload()
+      nameFeedback.show('success', '团队名称已保存')
+      onSaved?.()
+    } catch (reason) {
+      nameFeedback.show('error', reason instanceof Error ? reason.message : '保存失败，请稍后重试')
     } finally { setSaving(false) }
   }
 
@@ -93,24 +98,27 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
   return <div className="space-y-5">
     <Card><CardHeader><CardTitle className="text-base">基本资料</CardTitle></CardHeader><CardContent>
       <div className="max-w-2xl divide-y divide-border/70">
-        <div className="flex items-center gap-4 pb-3">
-          <span className="w-20 shrink-0 text-sm text-muted-foreground">团队名称</span>
-          {editing ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
-              <Button size="sm" onClick={save} disabled={saving || !name.trim()}>保存</Button>
-              <Button size="sm" variant="outline" onClick={() => { setName(team.name); setEditing(false) }}>取消</Button>
-            </div>
-          ) : (
-            <>
-              <p className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</p>
-              {role === 'OWNER' && (
-                <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 gap-1 px-2 text-xs text-muted-foreground" onClick={() => setEditing(true)} aria-label="修改团队名称">
-                  <Pencil className="h-3.5 w-3.5" />修改
-                </Button>
-              )}
-            </>
-          )}
+        <div className="pb-3">
+          <div className="flex items-center gap-4">
+            <span className="w-20 shrink-0 text-sm text-muted-foreground">团队名称</span>
+            {editing ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={80} className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
+                <Button size="sm" onClick={save} disabled={saving || !name.trim()}>保存</Button>
+                <Button size="sm" variant="outline" onClick={() => { setName(team.name); setEditing(false) }}>取消</Button>
+              </div>
+            ) : (
+              <>
+                <p className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</p>
+                {role === 'OWNER' && (
+                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 gap-1 px-2 text-xs text-muted-foreground" onClick={() => setEditing(true)} aria-label="修改团队名称">
+                    <Pencil className="h-3.5 w-3.5" />修改
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+          {nameFeedback.feedback && <div className="ml-24 mt-2"><ActionFeedback feedback={nameFeedback.feedback} onDismiss={nameFeedback.clear} /></div>}
         </div>
         <div className="flex items-center gap-4 pt-3">
           <span className="w-20 shrink-0 text-sm text-muted-foreground">团队 ID</span>
@@ -125,16 +133,15 @@ function TeamInfoPanel({ team, role }: { team: TeamData; role: TeamRole | null }
   </div>
 }
 
-function PersonalInfoPanel({ team }: { team: TeamData }) {
+function PersonalInfoPanel({ team, onSaved }: { team: TeamData; onSaved?: () => void }) {
   const { user } = useAuth()
-  const member = team.members.find((item) => item.userId === user?.id)
+  const member = team.members.find((item) => item.user.id === user?.id)
   const [teamNickname, setTeamNickname] = useState(member?.teamNickname || '')
   const [teamProfession, setTeamProfession] = useState(member?.teamProfession || '')
   const [department, setDepartment] = useState(member?.department || '')
   const [bio, setBio] = useState(member?.bio || '')
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const personalFeedback = useActionFeedback()
 
   useEffect(() => {
     setTeamNickname(member?.teamNickname || '')
@@ -146,19 +153,18 @@ function PersonalInfoPanel({ team }: { team: TeamData }) {
   const save = async () => {
     if (!member || saving) return
     setSaving(true)
-    setMessage('')
-    setError('')
+    personalFeedback.clear()
     try {
-      await apiPatch(`/api/teams/${team.id}/members/${member.userId}`, {
+      await apiPatch(`/api/teams/${team.id}/members/${member.user.id}`, {
         teamNickname: teamNickname.trim() || null,
         teamProfession: teamProfession.trim() || null,
         department: department.trim() || null,
         bio: bio.trim() || null,
       })
-      setMessage('团队个人资料已保存，新的批注会使用这些信息。')
-      window.setTimeout(() => window.location.reload(), 500)
+      personalFeedback.show('success', '团队个人资料已保存，新的批注会使用这些信息。')
+      onSaved?.()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '保存失败，请稍后重试')
+      personalFeedback.show('error', reason instanceof Error ? reason.message : '保存失败，请稍后重试')
     } finally { setSaving(false) }
   }
 
@@ -174,8 +180,7 @@ function PersonalInfoPanel({ team }: { team: TeamData }) {
         <label className="space-y-1.5"><span className="text-sm font-medium">部门</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={80} placeholder="例如：后期部" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" /></label>
       </div>
       <label className="block space-y-1.5"><span className="text-sm font-medium">个人简介</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={240} rows={4} placeholder="介绍你的职责或擅长领域，方便团队协作" className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary" /><span className="block text-right text-xs text-muted-foreground">{bio.length}/240</span></label>
-      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-      {message && <p className="text-sm text-primary" role="status">{message}</p>}
+      <ActionFeedback feedback={personalFeedback.feedback} onDismiss={personalFeedback.clear} />
       <Button onClick={() => void save()} disabled={!member || saving}>{saving ? '保存中...' : '保存团队资料'}</Button>
     </CardContent></Card>
   </div>
@@ -211,7 +216,7 @@ export default function TeamPage() {
     return () => { cancelled = true }
   }, [activeTeamId])
 
-  useEffect(() => {
+  const reloadTeam = useCallback(() => {
     if (!activeTeamId) return
     apiFetch(`/api/teams/${activeTeamId}`, { cache: 'no-store' }).then(async (response) => {
       if (!response.ok) throw new Error('无法加载团队信息')
@@ -219,6 +224,8 @@ export default function TeamPage() {
       setTeam(data.team)
     }).catch((reason) => setError(reason instanceof Error ? reason.message : '无法加载团队信息'))
   }, [activeTeamId])
+
+  useEffect(() => { reloadTeam() }, [reloadTeam])
 
   const activeRole = useMemo(() => teams.find((item) => item.team.id === activeTeamId)?.role || user?.teamRole || null, [activeTeamId, teams, user?.teamRole])
 
@@ -236,10 +243,10 @@ export default function TeamPage() {
   if (loading) return <StudioPageSkeleton label="正在加载团队管理..." />
 
   return <div className="space-y-6">
-    <div className="flex items-center justify-between gap-3">{tab === 'overview' ? <div><h1 className="text-2xl font-semibold tracking-normal">团队概览</h1><p className="mt-1 text-sm text-muted-foreground">{team?.name || '选择一个团队'}</p></div> : <span aria-hidden="true" />}<Button variant="outline" onClick={createTeam}><Plus className="h-4 w-4" />新建团队</Button></div>
+    <div className="flex items-center justify-between gap-3">{tab === 'overview' ? <div><h1 className="text-2xl font-semibold tracking-normal">团队概览</h1></div> : <span aria-hidden="true" />}<Button variant="outline" onClick={createTeam}><Plus className="h-4 w-4" />新建团队</Button></div>
     {error && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive-visible p-3 text-sm text-destructive">{error}</div>}
     {team && team.status !== 'ACTIVE' && <div role="status" className="rounded-md border border-warning/30 bg-warning-visible p-3 text-sm text-foreground">该团队当前已停用，项目和团队接口暂不可用。请联系平台运营启用团队。</div>}
-    {!team ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">还没有团队，先创建一个团队开始管理。</p><Button className="mt-4" onClick={createTeam}><Plus className="h-4 w-4" />创建团队</Button></CardContent></Card> : tab === 'team' ? <TeamInfoPanel team={team} role={activeRole} /> : tab === 'personal' ? <PersonalInfoPanel team={team} /> : team.status !== 'ACTIVE' ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm font-medium">团队已停用</p><p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p><Button className="mt-4" variant="outline" onClick={() => { window.history.replaceState(null, '', '/studio/team?tab=team'); window.dispatchEvent(new PopStateEvent('popstate')) }}>查看团队信息</Button></CardContent></Card> : <TeamOverview teamId={team.id} showHeading={false} />}
+    {!team ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">还没有团队，先创建一个团队开始管理。</p><Button className="mt-4" onClick={createTeam}><Plus className="h-4 w-4" />创建团队</Button></CardContent></Card> : tab === 'team' ? <TeamInfoPanel team={team} role={activeRole} onSaved={reloadTeam} /> : tab === 'personal' ? <PersonalInfoPanel team={team} onSaved={reloadTeam} /> : team.status !== 'ACTIVE' ? <Card><CardContent className="py-16 text-center"><Building2 className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 text-sm font-medium">团队已停用</p><p className="mt-1 text-sm text-muted-foreground">团队数据仍然保留，启用后即可继续使用项目和视频。</p><Button className="mt-4" variant="outline" onClick={() => { window.history.replaceState(null, '', '/studio/team?tab=team'); window.dispatchEvent(new PopStateEvent('popstate')) }}>查看团队信息</Button></CardContent></Card> : <TeamOverview teamId={team.id} showHeading={false} />}
     {team && team.status === 'ACTIVE' && (activeRole === 'OWNER' || activeRole === 'ADMIN') && <TeamPushSetup />}
     {team && activeRole && team.status === 'ACTIVE' && <TeamDangerZone team={team} role={activeRole} />}
   </div>

@@ -103,6 +103,8 @@ export async function POST(request: NextRequest) {
         email,
         phone,
         ...phoneHashField(phone),
+        // Random placeholder: SMS sign-up never asks for a password, so passwordSetAt
+        // stays null and the profile offers first-time password setting.
         password: await hashPassword(crypto.randomBytes(24).toString('hex')),
         name: phone.slice(-4),
         role: 'MEMBER',
