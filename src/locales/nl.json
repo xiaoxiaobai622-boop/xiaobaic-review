@@ -1134,6 +1134,7 @@
     "anonymous": "Anoniem",
     "seekToTimecode": "Naar Deze Tijdcode Springen",
     "reply": "Beantwoorden",
+    "replyPlaceholder": "Laat hier een antwoord achter...",
     "deleteComment": "Opmerking Verwijderen",
     "deleteReply": "Antwoord Verwijderen",
     "hasAnnotation": "Bevat een Tekening",

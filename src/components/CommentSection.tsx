@@ -134,8 +134,18 @@ export default function CommentSection({
     isSelectingTimecodeEnd,
     handleCommentChange,
     handleSubmitComment,
+    handleSubmitReply,
     handleReply,
     handleCancelReply,
+    replyDrafts,
+    replyAttachments,
+    replyErrors,
+    replySubmittingId,
+    replyClosingId,
+    handleReplyDraftChange,
+    handleReplyAttachmentAdded,
+    handleRemoveReplyAttachment,
+    handleReplyAttachmentErrorChange,
     replyFocusRequest,
     handleDeleteComment,
     handleAttachmentAdded,
@@ -215,7 +225,7 @@ export default function CommentSection({
         element.style.transition = 'background-color 0.3s'
         element.style.backgroundColor = 'hsl(var(--primary) / 0.12)'
         setTimeout(() => {
-          element.style.backgroundColor = 'transparent'
+          element.style.backgroundColor = ''
         }, 1000)
         return
       }
@@ -227,6 +237,62 @@ export default function CommentSection({
 
     setTimeout(tryScroll, 100)
   }, [focusCommentId, localComments.length])
+
+  // The inline composer grows below the thread; keep it fully visible without
+  // pushing the comment above it out of the list. `scrollIntoView` is unreliable
+  // here because the pane can still be settling when the composer mounts.
+  useEffect(() => {
+    if (!replyingToCommentId) return
+    let cancelled = false
+    let secondFrame = 0
+
+    const reveal = () => {
+      if (cancelled) return
+      const element = document.getElementById(`inline-reply-${replyingToCommentId}`)
+      const container = element?.closest<HTMLElement>('[data-comment-scroll]')
+      if (!element || !container) return
+
+      const elementRect = element.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      let delta = 0
+      if (elementRect.bottom > containerRect.bottom - 4) {
+        delta = elementRect.bottom - containerRect.bottom + 8
+      } else if (elementRect.top < containerRect.top + 4) {
+        delta = elementRect.top - containerRect.top - 8
+      }
+      if (delta !== 0) {
+        container.scrollTop = Math.max(0, container.scrollTop + delta)
+      }
+
+      // On phones the page, not the list, is the scroll container once the
+      // keyboard shrinks the visual viewport. Only nudge when the composer is
+      // actually outside the visible area.
+      const viewport = window.visualViewport
+      const viewportTop = viewport?.offsetTop ?? 0
+      const viewportBottom = viewportTop + (viewport?.height ?? window.innerHeight)
+      const updatedRect = element.getBoundingClientRect()
+      if (updatedRect.bottom > viewportBottom - 4 || updatedRect.top < viewportTop + 4) {
+        element.scrollIntoView({ block: 'nearest' })
+      }
+    }
+
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(reveal)
+    })
+    const settleTimer = window.setTimeout(reveal, 260)
+    const lateTimer = window.setTimeout(reveal, 540)
+    window.addEventListener('resize', reveal)
+    window.visualViewport?.addEventListener('resize', reveal)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+      window.clearTimeout(settleTimer)
+      window.clearTimeout(lateTimer)
+      window.removeEventListener('resize', reveal)
+      window.visualViewport?.removeEventListener('resize', reveal)
+    }
+  }, [replyingToCommentId, replyFocusRequest])
 
   const videoById = useMemo(() => new Map(videos.map((video) => [video.id, video])), [videos])
   const latestVideoVersion = useMemo(() => (
@@ -340,14 +406,20 @@ export default function CommentSection({
     ? `You can only leave feedback on the latest version. Please switch to version ${latestVideoVersion} to comment.`
     : undefined
 
-  const replyingToComment = mergedComments.find(c => c.id === replyingToCommentId) || null
-
   const handleSubmitWithAuth = () => {
     if (!isAdminView && !isReviewAuthenticated) {
       onRequireLogin?.()
       return
     }
     void handleSubmitComment()
+  }
+
+  const handleSubmitReplyWithAuth = (commentId: string) => {
+    if (!isAdminView && !isReviewAuthenticated) {
+      onRequireLogin?.()
+      return
+    }
+    void handleSubmitReply(commentId)
   }
 
   const formatMessageTime = (date: Date) => {
@@ -564,8 +636,9 @@ export default function CommentSection({
 
         {/* Messages Area - Threaded Conversations */}
         <div
+          data-comment-scroll
           className={cn(
-            "min-h-0 flex-1 space-y-0 overflow-y-auto p-0",
+            "min-h-0 flex-1 space-y-[8px] overflow-y-auto p-[8px]",
             mobileCollapsible && "order-3 lg:order-2",
             mobileCollapsible && isMobileCollapsed && "hidden lg:block"
           )}
@@ -597,17 +670,34 @@ export default function CommentSection({
                   ? formatTimecodeAs((comment as any).timecodeEnd, fps, duration, format)
                   : null
                 const hasAnnotation = !!(comment as any).annotations
+                const isResolved = resolvedOverrides[comment.id] ?? (comment as any).resolved === true
+                const isReplying = replyingToCommentId === comment.id && !commentsDisabled
+                const isReplyClosing = replyClosingId === comment.id
 
                 return (
                   <div
                     key={comment.id}
-                    className="[content-visibility:auto]"
-                    style={{ containIntrinsicSize: '0 132px' }}
+                    id={`comment-${comment.id}`}
+                    className={cn(
+                      'rounded-[8px] outline outline-1 outline-transparent transition-[background-color,box-shadow,outline-color] duration-150 ease-[var(--ease-standard)] motion-reduce:transition-none',
+                      isResolved
+                        ? 'bg-success/10 hover:bg-success/15'
+                        : 'bg-muted/40 hover:bg-muted/55',
+                      isReplying && !isReplyClosing
+                        ? 'outline-primary/30 shadow-elevation'
+                        : 'hover:outline-border/70 hover:shadow-elevation-sm',
+                    )}
                   >
                     <MessageBubble
-                      comment={{ ...comment, resolved: resolvedOverrides[comment.id] ?? (comment as any).resolved } as any}
+                      comment={{ ...comment, resolved: isResolved } as any}
                       isReply={false}
-                      onReply={() => handleReply(comment.id, comment.videoId)}
+                      onReply={() => {
+                        if (replyingToCommentId === comment.id && replyClosingId !== comment.id) {
+                          handleCancelReply(comment.id)
+                          return
+                        }
+                        handleReply(comment.id)
+                      }}
                       onSeekToTimecode={handleSeekToTimecode}
                       onDelete={isAdminView || (comment as any).canDelete ? () => handleDeleteComment(comment.id) : undefined}
                       formatMessageTime={formatMessageTime}
@@ -623,6 +713,41 @@ export default function CommentSection({
                       onToggleResolved={isAdminView || (comment as any).canDelete
                         ? (resolved) => handleToggleResolved(comment.id, resolved)
                         : undefined}
+                      inlineReplyClosing={isReplyClosing}
+                      inlineReply={isReplying ? (
+                        <div id={`inline-reply-${comment.id}`}>
+                          <CommentInput
+                            variant="inlineReply"
+                            newComment={replyDrafts[comment.id] ?? ''}
+                            onCommentChange={(value) => handleReplyDraftChange(comment.id, value)}
+                            onSubmit={() => handleSubmitReplyWithAuth(comment.id)}
+                            loading={replySubmittingId === comment.id}
+                            onCancelReply={() => handleCancelReply(comment.id)}
+                            focusRequest={replyFocusRequest}
+                            selectedTimestamp={null}
+                            selectedVideoFps={fps}
+                            selectedVideoDurationSeconds={duration ?? null}
+                            commentsDisabled={commentsDisabled}
+                            currentVideoRestricted={false}
+                            allowClientAssetUpload={allowClientAssetUpload}
+                            selectedVideoId={comment.videoId}
+                            pendingAttachments={replyAttachments[comment.id] || []}
+                            onAttachmentAdded={(attachment) => {
+                              if (attachment.videoId !== comment.videoId) return
+                              handleReplyAttachmentAdded(comment.id, attachment)
+                            }}
+                            onRemoveAttachment={(assetId) => {
+                              void handleRemoveReplyAttachment(comment.id, assetId)
+                            }}
+                            attachmentError={replyErrors[comment.id] || null}
+                            onAttachmentErrorChange={(message) => handleReplyAttachmentErrorChange(comment.id, message)}
+                            shareToken={shareToken}
+                            shareSlug={projectSlug}
+                            maxCommentAttachments={maxCommentAttachments}
+                            pendingAnnotation={false}
+                          />
+                        </div>
+                      ) : undefined}
                     />
                   </div>
                 )
@@ -648,9 +773,6 @@ export default function CommentSection({
           selectedTimecodeEnd={selectedTimecodeEnd}
           isSelectingTimecodeEnd={isSelectingTimecodeEnd}
           onSetTimecodeEnd={handleSetTimecodeEnd}
-          replyingToComment={replyingToComment}
-          onCancelReply={handleCancelReply}
-          focusRequest={replyFocusRequest}
           mentionCandidates={showVisibilitySelector ? mentionCandidates : undefined}
           mentionedUserIds={mentionedUserIds}
           onMentionedUserIdsChange={setMentionedUserIds}

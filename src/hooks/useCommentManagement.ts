@@ -62,6 +62,12 @@ export function useCommentManagement({
   const [hasAutoFilledTimestamp, setHasAutoFilledTimestamp] = useState(false)
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null)
   const [replyFocusRequest, setReplyFocusRequest] = useState(0)
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({})
+  const [replyAttachments, setReplyAttachments] = useState<Record<string, PendingAttachment[]>>({})
+  const [replyErrors, setReplyErrors] = useState<Record<string, string | null>>({})
+  const [replySubmittingId, setReplySubmittingId] = useState<string | null>(null)
+  const [replyClosingId, setReplyClosingId] = useState<string | null>(null)
+  const replyCloseTimerRef = useRef<number | null>(null)
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
@@ -121,6 +127,14 @@ export function useCommentManagement({
 
   const optimisticTopLevel = activeOptimisticComments.filter(oc => !oc.parentId)
   const comments = [...mergedComments, ...optimisticTopLevel]
+
+  useEffect(() => {
+    return () => {
+      if (replyCloseTimerRef.current !== null) {
+        window.clearTimeout(replyCloseTimerRef.current)
+      }
+    }
+  }, [])
 
   const cleanupAttachmentAsset = useCallback(async (attachment: PendingAttachment) => {
     const url = `/api/videos/${attachment.videoId}/client-assets?assetId=${attachment.assetId}`
@@ -371,6 +385,122 @@ export function useCommentManagement({
     }
   }
 
+  interface SubmitCommentPayload {
+    content: string
+    parentId: string | null
+    videoId: string
+    timecode: string
+    timecodeEnd: string | null
+    annotations: AnnotationData | null
+    attachments: PendingAttachment[]
+    visibility: 'PUBLIC' | 'INTERNAL'
+    mentionedUserIds: string[]
+  }
+
+  // Both the bottom composer and the inline reply composer go through this
+  // function so validation, optimistic insert, rollback and the POST payload
+  // stay identical.
+  const submitComment = async (
+    payload: SubmitCommentPayload,
+    onFailure: (error: unknown, finalContent: string) => void,
+  ): Promise<boolean> => {
+    const hasAttachments = payload.attachments.length > 0
+    const hasAnnotations = !!payload.annotations
+    if (!payload.content.trim() && !hasAttachments && !hasAnnotations) return false
+
+    let commentContent = payload.content
+    if (!commentContent.trim() && hasAttachments) {
+      attachmentUploadCountRef.current += 1
+      commentContent = `Attachments uploaded #${attachmentUploadCountRef.current}`
+    } else if (!commentContent.trim() && hasAnnotations) {
+      commentContent = tComments('drawingAnnotation')
+    }
+
+    const isInternalComment = useAdminAuth || !!adminUser
+    const commentVideo = videos.find(v => v.id === payload.videoId)
+    const commentAuthorName = isInternalComment
+      ? (adminUser!.name || adminUser!.phone || adminUser!.email)
+      : (authenticatedName || authorName)
+
+    const optimisticComment: CommentWithReplies = {
+      id: `temp-${Date.now()}`,
+      projectId,
+      videoId: payload.videoId,
+      videoVersion: commentVideo?.version || null,
+      timecode: payload.timecode,
+      timecodeEnd: payload.timecodeEnd || null,
+      annotations: (payload.annotations as Prisma.JsonValue) || null,
+      content: commentContent,
+      authorName: commentAuthorName,
+      authorEmail: isInternalComment ? adminUser?.email || null : null,
+      visibility: payload.visibility,
+      isInternal: isInternalComment,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      resolved: false,
+      parentId: payload.parentId,
+      userId: null,
+      replies: [],
+    }
+
+    setOptimisticComments(prev => [...prev, optimisticComment])
+
+    const assetIds = payload.attachments.map(a => a.assetId)
+
+    try {
+      const requestBody: any = {
+        projectId,
+        videoId: payload.videoId,
+        timecode: payload.timecode,
+        content: commentContent,
+        visibility: payload.visibility,
+      }
+
+      if (payload.annotations) {
+        requestBody.annotations = payload.annotations
+      }
+      if (payload.timecodeEnd) {
+        requestBody.timecodeEnd = payload.timecodeEnd
+      }
+
+      requestBody.authorName = commentAuthorName
+
+      if (payload.parentId) {
+        requestBody.parentId = payload.parentId
+      }
+
+      if (assetIds.length > 0) {
+        requestBody.assetIds = assetIds
+      }
+
+      if (payload.mentionedUserIds.length > 0) {
+        requestBody.mentionedUserIds = payload.mentionedUserIds
+      }
+
+      let updatedComments: CommentWithReplies[]
+      if (shareToken && effectiveShareSlug) {
+        updatedComments = await shareApiPost<CommentWithReplies[]>(effectiveShareSlug, '/api/comments', requestBody)
+      } else if (shareToken || useAdminAuth) {
+        updatedComments = await apiPost<CommentWithReplies[]>('/api/comments', requestBody, shareToken ? {
+          headers: { 'X-Share-Token': `Bearer ${shareToken}` },
+        } : undefined)
+      } else {
+        throw new Error('Authentication required to submit comment')
+      }
+      setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
+
+      window.dispatchEvent(new CustomEvent('commentPosted', {
+        detail: { comments: updatedComments, projectId }
+      }))
+
+      return true
+    } catch (error) {
+      setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
+      onFailure(error, commentContent)
+      return false
+    }
+  }
+
   const handleSubmitComment = async () => {
     let annotationForComment = pendingAnnotation
     let annotationVideoId: string | null = null
@@ -427,14 +557,6 @@ export function useCommentManagement({
     submittingCommentRef.current = true
     setLoading(true)
 
-    let commentContent = newComment
-    if (!commentContent.trim() && hasAttachments) {
-      attachmentUploadCountRef.current += 1
-      commentContent = `Attachments uploaded #${attachmentUploadCountRef.current}`
-    } else if (!commentContent.trim() && hasAnnotations) {
-      commentContent = tComments('drawingAnnotation')
-    }
-
     // Read the player synchronously at send time. The timestamp captured when
     // typing starts is only used to position the draft handles.
     let playerTime: number | null = null
@@ -454,47 +576,19 @@ export function useCommentManagement({
       ? playerTime
       : selectedTimestamp
     const commentTimecodeEnd = rangeWasAdjustedRef.current ? selectedTimecodeEnd : null
-
-    // OPTIMISTIC UPDATE
-    const isInternalComment = useAdminAuth || !!adminUser
     const commentVideo = videos.find(v => v.id === validatedVideoId)
     const fps = commentVideo?.fps || 24
     const timecode = commentTimestamp !== null ? secondsToTimecode(commentTimestamp, fps) : '00:00:00:00'
-    const commentAuthorName = isInternalComment
-      ? (adminUser!.name || adminUser!.phone || adminUser!.email)
-      : (authenticatedName || authorName)
 
-    const optimisticComment: CommentWithReplies = {
-      id: `temp-${Date.now()}`,
-      projectId,
-      videoId: validatedVideoId,
-      videoVersion: commentVideo?.version || null,
-      timecode,
-      timecodeEnd: commentTimecodeEnd || null,
-      annotations: (annotationForComment as Prisma.JsonValue) || null,
-      content: commentContent,
-      authorName: commentAuthorName,
-      authorEmail: isInternalComment ? adminUser?.email || null : null,
-      visibility: commentVisibility,
-      isInternal: isInternalComment,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      resolved: false,
-      parentId: replyingToCommentId,
-      userId: null,
-      replies: [],
-    }
-
-    setOptimisticComments(prev => [...prev, optimisticComment])
-
-    const commentParentId = replyingToCommentId
     const mentionedForComment = mentionedUserIds
+    const draftContent = newComment
+    const assetIds = attachmentsForVideo.map(a => a.assetId)
+
     setNewComment('')
     setMentionedUserIds([])
     setSelectedTimestamp(null)
     // Keep selectedVideoId so user can post multiple comments
     setHasAutoFilledTimestamp(false)
-    setReplyingToCommentId(null)
     setPendingAnnotation(null)
     if (annotationForComment) {
       window.dispatchEvent(new CustomEvent('annotationSubmitted'))
@@ -502,68 +596,31 @@ export function useCommentManagement({
     setSelectedTimecodeEnd(null)
     setIsSelectingTimecodeEnd(false)
     rangeWasAdjustedRef.current = false
-    const attachmentsForComment = pendingAttachments.filter(a => a.videoId === validatedVideoId)
-    const commentAssetIds = attachmentsForComment.map(a => a.assetId)
-    setPendingAttachments(prev => prev.filter(a => !commentAssetIds.includes(a.assetId)))
+    setPendingAttachments(prev => prev.filter(a => !assetIds.includes(a.assetId)))
 
     try {
-      const requestBody: any = {
-        projectId,
+      await submitComment({
+        content: draftContent,
+        parentId: null,
         videoId: validatedVideoId,
         timecode,
-        content: commentContent,
+        timecodeEnd: commentTimecodeEnd,
+        annotations: annotationForComment,
+        attachments: attachmentsForVideo,
         visibility: commentVisibility,
-      }
-
-      if (annotationForComment) {
-        requestBody.annotations = annotationForComment
-      }
-      if (commentTimecodeEnd) {
-        requestBody.timecodeEnd = commentTimecodeEnd
-      }
-
-      requestBody.authorName = commentAuthorName
-
-      if (commentParentId) {
-        requestBody.parentId = commentParentId
-      }
-
-      if (commentAssetIds.length > 0) {
-        requestBody.assetIds = commentAssetIds
-      }
-
-      if (mentionedForComment.length > 0) {
-        requestBody.mentionedUserIds = mentionedForComment
-      }
-
-      let updatedComments: CommentWithReplies[]
-      if (shareToken && effectiveShareSlug) {
-        updatedComments = await shareApiPost<CommentWithReplies[]>(effectiveShareSlug, '/api/comments', requestBody)
-      } else if (shareToken || useAdminAuth) {
-        updatedComments = await apiPost<CommentWithReplies[]>('/api/comments', requestBody, shareToken ? {
-          headers: { 'X-Share-Token': `Bearer ${shareToken}` },
-        } : undefined)
-      } else {
-        throw new Error('Authentication required to submit comment')
-      }
-      setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
-
-      window.dispatchEvent(new CustomEvent('commentPosted', {
-        detail: { comments: updatedComments, projectId }
-      }))
-
-    } catch (error) {
-      setOptimisticComments(prev => prev.filter(c => c.id !== optimisticComment.id))
-      setNewComment(commentContent)
-      setMentionedUserIds(mentionedForComment)
-      setSelectedTimestamp(commentTimestamp)
-      setSelectedVideoId(validatedVideoId)
-      setPendingAnnotation(annotationForComment)
-      setAttachmentError(shareErrorMessage(error, 'Failed to submit comment'))
-      setPendingAttachments(prev => {
-        const existingIds = new Set(prev.map(a => a.assetId))
-        const toRestore = attachmentsForComment.filter(a => !existingIds.has(a.assetId))
-        return toRestore.length > 0 ? [...prev, ...toRestore] : prev
+        mentionedUserIds: mentionedForComment,
+      }, (error, finalContent) => {
+        setNewComment(finalContent)
+        setMentionedUserIds(mentionedForComment)
+        setSelectedTimestamp(commentTimestamp)
+        setSelectedVideoId(validatedVideoId)
+        setPendingAnnotation(annotationForComment)
+        setAttachmentError(shareErrorMessage(error, 'Failed to submit comment'))
+        setPendingAttachments(prev => {
+          const existingIds = new Set(prev.map(a => a.assetId))
+          const toRestore = attachmentsForVideo.filter(a => !existingIds.has(a.assetId))
+          return toRestore.length > 0 ? [...prev, ...toRestore] : prev
+        })
       })
     } finally {
       submittingCommentRef.current = false
@@ -571,14 +628,176 @@ export function useCommentManagement({
     }
   }
 
-  const handleReply = (commentId: string, videoId: string) => {
+  const clearReplyCloseTimer = () => {
+    if (replyCloseTimerRef.current !== null) {
+      window.clearTimeout(replyCloseTimerRef.current)
+      replyCloseTimerRef.current = null
+    }
+  }
+
+  const finishReplyClose = (commentId: string) => {
+    const discardedAttachments = replyAttachments[commentId] || []
+    setReplyDrafts(prev => {
+      const next = { ...prev }
+      delete next[commentId]
+      return next
+    })
+    setReplyAttachments(prev => {
+      const next = { ...prev }
+      delete next[commentId]
+      return next
+    })
+    setReplyErrors(prev => {
+      const next = { ...prev }
+      delete next[commentId]
+      return next
+    })
+    setReplyClosingId(current => current === commentId ? null : current)
+    setReplyingToCommentId(current => current === commentId ? null : current)
+    discardedAttachments.forEach(attachment => {
+      void cleanupAttachmentAsset(attachment)
+    })
+  }
+
+  const beginReplyClose = (commentId: string) => {
+    clearReplyCloseTimer()
+    setReplyClosingId(commentId)
+    replyCloseTimerRef.current = window.setTimeout(() => {
+      replyCloseTimerRef.current = null
+      finishReplyClose(commentId)
+    }, 180)
+  }
+
+  const handleSubmitReply = async (commentId: string) => {
+    if (replySubmittingId || replyClosingId === commentId || loading || submittingCommentRef.current) return
+
+    const parent = comments.find(c => c.id === commentId && !c.parentId)
+    if (!parent) return
+
+    const content = replyDrafts[commentId] || ''
+    const attachmentsForReply = (replyAttachments[commentId] || [])
+      .filter(a => a.videoId === parent.videoId)
+
+    if (!content.trim() && attachmentsForReply.length === 0) return
+
+    if (!parent.videoId) {
+      appAlert('Please select a video before commenting.')
+      return
+    }
+
+    if (useAdminAuth && !adminUser) {
+      appAlert('Admin session not loaded yet. Please wait a moment and try again.')
+      return
+    }
+
+    if (restrictToLatestVersion) {
+      const latestVideoVersion = videos.length > 0 ? Math.max(...videos.map(v => v.version)) : null
+      const parentVideo = videos.find(v => v.id === parent.videoId)
+      if (parentVideo && parentVideo.version !== latestVideoVersion) {
+        appAlert('Comments are only allowed on the latest version of this project.')
+        return
+      }
+    }
+
+    submittingCommentRef.current = true
+    setReplySubmittingId(commentId)
+    setReplyErrors(prev => (prev[commentId] ? { ...prev, [commentId]: null } : prev))
+
+    const assetIds = attachmentsForReply.map(a => a.assetId)
+    setReplyAttachments(prev => {
+      const remaining = (prev[commentId] || []).filter(a => !assetIds.includes(a.assetId))
+      if (remaining.length > 0) return { ...prev, [commentId]: remaining }
+      const next = { ...prev }
+      delete next[commentId]
+      return next
+    })
+
+    let ok = false
+    try {
+      ok = await submitComment({
+        content,
+        parentId: parent.id,
+        videoId: parent.videoId,
+        timecode: parent.timecode || '00:00:00:00',
+        timecodeEnd: null,
+        annotations: null,
+        attachments: attachmentsForReply,
+        visibility: (parent as any).visibility === 'INTERNAL' ? 'INTERNAL' : 'PUBLIC',
+        mentionedUserIds: [],
+      }, (error) => {
+        setReplyErrors(prev => ({
+          ...prev,
+          [commentId]: shareErrorMessage(error, 'Failed to submit comment'),
+        }))
+        setReplyAttachments(prev => {
+          const existing = prev[commentId] || []
+          const existingIds = new Set(existing.map(a => a.assetId))
+          const toRestore = attachmentsForReply.filter(a => !existingIds.has(a.assetId))
+          return toRestore.length > 0
+            ? { ...prev, [commentId]: [...existing, ...toRestore] }
+            : prev
+        })
+      })
+    } finally {
+      submittingCommentRef.current = false
+      setReplySubmittingId(null)
+    }
+
+    if (ok) {
+      beginReplyClose(commentId)
+    }
+  }
+
+  const handleReply = (commentId: string) => {
+    if (replyClosingId) {
+      clearReplyCloseTimer()
+      finishReplyClose(replyClosingId)
+    }
     setReplyingToCommentId(commentId)
-    setSelectedVideoId(videoId)
+    setReplyErrors(prev => (prev[commentId] ? { ...prev, [commentId]: null } : prev))
     setReplyFocusRequest((value) => value + 1)
   }
 
-  const handleCancelReply = () => {
-    setReplyingToCommentId(null)
+  const handleReplyDraftChange = (commentId: string, value: string) => {
+    if (replyClosingId === commentId) return
+    setReplyDrafts(prev => ({ ...prev, [commentId]: value }))
+    setReplyErrors(prev => (prev[commentId] ? { ...prev, [commentId]: null } : prev))
+  }
+
+  const handleReplyAttachmentAdded = (commentId: string, attachment: PendingAttachment) => {
+    if (replyClosingId === commentId) {
+      void cleanupAttachmentAsset(attachment)
+      return
+    }
+    setReplyAttachments(prev => ({
+      ...prev,
+      [commentId]: [...(prev[commentId] || []), attachment],
+    }))
+    setReplyErrors(prev => (prev[commentId] ? { ...prev, [commentId]: null } : prev))
+  }
+
+  const handleRemoveReplyAttachment = async (commentId: string, assetId: string) => {
+    if (replyClosingId === commentId) return
+    const attachment = (replyAttachments[commentId] || []).find(a => a.assetId === assetId)
+    setReplyAttachments(prev => ({
+      ...prev,
+      [commentId]: (prev[commentId] || []).filter(a => a.assetId !== assetId),
+    }))
+    setReplyErrors(prev => (prev[commentId] ? { ...prev, [commentId]: null } : prev))
+    if (attachment) {
+      await cleanupAttachmentAsset(attachment)
+    }
+  }
+
+  const handleReplyAttachmentErrorChange = (commentId: string, message: string | null) => {
+    if (replyClosingId === commentId) return
+    setReplyErrors(prev => ({ ...prev, [commentId]: message }))
+  }
+
+  const handleCancelReply = (commentId?: string) => {
+    const targetId = commentId ?? replyingToCommentId
+    if (!targetId || replySubmittingId === targetId || replyClosingId === targetId) return
+    beginReplyClose(targetId)
   }
 
   const handleClearTimestamp = () => {
@@ -606,6 +825,11 @@ export function useCommentManagement({
         await apiDelete(`/api/comments/${commentId}`)
       } else {
         throw new Error('删除批注需要先登录')
+      }
+
+      if (replyingToCommentId === commentId || replyClosingId === commentId) {
+        clearReplyCloseTimer()
+        finishReplyClose(commentId)
       }
 
       window.dispatchEvent(new CustomEvent('commentDeleted', {
@@ -711,8 +935,18 @@ export function useCommentManagement({
     pendingAnnotation: !!pendingAnnotation,
     handleCommentChange,
     handleSubmitComment,
+    handleSubmitReply,
     handleReply,
     handleCancelReply,
+    replyDrafts,
+    replyAttachments,
+    replyErrors,
+    replySubmittingId,
+    replyClosingId,
+    handleReplyDraftChange,
+    handleReplyAttachmentAdded,
+    handleRemoveReplyAttachment,
+    handleReplyAttachmentErrorChange,
     replyFocusRequest,
     handleClearTimestamp,
     handleDeleteComment,

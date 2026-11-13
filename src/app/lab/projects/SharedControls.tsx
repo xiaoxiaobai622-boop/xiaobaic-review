@@ -67,7 +67,6 @@ export default function SharedControls() {
             loading={false}
             selectedTimestamp={null}
             selectedVideoFps={25}
-            replyingToComment={null}
             onCancelReply={() => {}}
             currentVideoRestricted={false}
             commentsDisabled={false}

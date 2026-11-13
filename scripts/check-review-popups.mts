@@ -30,7 +30,7 @@ function Composer() {
   const [visibility, setVisibility] = useState<'PUBLIC' | 'INTERNAL'>('PUBLIC')
   return React.createElement(CommentInput, {
     newComment: text, onCommentChange: setText, onSubmit() {}, loading: false,
-    selectedTimestamp: null, selectedVideoFps: 25, replyingToComment: null,
+    selectedTimestamp: null, selectedVideoFps: 25,
     onCancelReply() {}, currentVideoRestricted: false, commentsDisabled: false,
     visibility, onVisibilityChange: setVisibility,
     sendInsideComposer: true,
@@ -117,7 +117,7 @@ test('a reply request focuses the composer and places the caret at the end', asy
     const [text, setText] = useState('已有内容')
     return React.createElement(CommentInput, {
       newComment: text, onCommentChange: setText, onSubmit() {}, loading: false,
-      selectedTimestamp: null, selectedVideoFps: 25, replyingToComment: null,
+      selectedTimestamp: null, selectedVideoFps: 25,
       onCancelReply() {}, currentVideoRestricted: false, commentsDisabled: false,
       visibility: 'PUBLIC', onVisibilityChange() {},
       sendInsideComposer: true, focusRequest: 1,

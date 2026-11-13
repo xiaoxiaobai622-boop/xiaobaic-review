@@ -2,7 +2,6 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Comment } from '@prisma/client'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
 import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square, Smile, Globe, Users, ChevronDown, Check, Loader2 } from 'lucide-react'
@@ -40,9 +39,10 @@ interface CommentInputProps {
   onSetTimecodeEnd?: () => void
 
   // Reply state
-  replyingToComment: Comment | null
-  onCancelReply: () => void
+  onCancelReply?: () => void
   focusRequest?: number
+  /** `inlineReply` renders inside a comment card: no visibility/timecode/draw/shortcuts/@. */
+  variant?: 'default' | 'inlineReply'
 
   /** Project viewers that can be @-mentioned. Studio side only. */
   mentionCandidates?: Array<{ id: string; name: string; avatarUrl?: string | null }>
@@ -98,9 +98,9 @@ export default function CommentInput({
   selectedVideoDurationSeconds = null,
   selectedTimecodeEnd = null,
   onSetTimecodeEnd,
-  replyingToComment,
   onCancelReply,
   focusRequest,
+  variant = 'default',
   mentionCandidates = [],
   mentionedUserIds = [],
   onMentionedUserIdsChange,
@@ -126,6 +126,7 @@ export default function CommentInput({
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
   const format = useTimeFormat()
+  const isInlineReply = variant === 'inlineReply'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [visOpen, setVisOpen] = useState(false)
@@ -251,6 +252,7 @@ export default function CommentInput({
   }, [])
 
   if (commentsDisabled) {
+    if (isInlineReply) return null
     return (
       <div className={cn('flex-shrink-0 rounded-[8px] bg-card p-2', !sendInsideComposer && 'border-t border-border/70')}>
         <textarea
@@ -366,7 +368,11 @@ export default function CommentInput({
   }
 
   return (
-    <div className={cn('flex-shrink-0 rounded-[8px] bg-card px-2 pb-1 pt-[6.5px]', !sendInsideComposer && 'border-t border-border/70')}>
+    <div className={cn(
+      'flex-shrink-0',
+      isInlineReply ? 'bg-transparent' : 'rounded-[8px] bg-card px-2 pb-1 pt-[6.5px]',
+      !sendInsideComposer && !isInlineReply && 'border-t border-border/70',
+    )}>
       {/* Restriction Warning */}
       {currentVideoRestricted && restrictionMessage && (
         <div className="mb-3 p-3 bg-warning-visible border-2 border-warning-visible rounded-lg">
@@ -376,29 +382,6 @@ export default function CommentInput({
           <p className="text-xs text-warning font-medium mt-1">
             {restrictionMessage}
           </p>
-        </div>
-      )}
-
-      {/* Replying To Indicator */}
-      {replyingToComment && (
-        <div className="mb-3 p-3 bg-muted/30 border border-border rounded-lg flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-            <InitialsAvatar name={replyingToComment.authorName || t('anonymous')} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-foreground font-semibold mb-1 truncate">
-                {t('replyingTo')} {replyingToComment.authorName || t('anonymous')}
-              </p>
-              <p className="text-xs text-muted-foreground line-clamp-2 leading-snug">
-                {replyingToComment.content}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onCancelReply}
-            className="text-xs text-muted-foreground hover:text-foreground font-medium flex-shrink-0 px-2 py-1 rounded hover:bg-muted transition-colors"
-          >
-            {tCommon('cancel')}
-          </button>
         </div>
       )}
 
@@ -433,7 +416,7 @@ export default function CommentInput({
             <div className="relative">
               <Textarea
                 ref={textareaRef}
-                aria-label={t('typeMessage')}
+                aria-label={isInlineReply ? t('replyPlaceholder') : t('typeMessage')}
                 value={newComment}
                 onChange={(e) => handleCommentChangeWithMentions(e.target.value, e.target.selectionStart ?? e.target.value.length)}
                 onKeyDown={handleKeyDown}
@@ -441,9 +424,10 @@ export default function CommentInput({
                 aria-expanded={mentionOpen}
                 aria-haspopup="listbox"
                 className={cn(
-                  'h-[75px] min-h-[75px] resize-none rounded-md text-sm',
-                  // 内嵌工具栏压在输入框底部：留白要盖过它，否则长文本最后一行会被图标挡住。
-                  sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2'
+                  'resize-none rounded-md text-sm',
+                  isInlineReply
+                    ? 'h-[64px] min-h-[64px] pb-2'
+                    : cn('h-[75px] min-h-[75px]', sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2')
                 )}
                 rows={2}
               />
@@ -479,7 +463,7 @@ export default function CommentInput({
               )}
               {newComment.length === 0 && (
                 <span aria-hidden="true" className="comment-placeholder-shimmer pointer-events-none absolute left-3 top-2 select-none text-sm">
-                  {t('typeMessage')}
+                  {isInlineReply ? t('replyPlaceholder') : t('typeMessage')}
                 </span>
               )}
               {onStartDrawing && (
@@ -592,6 +576,61 @@ export default function CommentInput({
                 </div>
               )}
             </div>
+            {isInlineReply ? (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
+                  {allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded && (
+                    <CommentAttachmentButton
+                      videoId={selectedVideoIdProp}
+                      shareToken={shareToken}
+                      shareSlug={shareSlug}
+                      onAttachmentAdded={onAttachmentAdded}
+                      onUploadError={onAttachmentErrorChange}
+                      disabled={loading}
+                      maxFiles={maxCommentAttachments}
+                    />
+                  )}
+                  {!commentsDisabled && (
+                    <button
+                      ref={emojiBtnRef}
+                      type="button"
+                      onClick={toggleEmojiPicker}
+                      className={cn(styles.trigger, 'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
+                      aria-label="添加表情符号"
+                      aria-expanded={emojiOpen}
+                      aria-haspopup="dialog"
+                      aria-controls={emojiOpen ? emojiId : undefined}
+                      data-review-popup-trigger
+                      title="添加表情符号"
+                    >
+                      <Smile className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onCancelReply}
+                    className="h-[32px] rounded-[6px] px-3 text-xs"
+                  >
+                    {tCommon('cancel')}
+                  </Button>
+                  <Button
+                    onClick={onSubmit}
+                    variant="default"
+                    disabled={!canSubmit}
+                    size="icon"
+                    className="h-[32px] w-[32px] shrink-0 rounded-[6px]"
+                    aria-label={loading ? tCommon('sending') : tCommon('send')}
+                    aria-busy={loading}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+            ) : (
             <div className={sendInsideComposer
               ? 'flex min-w-0 items-center justify-between gap-2'
               : 'flex h-8 min-w-0 items-center justify-between gap-2'}>
@@ -665,10 +704,13 @@ export default function CommentInput({
                   </Button>
                 )}
               </div>
+            </div>
+            )}
 
-              <ReviewPopup id={emojiId} open={emojiOpen} onOpenChange={setEmojiOpen} anchor={emojiBtnRef} returnFocus={textareaRef} label="选择表情符号" align="center" width={298}>
-                <EmojiPicker onSelect={insertEmoji} onClose={() => setEmojiOpen(false)} />
-              </ReviewPopup>
+            <ReviewPopup id={emojiId} open={emojiOpen} onOpenChange={setEmojiOpen} anchor={emojiBtnRef} returnFocus={textareaRef} label="选择表情符号" align="center" width={298}>
+              <EmojiPicker onSelect={insertEmoji} onClose={() => setEmojiOpen(false)} />
+            </ReviewPopup>
+            {!isInlineReply && (
               <ReviewPopup id={visId} open={visOpen} onOpenChange={setVisOpen} anchor={visBtnRef} label="批注可见范围" role="menu" align="end" width={268}>
                 {([
                   ['PUBLIC', Globe, '公开评论', '所有成员及共享链接查看者均可见'],
@@ -688,7 +730,7 @@ export default function CommentInput({
                   </button>
                 ))}
               </ReviewPopup>
-            </div>
+            )}
           </div>
           {(attachmentError || attachmentNotice) && (
             <p className={`mt-2 text-xs ${attachmentError ? 'text-destructive' : 'text-muted-foreground'}`}>
@@ -696,11 +738,13 @@ export default function CommentInput({
             </p>
           )}
 
-          <div className="mt-1 sm:hidden">
-            <p className="text-xs text-muted-foreground">
-              {t('enterToSend')}
-            </p>
-          </div>
+          {!isInlineReply && (
+            <div className="mt-1 sm:hidden">
+              <p className="text-xs text-muted-foreground">
+                {t('enterToSend')}
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>

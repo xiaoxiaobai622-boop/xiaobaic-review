@@ -1134,6 +1134,7 @@
     "anonymous": "Anonym",
     "seekToTimecode": "Zu diesem Timecode springen",
     "reply": "Antworten",
+    "replyPlaceholder": "Antwort hier hinterlassen...",
     "deleteComment": "Kommentar löschen",
     "deleteReply": "Antwort löschen",
     "hasAnnotation": "Hat Zeichnungsanmerkung",

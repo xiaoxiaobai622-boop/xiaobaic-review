@@ -1,11 +1,12 @@
 'use client'
 
-import { memo, useMemo } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
 import { Trash2, Brush, Check, Users } from 'lucide-react'
 import DOMPurify from 'isomorphic-dompurify'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
+import { cn } from '@/lib/utils'
 import CommentAttachments from './CommentAttachments'
 
 type CommentWithReplies = Comment & {
@@ -31,6 +32,10 @@ interface MessageBubbleProps {
   hasAnnotation?: boolean
   shareToken?: string | null
   onToggleResolved?: (resolved: boolean) => void
+  /** Rendered after the reply list, outside the seek-to-timecode hit area. */
+  inlineReply?: ReactNode
+  /** Keeps the composer mounted for its collapse transition. */
+  inlineReplyClosing?: boolean
 }
 
 /**
@@ -47,6 +52,42 @@ function sanitizeContent(content: string): string {
     ADD_ATTR: ['rel'], // Add rel="noopener noreferrer" to all links for security
     FORCE_BODY: true, // Parse content as body to prevent context-breaking attacks
   })
+}
+
+function ReplyReveal({ open, children }: { open: boolean; children: ReactNode }) {
+  const [entered, setEntered] = useState(false)
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setEntered(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  const expanded = open && entered
+
+  return (
+    <div
+      data-reply-reveal
+      className={cn(
+        'grid transition-[grid-template-rows,opacity] motion-reduce:transition-none',
+        expanded
+          ? 'grid-rows-[1fr] opacity-100 duration-200 ease-[var(--ease-emphasis)]'
+          : 'grid-rows-[0fr] opacity-0 duration-150 ease-[var(--ease-standard)]',
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div
+          className={cn(
+            'transition-transform motion-reduce:transition-none',
+            expanded
+              ? 'translate-y-0 duration-200 ease-[var(--ease-emphasis)]'
+              : '-translate-y-1 duration-150 ease-[var(--ease-standard)]',
+          )}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function MessageBubble({
@@ -66,8 +107,20 @@ function MessageBubble({
   hasAnnotation,
   shareToken,
   onToggleResolved,
+  inlineReply,
+  inlineReplyClosing = false,
 }: MessageBubbleProps) {
   const t = useTranslations('comments')
+  const [seekPulse, setSeekPulse] = useState(false)
+  const seekPulseTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (seekPulseTimerRef.current !== null) {
+        window.clearTimeout(seekPulseTimerRef.current)
+      }
+    }
+  }, [])
 
   // Get effective author name for color generation
   // For internal comments without authorName, fall back to user.name or user.email
@@ -86,30 +139,47 @@ function MessageBubble({
     }
   }
 
-  const handleFeedbackClick = (event: React.MouseEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest('a, button')) return
+  const handleSeek = () => {
+    setSeekPulse(true)
+    if (seekPulseTimerRef.current !== null) window.clearTimeout(seekPulseTimerRef.current)
+    seekPulseTimerRef.current = window.setTimeout(() => {
+      setSeekPulse(false)
+      seekPulseTimerRef.current = null
+    }, 320)
     handleTimestampClick()
+  }
+
+  const handleFeedbackClick = (event: React.MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement
+    if (target.closest('a, button, textarea, input, [contenteditable="true"], [data-no-seek]')) return
+    handleSeek()
   }
 
   const handleFeedbackKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
+    const target = event.target as HTMLElement
+    if (target !== event.currentTarget && target.closest('button, a, textarea, input, [contenteditable="true"], [data-no-seek]')) return
     event.preventDefault()
-    handleTimestampClick()
+    handleSeek()
   }
 
   const threadReplies = !isReply && replies && replies.length > 0 ? replies : EMPTY_REPLIES
   const hasReplies = threadReplies.length > 0
+  const isReplyOpen = Boolean(inlineReply) && !inlineReplyClosing
   const sanitizedCommentContent = useMemo(() => sanitizeContent(comment.content), [comment.content])
   const sanitizedReplyContent = useMemo(() => (
     new Map(threadReplies.map((reply) => [reply.id, sanitizeContent(reply.content)]))
   ), [threadReplies])
 
   return (
-    <div className="w-full" id={`comment-${comment.id}`}>
+    <div className="w-full">
       <div
-        className={`relative border-b border-border/60 px-4 py-3 transition-colors ${
-          (comment as any).resolved ? 'bg-success/8 hover:bg-success/12' : 'bg-[hsl(var(--review-chrome,var(--card)))] hover:bg-muted/30'
-        } ${comment.timecode && onSeekToTimecode ? 'cursor-pointer focus-within:bg-muted/30' : ''}`}
+        className={cn(
+          'relative rounded-[8px] px-[12px] py-[12px] transition-[transform,box-shadow,background-color] duration-150 ease-[var(--ease-standard)] motion-reduce:transition-none',
+          comment.timecode && onSeekToTimecode && 'cursor-pointer active:scale-[0.997] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 motion-reduce:active:scale-100',
+          seekPulse && 'ring-2 ring-inset ring-primary/30',
+        )}
+        data-seeking={seekPulse || undefined}
         onClick={comment.timecode && onSeekToTimecode ? handleFeedbackClick : undefined}
         onKeyDown={comment.timecode && onSeekToTimecode ? handleFeedbackKeyDown : undefined}
         role={comment.timecode && onSeekToTimecode ? 'button' : undefined}
@@ -159,11 +229,12 @@ function MessageBubble({
                   event.stopPropagation()
                   onToggleResolved(!(comment as any).resolved)
                 }}
-                className={`absolute right-4 top-3.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border transition-colors ${
+                className={cn(
+                  'absolute right-4 top-3.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border transition-[border-color,background-color,transform,opacity] duration-150 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100',
                   (comment as any).resolved
-                    ? 'border-success bg-success text-success-foreground'
-                    : 'border-muted-foreground/50 bg-card text-transparent hover:border-primary'
-                }`}
+                    ? 'border-success bg-success text-success-foreground hover:opacity-90'
+                    : 'border-muted-foreground/50 bg-card text-transparent hover:border-primary hover:bg-primary/5',
+                )}
                 aria-label={(comment as any).resolved ? '标记为未完成' : '标记为已完成'}
                 aria-pressed={(comment as any).resolved === true}
               >
@@ -175,8 +246,8 @@ function MessageBubble({
               <div className="flex items-center gap-1.5 mb-1.5">
                 <button
                   type="button"
-                  onClick={handleTimestampClick}
-                  className="inline-flex h-[22px] items-center rounded bg-warning px-2 text-[11px] font-semibold text-warning-foreground transition-opacity hover:opacity-90"
+                  onClick={handleSeek}
+                  className="inline-flex h-[22px] items-center rounded bg-warning px-2 text-[11px] font-semibold text-warning-foreground transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100"
                   title={t('seekToTimecode')}
                 >
                   <span className="font-sans tabular-nums">
@@ -228,16 +299,26 @@ function MessageBubble({
                 </span>
                 {!isReply && !commentsDisabled && onReply && (
                   <button
+                    type="button"
                     onClick={onReply}
-                    className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    aria-expanded={isReplyOpen}
+                    aria-controls={isReplyOpen ? `inline-reply-${comment.id}` : undefined}
+                    data-reply-open={isReplyOpen || undefined}
+                    className={cn(
+                      '-mx-1.5 inline-flex h-[20px] items-center rounded-md px-1.5 text-xs font-medium transition-[color,background-color,transform] duration-150 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100',
+                      isReplyOpen
+                        ? 'bg-primary/10 text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                    )}
                   >
                     {t('reply')}
                   </button>
                 )}
                 {onDelete && (
                   <button
+                    type="button"
                     onClick={onDelete}
-                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive"
+                    className="-mx-1.5 flex min-h-[20px] items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,transform] duration-150 hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100"
                     title={t('deleteComment')}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -311,6 +392,18 @@ function MessageBubble({
           })}
         </div>
       </div>
+      {inlineReply && (
+        <ReplyReveal open={!inlineReplyClosing}>
+          <div
+            className={cn(
+              'rounded-b-[8px] border-t border-border bg-card px-[12px] py-[12px]',
+              inlineReplyClosing && 'pointer-events-none',
+            )}
+          >
+            {inlineReply}
+          </div>
+        </ReplyReveal>
+      )}
     </div>
   )
 }

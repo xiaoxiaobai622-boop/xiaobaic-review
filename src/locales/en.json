@@ -1174,6 +1174,7 @@
     "anonymous": "Anonymous",
     "seekToTimecode": "Seek to This Timecode",
     "reply": "Reply",
+    "replyPlaceholder": "Leave a reply here...",
     "deleteComment": "Delete Comment",
     "deleteReply": "Delete Reply",
     "hasAnnotation": "Has Drawing Annotation",

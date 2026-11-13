@@ -1134,6 +1134,7 @@
     "anonymous": "匿名",
     "seekToTimecode": "跳转到此时间码",
     "reply": "回复",
+    "replyPlaceholder": "请在此处留下您的回复…",
     "deleteComment": "删除评论",
     "deleteReply": "删除回复",
     "hasAnnotation": "包含画面标注",
