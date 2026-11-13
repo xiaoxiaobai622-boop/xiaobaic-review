@@ -411,11 +411,9 @@
   -webkit-text-fill-color: transparent;
   background-image: linear-gradient(90deg,
     hsl(var(--muted-foreground)) 0%,
-    color-mix(in srgb, hsl(var(--muted-foreground)) 30%, white) 12.5%,
-    hsl(var(--muted-foreground)) 25%,
-    hsl(var(--muted-foreground)) 50%,
-    color-mix(in srgb, hsl(var(--muted-foreground)) 30%, white) 62.5%,
-    hsl(var(--muted-foreground)) 75%,
+    hsl(var(--muted-foreground)) 40%,
+    color-mix(in srgb, hsl(var(--muted-foreground)) 42%, white) 50%,
+    hsl(var(--muted-foreground)) 60%,
     hsl(var(--muted-foreground)) 100%);
   background-size: 200% auto;
   background-repeat: repeat;

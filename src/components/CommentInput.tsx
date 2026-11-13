@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
@@ -134,8 +134,18 @@ export default function CommentInput({
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionIndex, setMentionIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const editorRef = useRef<HTMLDivElement | null>(null)
   const emojiBtnRef = useRef<HTMLButtonElement | null>(null)
   const visBtnRef = useRef<HTMLButtonElement | null>(null)
+  const [isWideComposer, setIsWideComposer] = useState(false)
+  const [simulatedText, setSimulatedText] = useState('')
+  const [simulationSentence, setSimulationSentence] = useState('')
+  const [simulationVisible, setSimulationVisible] = useState(false)
+  const [isSimulating, setIsSimulating] = useState(false)
+  const simulationTimeoutRef = useRef<number | null>(null)
+  const simulationFadeTimeoutRef = useRef<number | null>(null)
+  const simulationRevealTimeoutRef = useRef<number | null>(null)
+  const hasSimulatedRef = useRef(false)
   const emojiId = useId()
   const visId = useId()
 
@@ -149,6 +159,82 @@ export default function CommentInput({
     setEmojiOpen(false)
   }
 
+  function stopSimulation() {
+    if (simulationTimeoutRef.current !== null) {
+      window.clearTimeout(simulationTimeoutRef.current)
+      simulationTimeoutRef.current = null
+    }
+    if (simulationRevealTimeoutRef.current !== null) {
+      window.clearTimeout(simulationRevealTimeoutRef.current)
+      simulationRevealTimeoutRef.current = null
+    }
+    setSimulationVisible(false)
+    if (simulationFadeTimeoutRef.current !== null) {
+      window.clearTimeout(simulationFadeTimeoutRef.current)
+    }
+    simulationFadeTimeoutRef.current = window.setTimeout(() => {
+      setIsSimulating(false)
+      setSimulatedText('')
+      setSimulationSentence('')
+      simulationFadeTimeoutRef.current = null
+    }, 220)
+  }
+
+  function startSimulation() {
+    if (
+      isInlineReply ||
+      hasSimulatedRef.current ||
+      newComment.length > 0 ||
+      pendingAttachments.length > 0 ||
+      pendingAnnotation ||
+      commentsDisabled ||
+      currentVideoRestricted ||
+      loading ||
+      document.activeElement === textareaRef.current
+    ) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    const sentence = t('demoComment')
+    if (!sentence) return
+
+    hasSimulatedRef.current = true
+    setSimulationSentence(sentence)
+    setIsSimulating(true)
+    setSimulatedText('')
+    setSimulationVisible(false)
+
+    if (simulationRevealTimeoutRef.current !== null) window.clearTimeout(simulationRevealTimeoutRef.current)
+    simulationRevealTimeoutRef.current = window.setTimeout(() => {
+      setSimulationVisible(true)
+      simulationRevealTimeoutRef.current = null
+    }, 120)
+
+    let index = 0
+    const typeNext = () => {
+      index += 1
+      setSimulatedText(sentence.slice(0, index))
+      if (index >= sentence.length) {
+        simulationTimeoutRef.current = window.setTimeout(() => {
+          simulationTimeoutRef.current = null
+          stopSimulation()
+        }, 800)
+        return
+      }
+      const char = sentence[index - 1]
+      const delay = /[，。！？,.!?]/.test(char) ? 360 : 140 + Math.random() * 100
+      simulationTimeoutRef.current = window.setTimeout(typeNext, delay)
+    }
+
+    // First character lands with the click; the layer fades in around it.
+    typeNext()
+  }
+
+  const startSimulationRef = useRef(startSimulation)
+
+  useEffect(() => {
+    startSimulationRef.current = startSimulation
+  })
+
   useEffect(() => {
     if (!focusRequest) return
     const el = textareaRef.current
@@ -157,6 +243,51 @@ export default function CommentInput({
     const end = el.value.length
     el.setSelectionRange(end, end)
   }, [focusRequest])
+
+  useLayoutEffect(() => {
+    const el = editorRef.current
+    if (!el) return
+    const update = () => setIsWideComposer(el.clientWidth >= 1040)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (simulationTimeoutRef.current !== null) window.clearTimeout(simulationTimeoutRef.current)
+      if (simulationFadeTimeoutRef.current !== null) window.clearTimeout(simulationFadeTimeoutRef.current)
+      if (simulationRevealTimeoutRef.current !== null) window.clearTimeout(simulationRevealTimeoutRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!newComment) return
+    if (simulationTimeoutRef.current !== null) {
+      window.clearTimeout(simulationTimeoutRef.current)
+      simulationTimeoutRef.current = null
+    }
+    if (simulationFadeTimeoutRef.current !== null) {
+      window.clearTimeout(simulationFadeTimeoutRef.current)
+      simulationFadeTimeoutRef.current = null
+    }
+    if (simulationRevealTimeoutRef.current !== null) {
+      window.clearTimeout(simulationRevealTimeoutRef.current)
+      simulationRevealTimeoutRef.current = null
+    }
+    setSimulationVisible(false)
+    setIsSimulating(false)
+    setSimulatedText('')
+    setSimulationSentence('')
+  }, [newComment])
+
+  useEffect(() => {
+    if (isInlineReply) return
+    const timer = window.setTimeout(() => startSimulationRef.current(), 400)
+    return () => window.clearTimeout(timer)
+  }, [isInlineReply])
 
   const mentionNameById = useMemo(
     () => new Map(mentionCandidates.map((candidate) => [candidate.id, candidate.name])),
@@ -321,6 +452,31 @@ export default function CommentInput({
     </div>
   )
 
+  const drawingToolButtons = ([
+    ['freehand', Pencil, '画笔'],
+    ['arrow', ArrowUpRight, '箭头'],
+    ['rectangle', Square, '矩形'],
+  ] as const).map(([tool, Icon, label]) => (
+    <button
+      key={tool}
+      type="button"
+      onClick={() => {
+        setActiveDrawingTool(tool)
+        onStartDrawing?.(tool)
+      }}
+      disabled={loading}
+      className={cn(
+        'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+        activeDrawingTool === tool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
+      )}
+      title={label}
+      aria-label={label}
+      aria-pressed={activeDrawingTool === tool}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  ))
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Allow Ctrl+Space and other Ctrl shortcuts to pass through to VideoPlayer
     if (e.ctrlKey) {
@@ -390,7 +546,7 @@ export default function CommentInput({
         <>
           {/* Pending attachment chips */}
           {pendingAttachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
+            <div className={cn('mb-2 flex flex-wrap gap-1.5', !isInlineReply && 'justify-center')}>
               {pendingAttachments.map((att) => (
                 <span
                   key={att.assetId}
@@ -413,12 +569,18 @@ export default function CommentInput({
           )}
 
           <div className="relative flex flex-col gap-1">
-            <div className="relative">
+            <div className="relative" ref={editorRef}>
               <Textarea
                 ref={textareaRef}
                 aria-label={isInlineReply ? t('replyPlaceholder') : t('typeMessage')}
                 value={newComment}
-                onChange={(e) => handleCommentChangeWithMentions(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                onChange={(e) => {
+                  if (isSimulating) stopSimulation()
+                  handleCommentChangeWithMentions(e.target.value, e.target.selectionStart ?? e.target.value.length)
+                }}
+                onBlur={() => {
+                  if (isSimulating) stopSimulation()
+                }}
                 onKeyDown={handleKeyDown}
                 aria-autocomplete="list"
                 aria-expanded={mentionOpen}
@@ -427,7 +589,8 @@ export default function CommentInput({
                   'resize-none rounded-md text-sm',
                   isInlineReply
                     ? 'h-[64px] min-h-[64px] pb-2'
-                    : cn('h-[75px] min-h-[75px]', sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2')
+                    : cn('h-[75px] min-h-[75px] text-center', sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2'),
+                  !isInlineReply && (isSimulating || newComment.length === 0) && 'caret-transparent',
                 )}
                 rows={2}
               />
@@ -462,40 +625,44 @@ export default function CommentInput({
                 </div>
               )}
               {newComment.length === 0 && (
-                <span aria-hidden="true" className="comment-placeholder-shimmer pointer-events-none absolute left-3 top-2 select-none text-sm">
-                  {isInlineReply ? t('replyPlaceholder') : t('typeMessage')}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'pointer-events-none absolute top-2 select-none transition-opacity duration-150 ease-[var(--ease-standard)]',
+                    isInlineReply ? 'left-3' : 'inset-x-0 flex justify-center',
+                    isSimulating ? 'opacity-0' : 'opacity-100',
+                  )}
+                >
+                  <span className="comment-placeholder-shimmer select-none text-sm">
+                    {isInlineReply ? t('replyPlaceholder') : t('typeMessage')}
+                  </span>
                 </span>
               )}
-              {onStartDrawing && (
+              {isSimulating && !isInlineReply && newComment.length === 0 && (
+                <span
+                  aria-hidden="true"
+                  data-simulated-typing
+                  className={cn(
+                    'pointer-events-none absolute inset-x-0 top-2 flex select-none justify-center text-sm text-foreground transition-opacity duration-200 ease-[var(--ease-standard)]',
+                    simulationVisible ? 'opacity-60' : 'opacity-0',
+                  )}
+                >
+                  <span className="relative inline-block max-w-full text-left">
+                    <span className="invisible whitespace-pre">{simulationSentence}</span>
+                    <span data-simulated-text className="absolute inset-y-0 left-0 whitespace-pre">
+                      {simulatedText}
+                      <span className="ml-0.5 inline-block animate-pulse">|</span>
+                    </span>
+                  </span>
+                </span>
+              )}
+              {onStartDrawing && !sendInsideComposer && (
                 <div
                   className="absolute bottom-1 left-2 flex h-[28px] items-center gap-0.5 bg-transparent"
                   role="toolbar"
                   aria-label="画面批注工具"
                 >
-                  {([
-                    ['freehand', Pencil, '画笔'],
-                    ['arrow', ArrowUpRight, '箭头'],
-                    ['rectangle', Square, '矩形'],
-                  ] as const).map(([tool, Icon, label]) => (
-                    <button
-                      key={tool}
-                      type="button"
-                      onClick={() => {
-                        setActiveDrawingTool(tool)
-                        onStartDrawing(tool)
-                      }}
-                      disabled={loading}
-                      className={cn(
-                        'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
-                        activeDrawingTool === tool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
-                      )}
-                      title={label}
-                      aria-label={label}
-                      aria-pressed={activeDrawingTool === tool}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                    </button>
-                  ))}
+                  {drawingToolButtons}
                 </div>
               )}
               <div
@@ -505,9 +672,19 @@ export default function CommentInput({
               {sendInsideComposer && (
                 // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
                 // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
-                <div className="pointer-events-none absolute bottom-1 left-[100px] right-2 flex h-[28px] items-center justify-end gap-1.5">
-                  {/* 表情和时间码钉在工具栏左端（紧跟画笔那三枚），右边那组仍靠右对齐 */}
-                  <div className="mr-auto flex min-w-0 items-center gap-1.5">
+                <div className="pointer-events-none absolute bottom-1 inset-x-2 flex h-[28px] items-center justify-end gap-1.5">
+                  {/* 画笔/箭头/矩形 + 表情和时间码算一组：宽输入框里整体居中，窄栏仍靠左。 */}
+                  <div
+                    className={cn(
+                      'pointer-events-auto flex min-w-0 items-center gap-1.5',
+                      isWideComposer ? 'absolute left-1/2 top-0 -translate-x-1/2' : 'mr-auto',
+                    )}
+                  >
+                    {onStartDrawing && (
+                      <div className="flex h-[28px] items-center gap-0.5" role="toolbar" aria-label="画面批注工具">
+                        {drawingToolButtons}
+                      </div>
+                    )}
                     {onVisibilityChange && !commentsDisabled && (
                       <button
                         ref={emojiBtnRef}
@@ -524,8 +701,18 @@ export default function CommentInput({
                         <Smile className="h-3.5 w-3.5" />
                       </button>
                     )}
-                    {sendInsideComposer && showTimecodePill && renderTimecodePill(true)}
+                    {sendInsideComposer && showTimecodePill && (
+                      <div className={cn('shrink-0', isWideComposer && 'absolute left-full top-0 ml-2')}>
+                        {renderTimecodePill(true)}
+                      </div>
+                    )}
                   </div>
+                  <p
+                    title={t('enterToSend')}
+                    className="hidden min-w-0 truncate text-right text-[10px] text-muted-foreground lg:block"
+                  >
+                    {t('enterToSend')}
+                  </p>
                   {showVisibilitySelector && onVisibilityChange && (
                     <button
                       ref={visBtnRef}
@@ -544,12 +731,6 @@ export default function CommentInput({
                       <ChevronDown className="h-3 w-3 text-muted-foreground" />
                     </button>
                   )}
-                  <p
-                    title={t('enterToSend')}
-                    className="hidden min-w-0 truncate text-right text-[10px] text-muted-foreground lg:block"
-                  >
-                    {t('enterToSend')}
-                  </p>
                   {showShortcutsButton && onShowShortcuts && (
                     <Button
                       type="button"
@@ -665,6 +846,9 @@ export default function CommentInput({
                 {!sendInsideComposer && showTimecodePill && renderTimecodePill(false)}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
+                {!sendInsideComposer && (
+                  <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
+                )}
                 {!sendInsideComposer && showVisibilitySelector && onVisibilityChange && (
                   <button
                     ref={visBtnRef}
@@ -682,9 +866,6 @@ export default function CommentInput({
                     <span>{visibility === 'INTERNAL' ? '内部' : '公共'}</span>
                     <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
-                )}
-                {!sendInsideComposer && (
-                  <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
                 )}
                 {!sendInsideComposer && showShortcutsButton && onShowShortcuts && (
                   <Button type="button" variant="outline" size="sm" onClick={onShowShortcuts} className="hidden h-[28px] px-2 text-[11px] lg:inline-flex">
