@@ -27,6 +27,7 @@ import { getAccessToken } from '@/lib/token-store'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
+import ReviewMoreMenu from '@/components/ReviewMoreMenu'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 
 interface SharePageClientProps {
@@ -1570,14 +1571,11 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               compact
               openSignal={loginOpenSignal}
               onOpenChange={handleLoginOpenChange}
-              menuExtra={
-                <>
-                  <div className="my-1 border-t border-border" />
-                  <LanguageToggle row />
-                  <ThemeToggle row />
-                </>
-              }
             />
+            <ReviewMoreMenu />
+            <span aria-hidden="true" className="h-[20px] w-px shrink-0 rounded-full bg-border" />
+            <LanguageToggle compact />
+            <ThemeToggle compact />
             <ShareViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
           </div>
         </div>
@@ -1659,6 +1657,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           allowAssetDownload: project.allowAssetDownload,
           clientCanApprove: project.clientCanApprove,
           settings: project.settings,
+          team: project.team,
         }}
         videos={readyVideos}
         videosByName={project.videosByName}

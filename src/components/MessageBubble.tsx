@@ -199,6 +199,7 @@ function MessageBubble({
                 size="sm"
                 isInternal={comment.isInternal ?? false}
                 title={effectiveAuthorName || undefined}
+                variant="comment"
                 className={authorDetails ? 'cursor-help' : undefined}
               />
               {authorDetails && (
@@ -351,7 +352,7 @@ function MessageBubble({
               <div key={reply.id} className="contents">
                 <div className="flex justify-center">
                     <div className="group relative">
-                      <InitialsAvatar name={replyEffectiveName} src={replyUser?.avatarUrl} size="sm" isInternal={reply.isInternal ?? false} title={replyEffectiveName || undefined} className={replyDetails ? 'cursor-help' : undefined} />
+                      <InitialsAvatar name={replyEffectiveName} src={replyUser?.avatarUrl} size="sm" isInternal={reply.isInternal ?? false} title={replyEffectiveName || undefined} variant="comment" className={replyDetails ? 'cursor-help' : undefined} />
                       {replyDetails && (
                         <span role="tooltip" className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 w-max max-w-48 -translate-y-1/2 rounded-md bg-popover px-2 py-1 text-[11px] font-medium text-popover-foreground opacity-0 shadow-md ring-1 ring-border/70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                           {replyDetails}

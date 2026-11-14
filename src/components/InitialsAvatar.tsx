@@ -35,11 +35,14 @@ export function InitialsAvatar(props: {
   className?: string
   title?: string
   isInternal?: boolean // True if this is an internal/studio user (sender), false for client (receiver)
+  /** comment: Frame.io-style bright green default avatar with a dark single initial. */
+  variant?: 'default' | 'comment'
 }) {
-  const { name, src, size = 'md', className, title, isInternal = false } = props
+  const { name, src, size = 'md', className, title, isInternal = false, variant = 'default' } = props
+  const isCommentAvatar = variant === 'comment'
 
   const color = getUserColor(name, isInternal)
-  const background = AVATAR_HEX[color.border] || '#4f46e5'
+  const background = isCommentAvatar ? '#03c95a' : (AVATAR_HEX[color.border] || '#4f46e5')
   const [imageFailed, setImageFailed] = useState(false)
 
   useEffect(() => {
@@ -51,7 +54,8 @@ export function InitialsAvatar(props: {
       title={title || (name || undefined)}
       className={cn(
         'flex items-center justify-center rounded-full font-semibold select-none',
-        'overflow-hidden text-white',
+        'overflow-hidden',
+        isCommentAvatar ? 'text-[#181b29]' : 'text-white',
         sizeClasses(size),
         className
       )}

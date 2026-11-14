@@ -3,8 +3,10 @@
 import Image from 'next/image'
 import { useRef, useEffect, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { CheckCircle2, ChevronLeft, ChevronRight, Film, ArrowLeft, GitCompareArrows, MessageSquare, Sparkles } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, FileDown, Film, ArrowLeft, GitCompareArrows, MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { InitialsAvatar } from '@/components/InitialsAvatar'
+import ReviewMoreMenu from '@/components/ReviewMoreMenu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -27,6 +29,9 @@ interface ThumbnailReelProps {
   showLanguageToggle?: boolean
   showThemeToggle?: boolean
   showComparisonAction?: boolean
+  /** 项目所属团队，和分享网格顶栏保持一致；窄屏只显示头像。 */
+  teamName?: string
+  teamAvatarUrl?: string | null
   // Optional slot rendered after ThemeToggle (e.g. tutorial help button)
   trailingAction?: React.ReactNode
   // Optional action rendered between version comparison and language controls
@@ -50,6 +55,8 @@ export default function ThumbnailReel({
   showLanguageToggle = true,
   showThemeToggle = true,
   showComparisonAction = true,
+  teamName = '',
+  teamAvatarUrl = null,
   trailingAction,
   beforeToolbarAction,
   leadingAction,
@@ -57,6 +64,7 @@ export default function ThumbnailReel({
 }: ThumbnailReelProps) {
   const tShare = useTranslations('share')
   const tVideos = useTranslations('videos')
+  const tComments = useTranslations('comments')
   const tc = useTranslations('common')
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   // Start collapsed on first load
@@ -192,6 +200,14 @@ export default function ThumbnailReel({
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
+            {teamName && (
+              <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                <InitialsAvatar name={teamName} src={teamAvatarUrl} size="sm" isInternal />
+                <span className="hidden max-w-[96px] truncate text-sm font-medium text-foreground lg:inline" title={teamName}>
+                  {teamName}
+                </span>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleToggleExpanded}
@@ -250,13 +266,32 @@ export default function ThumbnailReel({
             )}
 
             {beforeToolbarAction}
+            {trailingAction}
+            <ReviewMoreMenu />
+            <span aria-hidden="true" className="h-[20px] w-px shrink-0 rounded-full bg-border" />
 
             {/* Language and theme toggles */}
-            {showLanguageToggle && <LanguageToggle className="h-8 shadow-none" />}
-            {showThemeToggle && <ThemeToggle />}
-            {trailingAction}
+            {showLanguageToggle && <LanguageToggle compact />}
+            {showThemeToggle && <ThemeToggle compact />}
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-disabled="true"
+                    aria-label={tComments('exportComments')}
+                    onClick={(event) => event.preventDefault()}
+                    className="inline-flex h-[28px] w-[28px] shrink-0 cursor-default items-center justify-center rounded-[6px] text-muted-foreground opacity-60 outline-none transition-colors hover:bg-transparent hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <FileDown className="h-[20px] w-[20px]" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{tComments('exportComingSoon')}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
             {showCommentToggle && onToggleCommentPanel && (
-              <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[8px] bg-secondary">
+              <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[8px]">
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -267,14 +302,9 @@ export default function ThumbnailReel({
                         onClick={onToggleCommentPanel}
                         aria-label={isCommentPanelVisible ? tShare('hideAssetInfo') : tShare('showAssetInfo')}
                         aria-pressed={isCommentPanelVisible}
-                        className={cn(
-                          'h-[28px] w-[28px] shrink-0 rounded-[6px] bg-transparent hover:bg-accent',
-                          isCommentPanelVisible
-                            ? 'text-primary hover:text-primary'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
+                        className="h-[28px] w-[28px] shrink-0 rounded-[6px] bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
                       >
-                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ width: 22, height: 22 }}>
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ width: 20, height: 20 }}>
                           <rect x="3.75" y="3.75" width="16.5" height="16.5" rx="2.75" stroke="currentColor" strokeWidth="1.75" />
                           <rect x="15" y="6.25" width="5" height="11.5" rx="1" fill="currentColor" />
                         </svg>

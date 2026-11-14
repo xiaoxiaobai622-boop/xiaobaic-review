@@ -1,19 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Check, Share2 } from 'lucide-react'
+import { Check, GitCompareArrows, Share2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import ThumbnailReel from '@/components/ThumbnailReel'
 import VideoPlayer from '@/components/VideoPlayer'
 import CommentSection from '@/components/CommentSection'
 import ReviewInfoPanel from '@/components/review/ReviewInfoPanel'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
-import LanguageToggle from '@/components/LanguageToggle'
-import ThemeToggle from '@/components/ThemeToggle'
 import VideoReviewStatusSelect from '@/components/VideoReviewStatusSelect'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ReviewCapabilities } from '@/lib/review-capabilities'
+import { cn } from '@/lib/utils'
 import { getLatestVideo } from '@/lib/video-comment-counts'
 
 /**
@@ -33,6 +33,7 @@ export interface ReviewWorkspaceProps {
     clientCanApprove?: boolean
     allowAssetDownload?: boolean
     settings?: { maxCommentAttachments?: number } | null
+    team?: { id?: string | null; name?: string | null; avatarUrl?: string | null } | null
   }
   videos: any[]
   videosByName: Record<string, any[]>
@@ -119,6 +120,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
     usePreviewForApprovedPlayback = false, timestampDisplayMode,
   } = props
   const tu = useTranslations('videoUi')
+  const tv = useTranslations('videos')
   const t = useTranslations('share')
 
   // A catalog refresh can add a same-name version above the one being watched.
@@ -189,19 +191,13 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const nextVideoName = activeIndex >= 0 && activeIndex < playableNames.length - 1 ? playableNames[activeIndex + 1] : null
   const selectedVideo = pinnedVideo ?? latestByName(videos, activeVideoName)
   const showCommentPanel = commentPanelAvailable && !hideComments
-  const canCompare = capabilities.canCompareVersions && playableNames.length > 1
-  const menuExtra = (
+  const canCompare = capabilities.canCompareVersions && videos.length > 1
+  const menuExtra = slots?.menuExtra ? (
     <>
-      {slots?.menuExtra && (
-        <>
-          {slots.menuExtra}
-          <div className="my-1 border-t border-border" />
-        </>
-      )}
-      <LanguageToggle row />
-      <ThemeToggle row />
+      {slots.menuExtra}
+      <div className="my-1 border-t border-border" />
     </>
-  )
+  ) : undefined
 
   return (
     <div data-review-surface data-review-shell className="min-h-screen sm:fixed sm:inset-0 bg-background flex flex-col sm:overflow-hidden">
@@ -212,9 +208,9 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
         onVideoSelect={actions.onVideoSelect}
         onBackToGrid={actions.onBackToGrid}
         showBackButton={Boolean(actions.onBackToGrid)}
-        showComparisonAction={canCompare}
-        showLanguageToggle={false}
-        showThemeToggle={false}
+        showComparisonAction={false}
+        teamName={project.team?.name || ''}
+        teamAvatarUrl={project.team?.avatarUrl || null}
         showCommentToggle={commentPanelAvailable && Boolean(actions.onToggleComments)}
         isCommentPanelVisible={showCommentPanel}
         onToggleCommentPanel={actions.onToggleComments}
@@ -229,6 +225,37 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 onUpdated={actions.onRefresh}
               />
             )}
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-disabled={!canCompare}
+                    aria-label={tv('compare')}
+                    tabIndex={canCompare ? 0 : -1}
+                    onClick={(event) => {
+                      if (!canCompare) {
+                        event.preventDefault()
+                        return
+                      }
+                      window.dispatchEvent(new CustomEvent('openReviewComparison'))
+                    }}
+                    className={cn(
+                      'h-[28px] shrink-0 gap-1.5 rounded-[8px] px-2 text-[13px] shadow-none sm:px-3',
+                      !canCompare && 'cursor-not-allowed border-border/60 text-muted-foreground opacity-60 hover:bg-transparent hover:text-muted-foreground'
+                    )}
+                  >
+                    <GitCompareArrows className="h-4 w-4" />
+                    <span className="hidden sm:inline">{tv('compare')}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {canCompare ? tv('compare') : tv('noComparableVersions')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             {capabilities.canShareLink && actions.onShareLink && (
               <Button type="button" variant="default" size="sm" className="h-[28px] shrink-0 gap-2 rounded-[8px] px-3 text-[13px] shadow-none sm:px-3" onClick={() => void actions.onShareLink?.()}>
                 {actions.shareCopied ? <Check className="mr-1.5 h-4 w-4" /> : <Share2 className="mr-1.5 h-4 w-4" />}
@@ -251,7 +278,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
         }
       />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:flex-row sm:gap-0 sm:p-0">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2 sm:flex-row sm:gap-4 sm:py-0 sm:pr-0 sm:pl-4">
         {videos.length === 0 ? (
           slots?.emptyState ?? (
             <div className="flex-1 flex items-center justify-center p-4">
@@ -317,11 +344,11 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 inert={!showCommentPanel ? true : undefined}
                 className={`max-h-[calc(100vh-56px)] overflow-hidden rounded-[8px] bg-card sm:h-full sm:max-h-full sm:flex-none ${
                   showCommentPanel
-                    ? 'flex w-full opacity-100 sm:w-[320px] lg:w-[360px]'
+                    ? 'flex w-full opacity-100 sm:w-[350px] lg:w-[390px]'
                     : 'hidden opacity-0 sm:flex sm:w-0'
                 }`}
               >
-                <div className="flex h-full w-full min-w-0 flex-col sm:w-[320px] sm:min-w-[320px] lg:w-[360px] lg:min-w-[360px]">
+                <div className="flex h-full w-full min-w-0 flex-col sm:w-[350px] sm:min-w-[350px] lg:w-[390px] lg:min-w-[390px]">
                   <div aria-hidden="true" className="hidden h-[2px] shrink-0 bg-[hsl(var(--review-gutter))] sm:block" />
                   <CommentSection
                     projectId={project.id}

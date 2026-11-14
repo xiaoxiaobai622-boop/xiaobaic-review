@@ -16,6 +16,7 @@ import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
+import ReviewMoreMenu from '@/components/ReviewMoreMenu'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import ReviewWorkspace from '@/components/review/ReviewWorkspace'
 import { getReviewCapabilities, viewerFromAdminUser } from '@/lib/review-capabilities'
@@ -1038,16 +1039,11 @@ export default function AdminSharePage() {
           {/* Right: view toggle + theme */}
           <div className="relative z-10 ml-auto flex shrink-0 items-center gap-2">
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
-            <ReviewLoginActions
-              compact
-              menuExtra={
-                <>
-                  <div className="my-1 border-t border-border" />
-                  <LanguageToggle row />
-                  <ThemeToggle row />
-                </>
-              }
-            />
+            <ReviewLoginActions compact />
+            <ReviewMoreMenu />
+            <span aria-hidden="true" className="h-[20px] w-px shrink-0 rounded-full bg-border" />
+            <LanguageToggle compact />
+            <ThemeToggle compact />
           </div>
         </div>
 
@@ -1098,6 +1094,7 @@ export default function AdminSharePage() {
         allowAssetDownload: project.allowAssetDownload,
         clientCanApprove: project.clientCanApprove,
         settings: project.settings,
+        team: project.team,
       }}
       videos={readyVideos}
       videosByName={project.videosByName}
