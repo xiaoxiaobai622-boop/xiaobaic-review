@@ -1481,9 +1481,6 @@ export default function SharePageClient({ token }: SharePageClientProps) {
                 </Button>
               </>
             )}
-            <div className="border-t border-border pt-4">
-              <ReviewLoginActions onIdentityChange={handleWechatIdentity} openSignal={loginOpenSignal} onOpenChange={handleLoginOpenChange} />
-            </div>
             </CardContent>
           </Card>
         </div>

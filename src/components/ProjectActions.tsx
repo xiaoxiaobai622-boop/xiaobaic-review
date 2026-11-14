@@ -3,17 +3,16 @@
 import OverlayMenu from '@/components/OverlayMenu'
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 
-import { useState, useEffect, useRef, type ElementType, type ReactNode } from 'react'
+import { useState, useRef, type ElementType, type ReactNode } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Project } from '@prisma/client'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, Calendar, Copy, Check, ChevronsUpDown, FileText, Users, Share2, UserPlus } from 'lucide-react'
+import { Trash2, Link2, Archive, ArchiveRestore, RotateCcw, CheckCircle, BarChart3, Calendar, Copy, ChevronsUpDown, FileText, Users, Share2, UserPlus } from 'lucide-react'
 import type { ProjectSettingsSection } from './ProjectSettingsPanel'
 import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
 import { apiPost, apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
-import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface ProjectCapabilities {
   canManageSettings: boolean
@@ -53,6 +52,8 @@ interface ProjectActionsProps {
   onShareReview: () => void
   /** 还没有可复制的收录链接时，这枚按钮开的也是页面那枚创建窗。 */
   onCreateCollectLink: () => void
+  /** 有现成收录链接时，开创建分享弹窗的「复制」页签由页面接管。 */
+  onCopyCollectLink: () => void
   /** 这排菜单就是项目设置那三节：按下哪一节，由页面浮起设置面板并落在这一节。 */
   onOpenSettings: (section: ProjectSettingsSection) => void
   /** 第四项开的是成员窗：同样是页面那一层浮栏，不是第二条路由。 */
@@ -64,7 +65,7 @@ interface ProjectActionsProps {
   canDeleteProject: boolean
 }
 
-export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onOpenSettings, onOpenMembers, shares, capabilities, canArchiveProject, canDeleteProject }: ProjectActionsProps) {
+export default function ProjectActions({ project, videos, onRefresh, bare = false, onShareReview, onCreateCollectLink, onCopyCollectLink, onOpenSettings, onOpenMembers, shares, capabilities, canArchiveProject, canDeleteProject }: ProjectActionsProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
   const locale = useLocale()
@@ -81,14 +82,9 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
-  // 「复制项目链接」是读操作：拿该项目最新一条有效收录短链写进剪贴板，
+  // 有现成收录链接就开弹窗的「复制」页签让人挑；没有才退到创建窗。
   // 已取消与已过期的都不算——复制出去只会让人拿到打不开的地址。
   const [collectLinkBusy, setCollectLinkBusy] = useState(false)
-  const [collectLinkCopied, setCollectLinkCopied] = useState(false)
-  const collectCopiedTimer = useRef<number | null>(null)
-  useEffect(() => () => {
-    if (collectCopiedTimer.current !== null) window.clearTimeout(collectCopiedTimer.current)
-  }, [])
 
   const handleCopyCollectLink = async () => {
     if (collectLinkBusy) return
@@ -107,13 +103,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
         onCreateCollectLink()
         return
       }
-      if (!await copyTextToClipboard(collect.url)) {
-        appAlert(tc('errorTryAgain'))
-        return
-      }
-      setCollectLinkCopied(true)
-      if (collectCopiedTimer.current !== null) window.clearTimeout(collectCopiedTimer.current)
-      collectCopiedTimer.current = window.setTimeout(() => setCollectLinkCopied(false), 1500)
+      onCopyCollectLink()
     } catch {
       appAlert(tc('errorTryAgain'))
     } finally {
@@ -432,10 +422,8 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
                 onClick={() => void handleCopyCollectLink()}
                 className={ACTION_ROW}
               >
-                {collectLinkCopied
-                  ? <Check className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
-                  : <Copy className="h-4 w-4 shrink-0" strokeWidth={2.5} />}
-                {collectLinkCopied ? tc('copied') : t('copyCollectLink')}
+                <Copy className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                {t('copyCollectLink')}
               </button>
             )}
 

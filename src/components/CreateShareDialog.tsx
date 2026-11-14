@@ -22,6 +22,8 @@ interface CreateShareDialogProps {
   open: boolean
   preset: SharePreset
   target: ShareTarget | null
+  /** 打开时落在哪个页签：侧栏「复制收录链接」直接进复制列表。 */
+  initialMode?: 'create' | 'copy'
   onOpenChange: (open: boolean) => void
   onCreated?: () => void
 }
@@ -39,7 +41,7 @@ function ToggleRow({ checked, onChange, icon: Icon, title, description }: { chec
   </div>
 }
 
-export default function CreateShareDialog({ projectId, open, preset, target, onOpenChange, onCreated }: CreateShareDialogProps) {
+export default function CreateShareDialog({ projectId, open, preset, target, initialMode = 'create', onOpenChange, onCreated }: CreateShareDialogProps) {
   const [name, setName] = useState('')
   const [copied, setCopied] = useState(false)
   const [versionScope, setVersionScope] = useState('all')
@@ -80,8 +82,8 @@ export default function CreateShareDialog({ projectId, open, preset, target, onO
     setError('')
     setCreated(null)
     setCopiedId(null)
-    setMode('create')
-  }, [open, preset, target])
+    setMode(initialMode)
+  }, [open, preset, target, initialMode])
 
   useEffect(() => {
     if (!open || !target) { setExistingLinks([]); return }

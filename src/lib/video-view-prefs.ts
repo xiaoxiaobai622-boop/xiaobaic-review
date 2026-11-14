@@ -27,8 +27,8 @@ export const DEFAULT_VIDEO_DISPLAY: VideoDisplayPrefs = {
 }
 
 export const DEFAULT_VIDEO_SORT: VideoSortPrefs = {
-  field: 'updated',
-  dir: 'desc',
+  field: 'name',
+  dir: 'asc',
 }
 
 export const VIDEO_GRID_TEMPLATE: Record<VideoCardSize, string> = {

@@ -54,7 +54,6 @@ import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
 export const dynamic = 'force-dynamic'
 
 const VIDEO_VIEW_MODE_KEY = 'vitransfer-admin-video-view-mode'
-const WORKSPACE_VIEW_KEY = 'vitransfer-admin-project-workspace'
 const SIDEBAR_COLLAPSED_KEY = 'vitransfer-admin-project-sidebar-collapsed'
 const INFO_AREA_COLLAPSED_KEY = 'vitransfer-admin-project-info-collapsed'
 const REVIEW_PANE_KEY = 'vitransfer-admin-project-review-pane'
@@ -497,7 +496,7 @@ export default function ProjectPage() {
     else if (event.key === 'End') next = items.length - 1
     items[next]?.focus()
   }
-  const [shareDialog, setShareDialog] = useState<{ preset: SharePreset; target: ShareTarget } | null>(null)
+  const [shareDialog, setShareDialog] = useState<{ preset: SharePreset; target: ShareTarget; mode?: 'create' | 'copy' } | null>(null)
   const [copiedFolderId, setCopiedFolderId] = useState<string | null>(null)
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null | undefined>(undefined)
   const [folderCoverUrls, setFolderCoverUrls] = useState<Record<string, string[]>>({})
@@ -519,20 +518,18 @@ export default function ProjectPage() {
     return () => window.removeEventListener('click', closeMenu)
   }, [id])
 
-  // Restore workspace preferences across projects.
+  // Restore viewer preferences across projects. The workspace itself is not
+  // restored: opening a project from the center always starts on videos.
   useEffect(() => {
     const requestedWorkspace = searchParams?.get('workspace')
     if (requestedWorkspace === 'videos' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads' || requestedWorkspace === 'shares' || requestedWorkspace === 'trash') {
       setActiveWorkspace(requestedWorkspace)
       return
     }
+    setActiveWorkspace('videos')
     try {
       const savedVideoView = localStorage.getItem(VIDEO_VIEW_MODE_KEY)
       if (savedVideoView === 'list' || savedVideoView === 'grid') setVideoViewMode(savedVideoView)
-      const savedWorkspace = localStorage.getItem(WORKSPACE_VIEW_KEY)
-      if (savedWorkspace === 'videos' || savedWorkspace === 'photos' || savedWorkspace === 'uploads' || savedWorkspace === 'shares' || savedWorkspace === 'trash') {
-        setActiveWorkspace(savedWorkspace)
-      }
       setSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
       setInfoAreaCollapsed(localStorage.getItem(INFO_AREA_COLLAPSED_KEY) === '1')
       setReviewPaneVisible(localStorage.getItem(REVIEW_PANE_KEY) === '1')
@@ -581,7 +578,6 @@ export default function ProjectPage() {
     setActiveWorkspace(workspace)
     if (workspace === 'trash') setRecycleBinRefreshKey((value) => value + 1)
     if (workspace !== 'videos') setSelectedVideoGroupName(null)
-    try { localStorage.setItem(WORKSPACE_VIEW_KEY, workspace) } catch {}
     const nextParams = new URLSearchParams(searchParams?.toString() || '')
     nextParams.set('workspace', workspace)
     router.replace(`/studio/projects/${id}?${nextParams.toString()}`, { scroll: false })
@@ -736,7 +732,6 @@ export default function ProjectPage() {
       const detail = (event as CustomEvent<{ name?: string; folderId?: string | null }>).detail
       if (!detail?.name) return
       setActiveWorkspace('videos')
-      try { localStorage.setItem(WORKSPACE_VIEW_KEY, 'videos') } catch {}
       const params = new URLSearchParams(window.location.search)
       params.set('workspace', 'videos')
       router.replace(`/studio/projects/${id}?${params.toString()}`, { scroll: false })
@@ -1182,10 +1177,10 @@ export default function ProjectPage() {
     window.open(`/studio/projects/${id}?workspace=videos&folder=${encodeURIComponent(folderId)}`, '_blank', 'noopener,noreferrer')
   }
 
-  const openObjectShare = (preset: SharePreset, target: ShareTarget) => {
+  const openObjectShare = (preset: SharePreset, target: ShareTarget, mode: 'create' | 'copy' = 'create') => {
     setFolderMenu(null)
     setFolderShareMenuId(null)
-    setShareDialog({ preset, target })
+    setShareDialog({ preset, target, mode })
   }
 
   // 项目信息里那条「分享审阅链接」开的是同一枚弹窗，只是范围整条换成项目本身
@@ -1195,6 +1190,9 @@ export default function ProjectPage() {
   // 「复制项目链接」在没有可复制的链接时退到创建流，范围与分享记录面板那枚按钮一字不差
   const createCollectLink = () =>
     openObjectShare('COLLECT', { scopeType: 'PROJECT', scopeId: '', name: project.title })
+  // 有现成收录链接时开同一枚弹窗，直接落在「复制收录链接」页签
+  const copyCollectLink = () =>
+    openObjectShare('COLLECT', { scopeType: 'PROJECT', scopeId: '', name: project.title }, 'copy')
 
   const downloadFolderOriginals = async (folderId: string) => {
     setFolderMenu(null)
@@ -1720,7 +1718,7 @@ export default function ProjectPage() {
               <section className="scrollbar-hidden hidden rounded-[8px] bg-popover px-2 lg:mt-[2px] lg:block lg:min-h-0 lg:overflow-y-auto" aria-label={selectedVideoGroup ? tv('versionInfo') : t('projectInfoSection')}>
                 {selectedVideoGroup ? renderVersionInspector(true) : (
                   <div id="project-info-panel" className="px-3 pb-3 pt-3">
-                    <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} capabilities={capabilities} canArchiveProject={canArchiveProject} canDeleteProject={canDeleteProject} />
+                    <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} bare onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onCopyCollectLink={copyCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} capabilities={capabilities} canArchiveProject={canArchiveProject} canDeleteProject={canDeleteProject} />
                   </div>
                 )}
               </section>
@@ -2068,7 +2066,7 @@ export default function ProjectPage() {
           {/* 宽屏不再占右列：版本信息已搬进左侧项目侧栏的下半区，这块只服务窄屏。 */}
           <aside className="scrollbar-hidden border-t border-border p-3 lg:hidden">
             {selectedVideoGroup ? renderVersionInspector(false) : (
-              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} capabilities={capabilities} canArchiveProject={canArchiveProject} canDeleteProject={canDeleteProject} />
+              <ProjectActions project={project} videos={workspaceVideos} onRefresh={fetchProject} onShareReview={shareWholeProjectReview} onCreateCollectLink={createCollectLink} onCopyCollectLink={copyCollectLink} onOpenSettings={openSettings} onOpenMembers={openMembers} shares={{ count: sharesCount || 0, active: activeWorkspace === 'shares', onOpen: () => changeWorkspace('shares') }} capabilities={capabilities} canArchiveProject={canArchiveProject} canDeleteProject={canDeleteProject} />
             )}
           </aside>
         </div>
@@ -2135,7 +2133,7 @@ export default function ProjectPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <CreateShareDialog projectId={project.id} open={Boolean(shareDialog)} preset={shareDialog?.preset || 'REVIEW'} target={shareDialog?.target || null} onOpenChange={(open) => { if (!open) setShareDialog(null) }} onCreated={() => window.dispatchEvent(new Event('shareLinksChanged'))} />
+      <CreateShareDialog projectId={project.id} open={Boolean(shareDialog)} preset={shareDialog?.preset || 'REVIEW'} target={shareDialog?.target || null} initialMode={shareDialog?.mode} onOpenChange={(open) => { if (!open) setShareDialog(null) }} onCreated={() => window.dispatchEvent(new Event('shareLinksChanged'))} />
       {overlay?.kind === 'settings' && (
         <ProjectSettingsPanel
           projectId={project.id}
