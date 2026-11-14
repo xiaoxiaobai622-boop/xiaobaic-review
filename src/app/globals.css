@@ -220,8 +220,9 @@
     --popover: 0 0% 100%;
     --popover-foreground: 128 24% 20%;
 
-    --primary: 128 27% 40%; /* #4a8252 — reference green */
-    --primary-foreground: 0 0% 0%;
+    /* 薄荷 · 调色面板导出 2026-11-14 · 2 处改动 */
+    --primary: 163 36.3% 48.6%; /* #4fa98f */
+    --primary-foreground: 0 0% 100%; /* #ffffff */
     --primary-visible: 125 34% 93%; /* #e7f3e8 */
 
     --secondary: 100 18% 88%; /* #dfe6db — grey-green middle: chrome, hover, inset rows */
@@ -316,12 +317,23 @@
     --review-tint-layer: 1; /* 没有消费者，只是让这层在 DOM 里量得到、在仓库里 grep 得到 */
     --review-canvas: var(--background);
     --review-gutter: var(--background);
+    /* 播放器画面区（含竖屏视频左右留白）的独立底色。
+       调色面板只认预设 token，所以借它已有的 --secondary-foreground 作为播放器底色开关；
+       审片页内没有其它组件消费这枚 token（secondary 按钮只在 lab 里出现），
+       调色面板可在「审片」页单独调它。 */
+    /* 审片 · 调色面板导出 2026-11-14 · 只改浅色 */
+    --secondary-foreground: 0 0% 100%; /* #ffffff */
+    --review-player-bg: var(--secondary-foreground);
+    /* 播放器播控条底色：借面板可调的 --secondary，默认保持浅色卡片白。 */
+    --secondary: 0 0% 100%; /* #ffffff */
+    --review-controls-bg: var(--secondary);
     /* 调色面板导出 2026-11-13：审片表面卡面纯白。 */
     --card: 0 0% 100%; /* #ffffff */
   }
 
   .dark [data-review-surface] {
-    --background: 230 25% 9.4%; /* #12141e */
+    /* 审片 · 调色面板导出 2026-11-14 · 1 处改动 */
+    --background: 0 0% 0%; /* #000000 */
     --review-chrome: 230 25% 9.41176%;
     --review-canvas: 0 0% 0%;
     --review-gutter: 0 0% 0%;
@@ -334,10 +346,15 @@
     --popover: 228.57143 21.64948% 19.01961%;
     --popover-foreground: var(--foreground);
 
-    --secondary: 227.36842 23.45679% 15.88235%;
-    --secondary-foreground: var(--foreground);
+    /* 播放器播控条底色：也走面板可调的 --secondary；只改深色这一处。 */
+    /* 审片 · 调色面板导出 2026-11-14 · 1 处改动 */
+    --secondary: 228 24.6% 12%; /* #171a26 */
+    /* 深色播放器底色也走面板可调的 secondary-foreground；只改深色这一处。 */
+    /* 审片 · 调色面板导出 2026-11-14 · 1 处改动 */
+    --secondary-foreground: 228 24.6% 12%; /* #171a26 */
 
-    --muted: var(--secondary);
+    /* muted 原本就是 secondary 的旧值，固定下来，避免跟着播控条一起变。 */
+    --muted: 227.36842 23.45679% 15.88235%;
     --muted-foreground: 231 9.43396% 58.43137%;
 
     --accent: var(--popover);
@@ -348,11 +365,20 @@
     --primary-visible: 243 22% 24%;
   }
 
+  /* 审片 · 调色面板导出 2026-11-14 · 1 处改动 · 只改薄荷 */
+  [data-theme='mint'] [data-review-surface] {
+    /* 审片 · 调色面板导出 2026-11-14 · 1 处改动 */
+    --background: 233 26.7% 94.1%; /* #ecedf4 */
+    --popover: 0 0% 100%; /* #ffffff */
+    --primary-foreground: 0 0% 0%; /* #000000 */
+    --muted: 155 36.2% 90.8%; /* #dff0e9 */
+  }
+
   .dark [data-review-surface] :is(button.border:where(:not([aria-pressed])), select.border, input.border, textarea.border),
   .dark [data-review-surface] [data-comment-section] div.inline-flex.border {
     --tw-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.04);
     border-color: transparent;
-    background-color: hsl(var(--secondary));
+    background-color: hsl(var(--muted));
     box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
   }
 
@@ -399,6 +425,45 @@
     box-shadow: 0 1px 16px rgb(0 0 0 / 0.12), 0 8px 12px rgb(0 0 0 / 0.16), 0 4px 8px rgb(0 0 0 / 0.2);
     --muted-foreground: 232 12.2% 64.7%;
   }
+}
+
+/* 薄荷 · 调色面板导出 2026-11-14：审片底部输入框底色单独改白，其它不动。
+   放在 layer 外，才能压过 textarea 上的 bg-background 工具类。 */
+:root[data-theme='mint'] [data-review-surface] [data-comment-composer] textarea {
+  background-color: hsl(0 0% 100%);
+}
+
+/* 薄荷审片：分享 / 公共 / 发送三枚按钮对齐“版本对比”的 outline 样式。 */
+:root[data-theme='mint'] [data-review-surface] [data-review-mint-outline] {
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background-color: hsl(var(--card));
+  color: hsl(var(--foreground));
+  box-shadow: none;
+}
+
+:root[data-theme='mint'] [data-review-surface] [data-review-mint-outline]:hover {
+  border-color: hsl(var(--primary) / 0.5);
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  opacity: 1;
+}
+
+:root[data-theme='mint'] [data-review-surface] [data-review-mint-outline]:active {
+  border-color: hsl(var(--primary) / 0.6);
+  background-color: hsl(var(--accent));
+}
+
+/* 薄荷审片：评论完成态的卡片底色用粉色，其它主题仍是 success 绿。 */
+:root[data-theme='mint'] [data-review-surface] [data-resolve-fill] {
+  background-color: hsl(330 81% 60% / 0.1); /* #EC4899 @ 10% */
+}
+
+/* 薄荷审片：评论完成勾选用粉色，其它主题仍是 success 绿。 */
+:root[data-theme='mint'] [data-review-surface] [data-comment-resolve-check][data-resolved='true'] {
+  border-color: hsl(330 81% 60%); /* #EC4899 */
+  background-color: hsl(330 81% 60%);
+  color: #fff;
 }
 
 /* 右侧批注栏：宽度收缩由外壳负责，内层保持固定宽度，内容跟着整列滑出而不是逐帧重排。 */
@@ -456,7 +521,40 @@
     opacity 180ms var(--ease-standard);
 }
 
+/* 左侧视频切换栏与播放器让位使用同一段节奏，进出都带过渡。 */
+[data-video-menu-panel] {
+  transition:
+    opacity 300ms var(--ease-standard),
+    transform 320ms cubic-bezier(.4, 0, .2, 1),
+    visibility 0s linear;
+}
+
+[data-video-menu-panel][data-open='true'] {
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+}
+
+[data-video-menu-panel][data-open='false'] {
+  opacity: 0;
+  transform: translateX(-16px);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 300ms cubic-bezier(.4, 0, .2, 1),
+    transform 320ms cubic-bezier(.4, 0, .2, 1),
+    visibility 0s linear 320ms;
+}
+
+@media (min-width: 1024px) {
+  [data-review-player-column] {
+    transition: padding-left 320ms cubic-bezier(.4, 0, .2, 1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  [data-review-player-column] { transition: none }
+  [data-video-menu-panel] { transition: none }
   [data-comment-panel],
   [data-comment-composer] { transition: none }
   [data-panel-tab-thumb] { transition: none }

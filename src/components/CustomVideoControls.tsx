@@ -387,6 +387,7 @@ const TimelineMarkers = memo(function TimelineMarkers({
               <InitialsAvatar
                 name={primaryMarker.authorName}
                 size="xs"
+                variant="comment"
                 isInternal={primaryMarker.isInternal}
                 className="pointer-events-none h-5 w-5 min-h-5 min-w-5 max-h-5 max-w-5 text-[9px]"
               />
@@ -418,6 +419,7 @@ const TimelineMarkers = memo(function TimelineMarkers({
                       <InitialsAvatar
                         name={marker.authorName}
                         size="xs"
+                        variant="comment"
                         isInternal={marker.isInternal}
                       />
                       <div className="flex-1 min-w-0">

@@ -906,12 +906,33 @@ export default function AdminSharePage() {
 
   const projectUrl = `/studio/projects/${id}`
 
-  const copyShareLink = useCallback(async () => {
-    const copied = await copyTextToClipboard(window.location.href)
-    if (!copied) return
-    setShareCopied(true)
-    window.setTimeout(() => setShareCopied(false), 1600)
-  }, [])
+  const copyShareLink = useCallback(async (video?: any) => {
+    if (!video?.id) return
+    try {
+      const response = await apiFetch(`/api/projects/${id}/share-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'REVIEW',
+          scopeType: 'VIDEO',
+          scopeId: video.id,
+          name: video.name ? `${video.name} · 审阅分享` : '审阅分享',
+          permissions: ['view', 'comment'],
+          authMode: 'NONE',
+        }),
+      })
+      if (!response.ok) return
+      const data = await response.json().catch(() => null)
+      const url = data?.shareLink?.url
+      if (!url) return
+      const copied = await copyTextToClipboard(url)
+      if (!copied) return
+      setShareCopied(true)
+      window.setTimeout(() => setShareCopied(false), 1600)
+    } catch {
+      // 创建单视频分享失败时不误报「已复制」。
+    }
+  }, [id])
 
   const handleReturnToSource = useCallback(() => {
     if (window.history.length > 1) {

@@ -70,7 +70,7 @@ export interface ReviewWorkspaceProps {
     onStreamAuthExpired?: (videoId: string) => Promise<boolean>
     onApprove?: () => void | Promise<void>
     onRefresh?: () => void | Promise<void>
-    onShareLink?: () => void | Promise<void>
+    onShareLink?: (video?: any) => void | Promise<void>
     shareCopied?: boolean
     onDownloadToken?: (videoId: string) => Promise<string | null>
     onCommentFocus?: (commentId: string) => void
@@ -129,6 +129,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // this, automaticVideoIndex=0 would silently switch versions (pause + 0).
   const [knownVideos, setKnownVideos] = useState<Map<string, any>>(() => new Map())
   const [pinnedVideoId, setPinnedVideoId] = useState<string | null>(null)
+  const [videoMenuOpen, setVideoMenuOpen] = useState(false)
   const stableVideos = useMemo(() => {
     return videos.map((video: any) => {
       if (hasPlaybackUrl(video)) return video
@@ -211,6 +212,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
         showComparisonAction={false}
         teamName={project.team?.name || ''}
         teamAvatarUrl={project.team?.avatarUrl || null}
+        onExpandedChange={setVideoMenuOpen}
         showCommentToggle={commentPanelAvailable && Boolean(actions.onToggleComments)}
         isCommentPanelVisible={showCommentPanel}
         onToggleCommentPanel={actions.onToggleComments}
@@ -256,9 +258,10 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            <div id="review-toolbar-download" className="flex shrink-0 items-center empty:hidden" />
             {capabilities.canShareLink && actions.onShareLink && (
-              <Button type="button" variant="default" size="sm" className="h-[28px] shrink-0 gap-2 rounded-[8px] px-3 text-[13px] shadow-none sm:px-3" onClick={() => void actions.onShareLink?.()}>
-                {actions.shareCopied ? <Check className="mr-1.5 h-4 w-4" /> : <Share2 className="mr-1.5 h-4 w-4" />}
+              <Button data-review-mint-outline type="button" variant="default" size="sm" className="h-[28px] shrink-0 gap-1.5 rounded-[8px] border border-transparent px-2.5 text-[13px] shadow-none" onClick={() => void actions.onShareLink?.(selectedVideo)}>
+                {actions.shareCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
                 <span className="hidden sm:inline">{actions.shareCopied ? tu('copied') : tu('share')}</span>
               </Button>
             )}
@@ -291,7 +294,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
           )
         ) : (
           <>
-            <div className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] sm:h-full sm:min-h-0 sm:flex-1 sm:p-[2px] sm:pb-[2px] ${showCommentPanel ? 'sm:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div data-review-player-column data-video-menu-open={videoMenuOpen ? 'true' : undefined} className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] sm:h-full sm:min-h-0 sm:flex-1 sm:px-[2px] sm:pt-[10px] sm:pb-[10px] ${videoMenuOpen ? 'lg:pl-[275px]' : ''} ${showCommentPanel ? 'sm:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={stableVideos}
                 projectId={project.id}
@@ -329,12 +332,12 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 onCommentFocus={actions.onCommentFocus}
                 usePreviewForApprovedPlayback={usePreviewForApprovedPlayback}
                 fillContainer={true}
-                playerSurfaceClassName="bg-[hsl(var(--review-canvas))]"
-                playerSurfaceColor="hsl(var(--review-canvas))"
-                controlsSurfaceClassName="bg-card dark:bg-[hsl(var(--review-canvas))]"
+                playerSurfaceClassName="bg-[hsl(var(--review-player-bg))]"
+                playerSurfaceColor="hsl(var(--review-player-bg))"
+                controlsSurfaceClassName="bg-[hsl(var(--review-controls-bg))]"
                 projectInfoClassName="mt-2 lg:order-3 xl:mt-0"
               />
-              <div id="review-comment-composer" className="pt-[2px] lg:mt-auto" />
+              <div id="review-comment-composer" className="pt-[2px] lg:mx-auto lg:mt-auto lg:w-[var(--review-video-width,100%)]" />
             </div>
 
             {commentPanelAvailable && (

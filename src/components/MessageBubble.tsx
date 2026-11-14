@@ -236,6 +236,8 @@ function MessageBubble({
                 aria-pressed={(comment as any).resolved === true}
               >
                 <span
+                  data-comment-resolve-check
+                  data-resolved={(comment as any).resolved ? 'true' : 'false'}
                   className={cn(
                     'flex h-[22px] w-[22px] items-center justify-center rounded-full border transition-[border-color,background-color,color,opacity] duration-150 motion-reduce:transition-none',
                     (comment as any).resolved

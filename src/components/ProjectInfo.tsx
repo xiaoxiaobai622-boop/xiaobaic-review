@@ -3,6 +3,7 @@
 import { appAlert } from '@/components/AppDialogProvider'
 
 import { memo, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
 import { Button } from './ui/button'
@@ -83,7 +84,12 @@ function ProjectInfo({
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [hasAssets, setHasAssets] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
+  const [toolbarTarget, setToolbarTarget] = useState<HTMLElement | null>(null)
   const canManageApproval = Boolean(onApprove && !isGuest && isAdmin)
+
+  useEffect(() => {
+    setToolbarTarget(document.getElementById('review-toolbar-download'))
+  }, [])
 
   useEffect(() => {
     const openApproval = () => {
@@ -231,8 +237,24 @@ function ProjectInfo({
     approvalActionLabel = isVideoApproved ? t('unapprove') : t('approve')
   }
 
+  const downloadButton = isVideoApproved && !hideDownloadButton ? (
+    <Button
+      data-tutorial="download-btn"
+      onClick={handleDownload}
+      variant="default"
+      size="sm"
+      className="pointer-events-auto hidden h-[28px] shrink-0 gap-1.5 rounded-[8px] border border-transparent px-2.5 text-[13px] shadow-none xl:inline-flex"
+      title={t('downloadOriginal')}
+    >
+      <Download className="h-4 w-4" />
+      <span className="hidden sm:inline">{tc('download')}</span>
+    </Button>
+  ) : null
+
   return (
-    <div className="pointer-events-none fixed right-[500px] top-2 z-40 hidden h-10 items-center bg-transparent text-card-foreground xl:flex 2xl:right-[568px]">
+    <>
+      {downloadButton && toolbarTarget ? createPortal(downloadButton, toolbarTarget) : null}
+      <div className="pointer-events-none fixed right-[500px] top-2 z-40 hidden h-10 items-center bg-transparent text-card-foreground xl:flex 2xl:right-[568px]">
       {/* Shortcuts Dialog */}
       <Dialog open={showShortcutsDialog} onOpenChange={setShowShortcutsDialog}>
         <DialogContent className="bg-card border-border text-card-foreground max-w-[95vw] sm:max-w-md">
@@ -415,15 +437,8 @@ function ProjectInfo({
             </Dialog>
           )}
 
-          {/* Download Button — only for an approved video, and only unless the share link hides it.
-              A link that grants download may be opened by someone with no account, so login is
-              not part of this decision; the mint endpoint re-checks the permission anyway. */}
-          {isVideoApproved && !hideDownloadButton && (
-            <Button data-tutorial="download-btn" onClick={handleDownload} variant="default" size="sm" title={t('downloadOriginal')}>
-              <Download className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">{tc('download')}</span>
-            </Button>
-          )}
+          {/* Fallback for non-review pages: the review top bar portals this button into its toolbar slot. */}
+          {downloadButton && !toolbarTarget ? downloadButton : null}
         </div>
       </div>
 
@@ -497,6 +512,7 @@ function ProjectInfo({
         />
       )}
     </div>
+    </>
   )
 }
 

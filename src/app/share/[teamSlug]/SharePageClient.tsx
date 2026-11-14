@@ -22,7 +22,7 @@ import ReverseShareUploadPanel from '@/components/ReverseShareUploadPanel'
 import ShareExpiryNote from '@/components/ShareExpiryNote'
 import ReviewWorkspace from '@/components/review/ReviewWorkspace'
 import { getReviewCapabilities, type ReviewCapabilities } from '@/lib/review-capabilities'
-import { attemptRefresh } from '@/lib/api-client'
+import { apiFetch, attemptRefresh } from '@/lib/api-client'
 import { getAccessToken } from '@/lib/token-store'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
@@ -1634,13 +1634,31 @@ export default function SharePageClient({ token }: SharePageClientProps) {
     link: { permissions: sharePermissions, visibleVersionCount: readyVideos.length, isExternalViewer: true },
   })
 
-  const copyCurrentShareLink = async () => {
+  const copyCurrentShareLink = async (video?: any) => {
+    const projectId = commentProjectId || project?.id
+    if (!projectId || !video?.id) return
     try {
-      await navigator.clipboard.writeText(window.location.href)
+      const response = await apiFetch(`/api/projects/${projectId}/share-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'REVIEW',
+          scopeType: 'VIDEO',
+          scopeId: video.id,
+          name: video.name ? `${video.name} · 审阅分享` : '审阅分享',
+          permissions: ['view', 'comment'],
+          authMode: 'NONE',
+        }),
+      })
+      if (!response.ok) return
+      const data = await response.json().catch(() => null)
+      const url = data?.shareLink?.url
+      if (!url) return
+      await navigator.clipboard.writeText(url)
       setLinkCopied(true)
       window.setTimeout(() => setLinkCopied(false), 1600)
     } catch {
-      // 复制失败就不报「已复制」。
+      // 创建单视频分享失败时不误报「已复制」。
     }
   }
 

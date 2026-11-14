@@ -1,12 +1,13 @@
 'use client'
 
 import Image from 'next/image'
-import { useRef, useEffect, useState, useMemo } from 'react'
+import { useId, useRef, useEffect, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { CheckCircle2, ChevronLeft, ChevronRight, FileDown, Film, ArrowLeft, GitCompareArrows, MessageSquare, Sparkles } from 'lucide-react'
+import { Check, CheckCircle2, ChevronLeft, ChevronRight, FileDown, Film, ArrowLeft, GitCompareArrows, MessageSquare, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import ReviewMoreMenu from '@/components/ReviewMoreMenu'
+import popupStyles from '@/components/review-popup.module.css'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -29,9 +30,11 @@ interface ThumbnailReelProps {
   showLanguageToggle?: boolean
   showThemeToggle?: boolean
   showComparisonAction?: boolean
-  /** 项目所属团队，和分享网格顶栏保持一致；窄屏只显示头像。 */
+  /** 项目所属团队；审片顶栏只显示团队头像。 */
   teamName?: string
   teamAvatarUrl?: string | null
+  /** Lets the player area make room for the left video list while it is open. */
+  onExpandedChange?: (open: boolean) => void
   // Optional slot rendered after ThemeToggle (e.g. tutorial help button)
   trailingAction?: React.ReactNode
   // Optional action rendered between version comparison and language controls
@@ -57,6 +60,7 @@ export default function ThumbnailReel({
   showComparisonAction = true,
   teamName = '',
   teamAvatarUrl = null,
+  onExpandedChange,
   trailingAction,
   beforeToolbarAction,
   leadingAction,
@@ -71,10 +75,16 @@ export default function ThumbnailReel({
   const [isExpanded, setIsExpanded] = useState(false)
   const [selectedVersionId, setSelectedVersionId] = useState<string>('')
   const hasScrolledRef = useRef(false)
+  const nameTriggerRef = useRef<HTMLButtonElement>(null)
+  const menuId = useId()
 
   const handleToggleExpanded = () => {
-    setIsExpanded(!isExpanded)
+    setIsExpanded((current) => !current)
   }
+
+  useEffect(() => {
+    onExpandedChange?.(isExpanded)
+  }, [isExpanded, onExpandedChange])
 
   // Keep the project order stable; approval is a state, not a sort priority.
   const videoNames = useMemo(() => {
@@ -100,30 +110,26 @@ export default function ThumbnailReel({
     }
   }
 
-  // Scroll to active thumbnail when expanded
+  // The popup list mounts a frame after opening; center the active video once it exists.
   useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container || !activeVideoName || !isExpanded) return
-
-    // Reset scroll flag when expanding
-    if (!hasScrolledRef.current) {
+    if (!isExpanded || !activeVideoName || hasScrolledRef.current) return
+    let frame = 0
+    let tries = 0
+    const centerActive = () => {
+      const container = scrollContainerRef.current
       const idx = videoNames.indexOf(activeVideoName)
-      if (idx === -1) return
-
-      // Find the active thumbnail element
-      const thumbnails = container.querySelectorAll('[data-thumbnail]')
-      const activeThumbnail = thumbnails[idx] as HTMLElement
-      if (!activeThumbnail) return
-
-      // Scroll to center the active thumbnail
-      const containerWidth = container.clientWidth
-      const thumbnailLeft = activeThumbnail.offsetLeft
-      const thumbnailWidth = activeThumbnail.offsetWidth
-      const scrollTo = thumbnailLeft - containerWidth / 2 + thumbnailWidth / 2
-
-      container.scrollTo({ left: scrollTo, behavior: 'smooth' })
+      const activeOption = idx === -1 ? undefined : container?.querySelectorAll('[data-video-option]')[idx] as HTMLElement | undefined
+      if (!container || !activeOption) {
+        if (tries++ < 60) frame = requestAnimationFrame(centerActive)
+        return
+      }
+      const scrollTo = activeOption.offsetTop - container.clientHeight / 2 + activeOption.offsetHeight / 2
+      // Jump before the panel finishes fading in; a smooth scroll here reads as jitter.
+      container.scrollTo({ top: scrollTo })
       hasScrolledRef.current = true
     }
+    centerActive()
+    return () => cancelAnimationFrame(frame)
   }, [activeVideoName, videoNames, isExpanded])
 
   // Reset scroll flag when collapsing
@@ -201,16 +207,18 @@ export default function ThumbnailReel({
               </Button>
             )}
             {teamName && (
-              <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+              <div className="hidden shrink-0 items-center sm:flex">
                 <InitialsAvatar name={teamName} src={teamAvatarUrl} size="sm" isInternal />
-                <span className="hidden max-w-[96px] truncate text-sm font-medium text-foreground lg:inline" title={teamName}>
-                  {teamName}
-                </span>
               </div>
             )}
             <button
+              ref={nameTriggerRef}
               type="button"
+              data-review-popup-trigger
               onClick={handleToggleExpanded}
+              aria-haspopup="menu"
+              aria-expanded={isExpanded}
+              aria-controls={isExpanded ? menuId : undefined}
               className="min-w-0 truncate text-left text-sm font-semibold text-foreground hover:text-primary sm:text-[13px] sm:font-medium"
               title={activeVideoName}
             >
@@ -245,7 +253,7 @@ export default function ThumbnailReel({
                 <span>{newerVersion.versionLabel || `v${newerVersion.version}`}</span>
               </button>
             )}
-            <div className="hidden items-center gap-0.5 sm:flex sm:gap-0 sm:rounded-[6px] sm:bg-[hsl(var(--secondary))]">
+            <div className="hidden items-center gap-0.5 sm:flex sm:gap-0 sm:rounded-[6px] sm:bg-[hsl(var(--muted))]">
               <Button variant="ghost" size="icon" onClick={handlePrevVideo} disabled={activeIndex <= 0} className="h-[28px] w-[28px] sm:rounded-[8px]" title={tShare('previousVideo')}><ChevronLeft className="h-4 w-4" /></Button>
               <span className="min-w-9 text-center text-xs text-muted-foreground tabular-nums sm:min-w-[26px] sm:text-[12px] sm:text-foreground">{activeIndex + 1}/{totalVideos}</span>
               <Button variant="ghost" size="icon" onClick={handleNextVideo} disabled={activeIndex >= totalVideos - 1} className="h-[28px] w-[28px] sm:rounded-[8px]" title={tShare('nextVideo')}><ChevronRight className="h-4 w-4" /></Button>
@@ -321,120 +329,91 @@ export default function ThumbnailReel({
         </div>
       </div>
 
-      {/* Floating Thumbnail Overlay - Appears below the bar, overlays content */}
       {isExpanded && (
         <div
-          className="absolute inset-x-0 top-full z-30 mt-1"
-        >
-          <div className="rounded-md border border-border/70 bg-background/95 shadow-lg backdrop-blur-md">
-            <div className="px-2 py-3 sm:px-4">
-              {/* Thumbnails container */}
-              <div
-                ref={scrollContainerRef}
-                className="flex gap-2 sm:gap-3 overflow-x-auto overscroll-x-contain snap-x justify-center"
-                style={{
-                  scrollbarWidth: 'none',
-                  msOverflowStyle: 'none',
-                  WebkitOverflowScrolling: 'touch',
-                }}
-              >
-                {videoNames.map((name) => {
-                  const videos = videosByName[name]
-                  const hasApprovedVideo = videos.some((v: any) => v.approved === true)
-                  const latestVideo = getLatestVideo(videos)
-                  const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
-                  const feedbackCount = commentCountByName.get(name) || 0
-                  const thumbnailUrl = thumbnailsByName.get(name)
-                  const isActive = activeVideoName === name
-
-                  return (
-                    <button
-                      key={name}
-                      data-thumbnail
-                      onClick={() => {
-                        onVideoSelect(name)
-                        setIsExpanded(false) // Close after selection
-                      }}
-                      className={cn(
-                        'shrink-0 rounded-md sm:rounded-lg overflow-hidden snap-start',
-                        'bg-muted border-2 transition-colors duration-150',
-                        'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:ring-offset-background',
-                        'w-[80px] sm:w-[110px] md:w-[130px] lg:w-[150px]',
-                        isActive
-                          ? 'border-primary ring-2 ring-primary/30'
-                          : 'border-transparent hover:border-border'
-                      )}
-                    >
-                      {/* Thumbnail */}
-                      <div className="aspect-video relative bg-black">
-                        {thumbnailUrl ? (
-                          <Image
-                            src={thumbnailUrl}
-                            alt={name}
-                            fill
-                            sizes="(min-width: 1024px) 150px, (min-width: 640px) 110px, 80px"
-                            className="object-contain"
-                            draggable={false}
-                            unoptimized
-                          />
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center bg-muted">
-                            <Film className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/50" />
-                          </div>
-                        )}
-
-                        {/* Approved badge */}
-                        {hasApprovedVideo && (
-                          <div className="absolute top-1 right-1 bg-success text-success-foreground rounded-full p-0.5">
-                            <CheckCircle2 className="w-3 h-3" />
-                          </div>
-                        )}
-
-                        {/* Latest version badge */}
-                        <div className="absolute bottom-1 right-1 rounded bg-white/90 px-1.5 py-0.5 text-[9px] font-medium text-black shadow-sm sm:text-[10px]">
-                          {latestVersionLabel}
-                        </div>
-
-                        {/* Active overlay */}
-                        {isActive && (
-                          <div className="absolute inset-0 bg-primary/10" />
-                        )}
-                      </div>
-
-                      {/* Name */}
-                      <div className="px-1.5 py-1 sm:px-2 sm:py-1.5 bg-card/80">
-                        <p
-                          className={cn(
-                            'text-[10px] sm:text-xs truncate text-center',
-                            isActive ? 'text-primary font-medium' : 'text-foreground'
-                          )}
-                        >
-                          {name}
-                        </p>
-                        <p className="mt-0.5 flex items-center justify-center gap-1 text-[9px] sm:text-[10px] text-muted-foreground">
-                          <MessageSquare className="h-2.5 w-2.5" />
-                          {tShare('feedbackCount', { count: feedbackCount })}
-                        </p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Click outside to close */}
-      {isExpanded && (
-        <div
-          className="fixed inset-0 z-20"
-          onClick={() => {
-            setIsExpanded(false)
-          }}
+          className="fixed inset-0 z-30"
+          onClick={() => setIsExpanded(false)}
           aria-hidden="true"
         />
       )}
+      <div
+        id={menuId}
+        ref={scrollContainerRef}
+        role="menu"
+        aria-label={activeVideoName}
+        aria-hidden={!isExpanded}
+        inert={!isExpanded ? true : undefined}
+        data-video-menu-panel
+        data-open={isExpanded ? 'true' : 'false'}
+        className="scrollbar-hidden absolute left-2 top-full z-40 mt-1 max-h-[calc(100dvh-47px)] w-[270px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-md border border-border/70 bg-background/95 p-1.5 shadow-lg backdrop-blur-md sm:max-h-[calc(100dvh-58px)]"
+      >
+          {videoNames.map((name) => {
+            const videos = videosByName[name]
+            const hasApprovedVideo = videos.some((v: any) => v.approved === true)
+            const latestVideo = getLatestVideo(videos)
+            const latestVersionLabel = latestVideo?.versionLabel || `v${latestVideo?.version || 1}`
+            const feedbackCount = commentCountByName.get(name) || 0
+            const thumbnailUrl = thumbnailsByName.get(name)
+            const isActive = activeVideoName === name
+
+            return (
+              <button
+                key={name}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isActive}
+                data-video-option
+                onClick={() => {
+                  onVideoSelect(name)
+                  setIsExpanded(false)
+                }}
+                className={popupStyles.item}
+              >
+                <span className="relative block aspect-video w-[72px] shrink-0 overflow-hidden rounded-[4px] bg-black">
+                  {thumbnailUrl ? (
+                    <Image
+                      src={thumbnailUrl}
+                      alt={name}
+                      fill
+                      sizes="72px"
+                      className="object-contain"
+                      draggable={false}
+                      unoptimized
+                    />
+                  ) : (
+                    <span className="absolute inset-0 flex items-center justify-center bg-muted">
+                      <Film className="h-4 w-4 text-muted-foreground/50" />
+                    </span>
+                  )}
+
+                  {hasApprovedVideo && (
+                    <span className="absolute right-0.5 top-0.5 rounded-full bg-success p-0.5 text-success-foreground">
+                      <CheckCircle2 className="h-2.5 w-2.5" />
+                    </span>
+                  )}
+
+                  <span className="absolute bottom-0.5 right-0.5 rounded bg-white/90 px-1 py-px text-[9px] font-medium text-black shadow-sm">
+                    {latestVersionLabel}
+                  </span>
+
+                  {isActive && <span className="absolute inset-0 bg-primary/10" />}
+                </span>
+
+                <span className="min-w-0 flex-1">
+                  <span className={cn('block truncate text-[13px] leading-5', isActive ? 'font-medium text-primary' : 'text-foreground')}>
+                    {name}
+                  </span>
+                  <span className="mt-1 flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                    <MessageSquare className="h-3 w-3" aria-hidden="true" />
+                    {tShare('feedbackCount', { count: feedbackCount })}
+                  </span>
+                </span>
+
+                {isActive && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
+              </button>
+            )
+          })}
+      </div>
     </div>
   )
 }

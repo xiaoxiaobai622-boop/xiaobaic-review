@@ -717,6 +717,7 @@ export default function CommentInput({
                     <button
                       ref={visBtnRef}
                       type="button"
+                      data-review-mint-outline
                       onClick={toggleVisibilityDropdown}
                       className={cn(styles.trigger, 'pointer-events-auto inline-flex h-[28px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-accent')}
                       aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
@@ -744,6 +745,7 @@ export default function CommentInput({
                     </Button>
                   )}
                   <Button
+                    data-review-mint-outline
                     onClick={onSubmit}
                     variant="default"
                     disabled={!canSubmit}

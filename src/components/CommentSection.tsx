@@ -350,12 +350,10 @@ export default function CommentSection({
 
   const currentVideo = selectedVideoId ? videoById.get(selectedVideoId) : undefined
   const currentVideoDuration = currentVideo?.duration ?? null
-  const isCurrentVideoApproved = currentVideo ? (currentVideo as any).approved === true : false
   // Check if ANY video in the group is approved (for admin view with multiple versions)
   const approvedVideo = useMemo(() => videos.find(v => (v as any).approved === true), [videos])
-  // Sharing a project is not the same as approving it. Only lock comments for
-  // an explicitly approved project or the currently approved version.
-  const commentsDisabled = isApproved || isCurrentVideoApproved
+  // Approval is a workflow state, not a comment lock: approved versions stay commentable.
+  const commentsDisabled = false
 
   // Always use hook comments (includes optimistic updates)
   // Local comments only used as fallback if hook hasn't loaded
@@ -529,6 +527,14 @@ export default function CommentSection({
     active && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
   )
 
+  const handleToggleResolvedWithAuth = (commentId: string, resolved: boolean) => {
+    if (!isAdminView && !isReviewAuthenticated) {
+      onRequireLogin?.()
+      return
+    }
+    void handleToggleResolved(commentId, resolved)
+  }
+
   const handleToggleResolved = async (commentId: string, resolved: boolean) => {
     setResolvedOverrides((current) => ({ ...current, [commentId]: resolved }))
     try {
@@ -573,7 +579,7 @@ export default function CommentSection({
             <div
               role="tablist"
               aria-label={`${t('discussion')} / ${t('info')}`}
-              className="relative grid h-[36px] grid-cols-2 items-center rounded-[8px] bg-secondary p-[3px]"
+              className="relative grid h-[36px] grid-cols-2 items-center rounded-[8px] bg-muted p-[3px]"
             >
               <span
                 aria-hidden="true"
@@ -1060,9 +1066,7 @@ export default function CommentSection({
                       timecodeEndLabel={timecodeEndLabel}
                       hasAnnotation={hasAnnotation}
                       shareToken={shareToken}
-                      onToggleResolved={isAdminView || (comment as any).canDelete
-                        ? (resolved) => handleToggleResolved(comment.id, resolved)
-                        : undefined}
+                      onToggleResolved={(resolved) => handleToggleResolvedWithAuth(comment.id, resolved)}
                       inlineReplyClosing={isReplyClosing}
                       inlineReply={isReplying ? (
                         <div id={`inline-reply-${comment.id}`}>

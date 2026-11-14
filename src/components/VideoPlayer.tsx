@@ -804,6 +804,28 @@ export default function VideoPlayer({
     }
   }, [activeVideoUrl, activeHlsUrl])
 
+  // 播控条和评论输入框跟着 16:9 画面走，而不是铺满更宽的播放器栏。
+  useEffect(() => {
+    if (!fillContainer) return
+    const stage = videoWrapperRef.current
+    const column = stage?.closest('[data-review-player-column]')
+    if (!stage || !(column instanceof HTMLElement)) return
+    const sync = () => {
+      const width = stage.getBoundingClientRect().width
+      if (width > 0) column.style.setProperty('--review-video-width', `${width}px`)
+    }
+    sync()
+    let observer: ResizeObserver | undefined
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(sync)
+      observer.observe(stage)
+    }
+    return () => {
+      observer?.disconnect()
+      column.style.removeProperty('--review-video-width')
+    }
+  }, [fillContainer, activeVideoUrl, activeHlsUrl])
+
   const visibleFrameTime = useCallback(() => {
     const video = videoRef.current
     if (!video) return currentTimeRef.current
@@ -1909,8 +1931,10 @@ export default function VideoPlayer({
             */}
             <div
               ref={videoWrapperRef}
-              className={`group relative mb-[76px] w-full max-h-[56vh] lg:mb-[var(--review-surface-mb,76px)] overflow-visible rounded-[8px] aspect-video lg:aspect-auto ${playerSurfaceClassName} ${playerFrameClassName} ${
-                fillContainer ? 'lg:max-h-none lg:min-h-0 lg:flex-1' : ''
+              data-review-video-stage
+              data-review-player-surface
+              className={`group relative mb-[76px] w-full max-h-[56vh] lg:mb-[var(--review-surface-mb,76px)] overflow-visible rounded-[8px] aspect-video ${playerSurfaceClassName} ${playerFrameClassName} ${
+                fillContainer ? 'lg:max-h-none lg:min-h-0 lg:flex-1 lg:w-auto lg:max-w-full lg:self-center' : ''
               }`}
               style={{
                 ...(playerSurfaceColor ? { backgroundColor: playerSurfaceColor } : undefined),

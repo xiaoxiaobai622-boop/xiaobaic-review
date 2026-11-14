@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, LogIn, LogOut, Phone, Settings, ShieldCheck, UserCircle, X } from 'lucide-react'
+import { Check, ChevronDown, LogIn, LogOut, Phone, Settings, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,6 +59,7 @@ function notifyReviewAuth(authenticated: boolean, name: string | null = null, em
 export default function ReviewLoginActions({ onIdentityChange, compact = false, openSignal = 0, onOpenChange, menuExtra }: ReviewLoginActionsProps) {
   const t = useTranslations('share')
   const ta = useTranslations('auth')
+  const tc = useTranslations('common')
   const [session, setSession] = useState<WechatSession | null>(null)
   const [passwordUser, setPasswordUser] = useState<{ id: string; name: string | null; email: string; phone?: string | null; role?: string; avatarUrl?: string | null } | null>(null)
   const [open, setOpen] = useState(false)
@@ -75,6 +76,9 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
   const [codeSent, setCodeSent] = useState(false)
   const [sendingCode, setSendingCode] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  const [agreed, setAgreed] = useState(false)
+  const [consentOpen, setConsentOpen] = useState(false)
+  const pendingLoginRef = useRef<(() => void) | null>(null)
 
   const updateOpen = useCallback((nextOpen: boolean) => {
     setOpen(nextOpen)
@@ -184,8 +188,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
 
   const currentReturnUrl = () => `${window.location.pathname}${window.location.search}${window.location.hash}`
 
-  const handlePasswordLogin = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const submitPasswordLogin = async () => {
     setError('')
     setLoading(true)
     try {
@@ -246,8 +249,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
     }
   }
 
-  const handleSmsLogin = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const submitSmsLogin = async () => {
     setError('')
     if (!PHONE_REGEX.test(phone)) {
       setError(ta('invalidPhone'))
@@ -289,6 +291,30 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleLoginSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    const action = mode === 'password' ? submitPasswordLogin : submitSmsLogin
+    if (!agreed) {
+      pendingLoginRef.current = () => { void action() }
+      setConsentOpen(true)
+      return
+    }
+    void action()
+  }
+
+  const confirmConsent = () => {
+    setAgreed(true)
+    setConsentOpen(false)
+    const action = pendingLoginRef.current
+    pendingLoginRef.current = null
+    action?.()
+  }
+
+  const cancelConsent = () => {
+    setConsentOpen(false)
+    pendingLoginRef.current = null
   }
 
   const logout = async () => {
@@ -335,6 +361,21 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
     }
   }, [profileOpen])
 
+  const consentBox = (terms: ReactNode) => (
+    <label className="flex cursor-pointer items-start gap-2.5 text-left text-xs leading-5 text-muted-foreground">
+      <span className="relative mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+        <input
+          type="checkbox"
+          checked={agreed}
+          onChange={(event) => setAgreed(event.target.checked)}
+          className="peer absolute inset-0 h-4 w-4 cursor-pointer appearance-none rounded-[4px] border border-border bg-popover transition-colors duration-[var(--motion-base)] checked:border-primary checked:bg-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+        />
+        <Check className="pointer-events-none relative h-3 w-3 text-primary-foreground opacity-0 transition-opacity duration-[var(--motion-base)] peer-checked:opacity-100" strokeWidth={3} />
+      </span>
+      <span>{terms}</span>
+    </label>
+  )
+
   return (
     <>
       {authenticated ? (
@@ -350,7 +391,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
             aria-expanded={profileOpen}
             aria-haspopup="menu"
           >
-            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" className="h-[28px] w-[28px] rounded-[8px] text-[13px]" title={displayName} isInternal={isAdmin} />
+            <InitialsAvatar name={displayName} src={currentUser?.avatarUrl} size="sm" variant="comment" className="h-[28px] w-[28px] rounded-[8px] text-[13px]" title={displayName} isInternal={isAdmin} />
             {!compact && <span className="max-w-28 truncate">{displayName}</span>}
             {!compact && <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
           </button>
@@ -381,8 +422,8 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
       )}
 
       {open && createPortal((
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="review-login-title" onMouseDown={(event) => { if (event.target === event.currentTarget) updateOpen(false) }}>
-          <div className="relative grid w-full max-w-[1120px] overflow-hidden rounded-xl border border-border bg-card shadow-2xl lg:grid-cols-2">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px] animate-in fade-in-0 duration-150" role="dialog" aria-modal="true" aria-labelledby="review-login-title" onMouseDown={(event) => { if (event.target === event.currentTarget) updateOpen(false) }}>
+          <div className="relative grid w-full max-w-[1120px] overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200 lg:grid-cols-2">
             <section className="relative hidden min-h-[560px] overflow-hidden border-r border-black/10 bg-[#ececea] dark:border-white/10 dark:bg-[#222329] lg:flex lg:flex-col">
               <div className="relative z-10 flex items-center gap-3 px-7 pt-7">
                 <BrandLogo height={36} />
@@ -402,7 +443,7 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
 
             {view === 'phone' ? (
               <>
-            <form onSubmit={mode === 'password' ? handlePasswordLogin : handleSmsLogin} className="w-full max-w-[360px] space-y-4">
+            <form onSubmit={handleLoginSubmit} className="w-full max-w-[360px] space-y-4">
               <div className="mb-7">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -445,12 +486,10 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
                 </div>
               )}
               {error && <p className="rounded-md border border-destructive/30 bg-destructive-visible px-3 py-2 text-sm text-destructive" aria-live="polite">{error}</p>}
-              <p className="text-center text-xs leading-5 text-muted-foreground">
-                {ta.rich('termsAgreement', {
-                  terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>,
-                  privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>,
-                })}
-              </p>
+              {consentBox(ta.rich('termsAgreement', {
+                terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>,
+                privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline-offset-2 hover:underline">{chunks}</Link>,
+              }))}
               <Button type="submit" className="h-11 w-full" disabled={loading || !phone || (mode === 'password' ? !password : code.length !== 6 || !codeSent)}>
                 {loading ? ta('signingIn') : ta('signIn')}
               </Button>
@@ -461,12 +500,12 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
                 <h2 id="review-login-title" className="text-2xl font-semibold tracking-tight text-foreground">{ta('wechatQrLogin')}</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{ta('wechatScanHint')}</p>
                 <WechatMiniQrLogin inline returnUrl={currentReturnUrl()} className="mt-5" />
-                <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
-                  {ta.rich('termsByScanning', {
+                <div className="mx-auto mt-4 max-w-[340px]">
+                  {consentBox(ta.rich('termsByScanning', {
                     terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>,
                     privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 text-primary hover:underline">{chunks}</Link>,
-                  })}
-                </p>
+                  }))}
+                </div>
                 <div className="mt-5">
                   <Button type="button" variant="ghost" className="h-10 text-muted-foreground" onClick={() => setView('phone')}>
                     <Phone className="mr-2 h-4 w-4" />{ta('usePhoneLogin')}
@@ -476,6 +515,26 @@ export default function ReviewLoginActions({ onIdentityChange, compact = false, 
             )}
             </section>
           </div>
+
+          {consentOpen && (
+            <div
+              className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4 animate-in fade-in-0 duration-150"
+              onMouseDown={(event) => { if (event.target === event.currentTarget) cancelConsent() }}
+            >
+              <div className="w-full max-w-[400px] rounded-xl border border-border bg-popover p-6 text-popover-foreground shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200">
+                <p className="text-[15px] leading-7">
+                  {ta.rich('termsConsentPrompt', {
+                    terms: (chunks) => <Link href="/terms" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline underline-offset-[3px]">{chunks}</Link>,
+                    privacy: (chunks) => <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="mx-0.5 font-medium text-primary underline underline-offset-[3px]">{chunks}</Link>,
+                  })}
+                </p>
+                <div className="mt-6 flex justify-end gap-2.5">
+                  <Button type="button" variant="outline" className="h-10 min-w-[88px] rounded-lg" onClick={cancelConsent}>{tc('cancel')}</Button>
+                  <Button type="button" className="h-10 min-w-[120px] rounded-lg" onClick={confirmConsent}>{ta('termsAgree')}</Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ), document.body)}
     </>
