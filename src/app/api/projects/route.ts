@@ -278,7 +278,6 @@ export async function POST(request: NextRequest) {
           skipTranscoding: settings?.defaultSkipTranscoding ?? false,
           timestampDisplay: settings?.defaultTimestampDisplay || 'TIMECODE',
           usePreviewForApprovedPlayback: settings?.defaultUsePreviewForApprovedPlayback ?? false,
-          allowClientAssetUpload: settings?.defaultAllowClientAssetUpload ?? false,
           allowReverseShare: settings?.defaultAllowReverseShare ?? false,
           showClientTutorial: settings?.defaultShowClientTutorial ?? true,
           allowAssetDownload: settings?.defaultAllowAssetDownload ?? true,

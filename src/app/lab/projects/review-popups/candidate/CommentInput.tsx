@@ -256,7 +256,7 @@ export default function CommentInput({
       {replyingToComment && (
         <div className="mb-3 p-3 bg-muted/30 border border-border rounded-lg flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
-            <InitialsAvatar name={replyingToComment.authorName || t('anonymous')} size="sm" />
+            <InitialsAvatar name={replyingToComment.authorName || t('anonymous')} src={(replyingToComment as any).user?.avatarUrl || (replyingToComment as any).avatarUrl || null} size="sm" />
             <div className="flex-1 min-w-0">
               <p className="text-xs text-foreground font-semibold mb-1 truncate">
                 {t('replyingTo')} {replyingToComment.authorName || t('anonymous')}

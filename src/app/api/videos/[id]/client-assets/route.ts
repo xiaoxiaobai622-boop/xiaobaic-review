@@ -4,15 +4,35 @@ import { rateLimit } from '@/lib/rate-limit'
 import { verifyProjectAccess } from '@/lib/project-access'
 import { enforceShareVideoScope } from '@/lib/share-scope'
 import { validateAssetFile, sanitizeFilename, sanitizeDisplayFilename, isSuspiciousFilename } from '@/lib/file-validation'
+import { detectAssetCategory } from '@/lib/asset-validation'
 import { initStorage, deleteFile } from '@/lib/storage'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { checkTeamStorageQuota } from '@/lib/platform-access'
 import { teamProjectStorageKey } from '@/lib/storage-keys'
+import { isCommentAttachmentTooLarge, MAX_COMMENT_ATTACHMENT_LABEL } from '@/lib/comment-attachment-limits'
 import { SHARE_ERROR_CODES } from '@/lib/share-error-codes'
-import { logShareDenial, requestEndpoint } from '@/lib/share-auth'
+import { getShareAuth } from '@/lib/auth'
 
 export const runtime = 'nodejs'
+
+/**
+ * A share page can be opened by a signed-in team member or client. The upload
+ * itself is authorized by the presented share token, so the asset must be
+ * owned by that share session too; otherwise a member's admin session and the
+ * upload's share session disagree and the upload is rejected.
+ */
+async function resolveUploaderSessionId(
+  request: NextRequest,
+  projectId: string,
+  accessCheck: { shareTokenSessionId?: string },
+): Promise<string | undefined> {
+  const shareAuth = await getShareAuth(request).catch(() => null)
+  if (shareAuth?.payload?.projectId === projectId && shareAuth.payload.sessionId) {
+    return shareAuth.payload.sessionId
+  }
+  return accessCheck.shareTokenSessionId
+}
 
 // POST /api/videos/[id]/client-assets - Create a client asset record (JSON)
 // The actual file upload goes through TUS at /api/uploads
@@ -50,23 +70,15 @@ export async function POST(
 
     const project = video.project
 
-    // Check if client asset upload is enabled for this project
-    if (!project.allowClientAssetUpload) {
-      logShareDenial({ shareToken: null, endpoint: requestEndpoint(request), reason: SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED })
-      return NextResponse.json(
-        { error: videosMessages.fileAttachmentsNotEnabledForProject || 'File attachments are not enabled for this project', code: SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED },
-        { status: 403 }
-      )
-    }
-
-    // Auth via verifyProjectAccess with comment permission, no guests
+    // The share link's own `attach` permission is the control; there is no
+    // project-level switch any more.
     const accessCheck = await verifyProjectAccess(
       request,
       project.id,
       project.sharePassword,
       project.authMode,
       {
-        requiredPermission: 'comment',
+        requiredPermission: 'attach',
         allowGuest: false,
       }
     )
@@ -81,7 +93,7 @@ export async function POST(
     const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
     if (scopeDenied) return scopeDenied
 
-    const uploaderSessionId = accessCheck.shareTokenSessionId
+    const uploaderSessionId = await resolveUploaderSessionId(request, project.id, accessCheck)
     if (!uploaderSessionId) {
       return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 })
     }
@@ -96,6 +108,13 @@ export async function POST(
 
     if (!fileSize || typeof fileSize !== 'number' || fileSize <= 0) {
       return NextResponse.json({ error: videosMessages.validFileSizeRequired || 'Valid fileSize is required' }, { status: 400 })
+    }
+
+    if (isCommentAttachmentTooLarge(fileSize)) {
+      return NextResponse.json(
+        { error: (videosMessages.commentAttachmentTooLarge || 'Comment attachments can be at most {size} each').replace('{size}', MAX_COMMENT_ATTACHMENT_LABEL) },
+        { status: 400 }
+      )
     }
 
     const storageCheck = await checkTeamStorageQuota(project.teamId, BigInt(fileSize))
@@ -126,6 +145,15 @@ export async function POST(
 
     // Sanitize filename
     const sanitizedFileName = sanitizeFilename(fileName)
+
+    // Comment attachments are references, not deliverables: a video belongs in
+    // the project's version list, where it gets a player and review status.
+    if (requestedCategory === 'video' || detectAssetCategory(fileName) === 'video') {
+      return NextResponse.json(
+        { error: videosMessages.commentAttachmentVideoNotAllowed || 'Video files cannot be added as comment attachments' },
+        { status: 400 }
+      )
+    }
 
     // Validate asset file (use a generic mime type since we don't have the file yet)
     const mimeType = 'application/octet-stream'
@@ -230,7 +258,7 @@ export async function GET(
     const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
     if (scopeDenied) return scopeDenied
 
-    const uploaderSessionId = accessCheck.shareTokenSessionId
+    const uploaderSessionId = await resolveUploaderSessionId(request, project.id, accessCheck)
     if (!uploaderSessionId) {
       return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 })
     }
@@ -310,7 +338,7 @@ export async function DELETE(
       project.sharePassword,
       project.authMode,
       {
-        requiredPermission: 'comment',
+        requiredPermission: 'attach',
         allowGuest: false,
       }
     )
@@ -325,7 +353,7 @@ export async function DELETE(
     const scopeDenied = await enforceShareVideoScope(request, project.id, videoId, accessCheck.isAdmin)
     if (scopeDenied) return scopeDenied
 
-    const uploaderSessionId = accessCheck.shareTokenSessionId
+    const uploaderSessionId = await resolveUploaderSessionId(request, project.id, accessCheck)
     if (!uploaderSessionId) {
       return NextResponse.json({ error: videosMessages.unauthorized || 'Unauthorized', code: SHARE_ERROR_CODES.LOGIN_REQUIRED }, { status: 401 })
     }

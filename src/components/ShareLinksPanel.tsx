@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Copy, ExternalLink, FolderUp, History, Link2, Loader2, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
+import { Check, Copy, ExternalLink, FolderUp, History, Link2, Loader2, Settings2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Switch } from '@/components/ui/switch'
 import { appAlert, appConfirm } from '@/components/AppDialogProvider'
 import CreateShareDialog, { type ShareTarget } from '@/components/CreateShareDialog'
 import { apiFetch } from '@/lib/api-client'
@@ -15,20 +16,13 @@ type ShareLink = {
   viewCount: number; status: string; createdAt: string
 }
 
-/** The project's own address. It is a real link row, so it carries the same
- *  expiry, view count and access records as any 审阅分享. */
-type MasterLink = {
-  id: string; name: string; url: string; authMode: string; hasPassword: boolean
-  permissions: string[]; status: string; expiresAt: string | null; maxViews: number | null; viewCount: number
-}
-
-/** What the two shared cells actually read; both row kinds satisfy it. */
+/** What the shared cells actually read. */
 type LinkExpiryFields = Pick<ShareLink, 'expiresAt' | 'status'>
 type LinkIdentityFields = Pick<ShareLink, 'id' | 'name'>
 
 type AccessRecord = { id: string; createdAt: string; accessMethod: string; email: string | null; ipAddress: string | null }
 
-/** Same three words the master-link row above already uses, so one visit means one thing. */
+/** Same three words the access dialog uses, so one visit means one thing. */
 const ACCESS_METHOD_LABEL: Record<string, string> = {
   NONE: '免密访问',
   PASSWORD: '访问口令',
@@ -91,12 +85,104 @@ function AccessRecordsDialog({ projectId, link, onOpenChange }: { projectId: str
   </Dialog>
 }
 
+function PermissionToggle({ checked, onChange, title, description }: { checked: boolean; onChange: (value: boolean) => void; title: string; description: string }) {
+  return <div className="flex items-center justify-between gap-4 py-3">
+    <div className="min-w-0 flex-1">
+      <p className="text-sm font-medium">{title}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+    </div>
+    <Switch checked={checked} onCheckedChange={onChange} aria-label={title} />
+  </div>
+}
+
+function PermissionsDialog({ projectId, link, onOpenChange, onSaved }: {
+  projectId: string
+  link: ShareLink | null
+  onOpenChange: (open: boolean) => void
+  onSaved: () => void
+}) {
+  const [allowComment, setAllowComment] = useState(true)
+  const [allowDownload, setAllowDownload] = useState(false)
+  const [allowAttach, setAllowAttach] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!link) return
+    setAllowComment(link.permissions.includes('comment'))
+    setAllowDownload(link.permissions.includes('download'))
+    setAllowAttach(link.permissions.includes('attach'))
+    setSaving(false)
+    setError('')
+  }, [link])
+
+  const save = async () => {
+    if (!link) return
+    setSaving(true)
+    setError('')
+    try {
+      const permissions = [
+        'view',
+        ...(allowComment ? ['comment'] : []),
+        ...(allowDownload ? ['download'] : []),
+        ...(allowAttach ? ['attach'] : []),
+        ...(link.permissions.includes('approve') ? ['approve'] : []),
+      ]
+      const response = await apiFetch(`/api/projects/${projectId}/share-links/${link.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || '保存失败')
+      }
+      onSaved()
+      onOpenChange(false)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <Dialog open={Boolean(link)} onOpenChange={onOpenChange}>
+    <DialogContent className="w-[calc(100%-2rem)] max-w-[460px] !rounded-lg">
+      <DialogHeader>
+        <DialogTitle>更改链接权限</DialogTitle>
+        <DialogDescription>{link?.name || ''} · 保存后已发出的访问令牌会失效，访客需要重新打开链接。</DialogDescription>
+      </DialogHeader>
+      <div className="divide-y divide-border border-y border-border">
+        <PermissionToggle checked={allowDownload} onChange={setAllowDownload} title="允许下载" description="接收方可以下载视频和素材" />
+        <PermissionToggle
+          checked={allowAttach}
+          onChange={(value) => { setAllowAttach(value); if (value) setAllowComment(true) }}
+          title="允许添加附件"
+          description="审阅者可以在评论中上传图片、文档等附件"
+        />
+        <PermissionToggle
+          checked={allowComment}
+          onChange={(value) => { setAllowComment(value); if (!value) setAllowAttach(false) }}
+          title="允许批注"
+          description="接收方可以添加时间点和画面批注"
+        />
+      </div>
+      {error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+      <DialogFooter className="gap-2 sm:justify-end">
+        <Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>取消</Button>
+        <Button disabled={saving} onClick={() => void save()}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}保存
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+}
+
 export default function ShareLinksPanel({ project, onCountChange }: { project: any, onCountChange?: (count: number) => void }) {
   const [links, setLinks] = useState<ShareLink[]>([])
-  const [master, setMaster] = useState<MasterLink | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [rotating, setRotating] = useState(false)
   const [accessLink, setAccessLink] = useState<LinkIdentityFields | null>(null)
+  const [permissionsLink, setPermissionsLink] = useState<ShareLink | null>(null)
   const [collectTarget, setCollectTarget] = useState<ShareTarget | null>(null)
   const [nowMs, setNowMs] = useState(0)
   const folders = useMemo(() => Array.isArray(project.folders) ? project.folders : [], [project.folders])
@@ -106,7 +192,6 @@ export default function ShareLinksPanel({ project, onCountChange }: { project: a
     if (!response.ok) return
     const data = await response.json()
     setLinks(data.shareLinks || [])
-    setMaster(data.masterLink || null)
     // 剩余天数要有基准点，但基准点不能在 render 里取（服务器与水合各取一次就对不上）。
     setNowMs(Date.now())
   }, [project.id])
@@ -120,24 +205,11 @@ export default function ShareLinksPanel({ project, onCountChange }: { project: a
     return () => window.removeEventListener('shareLinksChanged', refresh)
   }, [load])
 
-  const mutate = async (link: ShareLink, action: 'revoke' | 'delete') => {
-    if (action === 'delete' && !await appConfirm('删除这条分享记录？视频和项目内容不会被删除。')) return
-    const response = await apiFetch(`/api/projects/${project.id}/share-links/${link.id}`, { method: action === 'delete' ? 'DELETE' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: action === 'revoke' ? JSON.stringify({ status: 'REVOKED' }) : undefined })
+  const deleteLink = async (link: ShareLink) => {
+    if (!await appConfirm('删除这条分享记录？视频和项目内容不会被删除。')) return
+    const response = await apiFetch(`/api/projects/${project.id}/share-links/${link.id}`, { method: 'DELETE' })
     if (!response.ok) { appAlert('操作失败'); return }
-    if (action === 'delete') setLinks(current => current.filter(item => item.id !== link.id))
-    else setLinks(current => current.map(item => item.id === link.id ? { ...item, status: 'REVOKED' } : item))
-  }
-
-  const rotateMaster = async () => {
-    if (!await appConfirm('重置项目主链接地址？已经发出的邮件、飞书消息里的旧地址会立刻打不开，正在观看的访客也需要重新进入。')) return
-    setRotating(true)
-    try {
-      const response = await apiFetch(`/api/projects/${project.id}/share-slug/rotate`, { method: 'POST' })
-      if (!response.ok) { appAlert((await response.json().catch(() => ({})))?.error || '重置失败'); return }
-      await load()
-    } finally {
-      setRotating(false)
-    }
+    setLinks(current => current.filter(item => item.id !== link.id))
   }
 
   const scopeLabel = (link: ShareLink) => {
@@ -157,8 +229,9 @@ export default function ShareLinksPanel({ project, onCountChange }: { project: a
       {/* 上传接口在项目没开「允许客户提交素材」时一律 403，所以入口只在开着时才给。 */}
       {project.allowReverseShare && <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5 text-xs" onClick={() => setCollectTarget({ scopeType: 'PROJECT', scopeId: '', name: project.title })}><FolderUp className="h-4 w-4" />创建收录链接</Button>}
     </div>
-    <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left text-sm"><thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-4 py-2.5 font-medium">分享名称</th><th className="px-4 py-2.5 font-medium">范围</th><th className="px-4 py-2.5 font-medium">有效期</th><th className="px-4 py-2.5 font-medium">查看次数</th><th className="px-4 py-2.5 font-medium">创建时间</th><th className="px-4 py-2.5 font-medium">状态</th><th className="px-4 py-2.5 font-medium">操作</th></tr></thead><tbody className="divide-y divide-border">{master && <tr className="bg-primary/5"><td className="px-4 py-3"><div className="font-medium">项目主链接</div><div className="max-w-[280px] truncate text-xs text-muted-foreground" title={master.url}>{master.url}</div><div className="text-xs text-muted-foreground">{master.authMode === 'NONE' ? '免密访问' : master.authMode === 'OTP' ? '邮箱验证码' : master.hasPassword ? '访问口令' : '未设口令'} · {master.permissions.includes('comment') ? '可批注' : '不可批注'} · {master.permissions.includes('download') ? '可下载' : '不可下载'}</div></td><td className="px-4 py-3">整个项目</td><td className="px-4 py-3"><ExpiryCell link={master} nowMs={nowMs} /></td><td className="px-4 py-3 tabular-nums">{master.viewCount}{master.maxViews !== null ? ` / ${master.maxViews}` : ''}</td><td className="px-4 py-3 text-xs text-muted-foreground">—</td><td className="px-4 py-3"><span className={master.status === 'ACTIVE' ? 'text-emerald-600' : 'text-muted-foreground'}>{master.status === 'ACTIVE' ? '有效' : master.status === 'REVOKED' ? '已取消' : master.status === 'EXPIRED' ? '已过期' : '已归档'}</span></td><td className="px-4 py-3"><div className="flex items-center gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" title="访问记录" aria-label="查看项目主链接的访问记录" onClick={() => setAccessLink(master)}><History className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" title="复制链接" aria-label="复制链接" onClick={async () => { if (await copyTextToClipboard(master.url)) { setCopiedId('master'); setTimeout(() => setCopiedId(null), 1500) } }}>{copiedId === 'master' ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}</Button><Button variant="ghost" size="icon" className="h-8 w-8" title="打开链接" aria-label="打开链接" onClick={() => window.open(master.url, '_blank', 'noopener,noreferrer')}><ExternalLink className="h-4 w-4" /></Button><Button variant="ghost" size="sm" className="h-8 shrink-0 gap-1.5 px-2 text-xs text-amber-700" disabled={rotating} onClick={() => void rotateMaster()} title="旧地址立刻失效"><RefreshCw className={`h-4 w-4${rotating ? ' animate-spin' : ''}`} />重置地址</Button></div></td></tr>}{links.map(link => <tr key={link.id}><td className="px-4 py-3"><div className="font-medium">{link.name}</div><div className="text-xs text-muted-foreground">{link.type === 'COLLECT' ? '收录分享' : link.permissions.includes('comment') ? '审阅分享' : '交付分享'}</div></td><td className="px-4 py-3">{scopeLabel(link)}</td><td className="px-4 py-3"><ExpiryCell link={link} nowMs={nowMs} /></td><td className="px-4 py-3 tabular-nums">{link.viewCount}{link.maxViews !== null ? ` / ${link.maxViews}` : ''}</td><td className="px-4 py-3 text-xs text-muted-foreground">{new Date(link.createdAt).toLocaleString()}</td><td className="px-4 py-3"><span className={link.status === 'ACTIVE' ? 'text-emerald-600' : 'text-muted-foreground'}>{link.status === 'ACTIVE' ? '有效' : link.status === 'REVOKED' ? '已取消' : '已过期'}</span></td><td className="px-4 py-3"><div className="flex items-center gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" title="访问记录" aria-label="查看这条链接的访问记录" onClick={() => setAccessLink(link)}><History className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" title="复制链接" aria-label="复制链接" onClick={async () => { if (await copyTextToClipboard(link.url)) { setCopiedId(link.id); setTimeout(() => setCopiedId(null), 1500) } }} >{copiedId === link.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}</Button><Button variant="ghost" size="icon" className="h-8 w-8" title="打开链接" aria-label="打开链接" onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}><ExternalLink className="h-4 w-4" /></Button>{link.status === 'ACTIVE' && <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" title="取消分享" aria-label="取消分享" onClick={() => void mutate(link, 'revoke')}><RotateCcw className="h-4 w-4" /></Button>}<Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="删除记录" aria-label="删除分享记录" onClick={() => void mutate(link, 'delete')}><Trash2 className="h-4 w-4" /></Button></div></td></tr>)}{links.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">还没有分享记录</td></tr>}</tbody></table></div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left text-sm"><thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-4 py-2.5 font-medium">分享名称</th><th className="px-4 py-2.5 font-medium">范围</th><th className="px-4 py-2.5 font-medium">有效期</th><th className="px-4 py-2.5 font-medium">查看次数</th><th className="px-4 py-2.5 font-medium">创建时间</th><th className="px-4 py-2.5 font-medium">状态</th><th className="px-4 py-2.5 font-medium">操作</th></tr></thead><tbody className="divide-y divide-border">{links.map(link => <tr key={link.id}><td className="px-4 py-3"><div className="font-medium">{link.name}</div><div className="text-xs text-muted-foreground">{link.type === 'COLLECT' ? '收录分享' : link.permissions.includes('comment') ? '审阅分享' : '交付分享'}</div></td><td className="px-4 py-3">{scopeLabel(link)}</td><td className="px-4 py-3"><ExpiryCell link={link} nowMs={nowMs} /></td><td className="px-4 py-3 tabular-nums">{link.viewCount}{link.maxViews !== null ? ` / ${link.maxViews}` : ''}</td><td className="px-4 py-3 text-xs text-muted-foreground">{new Date(link.createdAt).toLocaleString()}</td><td className="px-4 py-3"><span className={link.status === 'ACTIVE' ? 'text-emerald-600' : 'text-muted-foreground'}>{link.status === 'ACTIVE' ? '有效' : link.status === 'REVOKED' ? '已取消' : '已过期'}</span></td><td className="px-4 py-3"><div className="flex items-center gap-1"><Button variant="ghost" size="icon" className="h-8 w-8" title="访问记录" aria-label="查看这条链接的访问记录" onClick={() => setAccessLink(link)}><History className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" title="复制链接" aria-label="复制链接" onClick={async () => { if (await copyTextToClipboard(link.url)) { setCopiedId(link.id); setTimeout(() => setCopiedId(null), 1500) } }} >{copiedId === link.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}</Button><Button variant="ghost" size="icon" className="h-8 w-8" title="打开链接" aria-label="打开链接" onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}><ExternalLink className="h-4 w-4" /></Button>{link.status === 'ACTIVE' && link.type !== 'COLLECT' && <Button variant="ghost" size="icon" className="h-8 w-8" title="更改链接权限" aria-label="更改链接权限" onClick={() => setPermissionsLink(link)}><Settings2 className="h-4 w-4" /></Button>}<Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="删除记录" aria-label="删除分享记录" onClick={() => void deleteLink(link)}><Trash2 className="h-4 w-4" /></Button></div></td></tr>)}{links.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">还没有分享记录</td></tr>}</tbody></table></div>
     <AccessRecordsDialog projectId={project.id} link={accessLink} onOpenChange={(open) => { if (!open) setAccessLink(null) }} />
+    <PermissionsDialog projectId={project.id} link={permissionsLink} onOpenChange={(open) => { if (!open) setPermissionsLink(null) }} onSaved={() => void load()} />
     {collectTarget && <CreateShareDialog projectId={project.id} open preset="COLLECT" target={collectTarget} onOpenChange={(open) => { if (!open) setCollectTarget(null) }} onCreated={() => void load()} />}
   </div>
 }

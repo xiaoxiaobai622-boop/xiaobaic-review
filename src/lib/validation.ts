@@ -335,9 +335,6 @@ export const updateProjectSchema = z.object({
   allowAssetDownload: z.boolean().optional(),
   allowPhotoDownload: z.boolean().optional(),
 
-  // Client asset upload
-  allowClientAssetUpload: z.boolean().optional(),
-
   // Reverse share
   allowReverseShare: z.boolean().optional(),
 

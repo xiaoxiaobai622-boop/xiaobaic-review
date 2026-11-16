@@ -1643,7 +1643,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           scopeType: 'VIDEO',
           scopeId: video.id,
           name: video.name ? `${video.name} · 审阅分享` : '审阅分享',
-          permissions: ['view', 'comment'],
+          permissions: ['view', 'comment', ...(sharePermissions.includes('attach') ? ['attach'] : [])],
           authMode: 'NONE',
         }),
       })
@@ -1688,7 +1688,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         clientName={displayClientName}
         clientEmail={project.clientEmail}
         recipients={project.recipients || []}
-        allowClientAssetUpload={project.allowClientAssetUpload || false}
+        allowClientAssetUpload={capabilities.canAttachFiles}
         isPasswordProtected={isPasswordProtected || false}
         identity={{
           name: authenticatedName,

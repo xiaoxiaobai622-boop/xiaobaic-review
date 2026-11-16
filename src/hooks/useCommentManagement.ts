@@ -75,7 +75,6 @@ export function useCommentManagement({
   const [selectedTimecodeEnd, setSelectedTimecodeEnd] = useState<string | null>(null)
   const [isSelectingTimecodeEnd, setIsSelectingTimecodeEnd] = useState(false)
   const submittingCommentRef = useRef(false)
-  const attachmentUploadCountRef = useRef(0)
   const previousVideoIdRef = useRef<string | null>(null)
   const rangeWasAdjustedRef = useRef(false)
 
@@ -409,11 +408,12 @@ export function useCommentManagement({
     if (!payload.content.trim() && !hasAttachments && !hasAnnotations) return false
 
     let commentContent = payload.content
-    if (!commentContent.trim() && hasAttachments) {
-      attachmentUploadCountRef.current += 1
-      commentContent = `Attachments uploaded #${attachmentUploadCountRef.current}`
-    } else if (!commentContent.trim() && hasAnnotations) {
+    if (!commentContent.trim() && hasAnnotations) {
       commentContent = tComments('drawingAnnotation')
+    } else if (!commentContent.trim()) {
+      // Attachment-only comments show the attachment itself; a synthetic
+      // "uploaded" line would just duplicate it in the card.
+      commentContent = ''
     }
 
     const isInternalComment = useAdminAuth || !!adminUser

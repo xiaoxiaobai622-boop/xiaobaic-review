@@ -36,7 +36,6 @@ interface Project {
   canAdminister: boolean
   allowAssetDownload: boolean
   allowPhotoDownload: boolean
-  allowClientAssetUpload: boolean
   allowReverseShare: boolean
   clientCanApprove: boolean
   showClientTutorial: boolean
@@ -79,7 +78,6 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
   const [restricted, setRestricted] = useState(false)
   const [allowAssetDownload, setAllowAssetDownload] = useState(true)
   const [allowPhotoDownload, setAllowPhotoDownload] = useState(true)
-  const [allowClientAssetUpload, setAllowClientAssetUpload] = useState(false)
   const [allowReverseShare, setAllowReverseShare] = useState(false)
   const [clientCanApprove, setClientCanApprove] = useState(true)
   const [showClientTutorial, setShowClientTutorial] = useState(true)
@@ -124,7 +122,6 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
         setRestricted(Boolean(data.restricted))
         setAllowAssetDownload(data.allowAssetDownload ?? true)
         setAllowPhotoDownload(data.allowPhotoDownload ?? true)
-        setAllowClientAssetUpload(data.allowClientAssetUpload ?? false)
         setAllowReverseShare(data.allowReverseShare ?? false)
         setClientCanApprove(data.clientCanApprove ?? true)
         setShowClientTutorial(data.showClientTutorial ?? true)
@@ -181,7 +178,6 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
         restricted,
         allowAssetDownload,
         allowPhotoDownload,
-        allowClientAssetUpload,
         allowReverseShare,
         clientCanApprove,
         showClientTutorial,
@@ -502,20 +498,6 @@ export function ProjectSettingsPanel({ projectId, variant, initialSection = 'pro
             id="allowPhotoDownload"
             checked={allowPhotoDownload}
             onCheckedChange={setAllowPhotoDownload}
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5 flex-1">
-            <Label htmlFor="allowClientAssetUpload">{t('allowClientFileAttachments')}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t('allowClientFileAttachmentsDescription')}
-            </p>
-          </div>
-          <Switch
-            id="allowClientAssetUpload"
-            checked={allowClientAssetUpload}
-            onCheckedChange={setAllowClientAssetUpload}
           />
         </div>
 

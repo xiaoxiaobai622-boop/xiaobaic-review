@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Users } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { initialsFromName } from '@/components/InitialsAvatar'
@@ -14,6 +15,7 @@ export default function ProjectMembersButton({
 }) {
   const t = useTranslations('projects')
   const { user } = useAuth()
+  const [avatarFailed, setAvatarFailed] = useState(false)
   const displayName = user?.name || user?.phone || user?.email || ''
 
   return (
@@ -25,9 +27,9 @@ export default function ProjectMembersButton({
       className="inline-flex h-8 shrink-0 items-center outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16c464] text-[10px] font-semibold text-[#06351e]">
-        {user?.avatarUrl ? (
+        {user?.avatarUrl && !avatarFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={user.avatarUrl} alt={displayName || '头像'} className="h-full w-full object-cover" />
+          <img src={user.avatarUrl} alt={displayName || '头像'} onError={() => setAvatarFailed(true)} className="h-full w-full object-cover" />
         ) : initialsFromName(displayName)}
       </span>
       <span className="-ml-1.5 inline-flex h-7 items-center gap-1 rounded-full bg-muted px-2 text-xs font-medium tabular-nums text-foreground">

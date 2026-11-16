@@ -124,6 +124,12 @@ export function sanitizeComment(
     }
   }
 
+  // A client's uploaded avatar is part of their comment presentation, not
+  // account data: expose only the image, never the name or email behind it.
+  if (!isAdmin && !comment.isInternal && comment.user?.avatarUrl) {
+    sanitized.user = { avatarUrl: comment.user.avatarUrl }
+  }
+
   // Pass through assets (safe subset already selected by Prisma query)
   if (comment.assets && Array.isArray(comment.assets)) {
     sanitized.assets = comment.assets.map((asset: any) => ({

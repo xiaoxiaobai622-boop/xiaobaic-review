@@ -3,7 +3,8 @@ import { verifyVideoAccessToken, detectHotlinking, trackVideoAccess, logSecurity
 import { getRedis } from '@/lib/redis'
 import { prisma } from '@/lib/db'
 import { createReadStream, existsSync, statSync } from 'fs'
-import { getFilePath, getVideoContentType, isS3Mode, createWebReadableStream } from '@/lib/storage'
+import { getFilePath, getVideoContentType, isS3Mode, createWebReadableStream, downloadFile } from '@/lib/storage'
+import sharp from 'sharp'
 import { contentDispositionAttachment } from '@/lib/download-names'
 import { canDownloadMedia } from '@/lib/download-permission'
 import { sanitizeContentType } from '@/lib/file-validation'
@@ -381,6 +382,8 @@ export async function GET(
     const { token } = await params
     const { searchParams } = request.nextUrl
     const isDownload = searchParams.get('download') === 'true'
+    const isInline = searchParams.get('inline') === 'true'
+    const isThumb = searchParams.get('thumb') === 'true'
     const assetId = searchParams.get('assetId')
     const requestedManifestPath = searchParams.get(HLS_MANIFEST_QUERY_PARAM)
 
@@ -430,6 +433,12 @@ export async function GET(
       return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
     }
     const isAdminRequest = verifiedToken.isAdmin === true
+
+    // Asset bytes require a token minted for that exact asset; a playback token
+    // cannot be turned into an arbitrary asset read by adding `assetId`.
+    if (assetId && verifiedToken.assetId !== assetId) {
+      return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
+    }
 
     // Session-based content rate limiting.
     // Range requests (video scrubbing/seeking) are normal browser behaviour and are
@@ -630,7 +639,7 @@ export async function GET(
           bytes: Number(video.sourceQualityBytes || 0),
         }).catch(() => {})
       }
-    } else if (assetId && isDownload) {
+    } else if (assetId && (isDownload || isInline)) {
       const asset = await prisma.videoAsset.findUnique({
         where: { id: assetId }
       })
@@ -639,24 +648,32 @@ export async function GET(
         return contentRefusal(404, shareMessages.assetNotFound || 'Asset not found')
       }
 
-      // Client-uploaded comment attachments keep their download affordance;
-      // every other asset also needs the link's own download permission.
-      if (!canDownloadMedia({
-        isAdmin: isAdminRequest,
-        isClientUploadedAsset: asset.uploadedBy === 'client',
-        permissions: verifiedToken.permissions,
-      })) {
-        return contentRefusal(403, shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed')
-      }
-
-      // Check permissions (skip for admins and client-uploaded comment attachments)
-      if (!isAdminRequest && asset.uploadedBy !== 'client') {
-        if (!video.project.allowAssetDownload) {
+      if (isInline) {
+        // Inline preview is reserved for client comment attachments; project
+        // assets still go through the download grant.
+        if (asset.uploadedBy !== 'client') {
+          return contentRefusal(403, shareMessages.accessDenied || 'Access denied')
+        }
+      } else {
+        // Client-uploaded comment attachments keep their download affordance;
+        // every other asset also needs the link's own download permission.
+        if (!canDownloadMedia({
+          isAdmin: isAdminRequest,
+          isClientUploadedAsset: asset.uploadedBy === 'client',
+          permissions: verifiedToken.permissions,
+        })) {
           return contentRefusal(403, shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed')
         }
 
-        if (!video.approved) {
-          return contentRefusal(403, shareMessages.assetsOnlyAvailableForApprovedVideos || 'Assets only available for approved videos')
+        // Check permissions (skip for admins and client-uploaded comment attachments)
+        if (!isAdminRequest && asset.uploadedBy !== 'client') {
+          if (!video.project.allowAssetDownload) {
+            return contentRefusal(403, shareMessages.assetDownloadsNotAllowed || 'Asset downloads not allowed')
+          }
+
+          if (!video.approved) {
+            return contentRefusal(403, shareMessages.assetsOnlyAvailableForApprovedVideos || 'Assets only available for approved videos')
+          }
         }
       }
 
@@ -716,6 +733,47 @@ export async function GET(
       return contentRefusal(404, shareMessages.accessDenied || 'Access denied')
     }
 
+    // Inline comment-image thumbnails are resized on demand so a comment never
+    // downloads a multi-megabyte original just to draw a small preview.
+    if (isInline && isThumb && assetId) {
+      if (!contentType.startsWith('image/')) {
+        return contentRefusal(400, shareMessages.accessDenied || 'Access denied')
+      }
+
+      const stream = await downloadFile(filePath)
+      const chunks: Buffer[] = []
+      for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      }
+      const original = Buffer.concat(chunks)
+
+      try {
+        const thumbnail = await sharp(original)
+          .rotate()
+          .resize({ width: 480, withoutEnlargement: true })
+          .webp({ quality: 72 })
+          .toBuffer()
+        return new NextResponse(new Uint8Array(thumbnail), {
+          headers: {
+            'Content-Type': 'image/webp',
+            'Content-Length': thumbnail.length.toString(),
+            'Cache-Control': 'private, max-age=86400',
+            'X-Content-Type-Options': 'nosniff',
+          },
+        })
+      } catch (error) {
+        logError('Comment attachment thumbnail generation failed:', error)
+        return new NextResponse(new Uint8Array(original), {
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': original.length.toString(),
+            'Cache-Control': 'private, max-age=3600',
+            'X-Content-Type-Options': 'nosniff',
+          },
+        })
+      }
+    }
+
     // ── S3 mode: redirect browser directly to MinIO ───────────────────────────
     if (isS3Mode()) {
       const fileExistsOnS3 = await s3FileExists(filePath)
@@ -748,6 +806,13 @@ export async function GET(
         return NextResponse.redirect(presignedUrl, {
           status: 302,
           headers: { 'Cache-Control': 'no-store' },
+        })
+      } else if (isInline) {
+        // Comment attachment preview: stream inline, no attachment disposition.
+        const presignedUrl = await s3GetPresignedStreamUrl(filePath, 3600, contentType)
+        return NextResponse.redirect(presignedUrl, {
+          status: 302,
+          headers: { 'Cache-Control': 'private, no-store' },
         })
       } else if (verifiedToken.quality === 'thumbnail') {
         const presignedUrl = await s3GetPresignedStreamUrl(filePath, 86400, 'image/jpeg')

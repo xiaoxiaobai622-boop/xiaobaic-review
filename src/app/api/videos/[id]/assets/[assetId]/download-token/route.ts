@@ -20,6 +20,8 @@ export async function POST(
     const videoMessages = messages?.videos || {}
 
     const { id: videoId, assetId } = await params
+    const body = await request.json().catch(() => null)
+    const mode = body?.mode === 'view' ? 'view' : 'download'
 
     const asset = await prisma.videoAsset.findUnique({
       where: { id: assetId },
@@ -48,6 +50,12 @@ export async function POST(
 
     const project = asset.video.project
     const isClientAsset = asset.uploadedBy === 'client'
+
+    // Inline preview is only for comment attachments, never for project assets
+    // that require a download grant.
+    if (mode === 'view' && !isClientAsset) {
+      return NextResponse.json({ error: videoMessages.unauthorizedApi || 'Unauthorized' }, { status: 403 })
+    }
 
     // Client-uploaded comment attachments only need view-level access ('comment');
     // admin/regular assets need 'download'. Guests are never allowed here.
@@ -89,10 +97,10 @@ export async function POST(
     // Video access tokens also gate asset downloads. A stable admin session id lets
     // repeated downloads reuse the cached token instead of minting one per click.
     const sessionId = accessCheck.shareTokenSessionId || (accessCheck.isAdmin ? `admin:${project.id}` : `guest:${Date.now()}`)
-    const token = await generateVideoAccessToken(videoId, project.id, 'original', request, sessionId)
+    const token = await generateVideoAccessToken(videoId, project.id, 'original', request, sessionId, { assetId })
 
     return NextResponse.json({
-      url: `/api/content/${token}?download=true&assetId=${assetId}`,
+      url: `/api/content/${token}?${mode === 'view' ? 'inline=true' : 'download=true'}&assetId=${assetId}`,
     })
   } catch (error) {
     logError('Asset download token generation error:', error)

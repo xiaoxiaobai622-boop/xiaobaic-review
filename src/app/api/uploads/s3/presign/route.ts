@@ -10,6 +10,7 @@ import { ALL_ALLOWED_EXTENSIONS } from '@/lib/asset-validation'
 import { FILE_LIMITS, ALLOWED_PHOTO_TYPES, sanitizeContentType } from '@/lib/file-validation'
 import { verifyS3UploadAccess, getUploadTargetProjectId } from '@/lib/s3-upload-auth'
 import { requireProjectWritable } from '@/lib/team-writeable'
+import { isCommentAttachmentTooLarge, MAX_COMMENT_ATTACHMENT_LABEL } from '@/lib/comment-attachment-limits'
 import { logError } from '@/lib/logging'
 import { rateLimit } from '@/lib/rate-limit'
 
@@ -106,6 +107,10 @@ export async function POST(request: NextRequest) {
 
     if (fileSize > ABSOLUTE_MAX_UPLOAD_SIZE) {
       return NextResponse.json({ error: 'File exceeds maximum allowed size (1000 GB)' }, { status: 413 })
+    }
+
+    if (assetId && isCommentAttachmentTooLarge(fileSize)) {
+      return NextResponse.json({ error: `Comment attachments can be at most ${MAX_COMMENT_ATTACHMENT_LABEL} each` }, { status: 413 })
     }
 
     // ── Enforce per-project max upload size ────────────────────────────────────

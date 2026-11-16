@@ -15,6 +15,12 @@ type CommentWithReplies = Comment & {
 
 const EMPTY_REPLIES: Comment[] = []
 
+const ATTACHMENT_PLACEHOLDER_PATTERN = /^Attachments uploaded #\d+$/
+
+function isAttachmentPlaceholder(content: string | null | undefined, assets: unknown): boolean {
+  return Array.isArray(assets) && assets.length > 0 && ATTACHMENT_PLACEHOLDER_PATTERN.test((content || '').trim())
+}
+
 interface MessageBubbleProps {
   comment: CommentWithReplies
   isReply: boolean
@@ -167,6 +173,7 @@ function MessageBubble({
   const hasReplies = threadReplies.length > 0
   const isReplyOpen = Boolean(inlineReply) && !inlineReplyClosing
   const sanitizedCommentContent = useMemo(() => sanitizeContent(comment.content), [comment.content])
+  const hideCommentPlaceholder = isAttachmentPlaceholder(comment.content, (comment as any).assets)
   const sanitizedReplyContent = useMemo(() => (
     new Map(threadReplies.map((reply) => [reply.id, sanitizeContent(reply.content)]))
   ), [threadReplies])
@@ -270,18 +277,20 @@ function MessageBubble({
               </div>
             )}
 
-            <div
-              className={`break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap ${
-                comment.timecode && onSeekToTimecode
-                  ? 'cursor-pointer rounded-md -mx-2 px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
-                  : ''
-              }`}
-            >
+            {!hideCommentPlaceholder && (
               <div
-                className="[&>p]:m-0"
-                dangerouslySetInnerHTML={{ __html: sanitizedCommentContent }}
-              />
-            </div>
+                className={`break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap ${
+                  comment.timecode && onSeekToTimecode
+                    ? 'cursor-pointer rounded-md -mx-2 px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+                    : ''
+                }`}
+              >
+                <div
+                  className="[&>p]:m-0"
+                  dangerouslySetInnerHTML={{ __html: sanitizedCommentContent }}
+                />
+              </div>
+            )}
 
             {(comment as any).assets && (comment as any).assets.length > 0 && (
               <CommentAttachments
@@ -349,6 +358,7 @@ function MessageBubble({
               (reply.isInternal && replyUser ? (replyUser.name || replyUser.email) : null)
             const replyDetails = [replyProfile?.teamProfession, replyProfile?.department].filter(Boolean).join(' · ')
             const replyTeamLabel = (reply as any).teamName as string | null | undefined
+            const hideReplyPlaceholder = isAttachmentPlaceholder(reply.content, (reply as any).assets)
 
             return (
               <div key={reply.id} className="contents">
@@ -383,10 +393,12 @@ function MessageBubble({
                       </button>
                     )}
                   </div>
-                  <div
-                    className="break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap [&>p]:m-0"
-                    dangerouslySetInnerHTML={{ __html: sanitizedReplyContent.get(reply.id) || '' }}
-                  />
+                  {!hideReplyPlaceholder && (
+                    <div
+                      className="break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap [&>p]:m-0"
+                      dangerouslySetInnerHTML={{ __html: sanitizedReplyContent.get(reply.id) || '' }}
+                    />
+                  )}
                   {(reply as any).assets && (reply as any).assets.length > 0 && (
                     <CommentAttachments
                       assets={(reply as any).assets}

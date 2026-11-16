@@ -8,7 +8,7 @@ import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, 
 import { formatTimecodeAs, formatTimeDisplay } from '@/lib/time-format'
 import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
-import CommentAttachmentButton from './CommentAttachmentButton'
+import CommentAttachmentButton, { type CommentAttachmentHandle } from './CommentAttachmentButton'
 import EmojiPicker from './EmojiPicker'
 import { cn } from '@/lib/utils'
 import type { DrawingTool } from '@/types/annotations'
@@ -142,6 +142,9 @@ export default function CommentInput({
   const [simulationSentence, setSimulationSentence] = useState('')
   const [simulationVisible, setSimulationVisible] = useState(false)
   const [isSimulating, setIsSimulating] = useState(false)
+  const [attachmentUploading, setAttachmentUploading] = useState(false)
+  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
+  const attachmentRef = useRef<CommentAttachmentHandle | null>(null)
   const simulationTimeoutRef = useRef<number | null>(null)
   const simulationFadeTimeoutRef = useRef<number | null>(null)
   const simulationRevealTimeoutRef = useRef<number | null>(null)
@@ -412,7 +415,21 @@ export default function CommentInput({
   }
 
   const hasAttachments = pendingAttachments.length > 0
-  const canSubmit = !loading && Boolean(newComment.trim() || hasAttachments || pendingAnnotation)
+  const canSubmit = !loading && !attachmentUploading && Boolean(newComment.trim() || hasAttachments || pendingAnnotation)
+  const canAttachFiles = Boolean(allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded)
+  const attachmentButton = canAttachFiles ? (
+    <CommentAttachmentButton
+      ref={attachmentRef}
+      videoId={selectedVideoIdProp as string}
+      shareToken={shareToken}
+      shareSlug={shareSlug}
+      onAttachmentAdded={onAttachmentAdded!}
+      onUploadError={onAttachmentErrorChange}
+      onUploadingChange={setAttachmentUploading}
+      disabled={loading}
+      maxFiles={maxCommentAttachments}
+    />
+  ) : null
   const timestampLabel =
     selectedTimestamp !== null && selectedTimestamp !== undefined
       ? formatTimeDisplay(selectedTimestamp, selectedVideoFps, selectedVideoDurationSeconds, format)
@@ -466,14 +483,14 @@ export default function CommentInput({
       }}
       disabled={loading}
       className={cn(
-        'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+        'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
         activeDrawingTool === tool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
       )}
       title={label}
       aria-label={label}
       aria-pressed={activeDrawingTool === tool}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className="h-4 w-4" />
     </button>
   ))
 
@@ -523,12 +540,61 @@ export default function CommentInput({
     }
   }
 
+  const hasDraggedFiles = (event: React.DragEvent<HTMLDivElement>) =>
+    Array.from(event.dataTransfer.types).includes('Files')
+
+  const handleAttachmentDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = canAttachFiles ? 'copy' : 'none'
+    if (canAttachFiles) setIsDraggingAttachment(true)
+  }
+
+  const handleAttachmentDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setIsDraggingAttachment(false)
+  }
+
+  const handleAttachmentDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return
+    event.preventDefault()
+    setIsDraggingAttachment(false)
+    if (!canAttachFiles) return
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length > 0) attachmentRef.current?.addFiles(files)
+  }
+
+  const handleAttachmentPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!canAttachFiles) return
+    const files = Array.from(event.clipboardData.files)
+    if (files.length === 0) {
+      for (const item of Array.from(event.clipboardData.items)) {
+        if (item.kind !== 'file') continue
+        const file = item.getAsFile()
+        if (file) files.push(file)
+      }
+    }
+    if (files.length === 0) return
+    event.preventDefault()
+    attachmentRef.current?.addFiles(files)
+  }
+
   return (
     <div className={cn(
-      'flex-shrink-0',
+      'relative flex-shrink-0',
       isInlineReply ? 'bg-transparent' : 'rounded-[8px] bg-card px-2 pb-1 pt-[6.5px]',
       !sendInsideComposer && !isInlineReply && 'border-t border-border/70',
-    )}>
+    )}
+      onDragOver={handleAttachmentDragOver}
+      onDragLeave={handleAttachmentDragLeave}
+      onDrop={handleAttachmentDrop}
+      onPaste={handleAttachmentPaste}
+    >
+      {isDraggingAttachment && (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[8px] border-2 border-dashed border-primary bg-primary/5 text-xs font-medium text-primary">
+          松开添加附件
+        </div>
+      )}
       {/* Restriction Warning */}
       {currentVideoRestricted && restrictionMessage && (
         <div className="mb-3 p-3 bg-warning-visible border-2 border-warning-visible rounded-lg">
@@ -618,7 +684,7 @@ export default function CommentInput({
                         index === mentionIndex ? 'bg-accent text-foreground' : 'text-foreground hover:bg-accent',
                       )}
                     >
-                      <InitialsAvatar name={candidate.name} size="sm" />
+                      <InitialsAvatar name={candidate.name} src={candidate.avatarUrl} size="sm" />
                       <span className="truncate">{candidate.name}</span>
                     </button>
                   ))}
@@ -658,7 +724,7 @@ export default function CommentInput({
               )}
               {onStartDrawing && !sendInsideComposer && (
                 <div
-                  className="absolute bottom-1 left-2 flex h-[28px] items-center gap-0.5 bg-transparent"
+                  className="absolute bottom-1 left-2 flex h-8 items-center gap-0.5 bg-transparent"
                   role="toolbar"
                   aria-label="画面批注工具"
                 >
@@ -672,7 +738,7 @@ export default function CommentInput({
               {sendInsideComposer && (
                 // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
                 // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
-                <div className="pointer-events-none absolute bottom-1 inset-x-2 flex h-[28px] items-center justify-end gap-1.5">
+                <div className="pointer-events-none absolute bottom-1 inset-x-2 flex h-8 items-center justify-end gap-1.5">
                   {/* 画笔/箭头/矩形 + 表情和时间码算一组：宽输入框里整体居中，窄栏仍靠左。 */}
                   <div
                     className={cn(
@@ -681,7 +747,7 @@ export default function CommentInput({
                     )}
                   >
                     {onStartDrawing && (
-                      <div className="flex h-[28px] items-center gap-0.5" role="toolbar" aria-label="画面批注工具">
+                      <div className="flex h-8 items-center gap-0.5" role="toolbar" aria-label="画面批注工具">
                         {drawingToolButtons}
                       </div>
                     )}
@@ -690,7 +756,7 @@ export default function CommentInput({
                         ref={emojiBtnRef}
                         type="button"
                         onClick={toggleEmojiPicker}
-                        className={cn(styles.trigger, 'pointer-events-auto inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
+                        className={cn(styles.trigger, 'pointer-events-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
                         aria-label="添加表情符号"
                         aria-expanded={emojiOpen}
                         aria-haspopup="dialog"
@@ -698,9 +764,10 @@ export default function CommentInput({
                         data-review-popup-trigger
                         title="添加表情符号"
                       >
-                        <Smile className="h-3.5 w-3.5" />
+                        <Smile className="h-4 w-4" />
                       </button>
                     )}
+                    {attachmentButton}
                     {sendInsideComposer && showTimecodePill && (
                       <div className={cn('shrink-0', isWideComposer && 'absolute left-full top-0 ml-2')}>
                         {renderTimecodePill(true)}
@@ -762,23 +829,13 @@ export default function CommentInput({
             {isInlineReply ? (
               <div className="mt-2 flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                  {allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded && (
-                    <CommentAttachmentButton
-                      videoId={selectedVideoIdProp}
-                      shareToken={shareToken}
-                      shareSlug={shareSlug}
-                      onAttachmentAdded={onAttachmentAdded}
-                      onUploadError={onAttachmentErrorChange}
-                      disabled={loading}
-                      maxFiles={maxCommentAttachments}
-                    />
-                  )}
+                  {attachmentButton}
                   {!commentsDisabled && (
                     <button
                       ref={emojiBtnRef}
                       type="button"
                       onClick={toggleEmojiPicker}
-                      className={cn(styles.trigger, 'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
+                      className={cn(styles.trigger, 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
                       aria-label="添加表情符号"
                       aria-expanded={emojiOpen}
                       aria-haspopup="dialog"
@@ -813,28 +870,16 @@ export default function CommentInput({
                   </Button>
                 </div>
               </div>
-            ) : (
-            <div className={sendInsideComposer
-              ? 'flex min-w-0 items-center justify-between gap-2'
-              : 'flex h-8 min-w-0 items-center justify-between gap-2'}>
+            ) : !sendInsideComposer ? (
+            <div className="flex h-8 min-w-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                {allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded && (
-                  <CommentAttachmentButton
-                    videoId={selectedVideoIdProp}
-                    shareToken={shareToken}
-                    shareSlug={shareSlug}
-                    onAttachmentAdded={onAttachmentAdded}
-                    onUploadError={onAttachmentErrorChange}
-                    disabled={loading}
-                    maxFiles={maxCommentAttachments}
-                  />
-                )}
+                {!sendInsideComposer && attachmentButton}
                 {!sendInsideComposer && onVisibilityChange && !commentsDisabled && (
                   <button
                     ref={emojiBtnRef}
                     type="button"
                     onClick={toggleEmojiPicker}
-                    className={cn(styles.trigger, 'inline-flex h-[28px] w-[28px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
+                    className={cn(styles.trigger, 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground')}
                     aria-label="添加表情符号"
                     aria-expanded={emojiOpen}
                     aria-haspopup="dialog"
@@ -888,7 +933,7 @@ export default function CommentInput({
                 )}
               </div>
             </div>
-            )}
+            ) : null}
 
             <ReviewPopup id={emojiId} open={emojiOpen} onOpenChange={setEmojiOpen} anchor={emojiBtnRef} returnFocus={textareaRef} label="选择表情符号" align="center" width={298}>
               <EmojiPicker onSelect={insertEmoji} onClose={() => setEmojiOpen(false)} />

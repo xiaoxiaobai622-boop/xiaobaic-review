@@ -373,7 +373,7 @@ export async function verifyProjectAccess(
       authorized: true,
       isAdmin: true,
       isAuthenticated: true,
-      permissions: ['view', 'comment', 'download', 'approve'],
+      permissions: ['view', 'comment', 'download', 'approve', 'attach'],
       shareTokenSessionId: currentUser.sessionId
         ? `admin:${currentUser.sessionId}`
         : `member:${currentUser.id}`,
@@ -553,7 +553,6 @@ export async function fetchProjectWithVideos(
     usePreviewForApprovedPlayback: true,
     allowAssetDownload: true,
     allowPhotoDownload: true,
-    allowClientAssetUpload: true,
     allowReverseShare: true,
     clientCanApprove: true,
     showClientTutorial: true,

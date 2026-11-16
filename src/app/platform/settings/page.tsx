@@ -62,7 +62,6 @@ interface Settings {
     recentFailures: number
     recentBytes: number
   } | null
-  defaultAllowClientAssetUpload: boolean | null
   defaultAllowReverseShare: boolean | null
   defaultShowClientTutorial: boolean | null
   defaultAllowAssetDownload: boolean | null
@@ -167,7 +166,6 @@ export default function GlobalSettingsPage() {
   const [enableSourceQualityPlayback, setEnableSourceQualityPlayback] = useState(false)
   const [sourceQualityAudit, setSourceQualityAudit] = useState<Settings['sourceQualityAudit']>(null)
   const [sourceQualityStats, setSourceQualityStats] = useState<Settings['sourceQualityStats']>(null)
-  const [defaultAllowClientAssetUpload, setDefaultAllowClientAssetUpload] = useState(false)
   const [defaultAllowReverseShare, setDefaultAllowReverseShare] = useState(false)
   const [defaultShowClientTutorial, setDefaultShowClientTutorial] = useState(true)
   const [defaultAllowAssetDownload, setDefaultAllowAssetDownload] = useState(true)
@@ -247,7 +245,6 @@ export default function GlobalSettingsPage() {
     setEnableSourceQualityPlayback(data.enableSourceQualityPlayback ?? false)
     setSourceQualityAudit(data.sourceQualityAudit ?? null)
     setSourceQualityStats(data.sourceQualityStats ?? null)
-    setDefaultAllowClientAssetUpload(data.defaultAllowClientAssetUpload ?? false)
     setDefaultAllowReverseShare(data.defaultAllowReverseShare ?? false)
     setDefaultShowClientTutorial(data.defaultShowClientTutorial ?? true)
     setDefaultAllowAssetDownload(data.defaultAllowAssetDownload ?? true)
@@ -649,7 +646,6 @@ export default function GlobalSettingsPage() {
         autoApproveProject: autoApproveProject,
         defaultUsePreviewForApprovedPlayback: defaultUsePreviewForApprovedPlayback,
         enableSourceQualityPlayback: enableSourceQualityPlayback,
-        defaultAllowClientAssetUpload: defaultAllowClientAssetUpload,
         defaultAllowReverseShare: defaultAllowReverseShare,
         defaultShowClientTutorial: defaultShowClientTutorial,
         defaultAllowAssetDownload: defaultAllowAssetDownload,
@@ -828,7 +824,6 @@ export default function GlobalSettingsPage() {
   const projectDefaultsProps = {
     autoApproveProject, setAutoApproveProject,
     defaultUsePreviewForApprovedPlayback, setDefaultUsePreviewForApprovedPlayback,
-    defaultAllowClientAssetUpload, setDefaultAllowClientAssetUpload,
     defaultAllowReverseShare, setDefaultAllowReverseShare,
     defaultShowClientTutorial, setDefaultShowClientTutorial,
     defaultAllowAssetDownload, setDefaultAllowAssetDownload,

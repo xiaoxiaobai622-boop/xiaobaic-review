@@ -405,10 +405,6 @@ export async function PATCH(
       updateData.allowPhotoDownload = validatedBody.allowPhotoDownload
     }
 
-    if (validatedBody.allowClientAssetUpload !== undefined) {
-      updateData.allowClientAssetUpload = validatedBody.allowClientAssetUpload
-    }
-
     if (validatedBody.allowReverseShare !== undefined) {
       updateData.allowReverseShare = validatedBody.allowReverseShare
     }

@@ -1,17 +1,9 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Paperclip, Loader2, CheckCircle2, AlertCircle, Upload, X, FileIcon, RotateCcw } from 'lucide-react'
+import { Loader2, Paperclip } from 'lucide-react'
 import { Button } from './ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from './ui/dialog'
 import * as tus from 'tus-js-client'
 import { createTusAfterResponseHandler, createTusShouldRetryHandler, getTusUploadErrorMessage, resetTusAuthRetry } from '@/lib/tus-error'
 import { getTusChunkSizeBytes, TUS_RETRY_DELAYS_MS } from '@/lib/transfer-tuning'
@@ -23,10 +15,12 @@ import {
 } from '@/lib/tus-context'
 import { useS3MultipartUpload } from '@/hooks/useS3MultipartUpload'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
-import { formatFileSize } from '@/lib/utils'
-import { ALL_ALLOWED_EXTENSIONS, ACCEPTED_FILE_INPUT } from '@/lib/asset-validation'
+import { COMMENT_ATTACHMENT_ACCEPT, COMMENT_ATTACHMENT_EXTENSIONS, isVideoAssetExtension } from '@/lib/asset-validation'
+import { apiFetch } from '@/lib/api-client'
+import { getAccessToken } from '@/lib/token-store'
 import { shareApiPost, shareFetch, readShareTokenRaw, renewShareToken, shareSlugFromToken } from '@/lib/share-token-store'
 import { SHARE_RENEWABLE_CODES } from '@/lib/share-error-codes'
+import { MAX_COMMENT_ATTACHMENT_BYTES, MAX_COMMENT_ATTACHMENT_LABEL } from '@/lib/comment-attachment-limits'
 
 interface PendingAttachment {
   assetId: string
@@ -43,23 +37,14 @@ interface CommentAttachmentButtonProps {
   shareSlug?: string | null
   onAttachmentAdded: (attachment: PendingAttachment) => void
   onUploadError?: (message: string | null) => void
+  onUploadingChange?: (uploading: boolean) => void
   disabled?: boolean
   maxFiles?: number
 }
 
-interface FileUploadItem {
-  id: string
-  file: File
-  status: 'pending' | 'uploading' | 'completed' | 'error'
-  progress: number
-  error?: string
-  assetId?: string
-  tusUpload?: tus.Upload
-}
-
 const DEFAULT_MAX_FILES = 10
 
-const ALLOWED_EXTENSIONS = new Set(ALL_ALLOWED_EXTENSIONS)
+const ALLOWED_EXTENSIONS = new Set(COMMENT_ATTACHMENT_EXTENSIONS)
 
 function getFileExtension(filename: string): string {
   const lastDot = filename.lastIndexOf('.')
@@ -67,106 +52,80 @@ function getFileExtension(filename: string): string {
   return filename.slice(lastDot).toLowerCase()
 }
 
-function validateFile(file: File): string | null {
-  const ext = getFileExtension(file.name)
-  if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
-    return `Unsupported file type (${ext || 'no extension'})`
-  }
-  return null
+type UploadResult = { ok: true; attachment: PendingAttachment } | { ok: false; error: string }
+
+export interface CommentAttachmentHandle {
+  addFiles: (files: File[]) => void
 }
 
-export default function CommentAttachmentButton({
+const CommentAttachmentButton = forwardRef<CommentAttachmentHandle, CommentAttachmentButtonProps>(function CommentAttachmentButton({
   videoId,
   shareToken,
   shareSlug = null,
   onAttachmentAdded,
   onUploadError,
+  onUploadingChange,
   disabled = false,
   maxFiles: maxFilesProp,
-}: CommentAttachmentButtonProps) {
+}, ref) {
   const t = useTranslations('comments')
   const tShare = useTranslations('share')
   const tc = useTranslations('common')
   const MAX_FILES = maxFilesProp ?? DEFAULT_MAX_FILES
-  const [open, setOpen] = useState(false)
-  const [items, setItems] = useState<FileUploadItem[]>([])
-  const [isUploading, setIsUploading] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
+  const [uploading, setUploading] = useState(false)
+  const [queue, setQueue] = useState<{ index: number; total: number; percent: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadingRef = useRef(false)
   const tusUploadsRef = useRef<Map<string, tus.Upload>>(new Map())
   const s3AbortKeysRef = useRef<Map<string, string>>(new Map())
   const { startUpload: startS3Upload, abortUpload: abortS3Upload } = useS3MultipartUpload()
   const storageProvider = useStorageProvider()
-
-  const allDone = items.length > 0 && items.every((i) => i.status === 'completed' || i.status === 'error')
-  const anyFailed = items.some((i) => i.status === 'error')
-  const hasFiles = items.length > 0
-  const atLimit = items.length >= MAX_FILES
+  const abortS3Ref = useRef(abortS3Upload)
+  useEffect(() => {
+    abortS3Ref.current = abortS3Upload
+  }, [abortS3Upload])
   const effectiveShareSlug = shareSlug || shareSlugFromToken(shareToken)
 
-  const addFiles = (files: FileList | File[]) => {
-    setItems((prev) => {
-      const remaining = MAX_FILES - prev.length
-      if (remaining <= 0) return prev
-      const newFiles = Array.from(files).slice(0, remaining)
-      const newItems: FileUploadItem[] = newFiles.map((file) => {
-        const error = validateFile(file)
-        return {
-          id: crypto.randomUUID(),
-          file,
-          status: error ? 'error' as const : 'pending' as const,
-          progress: 0,
-          error: error || undefined,
-        }
-      })
-      return [...prev, ...newItems]
-    })
+  useEffect(() => () => {
+    tusUploadsRef.current.forEach((upload) => upload.abort(true))
+    tusUploadsRef.current.clear()
+    s3AbortKeysRef.current.forEach((key) => abortS3Ref.current(key).catch(() => {}))
+    s3AbortKeysRef.current.clear()
+  }, [])
+
+  const fileError = (file: File): string | null => {
+    const ext = getFileExtension(file.name)
+    // A video belongs in the project's version list, not in a comment.
+    if (isVideoAssetExtension(ext)) return t('videoAttachmentsNotAllowed')
+    if (!ext || !ALLOWED_EXTENSIONS.has(ext)) return t('unsupportedFileType')
+    if (file.size > MAX_COMMENT_ATTACHMENT_BYTES) {
+      return t('attachmentTooLarge', { size: MAX_COMMENT_ATTACHMENT_LABEL })
+    }
+    return null
   }
 
-  const removeFile = (id: string) => {
-    if (storageProvider === 's3') {
-      const s3Key = s3AbortKeysRef.current.get(id)
-      if (s3Key) {
-        abortS3Upload(s3Key).catch(() => {})
-        s3AbortKeysRef.current.delete(id)
-      }
-    } else {
-      // Abort any in-progress TUS upload
-      const tusUpload = tusUploadsRef.current.get(id)
-      if (tusUpload) {
-        tusUpload.abort(true)
-        tusUploadsRef.current.delete(id)
-      }
+  const deleteAssetRecord = (assetId: string) => {
+    if (shareToken && effectiveShareSlug) {
+      shareFetch(effectiveShareSlug, `/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE' }).catch(() => {})
+      return
     }
-    setItems((prev) => prev.filter((i) => i.id !== id))
+    apiFetch(`/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE' }).catch(() => {})
   }
 
-  const uploadFile = async (item: FileUploadItem): Promise<boolean> => {
-    // Step 1: Create asset record via JSON POST
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-    if (shareToken) {
-      headers['Authorization'] = `Bearer ${shareToken}`
-    }
+  const uploadFile = async (file: File, onProgress: (percent: number) => void): Promise<UploadResult> => {
+    const localId = crypto.randomUUID()
 
     let assetId: string
     let fileName: string
     let category: string
 
     try {
-      const body = {
-        fileName: item.file.name,
-        fileSize: item.file.size,
-        category: undefined,
-      }
+      const body = { fileName: file.name, fileSize: file.size, category: undefined }
       const data = shareToken && effectiveShareSlug
         ? await shareApiPost<any>(effectiveShareSlug, `/api/videos/${videoId}/client-assets`, body)
-        : await fetch(`/api/videos/${videoId}/client-assets`, {
+        : await apiFetch(`/api/videos/${videoId}/client-assets`, {
             method: 'POST',
-            headers,
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
           }).then(async (response) => {
             if (!response.ok) {
@@ -184,66 +143,62 @@ export default function CommentAttachmentButton({
       const message = code && SHARE_RENEWABLE_CODES.has(code)
         ? tShare('sessionExpiredRefresh')
         : error instanceof Error ? error.message : t('failedToCreateAsset')
-      setItems((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: message } : i))
-      )
-      return false
+      return { ok: false, error: message }
     }
 
-    // Step 2: Upload file — S3 direct or TUS
-    return new Promise<boolean>((resolve) => {
-      if (storageProvider === 's3') {
-        // ── S3 direct multipart upload ──────────────────────────────
-        const s3Key = `s3-comment-${item.id}`
-        s3AbortKeysRef.current.set(item.id, s3Key)
+    if (storageProvider === 's3') {
+      return new Promise<UploadResult>((resolve) => {
+        const s3Key = `s3-comment-${localId}`
+        s3AbortKeysRef.current.set(localId, s3Key)
         startS3Upload(
-          item.file,
+          file,
           { assetId, shareToken: shareToken || undefined, shareSlug: effectiveShareSlug || undefined },
           {
             onProgress: (bytesUploaded, bytesTotal) => {
-              const pct = Math.round((bytesUploaded / bytesTotal) * 100)
-              setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, progress: pct } : i)))
+              onProgress(Math.round((bytesUploaded / bytesTotal) * 100))
             },
             onSuccess: () => {
-              setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'completed', progress: 100, assetId } : i)))
-              s3AbortKeysRef.current.delete(item.id)
-              clearFileContext(item.file)
-              clearUploadMetadata(item.file)
-              onAttachmentAdded({ assetId, videoId, fileName, fileSize: item.file.size.toString(), fileType: item.file.type || 'application/octet-stream', category })
-              resolve(true)
+              s3AbortKeysRef.current.delete(localId)
+              clearFileContext(file)
+              clearUploadMetadata(file)
+              resolve({
+                ok: true,
+                attachment: {
+                  assetId,
+                  videoId,
+                  fileName,
+                  fileSize: file.size.toString(),
+                  fileType: file.type || 'application/octet-stream',
+                  category,
+                },
+              })
             },
             onError: (err) => {
-              setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: err.message, assetId } : i)))
-              s3AbortKeysRef.current.delete(item.id)
-              clearUploadMetadata(item.file)
-              if (shareToken && effectiveShareSlug) {
-                shareFetch(effectiveShareSlug, `/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE' }).catch(() => {})
-              } else {
-                const deleteHeaders: Record<string, string> = {}
-                if (shareToken) deleteHeaders['Authorization'] = `Bearer ${shareToken}`
-                fetch(`/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE', headers: deleteHeaders }).catch(() => {})
-              }
-              resolve(false)
+              s3AbortKeysRef.current.delete(localId)
+              clearUploadMetadata(file)
+              deleteAssetRecord(assetId)
+              resolve({ ok: false, error: err.message || t('operationFailed') })
             },
           },
           s3Key
         )
-      } else {
-        // ── TUS resumable upload ──────────────────────────────────────
-        // Ensure fresh upload context
-        ensureFreshUploadOnContextChange(item.file, `client:${videoId}:${assetId}`)
+      })
+    }
+
+    return new Promise<UploadResult>((resolve) => {
+      ensureFreshUploadOnContextChange(file, `client:${videoId}:${assetId}`)
 
       const uploadRef = { current: null as tus.Upload | null }
 
-      const tusUpload = new tus.Upload(item.file, {
+      const tusUpload = new tus.Upload(file, {
         endpoint: `${window.location.origin}/api/uploads`,
         retryDelays: TUS_RETRY_DELAYS_MS,
         metadata: {
-          filename: item.file.name,
-          filetype: item.file.type || 'application/octet-stream',
-          assetId: assetId,
+          filename: file.name,
+          filetype: file.type || 'application/octet-stream',
+          assetId,
         },
-        chunkSize: getTusChunkSizeBytes(item.file.size),
+        chunkSize: getTusChunkSizeBytes(file.size),
         storeFingerprintForResuming: true,
         removeFingerprintOnSuccess: true,
         onAfterResponse: createTusAfterResponseHandler(
@@ -255,373 +210,135 @@ export default function CommentAttachmentButton({
         onShouldRetry: createTusShouldRetryHandler(uploadRef),
 
         onProgress: (bytesUploaded, bytesTotal) => {
-          const percentage = Math.round((bytesUploaded / bytesTotal) * 100)
-          setItems((prev) =>
-            prev.map((i) => (i.id === item.id ? { ...i, progress: percentage } : i))
-          )
+          onProgress(Math.round((bytesUploaded / bytesTotal) * 100))
         },
 
         onSuccess: () => {
-          setItems((prev) =>
-            prev.map((i) => (i.id === item.id ? { ...i, status: 'completed', progress: 100, assetId } : i))
-          )
-
-          tusUploadsRef.current.delete(item.id)
+          tusUploadsRef.current.delete(localId)
           resetTusAuthRetry(uploadRef.current)
-          clearFileContext(item.file)
-          clearUploadMetadata(item.file)
-          clearTUSFingerprint(item.file)
-
-          onAttachmentAdded({
-            assetId,
-            videoId,
-            fileName,
-            fileSize: item.file.size.toString(),
-            fileType: item.file.type || 'application/octet-stream',
-            category,
+          clearFileContext(file)
+          clearUploadMetadata(file)
+          clearTUSFingerprint(file)
+          resolve({
+            ok: true,
+            attachment: {
+              assetId,
+              videoId,
+              fileName,
+              fileSize: file.size.toString(),
+              fileType: file.type || 'application/octet-stream',
+              category,
+            },
           })
-
-          resolve(true)
         },
 
         onError: (error) => {
-          const errorMessage = getTusUploadErrorMessage(error)
-
-          setItems((prev) =>
-            prev.map((i) => (i.id === item.id ? { ...i, status: 'error', error: errorMessage, assetId } : i))
-          )
-
-          tusUploadsRef.current.delete(item.id)
+          tusUploadsRef.current.delete(localId)
           resetTusAuthRetry(uploadRef.current)
-          clearUploadMetadata(item.file)
-          clearTUSFingerprint(item.file)
-
-          // Try to clean up the asset record on failure
-          if (shareToken && effectiveShareSlug) {
-            shareFetch(effectiveShareSlug, `/api/videos/${videoId}/client-assets?assetId=${assetId}`, { method: 'DELETE' }).catch(() => {})
-          } else {
-            const deleteHeaders: Record<string, string> = {}
-            if (shareToken) {
-              deleteHeaders['Authorization'] = `Bearer ${shareToken}`
-            }
-            fetch(`/api/videos/${videoId}/client-assets?assetId=${assetId}`, {
-              method: 'DELETE',
-              headers: deleteHeaders,
-            }).catch(() => {})
-          }
-
-          resolve(false)
+          clearUploadMetadata(file)
+          clearTUSFingerprint(file)
+          deleteAssetRecord(assetId)
+          resolve({ ok: false, error: getTusUploadErrorMessage(error) || t('operationFailed') })
         },
 
         onBeforeRequest: (req) => {
           const xhr = req.getUnderlyingObject()
           xhr.withCredentials = true
-
-          // Use the newest share bearer: the upload can outlive the one this
-          // dialog opened with, and a renewal may have replaced it.
           const currentToken = (effectiveShareSlug && readShareTokenRaw(effectiveShareSlug)) || shareToken
-          if (currentToken) {
-            xhr.setRequestHeader('Authorization', `Bearer ${currentToken}`)
-          }
+          const accountToken = currentToken ? null : getAccessToken()
+          if (currentToken) xhr.setRequestHeader('Authorization', `Bearer ${currentToken}`)
+          else if (accountToken) xhr.setRequestHeader('Authorization', `Bearer ${accountToken}`)
         },
       })
 
       uploadRef.current = tusUpload
-      tusUploadsRef.current.set(item.id, tusUpload)
+      tusUploadsRef.current.set(localId, tusUpload)
 
-      // Check for previous uploads to resume
       tusUpload.findPreviousUploads().then((previousUploads) => {
-        if (previousUploads.length > 0) {
-          tusUpload.resumeFromPreviousUpload(previousUploads[0])
-        }
+        if (previousUploads.length > 0) tusUpload.resumeFromPreviousUpload(previousUploads[0])
         tusUpload.start()
       })
-      } // end TUS else block
     })
   }
 
-  const retryFile = (id: string) => {
-    setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: 'pending', error: undefined, progress: 0, assetId: undefined } : i))
-    )
-  }
+  const handleFiles = async (files: File[]) => {
+    if (uploadingRef.current) return
+    const selected = files.slice(0, MAX_FILES)
+    if (selected.length === 0) return
 
-  const startUpload = async () => {
-    const pending = items.filter((i) => i.status === 'pending')
-    if (pending.length === 0) return
+    const accepted: File[] = []
+    let firstError: string | null = null
+    for (const file of selected) {
+      const error = fileError(file)
+      if (error) {
+        if (!firstError) firstError = `${file.name}：${error}`
+      } else {
+        accepted.push(file)
+      }
+    }
+    onUploadError?.(firstError)
+    if (accepted.length === 0) return
 
-    setIsUploading(true)
     uploadingRef.current = true
-    onUploadError?.(null)
-    setUploadProgress({ current: 0, total: pending.length })
-
-    for (let idx = 0; idx < pending.length; idx++) {
-      const item = pending[idx]
-      setUploadProgress({ current: idx + 1, total: pending.length })
-
-      // Mark as uploading
-      setItems((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, status: 'uploading' } : i))
-      )
-
-      await uploadFile(item)
-    }
-
-    setIsUploading(false)
-    uploadingRef.current = false
-  }
-
-  const handleDone = () => {
-    setOpen(false)
-    setItems([])
-    setUploadProgress({ current: 0, total: 0 })
-  }
-
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next)
-    // Allow closing during upload — uploads continue in background via refs
-    if (!next && !uploadingRef.current) {
-      tusUploadsRef.current.forEach((upload) => upload.abort(true))
-      tusUploadsRef.current.clear()
-      s3AbortKeysRef.current.forEach((key) => abortS3Upload(key).catch(() => {}))
-      s3AbortKeysRef.current.clear()
-      setItems([])
-      setUploadProgress({ current: 0, total: 0 })
+    setUploading(true)
+    onUploadingChange?.(true)
+    try {
+      for (let index = 0; index < accepted.length; index++) {
+        setQueue({ index: index + 1, total: accepted.length, percent: 0 })
+        const result = await uploadFile(accepted[index], (percent) => {
+          setQueue((current) => current ? { ...current, percent } : current)
+        })
+        if (result.ok) {
+          onAttachmentAdded(result.attachment)
+        } else {
+          onUploadError?.(result.error)
+        }
+      }
+    } finally {
+      uploadingRef.current = false
+      setUploading(false)
+      setQueue(null)
+      onUploadingChange?.(false)
     }
   }
 
-  // Drag & drop handlers
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!atLimit && !isUploading) setIsDragging(true)
-  }
+  useImperativeHandle(ref, () => ({
+    addFiles: (files: File[]) => { void handleFiles(files) },
+  }))
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(false)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(false)
-    if (!atLimit && !isUploading && e.dataTransfer.files.length > 0) {
-      addFiles(e.dataTransfer.files)
-    }
-  }
-
-  const handleBrowse = () => {
-    fileInputRef.current?.click()
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      addFiles(e.target.files)
-    }
-    e.target.value = ''
-  }
+  const uploadingLabel = queue ? `${tc('uploading')} ${queue.index}/${queue.total} · ${queue.percent}%` : tc('uploading')
 
   return (
     <>
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="icon"
-        onClick={() => setOpen(true)}
-        disabled={disabled}
+        onClick={() => fileInputRef.current?.click()}
+        disabled={disabled || uploading}
         className="h-8 w-8 flex-shrink-0"
-        title={t('attachFiles')}
+        title={uploading ? uploadingLabel : t('attachFiles')}
+        aria-label={uploading ? uploadingLabel : t('attachFiles')}
+        aria-busy={uploading}
       >
-        <Paperclip className="w-4 h-4" />
+        {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
       </Button>
-
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('attachFilesTitle')}</DialogTitle>
-            <DialogDescription className="sr-only">{t('attachFilesDesc')}</DialogDescription>
-          </DialogHeader>
-
-          {/* Drop zone */}
-          {!isUploading && !allDone && (
-            <div
-              role="button"
-              tabIndex={atLimit ? -1 : 0}
-              aria-disabled={atLimit}
-              aria-label={atLimit ? t('maxFilesReached') : t('dragDropFiles')}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={atLimit ? undefined : handleBrowse}
-              onKeyDown={(event) => {
-                if (atLimit || (event.key !== 'Enter' && event.key !== ' ')) return
-                event.preventDefault()
-                handleBrowse()
-              }}
-              className={`
-                flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring
-                ${atLimit
-                  ? 'border-muted bg-muted/30 cursor-not-allowed opacity-50'
-                  : isDragging
-                    ? 'border-primary bg-primary/5'
-                    : 'border-muted-foreground/25 hover:border-primary/50'
-                }
-              `}
-            >
-              <Upload className="w-8 h-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground text-center">
-                {atLimit
-                  ? t('maxFilesReached')
-                  : t('dragDropFiles')}
-              </p>
-              <p className="text-xs text-muted-foreground text-center">
-                {t('supportedFileTypes')}
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept={ACCEPTED_FILE_INPUT}
-                multiple
-                onChange={handleFileChange}
-              />
-            </div>
-          )}
-
-          {/* Upload progress summary */}
-          {isUploading && (
-            <p role="status" aria-live="polite" className="text-sm text-muted-foreground flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {tc('loading')} {uploadProgress.current}/{uploadProgress.total}
-            </p>
-          )}
-
-          {allDone && !anyFailed && (
-            <p role="status" className="text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              {t('allFilesUploaded')}
-            </p>
-          )}
-          {allDone && anyFailed && (
-            <p role="status" className="text-sm text-destructive flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {tc('error')}
-            </p>
-          )}
-
-          {/* File list */}
-          {hasFiles && (
-            <div className="max-h-60 overflow-y-auto space-y-1">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-col rounded-md px-2 py-1.5 text-sm bg-muted/50"
-                >
-                  <div className="flex items-center gap-2">
-                    {/* Status icon */}
-                    {item.status === 'pending' && (
-                      <FileIcon className="w-4 h-4 shrink-0 text-muted-foreground" />
-                    )}
-                    {item.status === 'uploading' && (
-                      <Loader2 className="w-4 h-4 shrink-0 animate-spin text-primary" />
-                    )}
-                    {item.status === 'completed' && (
-                      <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600 dark:text-green-400" />
-                    )}
-                    {item.status === 'error' && (
-                      <AlertCircle className="w-4 h-4 shrink-0 text-destructive" />
-                    )}
-
-                    {/* File info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate">{item.file.name}</p>
-                      {item.status === 'error' && item.error && (
-                        <p className="text-xs text-destructive truncate">{item.error}</p>
-                      )}
-                    </div>
-
-                    {/* Progress percentage for uploading files */}
-                    {item.status === 'uploading' && (
-                      <span className="text-xs text-primary shrink-0 font-medium">
-                        {item.progress}%
-                      </span>
-                    )}
-
-                    {/* File size */}
-                    {item.status !== 'uploading' && (
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {formatFileSize(item.file.size)}
-                      </span>
-                    )}
-
-                    {/* Retry button (errored files) */}
-                    {item.status === 'error' && (
-                      <button
-                        type="button"
-                        onClick={() => retryFile(item.id)}
-                        className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                        title={tc('retry')}
-                        aria-label={tc('retry')}
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    {/* Remove button (pending or errored files) */}
-                    {(item.status === 'pending' || item.status === 'error') && (
-                      <button
-                        type="button"
-                        onClick={() => removeFile(item.id)}
-                        className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                        title={tc('remove')}
-                        aria-label={tc('remove')}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Progress bar for uploading files */}
-                  {item.status === 'uploading' && (
-                    <div className="mt-1.5 h-1 w-full rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-primary transition-[width] duration-300"
-                        style={{ width: `${item.progress}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Actions */}
-          <DialogFooter className="flex items-center justify-between sm:justify-between gap-2">
-            <span className="text-sm text-muted-foreground">
-              {items.length}/{MAX_FILES}
-            </span>
-            {allDone ? (
-              <Button onClick={handleDone}>{tc('done')}</Button>
-            ) : (
-              <Button
-                onClick={startUpload}
-                disabled={!hasFiles || isUploading || items.every((i) => i.status !== 'pending')}
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {tc('loading')}
-                  </>
-                ) : (
-                  tc('upload')
-                )}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept={COMMENT_ATTACHMENT_ACCEPT}
+        multiple
+        onChange={(event) => {
+          // Keep the File objects before clearing the input: clearing `value`
+          // empties the live FileList in some browsers.
+          const files = event.target.files ? Array.from(event.target.files) : []
+          event.target.value = ''
+          if (files.length > 0) void handleFiles(files)
+        }}
+      />
     </>
   )
-}
+})
+
+export default CommentAttachmentButton

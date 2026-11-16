@@ -86,7 +86,6 @@ const SHARE_PROJECT_METADATA_SELECT = {
   hideFeedback: true,
   allowAssetDownload: true,
   allowPhotoDownload: true,
-  allowClientAssetUpload: true,
   allowReverseShare: true,
   clientCanApprove: true,
   restrictCommentsToLatestVersion: true,
@@ -443,7 +442,7 @@ export async function shareTokenAllowsProjectPhotos(token: string | null | undef
  * defaults so neither path can produce that state.
  */
 export function sanitizeSharePermissions(value: unknown, type: string): string[] {
-  const allowed = type === 'COLLECT' ? ['upload'] : ['view', 'comment', 'download', 'approve']
+  const allowed = type === 'COLLECT' ? ['upload'] : ['view', 'comment', 'download', 'approve', 'attach']
   const cleaned = Array.from(new Set(
     (Array.isArray(value) ? value : []).map(String).filter(item => allowed.includes(item)),
   ))

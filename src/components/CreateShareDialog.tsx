@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from 'react'
 import Image from 'next/image'
 import QRCode from 'qrcode'
-import { Check, Copy, Download, ExternalLink, Link2, Loader2, MessageSquare, QrCode, ShieldCheck } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, Link2, Loader2, MessageSquare, Paperclip, QrCode, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api-client'
@@ -46,6 +46,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
   const [copied, setCopied] = useState(false)
   const [versionScope, setVersionScope] = useState('all')
   const [allowDownload, setAllowDownload] = useState(false)
+  const [allowAttach, setAllowAttach] = useState(false)
   const [allowComment, setAllowComment] = useState(true)
   const [passwordEnabled, setPasswordEnabled] = useState(false)
   const [password, setPassword] = useState('')
@@ -71,6 +72,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
     setName(`${target.name}${collect ? '收录' : delivery ? '交付' : '审阅'}`.slice(0, 100))
     setVersionScope('all')
     setAllowDownload(preset === 'DELIVERY')
+    setAllowAttach(!delivery && !collect)
     setAllowComment(!delivery && !collect)
     setPasswordEnabled(false)
     setPassword('')
@@ -119,7 +121,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
     setError('')
     try {
       const collect = preset === 'COLLECT'
-      const permissions = collect ? ['upload'] : ['view', ...(allowComment ? ['comment'] : []), ...(allowDownload ? ['download'] : [])]
+      const permissions = collect ? ['upload'] : ['view', ...(allowComment ? ['comment'] : []), ...(allowDownload ? ['download'] : []), ...(allowAttach ? ['attach'] : [])]
       const onlyVersion = target.versions?.find(item => item.id === versionScope)
       const scopeType = onlyVersion ? 'VIDEO_VERSION' : target.scopeType
       const scopeId = onlyVersion ? onlyVersion.id : target.scopeId
@@ -210,7 +212,8 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
               {/* 收录链接只带 upload 一条权限，服务端也会这样落库，所以这两个开关不能出现。 */}
               {preset !== 'COLLECT' && <>
                 <ToggleRow checked={allowDownload} onChange={setAllowDownload} icon={Download} title="允许下载" description={preset === 'DELIVERY' ? '接收方可以下载交付文件' : '审阅者可以下载视频文件'} />
-                <ToggleRow checked={allowComment} onChange={setAllowComment} icon={MessageSquare} title="允许批注" description="接收方可以添加时间点和画面批注" />
+                <ToggleRow checked={allowAttach} onChange={(value) => { setAllowAttach(value); if (value) setAllowComment(true) }} icon={Paperclip} title="允许添加附件" description="审阅者可以在评论中上传图片、文档等附件" />
+                <ToggleRow checked={allowComment} onChange={(value) => { setAllowComment(value); if (!value) setAllowAttach(false) }} icon={MessageSquare} title="允许批注" description="接收方可以添加时间点和画面批注" />
               </>}
               <ToggleRow checked={passwordEnabled} onChange={(value) => { setPasswordEnabled(value); setPassword(value ? (password || generateSharePasscode()) : '') }} icon={ShieldCheck} title="密码保护" description="打开链接时需要输入访问密码" />
             </div>

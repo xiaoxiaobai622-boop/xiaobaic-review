@@ -96,8 +96,7 @@ export async function canUserAdministerUploadTarget(userId: string, target: S3Up
  * Authenticate the request and verify upload ownership.
  *
  * For non-abort operations, pass `requireUploadPermission: true` to enforce
- * comment permission, guest blocking, and feature-flag checks
- * (allowReverseShare / allowClientAssetUpload).
+ * the link's attach permission, guest blocking, and reverse-share feature flags.
  *
  * For abort operations, ownership is still verified but feature-flag checks
  * are skipped (you should always be able to abort your own upload).
@@ -133,6 +132,20 @@ export async function verifyS3UploadAccess(
 
   if (adminPayload) {
     isAdmin = await canUserAdministerUploadTarget(adminPayload.userId, target)
+  }
+
+  // A plain team member can still finish an attachment they created from the
+  // studio review page. The asset record already proves project access; match
+  // the account session that created it instead of requiring OWNER/ADMIN.
+  if (!isAdmin && adminPayload && assetId) {
+    const ownedAsset = await prisma.videoAsset.findUnique({
+      where: { id: assetId },
+      select: { storagePath: true, uploadedBy: true, uploadedBySessionId: true },
+    })
+    const ownerSessions = [`admin:${adminPayload.sessionId}`, `member:${adminPayload.userId}`]
+    if (ownedAsset?.uploadedBy === 'client' && ownedAsset.uploadedBySessionId && ownerSessions.includes(ownedAsset.uploadedBySessionId)) {
+      return { isAdmin: false, s3Key: ownedAsset.storagePath }
+    }
   }
 
   if (!isAdmin) {
@@ -184,8 +197,8 @@ export async function verifyS3UploadAccess(
         return denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Share tokens can only upload assets or project files')
       }
       if (assetId) {
-        if (!sharePayload.permissions?.includes('comment')) {
-          return denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Comment permission required')
+        if (!sharePayload.permissions?.includes('attach')) {
+          return denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Attach permission required')
         }
         if (sharePayload.guest) {
           return denied(SHARE_ERROR_CODES.GUEST_RESTRICTED, 'Guest access cannot upload files')
@@ -239,15 +252,6 @@ export async function verifyS3UploadAccess(
       }
       if (asset.uploadedBySessionId !== sharePayload.sessionId) {
         return denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Asset does not belong to your session')
-      }
-      if (requireUploadPermission) {
-        const project = await prisma.project.findUnique({
-          where: { id: sharePayload.projectId },
-          select: { allowClientAssetUpload: true },
-        })
-        if (!project?.allowClientAssetUpload) {
-          return denied(SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, 'File attachments are not enabled for this project')
-        }
       }
       return { isAdmin: false, s3Key: asset.storagePath }
     }

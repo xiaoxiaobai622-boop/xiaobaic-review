@@ -23,6 +23,19 @@ export const ALL_ALLOWED_EXTENSIONS = [
 /** Deduplicated comma-separated string for HTML input accept attribute. */
 export const ACCEPTED_FILE_INPUT = [...new Set(ALL_ALLOWED_EXTENSIONS)].join(',')
 
+export const VIDEO_ASSET_EXTENSIONS = [...ALLOWED_ASSET_EXTENSIONS.video] as string[]
+
+export function isVideoAssetExtension(ext: string): boolean {
+  return VIDEO_ASSET_EXTENSIONS.includes(ext.toLowerCase())
+}
+
+/** Comment attachments are references, not deliverables, so video stays out. */
+export const COMMENT_ATTACHMENT_EXTENSIONS = ALL_ALLOWED_EXTENSIONS.filter(
+  (ext) => !VIDEO_ASSET_EXTENSIONS.includes(ext)
+)
+
+export const COMMENT_ATTACHMENT_ACCEPT = [...new Set(COMMENT_ATTACHMENT_EXTENSIONS)].join(',')
+
 export function validateAssetExtension(
   filename: string,
   category?: string

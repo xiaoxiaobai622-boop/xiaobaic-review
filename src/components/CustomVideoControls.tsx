@@ -266,6 +266,7 @@ interface MarkerData {
   id: string
   timestamp: number
   authorName: string | null
+  avatarUrl: string | null
   isInternal: boolean
   colorKey: string
   content: string
@@ -386,6 +387,7 @@ const TimelineMarkers = memo(function TimelineMarkers({
             >
               <InitialsAvatar
                 name={primaryMarker.authorName}
+                src={primaryMarker.avatarUrl}
                 size="xs"
                 variant="comment"
                 isInternal={primaryMarker.isInternal}
@@ -418,6 +420,7 @@ const TimelineMarkers = memo(function TimelineMarkers({
                     <div className="flex items-center gap-2 mb-1">
                       <InitialsAvatar
                         name={marker.authorName}
+                        src={marker.avatarUrl}
                         size="xs"
                         variant="comment"
                         isInternal={marker.isInternal}
@@ -687,6 +690,7 @@ function CustomVideoControls({
           id: comment.id,
           timestamp,
           authorName: effectiveAuthorName,
+          avatarUrl: (comment as any).user?.avatarUrl || (comment as any).avatarUrl || null,
           isInternal: isCommentInternal,
           colorKey,
           content: normalizedContent.slice(0, 100),

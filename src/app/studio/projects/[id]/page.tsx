@@ -1593,6 +1593,7 @@ export default function ProjectPage() {
           videos={reviewStreams}
           isAdminView={true}
           adminUser={user}
+          allowClientAssetUpload
           showShortcutsButton={false}
           showInfoButton={false}
           sendInsideComposer={true}

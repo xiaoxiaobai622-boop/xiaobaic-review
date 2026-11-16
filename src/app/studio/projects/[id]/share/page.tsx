@@ -917,7 +917,7 @@ export default function AdminSharePage() {
           scopeType: 'VIDEO',
           scopeId: video.id,
           name: video.name ? `${video.name} · 审阅分享` : '审阅分享',
-          permissions: ['view', 'comment'],
+          permissions: ['view', 'comment', 'attach'],
           authMode: 'NONE',
         }),
       })
@@ -1126,6 +1126,7 @@ export default function AdminSharePage() {
       source="admin"
       adminUser={adminUser}
       shareToken={null}
+      allowClientAssetUpload={capabilities.canAttachFiles}
       defaultQuality={defaultQuality}
       clientName={clientDisplayName}
       isPasswordProtected={project.hasSharePassword}

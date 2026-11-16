@@ -46,7 +46,6 @@ export async function PATCH(request: NextRequest) {
     'maxUploadSizeGB',
     'defaultTimestampDisplay',
     'defaultUsePreviewForApprovedPlayback',
-    'defaultAllowClientAssetUpload',
     'defaultAllowReverseShare',
     'defaultShowClientTutorial',
     'defaultAllowAssetDownload',

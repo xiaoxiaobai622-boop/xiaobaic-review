@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { ALL_ALLOWED_EXTENSIONS } from '@/lib/asset-validation'
 import { ALLOWED_PHOTO_TYPES } from '@/lib/file-validation'
 import { getFilePath, initStorage, isS3Mode, moveFile, fileExists, getStoredFileSize, TUS_TMP_DIR } from '@/lib/storage'
+import { isCommentAttachmentTooLarge, MAX_COMMENT_ATTACHMENT_LABEL } from '@/lib/comment-attachment-limits'
 import path from 'path'
 import fs from 'fs'
 import { Readable } from 'stream'
@@ -64,7 +65,22 @@ const tusServer: Server = new Server({
           projectUploadId: upload.metadata?.projectUploadId as string | undefined,
           photoId: upload.metadata?.photoId as string | undefined,
         })
-        if (!isAdmin) throw tusError(403, 'Access denied for upload target')
+        if (!isAdmin) {
+          // A plain team member may finish a client attachment they created from
+          // the studio review page; match the session that owns the asset.
+          const targetAssetId = upload.metadata?.assetId as string | undefined
+          const ownedAsset = targetAssetId
+            ? await prisma.videoAsset.findUnique({
+                where: { id: targetAssetId },
+                select: { uploadedBy: true, uploadedBySessionId: true },
+              })
+            : null
+          const ownerSessions = [`admin:${adminPayload.sessionId}`, `member:${adminPayload.userId}`]
+          const ownsAsset = ownedAsset?.uploadedBy === 'client'
+            && Boolean(ownedAsset.uploadedBySessionId)
+            && ownerSessions.includes(ownedAsset.uploadedBySessionId as string)
+          if (!ownsAsset) throw tusError(403, 'Access denied for upload target')
+        }
       } else {
         // Try share token auth for client uploads
         const shareResult = await verifyShareTokenResult(bearer)
@@ -118,9 +134,9 @@ const tusServer: Server = new Server({
             throw denied(SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, 'File submissions are not enabled for this link')
           }
         } else {
-          // Comment attachments still require comment permission and cannot be guests.
-          if (!sharePayload.permissions?.includes('comment')) {
-            throw denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Comment permission required')
+          // Comment attachments require the link's attach permission and cannot be guests.
+          if (!sharePayload.permissions?.includes('attach')) {
+            throw denied(SHARE_ERROR_CODES.PERMISSION_DENIED, 'Attach permission required')
           }
           if (sharePayload.guest) throw denied(SHARE_ERROR_CODES.GUEST_RESTRICTED, 'Guest access cannot upload files')
 
@@ -141,15 +157,6 @@ const tusServer: Server = new Server({
           }
           if (asset.uploadedBySessionId !== sharePayload.sessionId) {
             throw denied(SHARE_ERROR_CODES.SCOPE_DENIED, 'Asset does not belong to your session')
-          }
-
-          const project = await prisma.project.findUnique({
-            where: { id: sharePayload.projectId },
-            select: { allowClientAssetUpload: true },
-          })
-
-          if (!project?.allowClientAssetUpload) {
-            throw denied(SHARE_ERROR_CODES.UPLOAD_NOT_ALLOWED, 'File attachments are not enabled for this project')
           }
         }
       }
@@ -176,6 +183,9 @@ const tusServer: Server = new Server({
       }
       if (requestedSize > maxUploadSizeBytes) {
         throw tusError(413, `Upload exceeds maximum allowed size of ${maxUploadSizeGB} GB`)
+      }
+      if (assetId && isCommentAttachmentTooLarge(requestedSize)) {
+        throw tusError(413, `Comment attachments can be at most ${MAX_COMMENT_ATTACHMENT_LABEL} each`)
       }
       if (requestedSize > ABSOLUTE_MAX_UPLOAD_SIZE_BYTES) {
         throw tusError(413, 'Upload exceeds maximum allowed size')

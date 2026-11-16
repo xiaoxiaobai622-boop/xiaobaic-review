@@ -316,20 +316,23 @@ export default function ThumbnailGrid({
 
                   <VideoReviewStatusBadge video={latestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
 
-                  {/* Duration and annotation badges */}
+                  {/* Duration badge */}
                   <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
-                    <div className="inline-flex h-[22px] items-center gap-1 rounded bg-white/90 px-2 text-[10px] font-medium tabular-nums text-black shadow-sm">
+                    <div className="inline-flex h-[22px] items-center gap-1 rounded bg-card/90 px-2 text-[10px] font-medium tabular-nums text-foreground shadow-sm">
                       <Film className="h-2.5 w-2.5" />
                       {durationLabel}
                     </div>
-                    <div
-                      className="inline-flex h-[22px] items-center gap-1 rounded bg-white/90 px-2 text-[10px] font-medium tabular-nums text-black shadow-sm"
-                      title={t('feedbackCount', { count: feedbackCount })}
-                      aria-label={t('feedbackCount', { count: feedbackCount })}
-                    >
-                      <MessageSquare className="h-2.5 w-2.5" />
-                      {feedbackCount}
-                    </div>
+                  </div>
+
+                  {/* Comment count stays on the opposite side so both badges read
+                      as corner metadata instead of one wide left cluster. */}
+                  <div
+                    className="absolute bottom-1.5 right-1.5 inline-flex h-[22px] items-center gap-1 rounded bg-card/90 px-2 text-[10px] font-medium tabular-nums text-foreground shadow-sm"
+                    title={t('feedbackCount', { count: feedbackCount })}
+                    aria-label={t('feedbackCount', { count: feedbackCount })}
+                  >
+                    <MessageSquare className="h-2.5 w-2.5" />
+                    {feedbackCount}
                   </div>
                 </div>
 

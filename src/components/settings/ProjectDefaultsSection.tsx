@@ -8,8 +8,6 @@ interface ProjectDefaultsSectionProps {
   setAutoApproveProject: (value: boolean) => void
   defaultUsePreviewForApprovedPlayback: boolean
   setDefaultUsePreviewForApprovedPlayback: (value: boolean) => void
-  defaultAllowClientAssetUpload: boolean
-  setDefaultAllowClientAssetUpload: (value: boolean) => void
   defaultAllowReverseShare: boolean
   setDefaultAllowReverseShare: (value: boolean) => void
   defaultShowClientTutorial: boolean
@@ -28,8 +26,6 @@ export function ProjectDefaultsSection({
   setAutoApproveProject,
   defaultUsePreviewForApprovedPlayback,
   setDefaultUsePreviewForApprovedPlayback,
-  defaultAllowClientAssetUpload,
-  setDefaultAllowClientAssetUpload,
   defaultAllowReverseShare,
   setDefaultAllowReverseShare,
   defaultShowClientTutorial,
@@ -109,19 +105,6 @@ export function ProjectDefaultsSection({
             id="defaultAllowAssetDownload"
             checked={defaultAllowAssetDownload}
             onCheckedChange={setDefaultAllowAssetDownload}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5 flex-1">
-            <Label htmlFor="defaultAllowClientAssetUpload">{t('videoProcessing.clientAttachments')}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t('videoProcessing.clientAttachmentsHint')}
-            </p>
-          </div>
-          <Switch
-            id="defaultAllowClientAssetUpload"
-            checked={defaultAllowClientAssetUpload}
-            onCheckedChange={setDefaultAllowClientAssetUpload}
           />
         </div>
         <div className="flex items-center justify-between gap-4">

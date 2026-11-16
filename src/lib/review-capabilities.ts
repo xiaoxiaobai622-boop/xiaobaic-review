@@ -37,6 +37,7 @@ export interface ReviewCapabilities {
   canCompareVersions: boolean
   canShareLink: boolean
   canDownloadOriginal: boolean
+  canAttachFiles: boolean
   canApprove: boolean
   canSeeRoster: boolean
 }
@@ -68,6 +69,7 @@ export function getReviewCapabilities(input: {
       canCompareVersions: true,
       canShareLink: manager,
       canDownloadOriginal: true,
+      canAttachFiles: true,
       canApprove: manager,
       canSeeRoster: true,
     }
@@ -84,6 +86,7 @@ export function getReviewCapabilities(input: {
     canCompareVersions: Boolean(link && link.visibleVersionCount > 1 && permissions.has('view')),
     canShareLink: false,
     canDownloadOriginal: permissions.has('download'),
+    canAttachFiles: permissions.has('attach'),
     canApprove: project.clientCanApprove,
     canSeeRoster: false,
   }

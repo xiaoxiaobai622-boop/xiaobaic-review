@@ -442,7 +442,6 @@ export async function GET(
       allowPhotoDownload: photosVisible ? project.allowPhotoDownload : false,
       hasPhotos: photoAlbumCount > 0,
       allowReverseShare: shareAllowsUploads(policy, resolvedProject),
-      allowClientAssetUpload: project.allowClientAssetUpload,
       clientCanApprove: project.clientCanApprove,
       showClientTutorial: project.showClientTutorial ?? true,
 
@@ -473,7 +472,6 @@ export async function GET(
       projectData.videosByName = {}
       projectData.allowAssetDownload = false
       projectData.allowPhotoDownload = false
-      projectData.allowClientAssetUpload = false
       projectData.clientCanApprove = false
     }
 
