@@ -464,7 +464,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
   const t = useTranslations('controls')
 
   return (
-    <div className="hidden sm:flex h-[32px] items-center gap-1">
+    <div data-player-button-group className="hidden sm:flex h-[32px] items-center gap-1">
       <button
         onClick={() => onFrameStep('backward')}
         className="flex h-8 w-8 items-center justify-center rounded-md text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100 sm:h-[32px] sm:w-[32px]"
@@ -535,7 +535,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
   const t = useTranslations('controls')
 
   return (
-    <div className="relative z-[2] flex items-center gap-1 sm:gap-2">
+    <div data-player-button-group className="relative z-[2] flex items-center gap-1 sm:gap-2">
       {sourceQualityAvailable && (
         <button
           onClick={onToggleSourceQuality}

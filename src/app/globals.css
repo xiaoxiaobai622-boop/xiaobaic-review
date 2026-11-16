@@ -466,6 +466,26 @@
   color: #fff;
 }
 
+/* 审片界面键盘聚焦：统一中性描边，不出现紫色框。 */
+[data-review-surface] :is(button, a[href], [role="button"], [role="tab"]):focus-visible {
+  outline: 2px solid hsl(var(--foreground) / 0.25);
+  outline-offset: 2px;
+  box-shadow: var(--tw-shadow, 0 0 #0000);
+}
+
+/* 菜单自动聚焦第一项时保持无描边，避免看起来像被选中。 */
+[data-review-surface] [role="menu"] :is(button, [role="menuitem"], [role="menuitemradio"]):focus-visible {
+  outline: none;
+  box-shadow: var(--tw-shadow, 0 0 #0000);
+}
+
+/* 播放器播控按钮继续用轻背景提示，不画方框。 */
+[data-review-surface] [data-player-button-group] button:focus-visible {
+  outline: none;
+  background-color: hsl(var(--foreground) / 0.1);
+  box-shadow: var(--tw-shadow, 0 0 #0000);
+}
+
 /* 右侧批注栏：宽度收缩由外壳负责，内层保持固定宽度，内容跟着整列滑出而不是逐帧重排。 */
 [data-comment-panel] {
   transition:
@@ -713,6 +733,12 @@
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
+  }
+
+  /* Player transport buttons: keyboard focus gets a quiet surface instead of the purple ring. */
+  [data-player-button-group] button:focus-visible {
+    outline: none;
+    background-color: hsl(var(--foreground) / 0.1);
   }
 
   /* Menus auto-focus their first item; the global outline reads as a selected

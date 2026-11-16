@@ -29,8 +29,9 @@ async function loadCommentProject(projectId: string) {
 
 /**
  * A share token with `comment` permission only proves the holder may take part
- * in the discussion, not that they own the row, so every mutation has to be
+ * in the discussion, not that they own the row, so deletions still have to be
  * traced back to an account: the author or somebody on the owning team.
+ * Resolving is a shared workflow toggle and only needs a signed-in account.
  */
 async function getCommentActor(
   request: NextRequest,
@@ -109,17 +110,8 @@ export async function PATCH(
       return notAvailable()
     }
 
-    const actor = await getCommentActor(request, project.teamId, comment.userId)
-    // Resolving is a workflow status, so any member of the owning team may flip
-    // it; deleting stays limited to the author and the team admins.
-    if (!actor.isAuthor && !actor.teamRole) {
-      logCommentPermissionDenial(request)
-      return NextResponse.json(
-        { error: commentsMessages.onlyTeamMemberCanResolve || 'Only the author or a team member can change the status of this comment', code: SHARE_ERROR_CODES.PERMISSION_DENIED },
-        { status: 403 },
-      )
-    }
-
+    // Resolving is a shared workflow toggle: any signed-in account with comment
+    // access may flip it. Author/team checks stay on DELETE.
     const updated = await prisma.comment.update({
       where: { id },
       data: { resolved: body.resolved },
