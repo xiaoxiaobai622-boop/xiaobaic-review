@@ -1,8 +1,14 @@
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from './SharePageClient'
-import { ensureProjectMasterLink, isShareLinkActive, resolveShareMetadata } from '@/lib/share-links'
-import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
+import { ensureProjectMasterLink, isShareLinkActive, resolveHandoffShare, resolveShareMetadata } from '@/lib/share-links'
+import {
+  buildMiniShareCloudUrl,
+  isMobileHandoffUserAgent,
+  isWechatMobileUserAgent,
+  toAbsoluteHttpUrl,
+} from '@/lib/share-handoff'
+import { getAppUrl } from '@/lib/url'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +41,22 @@ export default async function SharePage({ params, searchParams }: SharePageProps
         const master = await ensureProjectMasterLink(project.id)
         if (master && isShareLinkActive(master)) handoffToken = master.token
       }
-      if (handoffToken) redirect(`/open/${encodeURIComponent(handoffToken)}`)
+      if (handoffToken) {
+        if (isWechatMobileUserAgent(userAgent)) {
+          const share = await resolveHandoffShare(handoffToken)
+          if (share) {
+            const baseUrl = await getAppUrl().catch(() => '')
+            redirect(buildMiniShareCloudUrl(
+              share.token,
+              share.ownerName,
+              toAbsoluteHttpUrl(share.ownerAvatarUrl, baseUrl),
+              share.shareDate,
+            ))
+          }
+        } else {
+          redirect(`/open/${encodeURIComponent(handoffToken)}`)
+        }
+      }
     }
   }
 

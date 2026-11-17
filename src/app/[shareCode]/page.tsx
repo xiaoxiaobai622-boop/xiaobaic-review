@@ -2,8 +2,14 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from '@/app/share/[teamSlug]/SharePageClient'
-import { resolveActiveShareLink } from '@/lib/share-links'
-import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
+import { resolveHandoffShare } from '@/lib/share-links'
+import {
+  buildMiniShareCloudUrl,
+  isMobileHandoffUserAgent,
+  isWechatMobileUserAgent,
+  toAbsoluteHttpUrl,
+} from '@/lib/share-handoff'
+import { getAppUrl } from '@/lib/url'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,24 +35,34 @@ export default async function RootSharePage({
 }) {
   const { shareCode } = await params
   const { mode, web } = await searchParams
-  const resolved = await resolveActiveShareLink(shareCode)
+  const share = await resolveHandoffShare(shareCode)
 
   // Only a `ShareLink` row answers at the root, project master link included.
   // A project's internal API token has no row, so it cannot be replayed here as
   // a path, and an unknown or revoked code falls through to the 404.
-  if (!resolved) notFound()
+  if (!share) notFound()
 
   // 收录链接的访客端由 ?mode=collect 决定画上传面板还是素材网格，而发出去的地址要能被
   // 人手工敲进来，所以裸短码在这里自己补上那个参数。
-  if (resolved.link.type === 'COLLECT' && mode !== 'collect') {
+  if (share.linkType === 'COLLECT' && mode !== 'collect') {
     redirect(`/${encodeURIComponent(shareCode)}?mode=collect`)
   }
 
   // ?web=1 是访客自己要网页版；收录链接本来就没有小程序落点，两者都不分流。
-  if (web !== '1' && resolved.link.type !== 'COLLECT') {
+  if (web !== '1' && share.linkType !== 'COLLECT') {
     const userAgent = (await headers()).get('user-agent')
     if (isMobileHandoffUserAgent(userAgent)) {
-      redirect(`/open/${encodeURIComponent(shareCode)}`)
+      // 手机微信走云页，电脑微信的 UA 已被桌面分支挡在上面。
+      if (isWechatMobileUserAgent(userAgent)) {
+        const baseUrl = await getAppUrl().catch(() => '')
+        redirect(buildMiniShareCloudUrl(
+          share.token,
+          share.ownerName,
+          toAbsoluteHttpUrl(share.ownerAvatarUrl, baseUrl),
+          share.shareDate,
+        ))
+      }
+      redirect(`/open/${encodeURIComponent(share.token)}`)
     }
   }
 
