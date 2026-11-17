@@ -1,4 +1,17 @@
 {
+  "handoff": {
+    "title": "Openen in het WeChat-miniprogramma",
+    "protectedTitle": "Beveiligde share",
+    "protectedNotice": "Voor dit project is een wachtwoord of e-mailverificatie nodig. Open het in het miniprogramma.",
+    "autoHint": "Het WeChat-miniprogramma wordt geopend. Gebruik de knop hieronder als dat niet automatisch gebeurt.",
+    "launching": "Miniprogramma wordt geopend…",
+    "openMini": "Miniprogramma openen",
+    "opening": "Bezig met openen…",
+    "scanHint": "Of scan de miniprogrammacode hieronder",
+    "desktopHint": "Open deze pagina op je telefoon of scan de code hieronder met WeChat.",
+    "failed": "Openen mislukt. Probeer opnieuw of scan de miniprogrammacode.",
+    "qrAlt": "Miniprogrammacode"
+  },
   "common": {
     "save": "Opslaan",
     "saveChanges": "Wijzigingen Opslaan",

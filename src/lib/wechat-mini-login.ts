@@ -59,7 +59,7 @@ export async function getWechatMiniAccessToken(forceRefresh = false): Promise<st
   return data.access_token
 }
 
-export async function generateWechatMiniQrCode(scene: string, page: string): Promise<Buffer> {
+export async function generateWechatMiniQrCode(scene: string, page: string, width = 280): Promise<Buffer> {
   let lastError: string | null = null
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -75,7 +75,7 @@ export async function generateWechatMiniQrCode(scene: string, page: string): Pro
         page,
         check_path: false,
         env_version: 'release',
-        width: 280,
+        width,
       }),
       cache: 'no-store',
       signal: AbortSignal.timeout(10_000),
@@ -104,4 +104,46 @@ export async function generateWechatMiniQrCode(scene: string, page: string): Pro
 
   logError('Wechat getwxacodeunlimit failed:', lastError || 'unknown error')
   throw new Error('Wechat mini program QR code generation failed')
+}
+
+interface WechatUrlLinkResponse {
+  url_link?: string
+  errcode?: number
+  errmsg?: string
+}
+
+export async function generateWechatMiniUrlLink(path: string, query: string): Promise<string> {
+  let lastError: string | null = null
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const accessToken = attempt === 0
+      ? await getWechatMiniAccessToken()
+      : await getWechatMiniAccessToken(true)
+    const url = `https://api.weixin.qq.com/wxa/generate_urllink?access_token=${encodeURIComponent(accessToken)}`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        path,
+        query,
+        expire_type: 1,
+        expire_interval: 30,
+        env_version: 'release',
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    })
+
+    const data = (await response.json().catch(() => null)) as WechatUrlLinkResponse | null
+    if (response.ok && data?.url_link) return data.url_link
+
+    lastError = data ? JSON.stringify(data) : `HTTP ${response.status}`
+    if (attempt === 0 && (data?.errcode === 40001 || data?.errcode === 42001)) {
+      continue
+    }
+    break
+  }
+
+  logError('Wechat generate_urllink failed:', lastError || 'unknown error')
+  throw new Error('Wechat mini program URL link generation failed')
 }

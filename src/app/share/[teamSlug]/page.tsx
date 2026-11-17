@@ -1,13 +1,19 @@
-import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
+import { notFound, redirect } from 'next/navigation'
 import SharePageClient from './SharePageClient'
-import { resolveShareMetadata, isShareLinkActive } from '@/lib/share-links'
+import { ensureProjectMasterLink, isShareLinkActive, resolveShareMetadata } from '@/lib/share-links'
+import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
+
+export const dynamic = 'force-dynamic'
 
 interface SharePageProps {
   params: Promise<{ teamSlug: string }>
+  searchParams: Promise<{ web?: string }>
 }
 
-export default async function SharePage({ params }: SharePageProps) {
+export default async function SharePage({ params, searchParams }: SharePageProps) {
   const { teamSlug } = await params
+  const { web } = await searchParams
 
   // Server-side validation: check if slug exists and is not archived
   const resolved = await resolveShareMetadata(teamSlug)
@@ -17,6 +23,20 @@ export default async function SharePage({ params }: SharePageProps) {
   // Archived projects appear as if they don't exist (security)
   if (!project || project.status === 'ARCHIVED' || !isShareLinkActive(resolved.policy)) {
     notFound()
+  }
+
+  if (web !== '1') {
+    const userAgent = (await headers()).get('user-agent')
+    if (isMobileHandoffUserAgent(userAgent)) {
+      // A real link row keeps its own scope and permissions; only the legacy
+      // project-only address needs the project's master code.
+      let handoffToken = resolved.link?.token ?? null
+      if (!handoffToken) {
+        const master = await ensureProjectMasterLink(project.id)
+        if (master && isShareLinkActive(master)) handoffToken = master.token
+      }
+      if (handoffToken) redirect(`/open/${encodeURIComponent(handoffToken)}`)
+    }
   }
 
   return <SharePageClient token={teamSlug} />

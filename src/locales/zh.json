@@ -1,4 +1,17 @@
 {
+  "handoff": {
+    "title": "在微信小程序中打开",
+    "protectedTitle": "受保护的分享",
+    "protectedNotice": "该项目需要密码或邮箱验证，请在小程序中打开。",
+    "autoHint": "正在为你打开微信小程序，若没有自动跳转，请点下方按钮。",
+    "launching": "正在打开小程序…",
+    "openMini": "打开小程序",
+    "opening": "正在打开…",
+    "scanHint": "也可以扫描下方小程序码",
+    "desktopHint": "请在手机上打开本页，或使用微信扫描下方小程序码。",
+    "failed": "打开失败，请重试或扫描小程序码。",
+    "qrAlt": "小程序码"
+  },
   "common": {
     "save": "保存",
     "saveChanges": "保存更改",

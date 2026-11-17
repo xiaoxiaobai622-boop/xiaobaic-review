@@ -1,13 +1,20 @@
-import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
+import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
+import { ensureProjectMasterLink, isShareLinkActive } from '@/lib/share-links'
+import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
 import SharePageClient from '../../[teamSlug]/SharePageClient'
+
+export const dynamic = 'force-dynamic'
 
 interface SharePageProps {
   params: Promise<{ teamSlug: string; projectSlug: string }>
+  searchParams: Promise<{ web?: string }>
 }
 
-export default async function TeamSharePage({ params }: SharePageProps) {
+export default async function TeamSharePage({ params, searchParams }: SharePageProps) {
   const { teamSlug, projectSlug } = await params
+  const { web } = await searchParams
 
   const project = await prisma.project.findFirst({
     where: {
@@ -19,11 +26,21 @@ export default async function TeamSharePage({ params }: SharePageProps) {
         ],
       },
     },
-    select: { slug: true, status: true },
+    select: { id: true, slug: true, status: true },
   })
 
   if (!project || project.status === 'ARCHIVED') {
     notFound()
+  }
+
+  if (web !== '1') {
+    const userAgent = (await headers()).get('user-agent')
+    if (isMobileHandoffUserAgent(userAgent)) {
+      const master = await ensureProjectMasterLink(project.id)
+      if (master && isShareLinkActive(master)) {
+        redirect(`/open/${encodeURIComponent(master.token)}`)
+      }
+    }
   }
 
   return <SharePageClient token={project.slug} />

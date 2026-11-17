@@ -167,6 +167,24 @@ export async function resolveShareMetadata(token: string): Promise<ResolvedShare
 }
 
 /**
+ * The code is good to hand off only while the address it names is still live:
+ * the root page's validity rule, shared by the mini-program handoff page and
+ * its two APIs so a revoked link cannot keep minting new entry points.
+ */
+export async function resolveActiveShareLink(token: string) {
+  const resolved = await resolveShareMetadata(token)
+  if (
+    !resolved.link ||
+    !resolved.project ||
+    resolved.project.status === 'ARCHIVED' ||
+    !isShareLinkActive(resolved.policy)
+  ) {
+    return null
+  }
+  return { ...resolved, link: resolved.link, project: resolved.project }
+}
+
+/**
  * Every project has one master link row, created the first time something needs
  * its address rather than in a migration: the container runs `prisma migrate
  * deploy` on boot, so a backfill that trips over an existing token would stop the
