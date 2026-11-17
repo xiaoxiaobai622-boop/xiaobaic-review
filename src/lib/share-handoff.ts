@@ -2,8 +2,6 @@
 // 否则在电脑微信里点开分享链接会被送进小程序。
 const DESKTOP_USER_AGENT = /Windows NT|Macintosh|X11|Linux x86_64/i
 const MOBILE_USER_AGENT = /iPhone|iPad|iPod|Android|Mobile|HarmonyOS/i
-const WECHAT_USER_AGENT = /MicroMessenger/i
-const MINI_SHARE_CLOUD_URL = 'https://cloud1-d9glwg5hsdbe6086a-1534195838.tcloudbaseapp.com/'
 
 export function isDesktopUserAgent(userAgent: string | null | undefined): boolean {
   if (!userAgent) return false
@@ -13,23 +11,6 @@ export function isDesktopUserAgent(userAgent: string | null | undefined): boolea
 export function isMobileHandoffUserAgent(userAgent: string | null | undefined): boolean {
   if (!userAgent || isDesktopUserAgent(userAgent)) return false
   return MOBILE_USER_AGENT.test(userAgent)
-}
-
-/** WeChat on a phone; desktop WeChat reports a desktop UA and stays on the website. */
-export function isWechatMobileUserAgent(userAgent: string | null | undefined): boolean {
-  if (!userAgent || isDesktopUserAgent(userAgent)) return false
-  return WECHAT_USER_AGENT.test(userAgent)
-}
-
-/** The static cloud handoff page that opens the mini program from inside WeChat. */
-export function buildMiniShareCloudUrl(code: string, owner: string, avatar: string, date: string): string {
-  const params = new URLSearchParams({
-    code,
-    owner: owner || '',
-    avatar: avatar || '',
-    date: date || '',
-  })
-  return `${MINI_SHARE_CLOUD_URL}?${params.toString()}`
 }
 
 /** Avatars are stored as same-origin paths; the mini program needs an http(s) URL. */

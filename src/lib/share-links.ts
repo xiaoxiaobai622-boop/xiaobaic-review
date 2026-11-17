@@ -187,7 +187,6 @@ export async function resolveActiveShareLink(token: string) {
 
 export type HandoffShare = {
   token: string
-  linkType: string
   projectTitle: string
   protectedShare: boolean
   ownerName: string
@@ -205,7 +204,6 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
     where: { token },
     select: {
       token: true,
-      type: true,
       status: true,
       expiresAt: true,
       maxViews: true,
@@ -240,7 +238,6 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
 
   return {
     token: link.token,
-    linkType: link.type,
     projectTitle: link.project.title,
     protectedShare: authMode !== 'NONE',
     ownerName: link.project.createdBy?.name?.trim() || '',

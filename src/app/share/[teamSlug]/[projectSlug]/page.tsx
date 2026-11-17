@@ -1,14 +1,8 @@
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
-import { ensureProjectMasterLink, isShareLinkActive, resolveHandoffShare } from '@/lib/share-links'
-import {
-  buildMiniShareCloudUrl,
-  isMobileHandoffUserAgent,
-  isWechatMobileUserAgent,
-  toAbsoluteHttpUrl,
-} from '@/lib/share-handoff'
-import { getAppUrl } from '@/lib/url'
+import { ensureProjectMasterLink, isShareLinkActive } from '@/lib/share-links'
+import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
 import SharePageClient from '../../[teamSlug]/SharePageClient'
 
 export const dynamic = 'force-dynamic'
@@ -44,20 +38,7 @@ export default async function TeamSharePage({ params, searchParams }: SharePageP
     if (isMobileHandoffUserAgent(userAgent)) {
       const master = await ensureProjectMasterLink(project.id)
       if (master && isShareLinkActive(master)) {
-        if (isWechatMobileUserAgent(userAgent)) {
-          const share = await resolveHandoffShare(master.token)
-          if (share) {
-            const baseUrl = await getAppUrl().catch(() => '')
-            redirect(buildMiniShareCloudUrl(
-              share.token,
-              share.ownerName,
-              toAbsoluteHttpUrl(share.ownerAvatarUrl, baseUrl),
-              share.shareDate,
-            ))
-          }
-        } else {
-          redirect(`/open/${encodeURIComponent(master.token)}`)
-        }
+        redirect(`/open/${encodeURIComponent(master.token)}`)
       }
     }
   }
