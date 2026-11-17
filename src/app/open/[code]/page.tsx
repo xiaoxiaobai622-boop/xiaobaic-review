@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { resolveActiveShareLink } from '@/lib/share-links'
+import { resolveHandoffShare } from '@/lib/share-links'
 import HandoffClient from './HandoffClient'
 
 export const dynamic = 'force-dynamic'
@@ -19,16 +19,17 @@ export default async function OpenHandoffPage({
   params: Promise<{ code: string }>
 }) {
   const { code } = await params
-  const resolved = await resolveActiveShareLink(code)
-  if (!resolved) notFound()
-
-  const protectedShare = resolved.policy?.authMode !== 'NONE'
+  const share = await resolveHandoffShare(code)
+  if (!share) notFound()
 
   return (
     <HandoffClient
       code={code}
-      projectTitle={protectedShare ? null : resolved.project.title}
-      protectedShare={protectedShare}
+      projectTitle={share.protectedShare ? null : share.projectTitle}
+      protectedShare={share.protectedShare}
+      ownerName={share.ownerName}
+      ownerAvatarUrl={share.ownerAvatarUrl}
+      shareDate={share.shareDate}
     />
   )
 }

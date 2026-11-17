@@ -1,6 +1,7 @@
 {
   "handoff": {
     "title": "在微信小程序中打开",
+    "sharedBy": "分享人",
     "protectedTitle": "受保护的分享",
     "protectedNotice": "该项目需要密码或邮箱验证，请在小程序中打开。",
     "autoHint": "正在为你打开微信小程序，若没有自动跳转，请点下方按钮。",

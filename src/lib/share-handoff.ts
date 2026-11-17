@@ -12,3 +12,24 @@ export function isMobileHandoffUserAgent(userAgent: string | null | undefined): 
   if (!userAgent || isDesktopUserAgent(userAgent)) return false
   return MOBILE_USER_AGENT.test(userAgent)
 }
+
+/** Avatars are stored as same-origin paths; the mini program needs an http(s) URL. */
+export function toAbsoluteHttpUrl(value: string, baseUrl: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const url = new URL(trimmed, baseUrl || undefined)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
+/** Empty fields are left out: the mini program falls back to its own brand/initial. */
+export function buildMiniShareQuery(code: string, owner: string, avatar: string, date: string): string {
+  const parts = [`code=${encodeURIComponent(code)}`]
+  if (owner) parts.push(`owner=${encodeURIComponent(owner)}`)
+  if (avatar) parts.push(`avatar=${encodeURIComponent(avatar)}`)
+  if (date) parts.push(`date=${encodeURIComponent(date)}`)
+  return parts.join('&')
+}

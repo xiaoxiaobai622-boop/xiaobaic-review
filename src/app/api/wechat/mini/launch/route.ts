@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveActiveShareLink } from '@/lib/share-links'
+import { resolveHandoffShare } from '@/lib/share-links'
+import { buildMiniShareQuery, toAbsoluteHttpUrl } from '@/lib/share-handoff'
 import { generateWechatMiniUrlLink, isWechatMiniConfigured } from '@/lib/wechat-mini-login'
 import { getRedis } from '@/lib/redis'
+import { getAppUrl } from '@/lib/url'
 import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 
-const MINI_VIDEO_LIST_PAGE = '/pages/video-list/index'
+const MINI_SHARE_PAGE = '/pages/share/index'
 // URL Link 本身 30 天后失效，缓存少留一天，避免把边角时间里的死链发给访客。
 const URL_LINK_CACHE_TTL_SECONDS = 29 * 24 * 60 * 60
 
 function cacheKey(code: string): string {
-  return `wechat:mini:urllink:${code}`
+  // v2: the target moved from the video list to the native share page; a v1
+  // entry would keep sending visitors to the old page for its whole 29 days.
+  return `wechat:mini:share-link:v2:${code}`
 }
 
 export async function POST(request: NextRequest) {
@@ -25,21 +29,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: '分享码无效' }, { status: 400 })
   }
 
-  const resolved = await resolveActiveShareLink(code)
-  if (!resolved) {
+  const share = await resolveHandoffShare(code)
+  if (!share) {
     return NextResponse.json({ error: '分享链接不可用' }, { status: 404 })
   }
 
   try {
     const redis = getRedis()
-    const cached = await redis.get(cacheKey(code))
+    const cached = await redis.get(cacheKey(share.token))
     if (cached) return NextResponse.json({ urlLink: cached })
 
-    const urlLink = await generateWechatMiniUrlLink(
-      MINI_VIDEO_LIST_PAGE,
-      `slug=${encodeURIComponent(code)}`,
+    // Owner, avatar and date come from the database, not the request body: the
+    // URL Link is cached per code, so client-supplied identity could be replayed
+    // to every later visitor of that link.
+    const baseUrl = await getAppUrl(request).catch(() => '')
+    const query = buildMiniShareQuery(
+      share.token,
+      share.ownerName,
+      toAbsoluteHttpUrl(share.ownerAvatarUrl, baseUrl),
+      share.shareDate,
     )
-    await redis.set(cacheKey(code), urlLink, 'EX', URL_LINK_CACHE_TTL_SECONDS).catch(() => {})
+    const urlLink = await generateWechatMiniUrlLink(MINI_SHARE_PAGE, query)
+    await redis.set(cacheKey(share.token), urlLink, 'EX', URL_LINK_CACHE_TTL_SECONDS).catch(() => {})
     return NextResponse.json({ urlLink })
   } catch (error) {
     logError('Wechat mini URL link creation failed:', error)

@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { prisma } from '@/lib/db'
 import { allocateShareToken } from '@/lib/share-tokens'
+import { beijingDayKey } from '@/lib/announcements/time'
 
 export const SHARE_LINK_STATUSES = ['ACTIVE', 'REVOKED', 'EXPIRED'] as const
 
@@ -182,6 +183,67 @@ export async function resolveActiveShareLink(token: string) {
     return null
   }
   return { ...resolved, link: resolved.link, project: resolved.project }
+}
+
+export type HandoffShare = {
+  token: string
+  projectTitle: string
+  protectedShare: boolean
+  ownerName: string
+  ownerAvatarUrl: string
+  shareDate: string
+}
+
+/**
+ * The mobile handoff page and the mini-program APIs need the link's validity
+ * plus who shared it. The sharer is the project's creator — a team is a
+ * workspace, not a person, so its name/avatar must not stand in for the sender.
+ */
+export async function resolveHandoffShare(token: string): Promise<HandoffShare | null> {
+  const link = await prisma.shareLink.findUnique({
+    where: { token },
+    select: {
+      token: true,
+      status: true,
+      expiresAt: true,
+      maxViews: true,
+      viewCount: true,
+      authMode: true,
+      masterOfProjectId: true,
+      createdAt: true,
+      project: {
+        select: {
+          title: true,
+          status: true,
+          authMode: true,
+          createdBy: { select: { name: true, avatarUrl: true } },
+        },
+      },
+    },
+  })
+
+  if (
+    !link ||
+    !link.project ||
+    link.project.status === 'ARCHIVED' ||
+    !isShareLinkActive(link)
+  ) {
+    return null
+  }
+
+  // A master row takes its gate from the project, matching toPolicy().
+  const authMode = link.masterOfProjectId
+    ? (link.project.authMode ?? 'PASSWORD')
+    : link.authMode
+
+  return {
+    token: link.token,
+    projectTitle: link.project.title,
+    protectedShare: authMode !== 'NONE',
+    ownerName: link.project.createdBy?.name?.trim() || '',
+    ownerAvatarUrl: link.project.createdBy?.avatarUrl?.trim() || '',
+    shareDate: beijingDayKey(link.createdAt),
+  }
 }
 
 /**

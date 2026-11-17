@@ -1,6 +1,7 @@
 {
   "handoff": {
     "title": "Openen in het WeChat-miniprogramma",
+    "sharedBy": "Gedeeld door",
     "protectedTitle": "Beveiligde share",
     "protectedNotice": "Voor dit project is een wachtwoord of e-mailverificatie nodig. Open het in het miniprogramma.",
     "autoHint": "Het WeChat-miniprogramma wordt geopend. Gebruik de knop hieronder als dat niet automatisch gebeurt.",

@@ -6,7 +6,7 @@ import { logError } from '@/lib/logging'
 
 export const runtime = 'nodejs'
 
-const MINI_VIDEO_LIST_PAGE = 'pages/video-list/index'
+const MINI_SHARE_PAGE = 'pages/share/index'
 
 export async function GET(request: NextRequest) {
   if (!isWechatMiniConfigured()) {
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const qr = await generateWechatMiniQrCode(code, MINI_VIDEO_LIST_PAGE, 420)
+    const qr = await generateWechatMiniQrCode(code, MINI_SHARE_PAGE, 420)
     // 微信这个接口实际回的是 JPEG；响应头写 PNG 就必须真的换成 PNG。
     const png = await sharp(qr).png().toBuffer()
     return new NextResponse(new Uint8Array(png), {

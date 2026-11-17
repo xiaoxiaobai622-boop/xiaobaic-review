@@ -1,6 +1,7 @@
 {
   "handoff": {
     "title": "Open in the WeChat mini program",
+    "sharedBy": "Shared by",
     "protectedTitle": "Protected share",
     "protectedNotice": "This project requires a password or email verification. Open it in the mini program.",
     "autoHint": "Opening the WeChat mini program. If it does not jump automatically, use the button below.",

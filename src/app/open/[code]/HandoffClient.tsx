@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Smartphone } from 'lucide-react'
+import { InitialsAvatar } from '@/components/InitialsAvatar'
 import { isDesktopUserAgent } from '@/lib/share-handoff'
 import styles from './handoff.module.css'
 
@@ -19,9 +20,19 @@ interface HandoffClientProps {
   code: string
   projectTitle: string | null
   protectedShare: boolean
+  ownerName: string
+  ownerAvatarUrl: string
+  shareDate: string
 }
 
-export default function HandoffClient({ code, projectTitle, protectedShare }: HandoffClientProps) {
+export default function HandoffClient({
+  code,
+  projectTitle,
+  protectedShare,
+  ownerName,
+  ownerAvatarUrl,
+  shareDate,
+}: HandoffClientProps) {
   const t = useTranslations('handoff')
   const [env, setEnv] = useState<Env | null>(null)
   const [status, setStatus] = useState<LaunchStatus>('idle')
@@ -34,7 +45,7 @@ export default function HandoffClient({ code, projectTitle, protectedShare }: Ha
       const response = await fetch('/api/wechat/mini/launch', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, owner: ownerName, avatar: ownerAvatarUrl, date: shareDate }),
       })
       const data = await response.json().catch(() => null) as { urlLink?: unknown } | null
       if (!response.ok || typeof data?.urlLink !== 'string') throw new Error('launch failed')
@@ -42,7 +53,7 @@ export default function HandoffClient({ code, projectTitle, protectedShare }: Ha
     } catch {
       setStatus('error')
     }
-  }, [code])
+  }, [code, ownerName, ownerAvatarUrl, shareDate])
 
   useEffect(() => {
     setEnv(detectEnv(navigator.userAgent))
@@ -73,6 +84,19 @@ export default function HandoffClient({ code, projectTitle, protectedShare }: Ha
           <Smartphone aria-hidden="true" />
         </span>
         <h1 className={styles.title}>{title}</h1>
+        {(ownerName || ownerAvatarUrl) && (
+          <div className={styles.owner}>
+            <InitialsAvatar
+              name={ownerName || '?'}
+              src={ownerAvatarUrl || null}
+              size="sm"
+              isInternal
+              className={styles.ownerAvatar}
+            />
+            <span className={styles.ownerLabel}>{t('sharedBy')}</span>
+            {ownerName && <span className={styles.ownerName}>{ownerName}</span>}
+          </div>
+        )}
         <p className={styles.hint}>{env ? hint : t('launching')}</p>
 
         {showFallback && (
