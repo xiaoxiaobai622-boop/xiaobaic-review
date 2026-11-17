@@ -26,6 +26,7 @@ import { Switch } from '@/components/ui/switch'
 import type { ViewMode } from '@/components/ViewModeToggle'
 import { getActiveTeamId } from '@/lib/team-store'
 import { STUDIO_HEADER_SHELL_CLASS } from '@/app/studio/shell'
+import { useStudioTitle } from '@/lib/use-studio-title'
 import { folderPath, type FolderNode } from '@/lib/project-folders'
 import {
   applyProjectsQuery,
@@ -80,6 +81,7 @@ function loadInitialViewMode(): ViewMode {
 export default function AdminPage() {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
+  useStudioTitle(t('dashboard'))
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
   const pathname = usePathname()

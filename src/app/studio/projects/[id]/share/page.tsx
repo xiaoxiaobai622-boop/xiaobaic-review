@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Check, LoaderCircle, Share2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useStudioTitle } from '@/lib/use-studio-title'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
@@ -150,6 +151,7 @@ export default function AdminSharePage() {
 
   const [focusCommentId, setFocusCommentId] = useState<string | null>(urlFocusCommentId)
   const [project, setProject] = useState<any>(null)
+  useStudioTitle(project?.title)
   const [comments, setComments] = useState<any[]>([])
   const [_commentsLoading, setCommentsLoading] = useState(false)
   const commentsRequestRef = useRef<Promise<void> | null>(null)

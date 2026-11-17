@@ -47,6 +47,7 @@ import { getLatestVideo } from '@/lib/video-comment-counts'
 import { useAuth } from '@/components/AuthProvider'
 import { getActiveTeamId } from '@/lib/team-store'
 import { STUDIO_HEADER_SHELL_CLASS, STUDIO_SIDEBAR_TRACK_PX } from '@/app/studio/shell'
+import { useStudioTitle } from '@/lib/use-studio-title'
 import FolderInteraction from '@/components/ui/folder-interaction'
 import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
 
@@ -361,6 +362,7 @@ export default function ProjectPage() {
   }, [])
 
   const [project, setProject] = useState<any>(null)
+  useStudioTitle(project?.title)
   const [loading, setLoading] = useState(true)
   const [shareUrl, setShareUrl] = useState('')
   const [videoViewMode, setVideoViewMode] = useState<'list' | 'grid'>('grid')
