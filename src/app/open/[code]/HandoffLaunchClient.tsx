@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Script from 'next/script'
 import { useTranslations } from 'next-intl'
-import { Smartphone } from 'lucide-react'
-import { InitialsAvatar } from '@/components/InitialsAvatar'
-import styles from './handoff.module.css'
+import { BRAND } from '@/lib/marketing/brand'
+import styles from './handoff-open.module.css'
 
 // Public mini-program identity; the AppID/secret used for signing stay server-side.
 const MINI_ORIGINAL_ID = 'gh_d8e227bc50e3'
@@ -40,6 +39,7 @@ interface HandoffLaunchClientProps {
   protectedShare: boolean
   ownerName: string
   ownerAvatarUrl: string
+  shareDate: string
   miniPath: string
   nonce?: string
 }
@@ -50,6 +50,7 @@ export default function HandoffLaunchClient({
   protectedShare,
   ownerName,
   ownerAvatarUrl,
+  shareDate,
   miniPath,
   nonce,
 }: HandoffLaunchClientProps) {
@@ -58,10 +59,20 @@ export default function HandoffLaunchClient({
   const configured = useRef(false)
   const [wxLoaded, setWxLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [debugMode, setDebugMode] = useState(false)
+  const [avatarFailed, setAvatarFailed] = useState(false)
 
   const openLabel = t('openInMini')
-  const title = protectedShare ? t('protectedTitle') : (projectTitle || t('title'))
+  const title = protectedShare ? t('protectedTitle') : (projectTitle || BRAND.zh)
+  const owner = ownerName || BRAND.zh
+  const initial = Array.from(owner)[0] || '逐'
+  const dateLabel = shareDate ? shareDate.replace(/-/g, '/') : ''
+  const meta = `${dateLabel}${t('sharedOn')} ${t('linkValid')}`.trim()
   const fallbackUrl = `/${encodeURIComponent(code)}?web=1`
+
+  useEffect(() => {
+    setDebugMode(new URLSearchParams(window.location.search).get('debug') === '1')
+  }, [])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && (window as unknown as { wx?: Wx }).wx) {
@@ -74,7 +85,7 @@ export default function HandoffLaunchClient({
     if (!slot) return
     // React must not manage this custom element; WeChat reads the template from
     // the injected HTML, so it is built once per path/label change.
-    slot.innerHTML = `<wx-open-launch-weapp username="${MINI_ORIGINAL_ID}" path="${escapeHtml(miniPath)}"><script type="text/wxtag-template"><style>.tag-button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:100%;height:52px;border:0;border-radius:4px;background:#07C160;color:#FFFFFF;font-family:inherit;font-size:16px;font-weight:600}</style><button class="tag-button">${escapeHtml(openLabel)}</button></script></wx-open-launch-weapp>`
+    slot.innerHTML = `<wx-open-launch-weapp username="${MINI_ORIGINAL_ID}" path="${escapeHtml(miniPath)}"><script type="text/wxtag-template"><style>.tag-button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:100%;height:54px;border:0;border-radius:0;background:#07C160;color:#FFFFFF;font-family:inherit;font-size:16px;font-weight:600;letter-spacing:.01em}</style><button class="tag-button">${escapeHtml(openLabel)}</button></script></wx-open-launch-weapp>`
   }, [miniPath, openLabel])
 
   useEffect(() => {
@@ -128,7 +139,7 @@ export default function HandoffLaunchClient({
   }, [wxLoaded])
 
   return (
-    <div className={styles.page}>
+    <div className={styles.shell}>
       <Script
         src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"
         strategy="afterInteractive"
@@ -136,34 +147,43 @@ export default function HandoffLaunchClient({
         onLoad={() => setWxLoaded(true)}
         onError={() => setError('微信 JS-SDK 加载失败')}
       />
-      <div className={styles.card}>
-        <span className={styles.icon}>
-          <Smartphone aria-hidden="true" />
-        </span>
+      <main className={styles.page}>
         <h1 className={styles.title}>{title}</h1>
-        {(ownerName || ownerAvatarUrl) && (
-          <div className={styles.owner}>
-            <InitialsAvatar
-              name={ownerName || '?'}
-              src={ownerAvatarUrl || null}
-              size="sm"
-              isInternal
-              className={styles.ownerAvatar}
-            />
-            <span className={styles.ownerLabel}>{t('sharedBy')}</span>
-            {ownerName && <span className={styles.ownerName}>{ownerName}</span>}
+
+        <div className={styles.owner}>
+          <div className={styles.avatar}>
+            {ownerAvatarUrl && !avatarFailed ? (
+              <img
+                className={styles.avatarImg}
+                src={ownerAvatarUrl}
+                alt=""
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : (
+              <span>{initial}</span>
+            )}
           </div>
-        )}
-        <div ref={slotRef} className={styles.slot} />
-        {!error && <p className={styles.slotHint}>{t('weappHint')}</p>}
-        {error && (
-          <div className={styles.error}>
-            <p className={styles.errorTitle}>{t('openFailed')}</p>
-            <p className={styles.errorDetail}>{error}</p>
-            <a className={styles.fallback} href={fallbackUrl}>{t('webFallback')}</a>
+          <div className={styles.ownerCopy}>
+            <div className={styles.ownerName}>{owner}</div>
+            <div className={styles.ownerMeta}>{meta}</div>
           </div>
-        )}
-      </div>
+        </div>
+
+        <div className={styles.divider} aria-hidden="true" />
+
+        <div className={styles.preview} aria-hidden="true">
+          <img className={styles.previewLogo} src="/brand/logo-192.png" alt="" />
+          <div className={styles.previewFoot}>{BRAND.zh}</div>
+        </div>
+
+        <div className={styles.launchWrap}>
+          <a className={styles.launchButton} href={fallbackUrl}>{openLabel}</a>
+          <div ref={slotRef} className={styles.launchSlot} />
+        </div>
+
+        {debugMode && error && <p className={styles.error}>{error}</p>}
+        <p className={styles.hint}>{t('appHint')}</p>
+      </main>
     </div>
   )
 }

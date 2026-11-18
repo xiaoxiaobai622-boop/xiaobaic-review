@@ -65,6 +65,12 @@ export async function proxy(request: NextRequest) {
     if (prefix) assetOrigin = ` ${new URL(prefix).origin}`
   } catch {}
 
+  // The open-tag page loads WeChat's JS-SDK from its own CDN. Nonces alone are
+  // not reliable for that external script in every WeChat WebView, so allow the
+  // origin only on the handoff pages.
+  const isWechatHandoffPath = url.pathname.startsWith('/open/') || url.pathname.startsWith('/handoff/')
+  const wechatSdkOrigin = isWechatHandoffPath ? ' https://res.wx.qq.com' : ''
+
   const connectSrc = [
     "'self'",
     'blob:',
@@ -92,7 +98,7 @@ export async function proxy(request: NextRequest) {
   // 等于把"谁能往这个页面里塞可执行内容"这件事交给一个已经没人负责的域名。
   const cspDirectives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}'${developmentScriptSource}${assetOrigin}`,
+    `script-src 'self' 'nonce-${nonce}'${developmentScriptSource}${assetOrigin}${wechatSdkOrigin}`,
     "script-src-attr 'none'",
     `style-src 'self' 'unsafe-inline'${assetOrigin}`,
     `img-src 'self' data: blob:${extraMediaOrigins}${assetOrigin}`,

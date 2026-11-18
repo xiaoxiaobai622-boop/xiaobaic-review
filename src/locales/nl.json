@@ -2,6 +2,9 @@
   "handoff": {
     "title": "Openen in het WeChat-miniprogramma",
     "sharedBy": "Gedeeld door",
+    "appHint": "Op mobiel raden we het FrameReview-miniprogramma aan.",
+    "sharedOn": " · gedeeld",
+    "linkValid": "Link is actief",
     "weappHint": "Tik op de knop hierboven om het miniprogramma te openen.",
     "openFailed": "Miniprogramma kon niet worden geopend",
     "webFallback": "Webpagina openen",

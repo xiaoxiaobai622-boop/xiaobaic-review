@@ -55,6 +55,7 @@ export default async function OpenHandoffPage({
       protectedShare={share.protectedShare}
       ownerName={share.ownerName}
       ownerAvatarUrl={share.ownerAvatarUrl}
+      shareDate={share.shareDate}
       miniPath={miniPath}
       nonce={requestHeaders.get('x-nonce') || undefined}
     />

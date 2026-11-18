@@ -1,0 +1,178 @@
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #0b0b0d;
+  color: #f5f5f7;
+}
+
+.page {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 32px);
+}
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.34;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #f5f5f7;
+  word-break: break-word;
+}
+
+.owner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #5b53ff;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.avatarImg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ownerCopy {
+  min-width: 0;
+}
+
+.ownerName {
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #e5e5ea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ownerMeta {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8e8e93;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.divider {
+  height: 1px;
+  background: #2c2c2e;
+  margin-top: 24px;
+}
+
+.preview {
+  position: relative;
+  width: 64%;
+  max-width: 300px;
+  aspect-ratio: 1.35;
+  margin: 34px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #1c1c1e;
+}
+
+.previewLogo {
+  display: block;
+  width: 84px;
+  height: 84px;
+  margin-bottom: 38px;
+  object-fit: contain;
+}
+
+.previewFoot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #242426;
+  color: #7c7c80;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.launchWrap {
+  position: relative;
+  margin-top: 34px;
+}
+
+.launchButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 54px;
+  border: 0;
+  border-radius: 0;
+  background: #07c160;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.launchButton:active {
+  background: #06ad56;
+}
+
+.launchSlot {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.launchSlot :global(wx-open-launch-weapp) {
+  display: block;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.hint {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #6e6e73;
+}
+
+.error {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #ff8a8a;
+  overflow-wrap: anywhere;
+}

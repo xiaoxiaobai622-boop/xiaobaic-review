@@ -2,6 +2,9 @@
   "handoff": {
     "title": "在微信小程序中打开",
     "sharedBy": "分享人",
+    "appHint": "手机端推荐使用逐帧审阅小程序，用着不烧心",
+    "sharedOn": "分享",
+    "linkValid": "链接有效期内",
     "weappHint": "点击上方按钮，在小程序里查看。",
     "openFailed": "打开小程序失败",
     "webFallback": "改用网页版",

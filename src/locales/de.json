@@ -2,6 +2,9 @@
   "handoff": {
     "title": "Im WeChat-Miniprogramm öffnen",
     "sharedBy": "Geteilt von",
+    "appHint": "Auf dem Smartphone empfehlen wir das FrameReview-Miniprogramm.",
+    "sharedOn": " · geteilt",
+    "linkValid": "Link ist aktiv",
     "weappHint": "Tippen Sie oben, um das Miniprogramm zu öffnen.",
     "openFailed": "Miniprogramm konnte nicht geöffnet werden",
     "webFallback": "Webseite öffnen",
