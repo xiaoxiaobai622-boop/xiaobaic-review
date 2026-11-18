@@ -43,7 +43,7 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/audit-production.mjs
 
       # Next 16 的 `npm run build` 已经不再跑 ESLint，所以规范门禁必须自己占一步——
       # 10-17 那条 `ReviewLoginActions.tsx:420` 用裸 <a> 打站内路由的红，就是靠这里才拦得住。
