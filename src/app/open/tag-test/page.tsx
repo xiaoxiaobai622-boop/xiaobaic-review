@@ -31,6 +31,11 @@ const SCRIPT = `
     set('openTagsError=' + (e.detail && e.detail.errMsg));
     rep('open-tags-error', 'test ' + (e.detail && e.detail.errMsg));
   });
+  document.addEventListener('securitypolicyviolation', function (e) {
+    set('CSP blocked ' + e.violatedDirective + ' ' + e.blockedURI);
+    rep('config-error', 'csp ' + e.violatedDirective + ' ' + e.blockedURI);
+  });
+  rep('page-load', 'tagtest page loaded');
   function load(src) {
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
