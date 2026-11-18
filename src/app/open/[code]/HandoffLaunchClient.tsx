@@ -55,6 +55,7 @@ interface HandoffLaunchClientProps {
   ownerName: string
   ownerAvatarUrl: string
   shareDate: string
+  coverVideoIds: string[]
   miniPath: string
   nonce?: string
 }
@@ -66,6 +67,7 @@ export default function HandoffLaunchClient({
   ownerName,
   ownerAvatarUrl,
   shareDate,
+  coverVideoIds,
   miniPath,
   nonce,
 }: HandoffLaunchClientProps) {
@@ -90,6 +92,14 @@ export default function HandoffLaunchClient({
   const dateLabel = shareDate ? shareDate.replace(/-/g, '/') : ''
   const meta = `${dateLabel}${t('sharedOn')} ${t('linkValid')}`.trim()
   const fallbackUrl = `/${encodeURIComponent(code)}?web=1`
+  const coverSrcs = coverVideoIds.map(
+    (id) => `/api/share/${encodeURIComponent(code)}/thumbnail?videoId=${encodeURIComponent(id)}`,
+  )
+  const coverSlots = coverSrcs.length >= 3
+    ? [styles.coverLeft, styles.coverRight, styles.coverFront]
+    : coverSrcs.length === 2
+      ? [styles.coverBack, styles.coverFront]
+      : [styles.coverFront]
 
   useEffect(() => {
     setDebugMode(new URLSearchParams(window.location.search).get('debug') === '1')
@@ -281,7 +291,21 @@ export default function HandoffLaunchClient({
         <div className={styles.divider} aria-hidden="true" />
 
         <div className={styles.preview} aria-hidden="true">
-          <img className={styles.previewLogo} src="/brand/logo-192.png" alt="" />
+          {coverSrcs.length > 0 ? (
+            <div className={styles.coverDeck}>
+              {coverSrcs.map((src, index) => (
+                <img
+                  key={src}
+                  className={`${styles.cover} ${coverSlots[index] || styles.coverFront}`}
+                  src={src}
+                  alt=""
+                  decoding="async"
+                />
+              ))}
+            </div>
+          ) : (
+            <img className={styles.previewLogo} src="/brand/logo-192.png" alt="" />
+          )}
           <div className={styles.previewFoot}>{BRAND.zh}</div>
         </div>
 

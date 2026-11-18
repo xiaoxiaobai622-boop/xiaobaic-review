@@ -192,6 +192,8 @@ export type HandoffShare = {
   ownerName: string
   ownerAvatarUrl: string
   shareDate: string
+  /** Public master links only: up to three real cover frames for the handoff card. */
+  coverVideoIds: string[]
 }
 
 /**
@@ -204,6 +206,7 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
     where: { token },
     select: {
       token: true,
+      projectId: true,
       status: true,
       expiresAt: true,
       maxViews: true,
@@ -235,14 +238,28 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
   const authMode = link.masterOfProjectId
     ? (link.project.authMode ?? 'PASSWORD')
     : link.authMode
+  const protectedShare = authMode !== 'NONE'
+
+  // Covers come from the whole project, so only the public master address may
+  // show them; scoped or password links keep the generic card.
+  const covers =
+    !protectedShare && link.masterOfProjectId
+      ? await prisma.video.findMany({
+          where: { projectId: link.projectId, status: 'READY', thumbnailPath: { not: null } },
+          orderBy: [{ updatedAt: 'desc' }, { version: 'desc' }],
+          take: 3,
+          select: { id: true },
+        })
+      : []
 
   return {
     token: link.token,
     projectTitle: link.project.title,
-    protectedShare: authMode !== 'NONE',
+    protectedShare,
     ownerName: link.project.createdBy?.name?.trim() || '',
     ownerAvatarUrl: link.project.createdBy?.avatarUrl?.trim() || '',
     shareDate: beijingDayKey(link.createdAt),
+    coverVideoIds: covers.map((video) => video.id),
   }
 }
 

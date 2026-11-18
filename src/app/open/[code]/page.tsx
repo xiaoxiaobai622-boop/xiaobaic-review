@@ -13,6 +13,7 @@ import HandoffLaunchClient from './HandoffLaunchClient'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
+  title: { absolute: '逐帧审阅 - 不负每一帧热爱' },
   robots: { index: false, follow: false },
 }
 
@@ -56,6 +57,7 @@ export default async function OpenHandoffPage({
       ownerName={share.ownerName}
       ownerAvatarUrl={share.ownerAvatarUrl}
       shareDate={share.shareDate}
+      coverVideoIds={share.coverVideoIds}
       miniPath={miniPath}
       nonce={requestHeaders.get('x-nonce') || undefined}
     />
