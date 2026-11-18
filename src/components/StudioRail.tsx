@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, Check, LogOut, MonitorDown, UserRound } from 'lucide-react'
-import { AllApplication, Config } from '@icon-park/react'
+import { Check, LogOut, UserRound } from 'lucide-react'
+import { Config, Download } from '@icon-park/react'
 import { useAuth } from '@/components/AuthProvider'
 import { initialsFromName } from '@/components/InitialsAvatar'
+import { RailHomeGlyph } from '@/components/RailGlyphs'
 import RailSearch from '@/components/RailSearch'
 import RailFeedback from '@/components/RailFeedback'
-import RailHelp from '@/components/RailHelp'
+import RailSupport from '@/components/RailSupport'
+import RailWhatsNew from '@/components/RailWhatsNew'
 import RailNotifications from '@/components/RailNotifications'
 import { apiPost } from '@/lib/api-client'
 import { getActiveTeamId, setActiveTeamId } from '@/lib/team-store'
@@ -176,22 +178,24 @@ export default function StudioRail() {
         label="项目日历"
         active={pathname === '/studio/calendar' || Boolean(pathname?.startsWith('/studio/calendar/'))}
       >
-        <Calendar className="h-[20px] w-[20px]" />
+        <CalendarDateIcon />
       </RailItem>
       <RailItem href="/studio/desktop" label="桌面客户端" active={pathname === '/studio/desktop'}>
-        <MonitorDown className="h-[20px] w-[20px]" />
+        <Download theme="filled" size={20} />
       </RailItem>
       <RailItem
         href="/studio/team"
         label="团队管理"
         active={pathname === '/studio/team' || pathname?.startsWith('/studio/team/') || false}
       >
-        <Config theme="outline" size={20} />
+        <Config theme="filled" size={20} />
       </RailItem>
 
       <div className="flex-1" aria-hidden />
 
-      <RailHelp className={RAIL_ICON_BUTTON} />
+      <RailWhatsNew className={RAIL_ICON_BUTTON} />
+
+      <RailSupport className={RAIL_ICON_BUTTON} />
 
       <RailFeedback className={RAIL_ICON_BUTTON} />
 
@@ -331,6 +335,18 @@ export default function StudioRail() {
   )
 }
 
+/** 日历图标里直接写今天几号：只显示日，不显示月。 */
+function CalendarDateIcon() {
+  const day = new Date().getDate()
+  return (
+    <span aria-hidden="true" className="relative flex h-[18px] w-[18px] items-center justify-center rounded-[5px] bg-current">
+      <span className="absolute -top-[3px] left-[5px] h-[4px] w-[2px] rounded-full bg-current" />
+      <span className="absolute -top-[3px] right-[5px] h-[4px] w-[2px] rounded-full bg-current" />
+      <span className="text-[10px] font-semibold leading-none tabular-nums text-popover">{day}</span>
+    </span>
+  )
+}
+
 /**
  * 选中态只换图标颜色、不铺底色：frame.io 那条 dock 的 `[aria-current="page"]` 规则
  * 里只有一句 `color: --colors-text-primary`，`background` 与 `box-shadow` 都是 none，
@@ -345,11 +361,11 @@ function ProjectsRailItem({ active }: { active: boolean }) {
       className={`${RAIL_ICON_BUTTON} ${
         active
           ? 'text-foreground'
-          : 'text-muted-foreground hover:text-accent-foreground'
+          : 'text-muted-foreground hover:text-foreground'
       }`}
       aria-current={active ? 'page' : undefined}
     >
-      <AllApplication theme="outline" size={20} />
+      <RailHomeGlyph className="h-[22px] w-[22px]" />
     </Link>
   )
 }
@@ -366,7 +382,7 @@ function RailItem({
   const className = `${RAIL_ICON_BUTTON} ${
     active
       ? 'text-foreground'
-      : 'text-muted-foreground hover:text-accent-foreground'
+      : 'text-muted-foreground hover:text-foreground'
   }`
   return (
     <Link href={href} className={className} title={title || label} aria-current={active ? 'page' : undefined}>

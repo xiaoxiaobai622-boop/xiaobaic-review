@@ -110,6 +110,8 @@
     --studio-sidebar-track-width: 288px;
     --studio-shell-gap: 2px;
     --studio-sidebar-width: calc(var(--studio-sidebar-track-width) - var(--studio-shell-gap));
+    /* lg 顶栏高：h-9 控件行（2.125rem）+ py-4（2rem）。面板头跟着它走，缝才能和顶栏下的缝重叠。 */
+    --studio-header-height: 4.125rem;
   }
 
   /*

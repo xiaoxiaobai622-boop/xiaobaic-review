@@ -14,11 +14,12 @@ interface RailPanelProps {
   onOpenChange: (open: boolean) => void
   trigger: ReactNode
   actions?: ReactNode
+  headerClassName?: string
   children: ReactNode
 }
 
 /** 窄栏旁那块 288px 栏面的共用外壳：开合动效、Esc/点外面关闭、焦点进出都归这里。 */
-export default function RailPanel({ name, label, closeLabel, open, onOpenChange, trigger, actions, children }: RailPanelProps) {
+export default function RailPanel({ name, label, closeLabel, open, onOpenChange, trigger, actions, headerClassName, children }: RailPanelProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
@@ -32,7 +33,7 @@ export default function RailPanel({ name, label, closeLabel, open, onOpenChange,
             motion.railPanel,
           )}
         >
-          <div className="flex h-9 shrink-0 items-center justify-between px-3">
+          <div className={cn('flex h-9 shrink-0 items-center justify-between px-3', headerClassName)}>
             <Dialog.Title className="text-sm font-medium text-foreground">{label}</Dialog.Title>
             <span className="flex items-center gap-1">
               {actions}

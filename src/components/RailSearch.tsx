@@ -21,7 +21,7 @@ export default function RailSearch({ className }: { className?: string }) {
       aria-current={active ? 'page' : undefined}
       className={cn(
         className,
-        active ? 'text-foreground' : 'text-muted-foreground hover:text-accent-foreground',
+        active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
       )}
     >
       <Search className="h-[20px] w-[20px]" aria-hidden />

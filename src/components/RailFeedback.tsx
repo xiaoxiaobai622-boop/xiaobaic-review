@@ -115,7 +115,7 @@ export default function RailFeedback({ className }: { className?: string }) {
         aria-haspopup="dialog"
         aria-label="提交反馈"
         title="提交反馈"
-        className={cn(className, 'text-muted-foreground hover:text-accent-foreground')}
+        className={cn(className, 'text-muted-foreground hover:text-foreground')}
       >
         <BulbIcon className="h-[20px] w-[20px]" />
       </button>

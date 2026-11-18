@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell, Settings } from 'lucide-react'
 import RailPanel from '@/components/RailPanel'
+import { RailBellGlyph } from '@/components/RailGlyphs'
 import { cn } from '@/lib/utils'
 import { apiFetch, apiPost } from '@/lib/api-client'
 import { appNotice } from '@/components/AppDialogProvider'
@@ -549,10 +550,10 @@ export default function RailNotifications({ className, enabled = true }: { class
           className={cn(
             className,
             'relative',
-            open ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground',
+            open ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
           )}
         >
-          <Bell className="h-[20px] w-[20px]" aria-hidden="true" />
+          <RailBellGlyph className="h-[22px] w-[22px]" />
           {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-destructive" />}
         </button>
       )}
