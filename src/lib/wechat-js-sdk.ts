@@ -2,8 +2,11 @@ import crypto from 'crypto'
 import { getRedis } from './redis'
 import { logError } from './logging'
 
-const ACCESS_TOKEN_KEY = 'wechat:js-sdk:access_token:v1'
-const JSAPI_TICKET_KEY = 'wechat:js-sdk:jsapi_ticket:v1'
+// The service account and the mini program have different AppIDs. The AppID is
+// part of the key so switching credentials cannot silently reuse the other
+// account's token/ticket for the rest of its 7000-second lifetime.
+const ACCESS_TOKEN_KEY_PREFIX = 'wechat:js-sdk:access_token:v2:'
+const JSAPI_TICKET_KEY_PREFIX = 'wechat:js-sdk:jsapi_ticket:v2:'
 // 微信给 7200 秒，留 200 秒余量，避免拿到一个刚好在签名路上过期的票据。
 const CACHE_TTL_SECONDS = 7000
 const INVALID_TOKEN_CODES = new Set([40001, 40014, 42001])
@@ -23,24 +26,26 @@ interface TicketResponse {
 }
 
 export function isWechatJsSdkConfigured(): boolean {
-  return Boolean(process.env.WECHAT_WEB_APP_ID?.trim() && process.env.WECHAT_WEB_APP_SECRET?.trim())
+  return Boolean(process.env.WECHAT_OA_APP_ID?.trim() && process.env.WECHAT_OA_APP_SECRET?.trim())
 }
 
 function credentials() {
+  // JS-SDK 开放标签属于服务号；小程序 AppID 不能拿来签名，也不做回退。
   return {
-    appId: process.env.WECHAT_WEB_APP_ID!.trim(),
-    secret: process.env.WECHAT_WEB_APP_SECRET!.trim(),
+    appId: process.env.WECHAT_OA_APP_ID!.trim(),
+    secret: process.env.WECHAT_OA_APP_SECRET!.trim(),
   }
 }
 
 async function fetchAccessToken(forceRefresh: boolean): Promise<string> {
   const redis = getRedis()
+  const { appId, secret } = credentials()
+  const tokenKey = `${ACCESS_TOKEN_KEY_PREFIX}${appId}`
   if (!forceRefresh) {
-    const cached = await redis.get(ACCESS_TOKEN_KEY)
+    const cached = await redis.get(tokenKey)
     if (cached) return cached
   }
 
-  const { appId, secret } = credentials()
   const params = new URLSearchParams({
     grant_type: 'client_credential',
     appid: appId,
@@ -57,21 +62,24 @@ async function fetchAccessToken(forceRefresh: boolean): Promise<string> {
     throw new Error('WeChat JS-SDK access_token failed')
   }
 
-  await redis.set(ACCESS_TOKEN_KEY, data.access_token, 'EX', CACHE_TTL_SECONDS)
+  await redis.set(tokenKey, data.access_token, 'EX', CACHE_TTL_SECONDS)
   return data.access_token
 }
 
 async function fetchJsapiTicket(forceRefresh: boolean): Promise<string> {
   const redis = getRedis()
+  const { appId } = credentials()
+  const ticketKey = `${JSAPI_TICKET_KEY_PREFIX}${appId}`
+  const tokenKey = `${ACCESS_TOKEN_KEY_PREFIX}${appId}`
   if (!forceRefresh) {
-    const cached = await redis.get(JSAPI_TICKET_KEY)
+    const cached = await redis.get(ticketKey)
     if (cached) return cached
   }
 
   if (forceRefresh) {
     await Promise.all([
-      redis.del(ACCESS_TOKEN_KEY).catch(() => {}),
-      redis.del(JSAPI_TICKET_KEY).catch(() => {}),
+      redis.del(tokenKey).catch(() => {}),
+      redis.del(ticketKey).catch(() => {}),
     ])
   }
 
@@ -83,7 +91,7 @@ async function fetchJsapiTicket(forceRefresh: boolean): Promise<string> {
   const data = (await response.json().catch(() => null)) as TicketResponse | null
 
   if (response.ok && data?.errcode === 0 && data.ticket) {
-    await redis.set(JSAPI_TICKET_KEY, data.ticket, 'EX', CACHE_TTL_SECONDS)
+    await redis.set(ticketKey, data.ticket, 'EX', CACHE_TTL_SECONDS)
     return data.ticket
   }
 
