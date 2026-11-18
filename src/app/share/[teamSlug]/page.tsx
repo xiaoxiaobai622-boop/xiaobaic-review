@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from './SharePageClient'
 import { ensureProjectMasterLink, isShareLinkActive, resolveShareMetadata } from '@/lib/share-links'
-import { isMobileHandoffUserAgent, isWechatMobileUserAgent } from '@/lib/share-handoff'
+import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,9 +36,8 @@ export default async function SharePage({ params, searchParams }: SharePageProps
         if (master && isShareLinkActive(master)) handoffToken = master.token
       }
       if (handoffToken) {
-        const target = isWechatMobileUserAgent(userAgent) ? 'handoff' : 'open'
-        const debugQuery = target === 'handoff' && debug === '1' ? '?debug=1' : ''
-        redirect(`/${target}/${encodeURIComponent(handoffToken)}${debugQuery}`)
+        const debugQuery = debug === '1' ? '?debug=1' : ''
+        redirect(`/open/${encodeURIComponent(handoffToken)}${debugQuery}`)
       }
     }
   }

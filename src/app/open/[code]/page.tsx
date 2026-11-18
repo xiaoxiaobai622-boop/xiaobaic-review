@@ -1,7 +1,14 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
+import { notFound, redirect } from 'next/navigation'
 import { resolveHandoffShare } from '@/lib/share-links'
-import HandoffClient from './HandoffClient'
+import {
+  buildMiniShareQuery,
+  isWechatMobileUserAgent,
+  toAbsoluteHttpUrl,
+} from '@/lib/share-handoff'
+import { getAppUrl } from '@/lib/url'
+import HandoffLaunchClient from './HandoffLaunchClient'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,26 +17,46 @@ export const metadata: Metadata = {
 }
 
 /**
- * 手机从主链接进来的中转站：真正的内容在小程序里，这一页只负责把码交过去。
- * 它不能出现在搜索结果里，受密码/验证码保护的项目连标题也不在这里露出。
+ * WeChat-only shortcut: the service account signs this page and the open tag
+ * starts the published mini program directly, so a share never leaves vidx.cn.
+ * Non-WeChat visitors (and ?web=1) go back to the ordinary web share page.
  */
 export default async function OpenHandoffPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ code: string }>
+  searchParams: Promise<{ web?: string }>
 }) {
   const { code } = await params
+  const { web } = await searchParams
+  const requestHeaders = await headers()
+
+  if (web === '1' || !isWechatMobileUserAgent(requestHeaders.get('user-agent'))) {
+    redirect(`/${encodeURIComponent(code)}?web=1`)
+  }
+
   const share = await resolveHandoffShare(code)
   if (!share) notFound()
 
+  const baseUrl = await getAppUrl().catch(() => '')
+  const avatarUrl = toAbsoluteHttpUrl(share.ownerAvatarUrl, baseUrl)
+  const miniPath = `pages/share/index?${buildMiniShareQuery(
+    share.token,
+    share.ownerName,
+    avatarUrl,
+    share.shareDate,
+  )}`
+
   return (
-    <HandoffClient
+    <HandoffLaunchClient
       code={code}
       projectTitle={share.protectedShare ? null : share.projectTitle}
       protectedShare={share.protectedShare}
       ownerName={share.ownerName}
       ownerAvatarUrl={share.ownerAvatarUrl}
-      shareDate={share.shareDate}
+      miniPath={miniPath}
+      nonce={requestHeaders.get('x-nonce') || undefined}
     />
   )
 }

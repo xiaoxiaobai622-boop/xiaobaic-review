@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from '@/app/share/[teamSlug]/SharePageClient'
 import { resolveActiveShareLink } from '@/lib/share-links'
-import { isMobileHandoffUserAgent, isWechatMobileUserAgent } from '@/lib/share-handoff'
+import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,12 +46,10 @@ export default async function RootSharePage({
   if (web !== '1' && resolved.link.type !== 'COLLECT') {
     const userAgent = (await headers()).get('user-agent')
     if (isMobileHandoffUserAgent(userAgent)) {
-      // WeChat gets the signed open tag on our own domain; other mobile keeps
-      // the URL Link fallback. ?debug=1 follows the WeChat branch so the
-      // open-tag config can be inspected on a phone.
-      const target = isWechatMobileUserAgent(userAgent) ? 'handoff' : 'open'
-      const debugQuery = target === 'handoff' && debug === '1' ? '?debug=1' : ''
-      redirect(`/${target}/${encodeURIComponent(shareCode)}${debugQuery}`)
+      // /open renders the signed open tag inside WeChat and sends everyone else
+      // back to the web share page. ?debug=1 follows the page for inspection.
+      const debugQuery = debug === '1' ? '?debug=1' : ''
+      redirect(`/open/${encodeURIComponent(shareCode)}${debugQuery}`)
     }
   }
 

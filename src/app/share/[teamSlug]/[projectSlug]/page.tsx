@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { ensureProjectMasterLink, isShareLinkActive } from '@/lib/share-links'
-import { isMobileHandoffUserAgent, isWechatMobileUserAgent } from '@/lib/share-handoff'
+import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
 import SharePageClient from '../../[teamSlug]/SharePageClient'
 
 export const dynamic = 'force-dynamic'
@@ -38,9 +38,8 @@ export default async function TeamSharePage({ params, searchParams }: SharePageP
     if (isMobileHandoffUserAgent(userAgent)) {
       const master = await ensureProjectMasterLink(project.id)
       if (master && isShareLinkActive(master)) {
-        const target = isWechatMobileUserAgent(userAgent) ? 'handoff' : 'open'
-        const debugQuery = target === 'handoff' && debug === '1' ? '?debug=1' : ''
-        redirect(`/${target}/${encodeURIComponent(master.token)}${debugQuery}`)
+        const debugQuery = debug === '1' ? '?debug=1' : ''
+        redirect(`/open/${encodeURIComponent(master.token)}${debugQuery}`)
       }
     }
   }
