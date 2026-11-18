@@ -8,8 +8,8 @@ import { BRAND } from '@/lib/marketing/brand'
 export function useStudioTitle(title?: string | null) {
   useEffect(() => {
     const name = title?.trim()
-    // 用函数式替换：项目名里的 `$&` 之类不会被 String.replace 当成替换模式。
-    const next = name ? BRAND.titleTemplate.replace('%s', () => name) : BRAND.tabTitle
+    // 后台标签页用「页面/项目名 - 逐帧审阅」；根 metadata 的 SEO 标题模板不动。
+    const next = name ? `${name} - ${BRAND.zh}` : BRAND.tabTitle
     const apply = () => {
       if (document.title !== next) document.title = next
     }
