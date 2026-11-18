@@ -140,11 +140,26 @@
   font-weight: 600;
   letter-spacing: 0.01em;
   text-decoration: none;
+  cursor: pointer;
   transition: background-color 0.15s ease;
 }
 
 .launchButton:active {
   background: #06ad56;
+}
+
+.launchButton:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.errorLink {
+  color: #07c160;
+  text-decoration: none;
+}
+
+.errorLink:hover {
+  text-decoration: underline;
 }
 
 .launchSlot {

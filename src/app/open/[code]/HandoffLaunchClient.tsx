@@ -61,6 +61,8 @@ export default function HandoffLaunchClient({
   const [error, setError] = useState<string | null>(null)
   const [debugMode, setDebugMode] = useState(false)
   const [avatarFailed, setAvatarFailed] = useState(false)
+  const [launching, setLaunching] = useState(false)
+  const [launchError, setLaunchError] = useState<string | null>(null)
 
   const openLabel = t('openInMini')
   const title = protectedShare ? t('protectedTitle') : (projectTitle || BRAND.zh)
@@ -138,6 +140,27 @@ export default function HandoffLaunchClient({
     }
   }, [wxLoaded])
 
+  async function launchViaUrlLink() {
+    if (launching) return
+    setLaunching(true)
+    setLaunchError(null)
+    try {
+      const response = await fetch('/api/wechat/mini/launch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code, owner: ownerName, avatar: ownerAvatarUrl, date: shareDate }),
+      })
+      const data = await response.json().catch(() => null) as { urlLink?: unknown } | null
+      if (!response.ok || typeof data?.urlLink !== 'string') {
+        throw new Error(`launch failed (${response.status})`)
+      }
+      window.location.assign(data.urlLink)
+    } catch {
+      setLaunching(false)
+      setLaunchError(t('openFailed'))
+    }
+  }
+
   return (
     <div className={styles.shell}>
       <Script
@@ -177,10 +200,23 @@ export default function HandoffLaunchClient({
         </div>
 
         <div className={styles.launchWrap}>
-          <a className={styles.launchButton} href={fallbackUrl}>{openLabel}</a>
+          <button
+            type="button"
+            className={styles.launchButton}
+            onClick={launchViaUrlLink}
+            disabled={launching}
+          >
+            {launching ? t('opening') : openLabel}
+          </button>
           <div ref={slotRef} className={styles.launchSlot} />
         </div>
 
+        {launchError && (
+          <p className={styles.error}>
+            {launchError}{' '}
+            <a className={styles.errorLink} href={fallbackUrl}>{t('webFallback')}</a>
+          </p>
+        )}
         {debugMode && error && <p className={styles.error}>{error}</p>}
         <p className={styles.hint}>{t('appHint')}</p>
       </main>
