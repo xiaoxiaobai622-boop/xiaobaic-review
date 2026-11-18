@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from '@/app/share/[teamSlug]/SharePageClient'
 import { resolveActiveShareLink } from '@/lib/share-links'
-import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
+import { isMobileHandoffUserAgent, isWechatMobileUserAgent } from '@/lib/share-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,10 +25,10 @@ export default async function RootSharePage({
   searchParams,
 }: {
   params: Promise<{ shareCode: string }>
-  searchParams: Promise<{ mode?: string; web?: string }>
+  searchParams: Promise<{ mode?: string; web?: string; debug?: string }>
 }) {
   const { shareCode } = await params
-  const { mode, web } = await searchParams
+  const { mode, web, debug } = await searchParams
   const resolved = await resolveActiveShareLink(shareCode)
 
   // Only a `ShareLink` row answers at the root, project master link included.
@@ -46,7 +46,12 @@ export default async function RootSharePage({
   if (web !== '1' && resolved.link.type !== 'COLLECT') {
     const userAgent = (await headers()).get('user-agent')
     if (isMobileHandoffUserAgent(userAgent)) {
-      redirect(`/open/${encodeURIComponent(shareCode)}`)
+      // WeChat gets the signed open tag on our own domain; other mobile keeps
+      // the URL Link fallback. ?debug=1 follows the WeChat branch so the
+      // open-tag config can be inspected on a phone.
+      const target = isWechatMobileUserAgent(userAgent) ? 'handoff' : 'open'
+      const debugQuery = target === 'handoff' && debug === '1' ? '?debug=1' : ''
+      redirect(`/${target}/${encodeURIComponent(shareCode)}${debugQuery}`)
     }
   }
 

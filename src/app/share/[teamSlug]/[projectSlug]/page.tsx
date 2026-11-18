@@ -2,19 +2,19 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { ensureProjectMasterLink, isShareLinkActive } from '@/lib/share-links'
-import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
+import { isMobileHandoffUserAgent, isWechatMobileUserAgent } from '@/lib/share-handoff'
 import SharePageClient from '../../[teamSlug]/SharePageClient'
 
 export const dynamic = 'force-dynamic'
 
 interface SharePageProps {
   params: Promise<{ teamSlug: string; projectSlug: string }>
-  searchParams: Promise<{ web?: string }>
+  searchParams: Promise<{ web?: string; debug?: string }>
 }
 
 export default async function TeamSharePage({ params, searchParams }: SharePageProps) {
   const { teamSlug, projectSlug } = await params
-  const { web } = await searchParams
+  const { web, debug } = await searchParams
 
   const project = await prisma.project.findFirst({
     where: {
@@ -38,7 +38,9 @@ export default async function TeamSharePage({ params, searchParams }: SharePageP
     if (isMobileHandoffUserAgent(userAgent)) {
       const master = await ensureProjectMasterLink(project.id)
       if (master && isShareLinkActive(master)) {
-        redirect(`/open/${encodeURIComponent(master.token)}`)
+        const target = isWechatMobileUserAgent(userAgent) ? 'handoff' : 'open'
+        const debugQuery = target === 'handoff' && debug === '1' ? '?debug=1' : ''
+        redirect(`/${target}/${encodeURIComponent(master.token)}${debugQuery}`)
       }
     }
   }

@@ -129,3 +129,61 @@
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
 }
+
+.slot {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 4px;
+}
+
+.slot wx-open-launch-weapp {
+  display: block;
+  width: 100%;
+}
+
+.slotHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+
+.error {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid hsl(var(--destructive) / 0.3);
+  border-radius: var(--radius);
+  background: hsl(var(--destructive) / 0.08);
+  text-align: left;
+}
+
+.errorTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--destructive));
+}
+
+.errorDetail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+
+.fallback {
+  align-self: flex-start;
+  margin-top: 2px;
+  color: hsl(var(--primary));
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.fallback:hover {
+  text-decoration: underline;
+}

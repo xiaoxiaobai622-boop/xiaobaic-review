@@ -2,18 +2,18 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from './SharePageClient'
 import { ensureProjectMasterLink, isShareLinkActive, resolveShareMetadata } from '@/lib/share-links'
-import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
+import { isMobileHandoffUserAgent, isWechatMobileUserAgent } from '@/lib/share-handoff'
 
 export const dynamic = 'force-dynamic'
 
 interface SharePageProps {
   params: Promise<{ teamSlug: string }>
-  searchParams: Promise<{ web?: string }>
+  searchParams: Promise<{ web?: string; debug?: string }>
 }
 
 export default async function SharePage({ params, searchParams }: SharePageProps) {
   const { teamSlug } = await params
-  const { web } = await searchParams
+  const { web, debug } = await searchParams
 
   // Server-side validation: check if slug exists and is not archived
   const resolved = await resolveShareMetadata(teamSlug)
@@ -35,7 +35,11 @@ export default async function SharePage({ params, searchParams }: SharePageProps
         const master = await ensureProjectMasterLink(project.id)
         if (master && isShareLinkActive(master)) handoffToken = master.token
       }
-      if (handoffToken) redirect(`/open/${encodeURIComponent(handoffToken)}`)
+      if (handoffToken) {
+        const target = isWechatMobileUserAgent(userAgent) ? 'handoff' : 'open'
+        const debugQuery = target === 'handoff' && debug === '1' ? '?debug=1' : ''
+        redirect(`/${target}/${encodeURIComponent(handoffToken)}${debugQuery}`)
+      }
     }
   }
 
