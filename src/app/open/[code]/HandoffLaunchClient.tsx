@@ -13,10 +13,12 @@ const MINI_APP_ID = 'wxcbdd1a599d18af2b'
 function reportOpenTag(stage: string, detail: string): void {
   try {
     const body = JSON.stringify({ stage, detail, page: window.location.pathname })
-    const blob = new Blob([body], { type: 'application/json' })
-    if (!navigator.sendBeacon?.('/api/wechat/js-sdk/report', blob)) {
-      void fetch('/api/wechat/js-sdk/report', { method: 'POST', body, keepalive: true })
-    }
+    void fetch('/api/wechat/js-sdk/report', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => {})
   } catch {
     // Diagnostics only.
   }
@@ -73,6 +75,8 @@ export default function HandoffLaunchClient({
   const [wxLoaded, setWxLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openTagsError, setOpenTagsError] = useState<string | null>(null)
+  const [wxState, setWxState] = useState('pending')
+  const [tagState, setTagState] = useState<string | null>(null)
   const [debugMode, setDebugMode] = useState(false)
   const [avatarFailed, setAvatarFailed] = useState(false)
   const [launching, setLaunching] = useState(false)
@@ -129,11 +133,28 @@ export default function HandoffLaunchClient({
   }, [])
 
   useEffect(() => {
+    const readTagState = () => {
+      const tag = slotRef.current?.querySelector('wx-open-launch-weapp') as HTMLElement | null
+      const defined = Boolean(window.customElements?.get('wx-open-launch-weapp'))
+      const height = tag ? Math.round(tag.getBoundingClientRect().height) : -1
+      const shadow = Boolean(tag?.shadowRoot)
+      const state = `tag defined=${defined} height=${height} shadow=${shadow}`
+      setTagState(state)
+      reportOpenTag('tag-state', state)
+    }
+    const timer = window.setTimeout(readTagState, 3000)
+    reportOpenTag('page-load', 'open page loaded')
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
     if (!wxLoaded || configured.current) return
     let cancelled = false
     const wx = (window as unknown as { wx?: Wx }).wx
     if (!wx?.config) {
       setError('微信 JS-SDK 未加载')
+      setWxState('no-sdk')
+      reportOpenTag('config-error', 'wx missing')
       return
     }
 
@@ -164,23 +185,27 @@ export default function HandoffLaunchClient({
         })
         wx.ready(() => {
           if (!cancelled) setError(null)
+          setWxState('ready')
           window.setTimeout(() => {
+            if (cancelled) return
             const tag = slotRef.current?.querySelector('wx-open-launch-weapp') as HTMLElement | null
             const defined = Boolean(window.customElements?.get('wx-open-launch-weapp'))
             const height = tag ? Math.round(tag.getBoundingClientRect().height) : -1
-            reportOpenTag(
-              'tag-state',
-              `defined=${defined} height=${height} shadow=${Boolean(tag?.shadowRoot)}`,
-            )
+            const shadow = Boolean(tag?.shadowRoot)
+            const state = `tag ready+2s defined=${defined} height=${height} shadow=${shadow}`
+            setTagState(state)
+            reportOpenTag('tag-state', state)
           }, 2000)
         })
         wx.error((result) => {
           if (!cancelled) setError(result?.errMsg || '微信 JS-SDK 配置失败')
+          setWxState(`error ${result?.errMsg || ''}`.trim())
           reportOpenTag('config-error', result?.errMsg || 'config failed')
         })
       })
       .catch((reason: Error) => {
         if (!cancelled) setError(reason.message)
+        setWxState(`sign-error ${reason.message}`)
         reportOpenTag('config-error', reason.message)
       })
 
@@ -219,6 +244,7 @@ export default function HandoffLaunchClient({
         onLoad={() => setWxLoaded(true)}
         onError={() => {
           setError('微信 JS-SDK 加载失败')
+          setWxState('script-error')
           reportOpenTag('config-error', 'jweixin load failed')
         }}
       />
@@ -269,8 +295,10 @@ export default function HandoffLaunchClient({
             <a className={styles.errorLink} href={fallbackUrl}>{t('webFallback')}</a>
           </p>
         )}
-        {debugMode && (error || openTagsError) && (
-          <p className={styles.error}>{[error, openTagsError].filter(Boolean).join(' · ')}</p>
+        {debugMode && (
+          <p className={styles.error}>
+            {[`wx=${wxState}`, tagState, error, openTagsError].filter(Boolean).join(' · ')}
+          </p>
         )}
         <p className={styles.hint}>{t('appHint')}</p>
       </main>
