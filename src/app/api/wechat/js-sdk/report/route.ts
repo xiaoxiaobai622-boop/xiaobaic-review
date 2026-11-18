@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-const STAGES = new Set(['config-error', 'open-tags-error', 'tag-error', 'tag-launch', 'tag-state'])
+const STAGES = new Set(['page-load', 'config-error', 'open-tags-error', 'tag-error', 'tag-launch', 'tag-state'])
 const RATE_WINDOW_SECONDS = 60
 const RATE_LIMIT = 30
 

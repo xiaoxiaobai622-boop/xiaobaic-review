@@ -71,6 +71,7 @@ export default function HandoffLaunchClient({
 }: HandoffLaunchClientProps) {
   const t = useTranslations('handoff')
   const slotRef = useRef<HTMLDivElement>(null)
+  const renderTagRef = useRef<() => void>(() => {})
   const configured = useRef(false)
   const [wxLoaded, setWxLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,21 +105,23 @@ export default function HandoffLaunchClient({
     const slot = slotRef.current
     if (!slot) return
     // React must not manage this custom element; WeChat reads the template from
-    // the injected HTML, so it is built once per path/label change.
-    slot.innerHTML = `<wx-open-launch-weapp appid="${MINI_APP_ID}" username="${MINI_ORIGINAL_ID}" path="${escapeHtml(miniPath)}"><script type="text/wxtag-template"><style>.tag-button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:100%;height:54px;border:0;border-radius:0;background:#07C160;color:#FFFFFF;font-family:inherit;font-size:16px;font-weight:600;letter-spacing:.01em}</style><button class="tag-button">${escapeHtml(openLabel)}</button></script></wx-open-launch-weapp>`
+    // the injected HTML. iOS WeChat skips the first upgrade when the tag exists
+    // before config, so wx.ready rebuilds it once through renderTagRef.
+    const render = () => {
+      slot.innerHTML = `<wx-open-launch-weapp appid="${MINI_APP_ID}" username="${MINI_ORIGINAL_ID}" path="${escapeHtml(miniPath)}"><script type="text/wxtag-template"><style>.tag-button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:100%;height:54px;border:0;border-radius:0;background:#07C160;color:#FFFFFF;font-family:inherit;font-size:16px;font-weight:600;letter-spacing:.01em}</style><button class="tag-button">${escapeHtml(openLabel)}</button></script></wx-open-launch-weapp>`
 
-    const tag = slot.querySelector('wx-open-launch-weapp') as HTMLElement | null
-    if (!tag) return
-    const onLaunch = () => reportOpenTag('tag-launch', 'ok')
-    const onError = (event: Event) => {
-      const detail = (event as CustomEvent<{ errMsg?: string }>).detail?.errMsg || 'tag error'
-      reportOpenTag('tag-error', detail)
+      const tag = slot.querySelector('wx-open-launch-weapp') as HTMLElement | null
+      if (!tag) return
+      tag.addEventListener('launch', () => reportOpenTag('tag-launch', 'ok'))
+      tag.addEventListener('error', (event) => {
+        const detail = (event as unknown as CustomEvent<{ errMsg?: string }>).detail?.errMsg || 'tag error'
+        reportOpenTag('tag-error', detail)
+      })
     }
-    tag.addEventListener('launch', onLaunch)
-    tag.addEventListener('error', onError)
+    renderTagRef.current = render
+    render()
     return () => {
-      tag.removeEventListener('launch', onLaunch)
-      tag.removeEventListener('error', onError)
+      renderTagRef.current = () => {}
     }
   }, [miniPath, openLabel])
 
@@ -186,6 +189,11 @@ export default function HandoffLaunchClient({
         wx.ready(() => {
           if (!cancelled) setError(null)
           setWxState('ready')
+          window.setTimeout(() => {
+            if (cancelled) return
+            renderTagRef.current?.()
+            reportOpenTag('tag-state', 'rebuilt after ready')
+          }, 400)
           window.setTimeout(() => {
             if (cancelled) return
             const tag = slotRef.current?.querySelector('wx-open-launch-weapp') as HTMLElement | null
