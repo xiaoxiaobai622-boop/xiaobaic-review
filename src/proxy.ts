@@ -70,6 +70,8 @@ export async function proxy(request: NextRequest) {
   // origin only on the handoff pages.
   const isWechatHandoffPath = url.pathname.startsWith('/open/') || url.pathname.startsWith('/handoff/')
   const wechatSdkOrigin = isWechatHandoffPath ? ' https://res.wx.qq.com' : ''
+  // 开放标签由微信以 *.qq.com / webcompt: 组件渲染；frame-src 不放行时标签静默不渲染。
+  const wechatOpenTagFrameSrc = isWechatHandoffPath ? ' https://*.qq.com webcompt:' : ''
 
   const connectSrc = [
     "'self'",
@@ -109,7 +111,7 @@ export async function proxy(request: NextRequest) {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    "frame-src 'self'",
+    `frame-src 'self'${wechatOpenTagFrameSrc}`,
   ]
 
   if (isHttpsEnabled) {
