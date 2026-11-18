@@ -7,6 +7,7 @@ import { timecodeToSeconds } from '@/lib/timecode'
 import { formatTimeDisplay } from '@/lib/time-format'
 import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { InitialsAvatar } from './InitialsAvatar'
+import { sanitizeCommentHtml } from '@/lib/security/html-sanitization'
 
 const SPEED_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
@@ -89,6 +90,10 @@ export default function VideoComparisonControls({
     return [...groups.values()].sort((a, b) => a.time - b.time)
   }, [comments, videoDuration, videoFps])
   const activeCommentGroup = commentGroups.find(group => group.key === activeCommentGroupKey) || null
+  const safeCommentHtml = useMemo(
+    () => new Map((activeCommentGroup?.comments ?? []).map((comment) => [comment.id, sanitizeCommentHtml(comment.content)])),
+    [activeCommentGroup],
+  )
 
   useEffect(() => {
     if (activeCommentGroupKey && !commentGroups.some(group => group.key === activeCommentGroupKey)) {
@@ -223,7 +228,7 @@ export default function VideoComparisonControls({
                   </div>
                   <div
                     className="line-clamp-4 break-words text-sm leading-5 [&_p]:m-0"
-                    dangerouslySetInnerHTML={{ __html: comment.content }}
+                    dangerouslySetInnerHTML={{ __html: safeCommentHtml.get(comment.id) ?? '' }}
                   />
                 </div>
               ))}

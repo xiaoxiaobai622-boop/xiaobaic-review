@@ -555,6 +555,7 @@ export function SupportWidget({ placement = 'bottom', hideLauncher = false, embe
                         onChange={(event) => { setDraft(event.target.value); notifyTyping() }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' && !event.shiftKey) {
+                            if (event.nativeEvent.isComposing || event.keyCode === 229) return
                             event.preventDefault()
                             void send()
                           }

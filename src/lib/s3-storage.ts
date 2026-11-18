@@ -535,7 +535,7 @@ export async function s3GetObjectSize(key: string): Promise<number | null> {
     if (isS3NotFoundError(err)) return null
     const e = err as { $metadata?: { httpStatusCode?: number }; message?: string }
     const status = e?.$metadata?.httpStatusCode
-    throw new Error(`S3 HeadObject failed for key "${key}"${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? String(err)}`)
+    throw new Error(`S3 HeadObject failed for key "${key}"${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? String(err)}`, { cause: err })
   }
 }
 
@@ -578,7 +578,7 @@ export async function s3FileExists(key: string): Promise<boolean> {
       const status = e?.$metadata?.httpStatusCode
       // Do not cache provider/network failures: the next request should be
       // able to recover immediately when the backend becomes available.
-      throw new Error(`S3 HeadObject failed for key "${key}"${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? String(err)}`)
+      throw new Error(`S3 HeadObject failed for key "${key}"${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? String(err)}`, { cause: err })
     }
   })()
 

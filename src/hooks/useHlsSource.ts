@@ -512,8 +512,6 @@ export function useHlsSource({
     // round trip even for a multi-gigabyte original.
     const probePlaybackStatus = async (url: string | null | undefined): Promise<PlaybackProbe | undefined> => {
       if (!url || disposed) return undefined
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), PLAYBACK_PROBE_TIMEOUT_MS)
       try {
         const response = await fetch(url, {
           method: 'GET',
@@ -521,7 +519,7 @@ export function useHlsSource({
           // Keep the probe off the non-range session counter and stop the body
           // as soon as the status line is known.
           headers: { Range: 'bytes=0-1' },
-          signal: controller.signal,
+          signal: AbortSignal.timeout(PLAYBACK_PROBE_TIMEOUT_MS),
         })
         const status = response.status
         let retryAfterMs: number | undefined
@@ -543,8 +541,6 @@ export function useHlsSource({
         return { status, retryAfterMs }
       } catch {
         return undefined
-      } finally {
-        clearTimeout(timer)
       }
     }
 

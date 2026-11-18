@@ -484,7 +484,7 @@ export function sharePolicyFingerprint(
     type: policy.type,
     scopeType: policy.scopeType,
     scopeId: policy.scopeId,
-    permissions: [...policy.permissions].sort(),
+    permissions: policy.permissions.toSorted(),
     authMode: policy.authMode,
     sharePassword: policy.sharePassword ?? null,
     expiresAt: policy.expiresAt ? new Date(policy.expiresAt).getTime() : null,

@@ -7,6 +7,7 @@ import { Check, Copy, Download, ExternalLink, Link2, Loader2, MessageSquare, Pap
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api-client'
+import { toSorted } from '@/lib/array-compat'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { Switch } from '@/components/ui/switch'
 import { generateSharePasscode } from '@/lib/password-utils'
@@ -147,7 +148,7 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
     window.setTimeout(() => setCopied(false), 2000)
   }
 
-  const versions = [...(target?.versions ?? [])].sort((a, b) => b.version - a.version)
+  const versions = toSorted(target?.versions ?? [], (a, b) => b.version - a.version)
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="w-[calc(100%-2rem)] max-w-[520px] gap-0 overflow-hidden !rounded-lg !p-0">

@@ -8,6 +8,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderPlus, ImageIcon, ImageOff, Loader2, Pencil, Plus, Star, Trash2, Upload, X,
 } from 'lucide-react'
 import { formatFileSize } from '@/lib/utils'
+import { toSorted } from '@/lib/array-compat'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Input } from './ui/input'
@@ -375,7 +376,7 @@ export default function PhotoAlbumsBlock({ projectId, sortMode = 'date', onCount
 
   // ── Albums (accordion) ─────────────────────────────────────────────────────
   const sortedAlbums = sortMode === 'alphabetical'
-    ? [...albums].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    ? toSorted(albums, (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
     : albums // API returns createdAt ascending
 
   const pageCount = Math.ceil(photos.length / PHOTO_PAGE_SIZE)
@@ -680,7 +681,7 @@ function RenameDialog({ open, onOpenChange, title, value, onValueChange, onSave,
           placeholder={t('albumNamePlaceholder')}
           maxLength={100}
           autoFocus
-          onKeyDown={(e) => { if (e.key === 'Enter' && value.trim() && !saving) onSave() }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && value.trim() && !saving) onSave() }}
         />
         <DialogFooter>
           <Button variant="default" onClick={onSave} disabled={saving || !value.trim()}>

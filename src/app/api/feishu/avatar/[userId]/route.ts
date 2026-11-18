@@ -49,13 +49,11 @@ export async function GET(
   }
 
   try {
-    const controller = new AbortController()
-    const connectTimer = setTimeout(() => controller.abort(), AVATAR_CONNECT_TIMEOUT_MS)
     const response = await fetch(avatarUrl, {
       cache: 'no-store',
       redirect: 'manual',
-      signal: controller.signal,
-    }).finally(() => clearTimeout(connectTimer))
+      signal: AbortSignal.timeout(AVATAR_CONNECT_TIMEOUT_MS),
+    })
     if (!response.ok) return avatarUnavailable()
 
     const contentType = response.headers.get('content-type') || ''

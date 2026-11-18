@@ -3,6 +3,7 @@
 import { useRef, useCallback } from 'react'
 import { apiPost } from '@/lib/api-client'
 import { shareApiPost, shareSlugFromToken } from '@/lib/share-token-store'
+import { withResolvers } from '@/lib/with-resolvers'
 
 // Upload N parts in parallel via a shared worker pool. Each finished part
 // frees its slot for the next queued part — no straggler-blocks-batch waste.
@@ -371,9 +372,8 @@ export function useS3MultipartUpload() {
   /** Pause an in-progress upload and stop the parts already in flight. */
   const pauseUpload = useCallback((uploadKey: string): void => {
     if (pauseGatesRef.current.has(uploadKey)) return
-    let resolve!: () => void
-    const promise = new Promise<void>((r) => { resolve = r })
-    pauseGatesRef.current.set(uploadKey, { promise, resolve })
+    const gate = withResolvers<void>()
+    pauseGatesRef.current.set(uploadKey, { promise: gate.promise, resolve: () => gate.resolve() })
     pauseAbortersRef.current.get(uploadKey)?.forEach((abort) => abort())
   }, [])
 

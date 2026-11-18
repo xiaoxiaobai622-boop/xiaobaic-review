@@ -1094,9 +1094,15 @@ a.pointCol:focus-visible {
   animation: riseIn 720ms cubic-bezier(0.22, 0.8, 0.32, 1) both;
 }
 
-.heroCopy > *:nth-child(2) { animation-delay: 90ms; }
-.heroCopy > *:nth-child(3) { animation-delay: 180ms; }
-.heroCopy > *:nth-child(4) { animation-delay: 270ms; }
+@supports (animation-delay: calc(sibling-index() * 0.1s)) {
+  .heroCopy > * { animation-delay: calc((sibling-index() - 1) * 90ms); }
+}
+
+@supports not (animation-delay: calc(sibling-index() * 0.1s)) {
+  .heroCopy > *:nth-child(2) { animation-delay: 90ms; }
+  .heroCopy > *:nth-child(3) { animation-delay: 180ms; }
+  .heroCopy > *:nth-child(4) { animation-delay: 270ms; }
+}
 
 .heroShot {
   animation: shotIn 920ms cubic-bezier(0.22, 0.8, 0.32, 1) 200ms both;

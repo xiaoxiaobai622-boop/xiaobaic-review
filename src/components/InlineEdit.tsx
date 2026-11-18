@@ -30,7 +30,7 @@ export function InlineEdit({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') onSave()
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) onSave()
     if (e.key === 'Escape') onCancel()
     if (stopPropagation) {
       e.stopPropagation()

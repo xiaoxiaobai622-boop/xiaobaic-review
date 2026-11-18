@@ -104,7 +104,7 @@ export async function processPhoto(job: Job<PhotoProcessingJob>) {
         data: { fileType: markInvalidFileType(fileType.mime) },
       })
       const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(`Photo content cannot be decoded. Detected: ${fileType.mime}. ${detail}`)
+      throw new Error(`Photo content cannot be decoded. Detected: ${fileType.mime}. ${detail}`, { cause: error })
     }
 
     const project = await prisma.project.findUnique({ where: { id: photo.album.projectId }, select: { teamId: true } })

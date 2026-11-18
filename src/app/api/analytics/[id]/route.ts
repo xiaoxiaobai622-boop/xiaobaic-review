@@ -104,13 +104,7 @@ export async function GET(
     const photoAnalyticsRows = project.analytics.filter(a => !a.videoId)
 
     // Group videos by name
-    const videosByName = project.videos.reduce((acc, video) => {
-      if (!acc[video.name]) {
-        acc[video.name] = []
-      }
-      acc[video.name].push(video)
-      return acc
-    }, {} as Record<string, typeof project.videos>)
+    const videosByName = Object.groupBy(project.videos, (video) => video.name) as Record<string, typeof project.videos>
 
     // Create stats grouped by video name
     const videoStats = Object.entries(videosByName).map(([videoName, versions]) => {

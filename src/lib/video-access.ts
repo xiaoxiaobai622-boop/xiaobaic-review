@@ -42,7 +42,7 @@ const tokenVerificationCache = new Map<string, CachedTokenEntry>()
 const TOKEN_REV_VERSION_KEY = 'video_token_rev_version'
 
 function permissionsFingerprint(permissions?: string[]): string {
-  return permissions?.length ? [...permissions].sort().join('+') : 'none'
+  return permissions?.length ? permissions.toSorted().join('+') : 'none'
 }
 
 export async function getCachedVideoAccessToken(

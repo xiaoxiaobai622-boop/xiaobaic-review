@@ -284,7 +284,7 @@ export default function PlatformMessagesPage() {
                         placeholder="回复该用户…"
                         maxLength={2000}
                         className="h-8 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                        onKeyDown={(event) => { if (event.key === 'Enter') void reply(item.id) }}
+                        onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) void reply(item.id) }}
                       />
                       <button
                         type="button"

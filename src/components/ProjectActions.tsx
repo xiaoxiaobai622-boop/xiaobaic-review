@@ -13,6 +13,7 @@ import type { ProjectSettingsSection } from './ProjectSettingsPanel'
 import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
 import { apiPost, apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
+import { groupBy } from '@/lib/array-compat'
 
 interface ProjectCapabilities {
   canManageSettings: boolean
@@ -115,13 +116,7 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
   const readyVideos = videos.filter(v => v.status === 'READY')
 
   // Check if all unique videos have at least one approved version
-  const videosByNameForApproval = readyVideos.reduce((acc, video) => {
-    if (!acc[video.name]) {
-      acc[video.name] = []
-    }
-    acc[video.name].push(video)
-    return acc
-  }, {} as Record<string, Video[]>)
+  const videosByNameForApproval = groupBy(readyVideos, (video) => video.name) as Record<string, Video[]>
 
   const allVideosHaveApprovedVersion = Object.values(videosByNameForApproval).every((versions: Video[]) =>
     versions.some(v => v.approved)

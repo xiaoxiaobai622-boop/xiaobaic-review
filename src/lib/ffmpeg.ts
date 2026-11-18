@@ -199,12 +199,12 @@ export async function getVideoMetadata(inputPath: string): Promise<VideoMetadata
         if (DEBUG) {
           logError('[FFPROBE DEBUG] Failed to parse output:', error)
         }
-        reject(new Error(`Failed to parse ffprobe output: ${error}. Output was: ${stdout.substring(0, 200)}`))
+        reject(new Error(`Failed to parse ffprobe output: ${error}. Output was: ${stdout.substring(0, 200)}`, { cause: error }))
       }
     })
 
     ffprobe.on('error', (err) => {
-      reject(new Error(`Failed to spawn ffprobe: ${err.message}. Is ffprobe installed?`))
+      reject(new Error(`Failed to spawn ffprobe: ${err.message}. Is ffprobe installed?`, { cause: err }))
     })
   })
 }
@@ -391,7 +391,7 @@ export async function transcodeVideo(options: TranscodeOptions): Promise<void> {
       if (DEBUG) {
         logError('[FFMPEG DEBUG] Failed to spawn FFmpeg:', err)
       }
-      reject(new Error(`Failed to start FFmpeg: ${err.message}`))
+      reject(new Error(`Failed to start FFmpeg: ${err.message}`, { cause: err }))
     })
   })
 }
@@ -470,7 +470,7 @@ export async function transcodeSourceQuality(
       }
     })
 
-    ffmpeg.on('error', (err) => reject(new Error(`Failed to start FFmpeg source-quality transcode: ${err.message}`)))
+    ffmpeg.on('error', (err) => reject(new Error(`Failed to start FFmpeg source-quality transcode: ${err.message}`, { cause: err })))
   })
 }
 
@@ -544,7 +544,7 @@ export async function generateThumbnail(
       if (DEBUG) {
         logError('[FFMPEG DEBUG] Failed to spawn FFmpeg for thumbnail:', err)
       }
-      reject(new Error(`Failed to start FFmpeg: ${err.message}`))
+      reject(new Error(`Failed to start FFmpeg: ${err.message}`, { cause: err }))
     })
   })
 }
@@ -588,7 +588,7 @@ export async function generateWaveformImage(
     })
 
     ffmpeg.on('error', (err) => {
-      reject(new Error(`Failed to start FFmpeg: ${err.message}`))
+      reject(new Error(`Failed to start FFmpeg: ${err.message}`, { cause: err }))
     })
   })
 }

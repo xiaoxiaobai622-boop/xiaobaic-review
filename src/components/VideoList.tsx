@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Video } from '@prisma/client'
 import { formatDuration, formatFileSize } from '@/lib/utils'
+import { toSorted } from '@/lib/array-compat'
 import { Button } from './ui/button'
 import { Trash2, CheckCircle2, XCircle, Upload, Download, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react'
 import { apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
@@ -21,7 +22,7 @@ interface VideoListProps {
 }
 
 function expandNewestOnly(videos: Video[]) {
-  const sorted = [...videos].sort((a, b) => b.version - a.version)
+  const sorted = toSorted(videos, (a, b) => b.version - a.version)
   return new Set(sorted[0]?.id ? [sorted[0].id] : [])
 }
 
@@ -172,7 +173,7 @@ export default function VideoList({ videos: initialVideos, isAdmin = true, canDe
     setShowAllVersions(!showAllVersions)
   }
 
-  const sortedVideos = [...videos].sort((a, b) => b.version - a.version)
+  const sortedVideos = toSorted(videos, (a, b) => b.version - a.version)
   const latestVideoId = sortedVideos[0]?.id
 
   if (videos.length === 0) {

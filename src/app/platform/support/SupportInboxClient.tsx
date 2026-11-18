@@ -641,7 +641,7 @@ export default function SupportInboxClient({ initialConversationId }: { initialC
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') void loadList() }}
+                onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) void loadList() }}
                 placeholder="搜索访客、内容、标签…"
                 className="h-9 w-full rounded-md border border-border bg-background pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-ring"
               />
@@ -745,7 +745,7 @@ export default function SupportInboxClient({ initialConversationId }: { initialC
                   value={tagsDraft}
                   onChange={(event) => setTagsDraft(event.target.value)}
                   onBlur={applyTags}
-                  onKeyDown={(event) => { if (event.key === 'Enter') applyTags() }}
+                  onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) applyTags() }}
                   placeholder="标签，逗号分隔"
                   className="h-8 w-36 rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
                   aria-label="标签"
@@ -807,6 +807,7 @@ export default function SupportInboxClient({ initialConversationId }: { initialC
                   onChange={(event) => { setDraft(event.target.value); notifyTyping() }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) return
                       event.preventDefault()
                       void send()
                     }

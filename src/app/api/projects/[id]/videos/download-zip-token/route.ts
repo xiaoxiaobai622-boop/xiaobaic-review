@@ -30,8 +30,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const grouped = await prisma.video.findMany({
     where: { projectId, name: { in: names }, ...LIVE_VIDEO },
   })
-  const versionsByName: Record<string, typeof grouped> = {}
-  for (const video of grouped) (versionsByName[video.name] ||= []).push(video)
+  const versionsByName = Object.groupBy(grouped, (video) => video.name) as Record<string, typeof grouped>
   const latestVideos = Object.values(versionsByName)
     .map((versions) => getLatestVideo(versions)!)
     .sort((a, b) => a.name.localeCompare(b.name))

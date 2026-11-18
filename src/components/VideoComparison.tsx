@@ -11,6 +11,7 @@ import AnnotationOverlay, { type AnnotationAuthorMeta } from './AnnotationOverla
 import { useHlsSource } from '@/hooks/useHlsSource'
 import { ComparisonSide, useDualVideoSync } from '@/hooks/useDualVideoSync'
 import { formatTimecodeAs } from '@/lib/time-format'
+import { toSorted } from '@/lib/array-compat'
 import { useTimeFormat } from '@/hooks/useTimeFormat'
 import type { AnnotationData } from '@/types/annotations'
 
@@ -63,7 +64,7 @@ export default function VideoComparison({
 }: VideoComparisonProps) {
   const t = useTranslations('videos')
   const format = useTimeFormat()
-  const sorted = [...videoVersions].sort((a, b) => a.version - b.version)
+  const sorted = toSorted(videoVersions, (a, b) => a.version - b.version)
 
   // Default: A = second-to-last (previous), B = last (latest)
   const initialA = defaultVersionA !== undefined

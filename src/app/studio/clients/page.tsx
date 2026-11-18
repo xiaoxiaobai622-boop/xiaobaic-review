@@ -491,7 +491,7 @@ export default function ClientsPage() {
                 placeholder={t('companyNamePlaceholder')}
                 value={newCompanyName}
                 onChange={(e) => setNewCompanyName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddCompany()}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleAddCompany() }}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -533,7 +533,7 @@ export default function ClientsPage() {
                 id="editCompanyName"
                 value={newCompanyName}
                 onChange={(e) => setNewCompanyName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleEditCompany()}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleEditCompany() }}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -679,7 +679,7 @@ export default function ClientsPage() {
                 placeholder={t('contactEmailPlaceholder')}
                 value={newContactEmail}
                 onChange={(e) => setNewContactEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddContact()}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleAddContact() }}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -754,7 +754,7 @@ export default function ClientsPage() {
                 type="email"
                 value={newContactEmail}
                 onChange={(e) => setNewContactEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleEditContact()}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleEditContact() }}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"

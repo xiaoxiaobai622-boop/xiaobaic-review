@@ -27,6 +27,7 @@ import ProjectSwitcher from '@/components/projects/ProjectSwitcher'
 import { ProjectWorkspaceSkeleton } from '@/components/projects/ProjectWorkspaceSkeleton'
 import FilterDropdown from '@/components/FilterDropdown'
 import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
+import { groupBy } from '@/lib/array-compat'
 import {
   loadVideoDisplayPrefs,
   loadVideoSortPrefs,
@@ -1199,8 +1200,7 @@ export default function ProjectPage() {
   const downloadFolderOriginals = async (folderId: string) => {
     setFolderMenu(null)
     const folderVideos = project.videos.filter((video: any) => video.folderId === folderId)
-    const versionsByName: Record<string, any[]> = {}
-    for (const video of folderVideos) (versionsByName[video.name] ||= []).push(video)
+    const versionsByName = groupBy(folderVideos, (video: any) => video.name) as Record<string, any[]>
     const latestVideos = Object.values(versionsByName).map((versions) => getLatestVideo(versions))
     if (latestVideos.length === 0) {
       appAlert('文件夹中没有可下载的视频')

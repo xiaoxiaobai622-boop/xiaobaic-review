@@ -108,13 +108,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       select: { id: true, approved: true, name: true },
     })
 
-    const videosByName = allVideos.reduce((acc: Record<string, any[]>, video) => {
-      if (!acc[video.name]) {
-        acc[video.name] = []
-      }
-      acc[video.name].push(video)
-      return acc
-    }, {})
+    const videosByName = Object.groupBy(allVideos, (video) => video.name) as Record<string, typeof allVideos>
 
     const allApproved = Object.values(videosByName).every((versions: any[]) =>
       versions.some(v => v.approved)

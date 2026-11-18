@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/api-client'
 import { Label } from '@/components/ui/label'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
+import { groupBy } from '@/lib/array-compat'
 import { copyTextToClipboard } from '@/lib/clipboard'
 
 interface PlaceholderDefinition {
@@ -210,15 +211,7 @@ export function EmailTemplatesEditor({ emailHeaderStyle, setEmailHeaderStyle }: 
   }
 
   // Group templates by category
-  const groupedTemplates = templates.reduce(
-    (acc, template) => {
-      const cat = template.category || 'client'
-      if (!acc[cat]) acc[cat] = []
-      acc[cat].push(template)
-      return acc
-    },
-    {} as Record<string, EmailTemplate[]>
-  )
+  const groupedTemplates = groupBy(templates, (template) => template.category || 'client') as Record<string, EmailTemplate[]>
 
   const categoryLabels: Record<string, string> = {
     client: t('clientNotifications'),

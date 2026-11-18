@@ -26,7 +26,7 @@ function splitFrontmatter(raw: string, file: string): { meta: Record<string, unk
   try {
     meta = JSON.parse(m[1]) as Record<string, unknown>
   } catch (e) {
-    throw new Error(`${file} frontmatter JSON 解析失败：${(e as Error).message}`)
+    throw new Error(`${file} frontmatter JSON 解析失败：${(e as Error).message}`, { cause: e })
   }
   // 守门报错要落到文件真实行号：正文第 0 行 = 文件的第 lineOffset + 1 行。
   const lineOffset = (m[0].match(/\n/g) ?? []).length

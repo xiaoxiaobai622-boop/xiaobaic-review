@@ -283,7 +283,7 @@ export default function TeamSwitcher({ compact = false }: { compact?: boolean } 
               value={teamName}
               onChange={(event) => setTeamName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') void createTeam()
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) void createTeam()
               }}
               placeholder="例如：小白工作室"
               className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"

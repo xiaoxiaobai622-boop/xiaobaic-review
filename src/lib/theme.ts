@@ -31,6 +31,8 @@ export function resolveDefaultTheme(defaultTheme: string | null | undefined): Th
 export function applyThemeChoice(theme: ThemeChoice): void {
   const root = document.documentElement
   root.classList.toggle('dark', theme === 'dark')
+  const meta = document.querySelector('meta[name="color-scheme"]')
+  if (meta) meta.setAttribute('content', theme === 'dark' ? 'dark' : 'light')
   if (THEMES_WITH_ATTRIBUTE.includes(theme)) {
     root.setAttribute('data-theme', theme)
   } else {
@@ -43,4 +45,4 @@ export function applyThemeChoice(theme: ThemeChoice): void {
  * Deliberately mirrors resolveDefaultTheme + applyThemeChoice above: it cannot
  * import them, because it has to survive as a standalone inline script.
  */
-export const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(t!=='light'&&t!=='mint'&&t!=='frame'&&t!=='dark'){var d=localStorage.getItem('adminDefaultTheme');t=(d==='light'||d==='dark')?d:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}document.documentElement.classList.toggle('dark',t==='dark');if(t==='mint'||t==='frame')document.documentElement.setAttribute('data-theme',t)}catch(e){}})();`
+export const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(t!=='light'&&t!=='mint'&&t!=='frame'&&t!=='dark'){var d=localStorage.getItem('adminDefaultTheme');t=(d==='light'||d==='dark')?d:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}document.documentElement.classList.toggle('dark',t==='dark');if(t==='mint'||t==='frame')document.documentElement.setAttribute('data-theme',t);var m=document.querySelector('meta[name="color-scheme"]');if(m)m.setAttribute('content',t==='dark'?'dark':'light')}catch(e){}})();`

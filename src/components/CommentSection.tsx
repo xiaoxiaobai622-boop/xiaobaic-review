@@ -8,6 +8,7 @@ import { Button } from './ui/button'
 import { Check, CheckCircle2, MessageSquare, MessageSquareText, MoreHorizontal, ChevronDown, ChevronUp, Filter, Info, Search, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
+import { toSorted } from '@/lib/array-compat'
 import MessageBubble from './MessageBubble'
 import CommentInput from './CommentInput'
 import CommentSortMenu, { type CommentSortMode } from './CommentSortMenu'
@@ -405,8 +406,7 @@ export default function CommentSection({
       }
     }
 
-    return [...filteredByStatus]
-      .sort((a, b) => {
+    return toSorted(filteredByStatus, (a, b) => {
         if (commentSort === 'newest') {
           const newestDifference = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           return newestDifference || a.id.localeCompare(b.id)
@@ -428,7 +428,7 @@ export default function CommentSection({
       .map((comment) => comment.replies && comment.replies.length > 0
         ? {
             ...comment,
-            replies: [...comment.replies].sort((a: Comment, b: Comment) => (
+            replies: toSorted(comment.replies, (a: Comment, b: Comment) => (
               new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
             )),
           }

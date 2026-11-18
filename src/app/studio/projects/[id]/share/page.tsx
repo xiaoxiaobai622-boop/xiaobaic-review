@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Check, LoaderCircle, Share2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { groupBy } from '@/lib/array-compat'
 import { useStudioTitle } from '@/lib/use-studio-title'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -371,14 +372,7 @@ export default function AdminSharePage() {
   }, [fetchComments, id])
 
   const transformProjectData = (projectData: any) => {
-    const videosByName = projectData.videos.reduce((acc: any, video: any) => {
-      const name = video.name
-      if (!acc[name]) {
-        acc[name] = []
-      }
-      acc[name].push(video)
-      return acc
-    }, {})
+    const videosByName = groupBy(projectData.videos, (video: any) => video.name) as Record<string, any[]>
 
     // Sort versions within each video name (newest first)
     Object.keys(videosByName).forEach(name => {

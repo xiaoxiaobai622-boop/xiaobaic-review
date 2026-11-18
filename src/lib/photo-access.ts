@@ -21,7 +21,7 @@ export interface AlbumAccessToken {
 }
 
 function permissionsFingerprint(permissions: string[]): string {
-  return permissions.length ? [...permissions].sort().join('+') : 'none'
+  return permissions.length ? permissions.toSorted().join('+') : 'none'
 }
 
 /**

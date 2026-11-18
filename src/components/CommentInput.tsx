@@ -517,6 +517,7 @@ export default function CommentInput({
         return
       }
       if (e.key === 'Enter') {
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return
         if (filteredMentionCandidates.length > 0) {
           e.preventDefault()
           selectMention(filteredMentionCandidates[mentionIndex] || filteredMentionCandidates[0])
@@ -532,6 +533,7 @@ export default function CommentInput({
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return
       e.preventDefault()
       // Prevent multiple submissions while loading
       if (canSubmit) {

@@ -275,14 +275,7 @@ export async function GET(
       thumbnailUrl: null,
     }))
 
-    const videosByName = videosSanitizedBase.reduce((acc: any, video: any) => {
-      const name = video.name
-      if (!acc[name]) {
-        acc[name] = []
-      }
-      acc[name].push(video)
-      return acc
-    }, {})
+    const videosByName = Object.groupBy(videosSanitizedBase, (video: any) => video.name) as Record<string, any[]>
 
     Object.keys(videosByName).forEach(name => {
       videosByName[name].sort((a: any, b: any) => b.version - a.version)

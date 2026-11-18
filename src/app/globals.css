@@ -5,6 +5,8 @@
 @layer base {
   /* Light Mode Theme */
   :root {
+    color-scheme: light;
+
     /* Not 16px: one rem-root step pulls every rem-based utility (spacing,
        gaps, padding, type) down 6.25% at once. */
     font-size: 15px;

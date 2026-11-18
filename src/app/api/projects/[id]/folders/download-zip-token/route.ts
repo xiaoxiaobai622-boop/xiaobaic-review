@@ -25,8 +25,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // Map-dedup of a version-DESC query keeps the *last* row seen, i.e. the oldest
   // version, so the latest version has to be picked explicitly.
-  const versionsByName: Record<string, typeof folder.videos> = {}
-  for (const video of folder.videos) (versionsByName[video.name] ||= []).push(video)
+  const versionsByName = Object.groupBy(folder.videos, (video) => video.name) as Record<string, typeof folder.videos>
   const latestVideos = Object.values(versionsByName)
     .map((versions) => getLatestVideo(versions)!)
     .sort((a, b) => a.name.localeCompare(b.name))

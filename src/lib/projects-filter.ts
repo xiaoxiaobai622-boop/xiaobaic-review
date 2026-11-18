@@ -3,6 +3,8 @@
  * Kept out of components so it can be reasoned about and tested in isolation.
  */
 
+import { toSorted } from '@/lib/array-compat'
+
 export type DueBucket = 'overdue' | 'thisWeek' | 'thisMonth' | 'later' | 'none'
 
 export type SortKey =
@@ -312,8 +314,8 @@ function arrayEqualUnordered<T>(a: T[] | undefined, b: T[] | undefined): boolean
   const aa = a || []
   const bb = b || []
   if (aa.length !== bb.length) return false
-  const sa = [...aa].sort()
-  const sb = [...bb].sort()
+  const sa = toSorted(aa)
+  const sb = toSorted(bb)
   return sa.every((v, i) => v === sb[i])
 }
 

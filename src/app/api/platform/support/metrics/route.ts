@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 function percentile(values: number[], p: number) {
   if (!values.length) return null
-  const sorted = [...values].sort((a, b) => a - b)
+  const sorted = values.toSorted((a, b) => a - b)
   const index = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)
   return sorted[index]
 }

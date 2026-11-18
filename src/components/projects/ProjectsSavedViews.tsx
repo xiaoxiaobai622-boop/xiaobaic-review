@@ -105,7 +105,7 @@ export default function ProjectsSavedViews({
             placeholder={t('savedViewNamePlaceholder')}
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSave()
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) handleSave()
               if (e.key === 'Escape') { setNaming(false); setName('') }
             }}
             className="h-9 text-sm w-44"

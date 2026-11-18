@@ -15,6 +15,7 @@ import motion from '@/components/ui/surface-motion.module.css'
 import { Input } from './ui/input'
 import { VideoUploadModal } from './VideoUploadModal'
 import { cn, formatFileSize } from '@/lib/utils'
+import { groupBy, toSorted } from '@/lib/array-compat'
 import { useRouter } from 'next/navigation'
 import { apiPatch, apiFetch, apiDelete } from '@/lib/api-client'
 import { FILE_LIMITS } from '@/lib/file-validation'
@@ -186,13 +187,7 @@ export default function AdminVideoManager({
   // prop so a parent re-render keeps the same arrays — VideoList resets its local state
   // when it sees a new array identity, and the version list used to be a fresh sort.
   const videoGroups = useMemo(() => {
-    const grouped = videos.reduce((acc: Record<string, any[]>, video) => {
-      if (!acc[video.name]) {
-        acc[video.name] = []
-      }
-      acc[video.name].push(video)
-      return acc
-    }, {})
+    const grouped = groupBy(videos, (video) => video.name) as Record<string, any[]>
 
     for (const groupVideos of Object.values(grouped)) {
       groupVideos.sort((a, b) => {
@@ -455,8 +450,7 @@ export default function AdminVideoManager({
 
       const entries = await Promise.all(
         Object.entries(groups).map(async ([name, groupVideos]) => {
-          const videoWithThumb = [...(groupVideos as any[])]
-            .sort((a, b) => b.version - a.version)
+          const videoWithThumb = toSorted(groupVideos as any[], (a, b) => b.version - a.version)
             .find(v => v.thumbnailPath)
           if (!videoWithThumb) return null
 
@@ -503,8 +497,7 @@ export default function AdminVideoManager({
   // Preview the latest READY version's transcoded preview (never the original file)
   const handlePreview = async (groupName: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const latest = [...videoGroups[groupName]]
-      .sort((a, b) => b.version - a.version)
+    const latest = toSorted(videoGroups[groupName], (a, b) => b.version - a.version)
       .find(v => v.status === 'READY')
     if (!latest) return
 
@@ -1326,7 +1319,7 @@ export default function AdminVideoManager({
                 setReviewStatusMenuGroup(null)
                 onShowVideoInfo?.({
                   name: groupName,
-                  videos: [...groupVideos].sort((a, b) => b.version - a.version),
+                  videos: toSorted(groupVideos, (a, b) => b.version - a.version),
                 })
               }}
               className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"

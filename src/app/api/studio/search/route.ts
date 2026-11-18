@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
     }))
     const projects: SearchProjectHit[] = (sort === 'newest'
       ? projectRows
-      : [...projectRows].sort(byPrefix(query))
+      : projectRows.toSorted(byPrefix(query))
     ).map((row) => ({
       id: row.id,
       title: row.title,

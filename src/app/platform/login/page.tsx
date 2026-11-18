@@ -117,20 +117,31 @@ export default function PlatformLoginPage() {
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
+          <label htmlFor="platform-identifier" className="block text-sm font-medium text-foreground">平台账号</label>
           <input
+            id="platform-identifier"
+            name="identifier"
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
             placeholder="平台账号"
+            autoComplete="username"
+            spellCheck={false}
+            aria-describedby={error ? 'platform-login-error' : undefined}
             className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
           />
+          <label htmlFor="platform-password" className="block text-sm font-medium text-foreground">密码</label>
           <input
+            id="platform-password"
+            name="password"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="密码"
+            autoComplete="current-password"
+            aria-describedby={error ? 'platform-login-error' : undefined}
             className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
           />
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p id="platform-login-error" role="alert" className="text-sm text-destructive">{error}</p>}
           <button
             type="submit"
             disabled={loading}

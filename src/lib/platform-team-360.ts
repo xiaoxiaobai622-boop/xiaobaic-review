@@ -603,7 +603,7 @@ function sortRows(rows: TeamListRow[], sort: PlatformTeamSort, order: SortOrder)
     const base = av < bv ? -1 : av > bv ? 1 : 0
     return order === 'asc' ? base : -base
   }
-  return [...rows].sort(compare)
+  return rows.toSorted(compare)
 }
 
 /** One team's identity only; the detail header must not read the whole list. */
