@@ -231,6 +231,7 @@ interface ProjectCardProps {
   showStatus: boolean
   showProgress: boolean
   showFolderChip: boolean
+  hasUnread: boolean
   folderLabel: string | null
   folderOptions: { id: string; name: string; depth: number }[]
   dragging: boolean
@@ -250,7 +251,7 @@ interface ProjectCardProps {
 
 function ProjectCard({
   project, href, isAdmin, pinned, batchMode, selected, menuOpen, showClient, showStatus, showProgress,
-  showFolderChip, folderLabel, folderOptions, dragging, contextMenuPoint,
+  showFolderChip, hasUnread, folderLabel, folderOptions, dragging, contextMenuPoint,
   onToggleSelect, onToggleMenu, onOpenContextMenu, onCloseContextMenu, onTogglePin, onCopyLink, onSetStatus, onMove, onDragStart, onDragEnd, onDeleteRequest,
 }: ProjectCardProps) {
   const t = useTranslations('projects')
@@ -344,6 +345,12 @@ function ProjectCard({
       } : undefined}
       className={`relative rounded-xl border bg-card shadow-sm transition-[color,background-color,border-color,opacity,transform] duration-150 active:bg-accent/20 ${selected ? 'border-primary ring-2 ring-primary-visible' : 'border-border hover:border-primary/60'} ${dragging ? 'opacity-40 scale-[0.9]' : ''}`}
     >
+      {hasUnread && (
+        <span
+          aria-label="有新消息"
+          className="pointer-events-none absolute right-1.5 top-1.5 z-10 h-2 w-2 rounded-full bg-destructive ring-2 ring-card"
+        />
+      )}
       {isAdmin && batchMode && (
         <button
           type="button"
@@ -454,10 +461,11 @@ interface ProjectsDashboardProps {
   onMoveProjects: (projectIds: string[], folderId: string | null) => Promise<void>
   onMutated: () => void
   onCreateProject?: () => void
+  unreadProjectIds?: Set<string>
 }
 
 export default function ProjectsDashboard({
-  projects, isAdmin, folders, showFolderChip, emptyMessage, folderBreadcrumb, onMoveProjects, onMutated, onCreateProject,
+  projects, isAdmin, folders, showFolderChip, emptyMessage, folderBreadcrumb, onMoveProjects, onMutated, onCreateProject, unreadProjectIds,
 }: ProjectsDashboardProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -742,6 +750,7 @@ export default function ProjectsDashboard({
     showStatus: true,
     showProgress: true,
     showFolderChip,
+    hasUnread: unreadProjectIds?.has(p.id) ?? false,
     folderLabel: p.groupId ? (folderLabelsById.get(p.groupId) ?? null) : null,
     folderOptions: folderOpts,
     dragging: draggingId === p.id,

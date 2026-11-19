@@ -63,7 +63,6 @@ export default function RailWhatsNew({ className }: { className?: string }) {
         </button>
       )}
     >
-      <div className="h-[var(--studio-shell-gap)] shrink-0 bg-background" />
       <div className="min-h-0 flex-1 overflow-y-auto bg-popover">
         {!feed.data && feed.loading && (
           <p className="px-3 py-4 text-sm text-muted-foreground">正在载入新增功能…</p>

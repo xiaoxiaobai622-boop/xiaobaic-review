@@ -28,12 +28,12 @@ export default function RailPanel({ name, label, closeLabel, open, onOpenChange,
           data-rail-panel={name}
           aria-describedby={undefined}
           className={cn(
-            'fixed bottom-0 left-14 top-0 z-50 flex w-[288px] flex-col border-r border-border bg-popover outline-none lg:left-[56px]',
+            'fixed bottom-0 left-14 top-0 z-50 flex w-[288px] flex-col bg-background outline-none lg:left-[56px]',
             motion.surface,
             motion.railPanel,
           )}
         >
-          <div className={cn('flex h-9 shrink-0 items-center justify-between px-3', headerClassName)}>
+          <div className={cn('flex h-9 shrink-0 items-center justify-between rounded-bl-[8px] bg-popover px-3', headerClassName)}>
             <Dialog.Title className="text-sm font-medium text-foreground">{label}</Dialog.Title>
             <span className="flex items-center gap-1">
               {actions}
@@ -45,7 +45,10 @@ export default function RailPanel({ name, label, closeLabel, open, onOpenChange,
               </Dialog.Close>
             </span>
           </div>
-          {children}
+          <div className="h-[var(--studio-shell-gap)] shrink-0 bg-background" />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[8px] border-r border-border bg-popover">
+            {children}
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

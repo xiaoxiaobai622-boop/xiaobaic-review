@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Building2, FolderKanban, FolderTree, Plus, AlertCircle, ChevronRight, Lock, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus, Users } from 'lucide-react'
+import { Building2, FolderKanban, FolderTree, Plus, AlertCircle, ChevronRight, Lock, PanelLeftOpen, Home, Folder, FolderOpen, FolderPlus } from 'lucide-react'
 import { useAuth } from '@/components/AuthProvider'
 import ProjectsList from '@/components/ProjectsList'
 import ProjectsToolbar from '@/components/projects/ProjectsToolbar'
@@ -19,6 +19,8 @@ import ProjectsSavedViews, { type SavedView } from '@/components/projects/Projec
 import ProjectsSearchBar from '@/components/projects/ProjectsSearchBar'
 import ProjectsDashboard, { ProjectsStats } from '@/components/projects/ProjectsDashboard'
 import ProjectsFolderTree from '@/components/projects/ProjectsFolderTree'
+import TeamAvatarStack from '@/components/projects/TeamAvatarStack'
+import TeamInviteButton from '@/components/projects/TeamInviteButton'
 import { apiFetch, apiPatch, apiPost, apiDelete } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
 import { useTranslations } from 'next-intl'
@@ -87,6 +89,8 @@ export default function AdminPage() {
   const pathname = usePathname()
   const activeTeamId = getActiveTeamId()
   const activeTeam = user?.teams?.find((item) => item.team.id === activeTeamId) || user?.teams?.[0]
+  const canInviteMembers = user?.teamRole === 'OWNER' || user?.teamRole === 'ADMIN'
+  const [unreadProjectIds, setUnreadProjectIds] = useState<Set<string>>(new Set())
   const hasTeam = (user?.teams?.length ?? 0) > 0
   const teamDisabled = activeTeam?.team.status === 'DISABLED'
 
@@ -560,6 +564,40 @@ export default function AdminPage() {
     )
   }
 
+
+  useEffect(() => {
+    const teamId = activeTeam?.team.id
+    if (!teamId) {
+      setUnreadProjectIds(new Set())
+      return
+    }
+    let cancelled = false
+    const loadUnreadProjects = async () => {
+      const ids = new Set<string>()
+      try {
+        const responses = await Promise.all(
+          (['TEAM', 'MENTION'] as const).map((category) =>
+            apiFetch(`/api/notifications?category=${category}&filter=unread&limit=100`, { cache: 'no-store' }),
+          ),
+        )
+        const feeds = await Promise.all(responses.map((response) => (response.ok ? response.json() : null)))
+        for (const feed of feeds) {
+          for (const item of (feed?.items || []) as Array<{ projectId?: string | null }>) {
+            if (item.projectId) ids.add(item.projectId)
+          }
+        }
+      } catch {
+        // The card dots disappear only for this refresh; the next interval retries.
+      }
+      if (!cancelled) setUnreadProjectIds(ids)
+    }
+    void loadUnreadProjects()
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadUnreadProjects()
+    }, 30_000)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [activeTeam?.team.id])
+
   if (loading) {
     // 骨架按真页面的 DOM 形状逐层占位（页头带 / 288px 轨道侧栏 / 工具栏行 / 四张统计卡 / 项目卡网格），
     // 卡内每根占位条用真卡同款字号与行高，不写死整卡高度——猜数字反而会跳版式。
@@ -704,11 +742,8 @@ export default function AdminPage() {
               </h1>
             </div>
             <div className="flex items-center gap-2">
-              <Button asChild variant="outline" size="icon" className="h-9 w-9">
-                <Link href="/studio/team/members" aria-label={t('projectMembers')} title={t('projectMembers')}>
-                  <Users className="h-4 w-4" />
-                </Link>
-              </Button>
+              <TeamAvatarStack teamId={activeTeam?.team.id ?? null} />
+              {canInviteMembers && <TeamInviteButton teamId={activeTeam?.team.id ?? null} teamName={activeTeam?.team.name} />}
             </div>
           </div>
           <Card>
@@ -816,11 +851,8 @@ export default function AdminPage() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="icon" className="h-9 w-9">
-              <Link href="/studio/team/members" aria-label={t('projectMembers')} title={t('projectMembers')}>
-                <Users className="h-4 w-4" />
-              </Link>
-            </Button>
+            <TeamAvatarStack teamId={activeTeam?.team.id ?? null} />
+            {canInviteMembers && <TeamInviteButton teamId={activeTeam?.team.id ?? null} teamName={activeTeam?.team.name} />}
           </div>
         </div>
 
@@ -919,6 +951,7 @@ export default function AdminPage() {
                 onMoveProjects={handleMoveProjects}
                 onMutated={() => void loadProjects()}
                 onCreateProject={openNewProjectModal}
+                unreadProjectIds={unreadProjectIds}
               />
             ) : (
               <ProjectsList

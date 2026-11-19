@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Bell, Settings } from 'lucide-react'
 import RailPanel from '@/components/RailPanel'
 import { RailBellGlyph } from '@/components/RailGlyphs'
@@ -180,6 +180,10 @@ export default function RailNotifications({ className, enabled = true }: { class
   const desktop = getDesktopBridge()
   const desktopSeenRef = useRef<string | null>(null)
   const router = useRouter()
+  const pathname = usePathname() || ''
+  const currentProjectId = pathname.match(/^\/studio\/projects\/([^/]+)/)?.[1] ?? null
+  // 项目里面的消息只在进入对应项目后进通知；项目中心和其他页不显示，项目卡片用小红点提示。
+  const visibleInApp = useCallback((items: InAppItem[]) => items.filter((item) => !item.projectId || (currentProjectId !== null && item.projectId === currentProjectId)), [currentProjectId])
 
   const loadFeed = useCallback(async (
     target: 'team' | 'mentions',
@@ -260,18 +264,18 @@ export default function RailNotifications({ className, enabled = true }: { class
   // or "全部已读" is what changes the server unread count.
   useEffect(() => {
     if (!open || (category !== 'team' && category !== 'mentions')) return
-    const items = feeds[category]?.items ?? []
+    const items = visibleInApp(category === 'team' ? (feeds.team?.items ?? []) : (feeds.mentions?.items ?? []))
     const unreadIds = items.filter((item) => !item.readAt).map((item) => item.id)
     if (unreadIds.length === 0) return
     void apiPost('/api/notifications/seen', {
       ids: unreadIds,
       category: category === 'team' ? 'TEAM' : 'MENTION',
     }).catch(() => {})
-  }, [open, category, feeds])
+  }, [open, category, feeds, currentProjectId, visibleInApp])
 
   useEffect(() => {
     if (!desktop) return
-    const inAppItems = [...(feeds.team?.items ?? []), ...(feeds.mentions?.items ?? [])]
+    const inAppItems = [...visibleInApp(feeds.team?.items ?? []), ...visibleInApp(feeds.mentions?.items ?? [])]
     const stamps = [...inAppItems.map((item) => item.lastEventAt), ...platformItems.map((item) => item.createdAt)]
     if (stamps.length === 0) return
     const newestStamp = newestOf(stamps)
@@ -310,7 +314,7 @@ export default function RailNotifications({ className, enabled = true }: { class
       desktopSeenRef.current = newestStamp
       writeDesktopSeenAt(newestStamp)
     }
-  }, [desktop, feeds, platformItems, kinds])
+  }, [desktop, feeds, platformItems, kinds, currentProjectId, visibleInApp])
 
   const close = () => {
     setOpen(false)
@@ -328,13 +332,14 @@ export default function RailNotifications({ className, enabled = true }: { class
   const platformIsUnread = (item: FeedAnnouncement) => !item.readAt
   const platformUnreadCount = platformItems.filter(platformIsUnread).length
 
-  const teamUnread = kinds.team ? (feeds.team?.unread.TEAM ?? 0) : 0
-  const mentionUnread = kinds.mentions ? (feeds.mentions?.unread.MENTION ?? 0) : 0
+  const teamVisibleItems = visibleInApp(feeds.team?.items ?? [])
+  const mentionVisibleItems = visibleInApp(feeds.mentions?.items ?? [])
+  const teamUnread = kinds.team ? teamVisibleItems.filter((item) => !item.readAt).length : 0
+  const mentionUnread = kinds.mentions ? mentionVisibleItems.filter((item) => !item.readAt).length : 0
   const visiblePlatformUnread = kinds.announcement ? platformUnreadCount : 0
   const unreadCount = teamUnread + mentionUnread + visiblePlatformUnread + invitations.length
 
-  const currentFeed = category === 'team' ? feeds.team : category === 'mentions' ? feeds.mentions : null
-  const currentItems = currentFeed?.items ?? []
+  const currentItems = category === 'team' ? teamVisibleItems : category === 'mentions' ? mentionVisibleItems : []
   const currentUnread = category === 'team'
     ? teamUnread
     : category === 'mentions'
@@ -459,7 +464,9 @@ export default function RailNotifications({ className, enabled = true }: { class
 
   const markAllRead = async () => {
     if (category === 'team' || category === 'mentions') {
-      await markInAppRead(undefined, true)
+      const items = category === 'team' ? teamVisibleItems : mentionVisibleItems
+      const ids = items.filter((item) => !item.readAt).map((item) => item.id)
+      if (ids.length > 0) await markInAppRead(ids)
       return
     }
     if (category !== 'platform') return
@@ -528,9 +535,9 @@ export default function RailNotifications({ className, enabled = true }: { class
         ? '暂无平台消息'
         : '暂无个人邀请'
   const emptyHint = category === 'team'
-    ? '上传、批注、审批和到期提醒会显示在这里。'
+    ? (currentProjectId ? '上传、批注、审批和到期提醒会显示在这里。' : '团队动态会显示在这里；项目里的消息看项目卡片右上角的小红点，进入项目后查看。')
     : category === 'mentions'
-      ? '回复和 @ 提及会显示在这里。'
+      ? (currentProjectId ? '回复和 @ 提及会显示在这里。' : '@ 提及会显示在这里；项目里的 @ 会进入项目后显示。')
       : category === 'platform'
         ? '平台公告与消息会显示在这里。'
         : '其他团队邀请你加入时会显示在这里。'
@@ -542,6 +549,7 @@ export default function RailNotifications({ className, enabled = true }: { class
       closeLabel="关闭通知"
       open={open}
       onOpenChange={handleOpenChange}
+      headerClassName="lg:!h-[var(--studio-header-height)]"
       trigger={(
         <button
           type="button"
@@ -599,7 +607,7 @@ export default function RailNotifications({ className, enabled = true }: { class
         </div>
       )}
 
-      <div role="tablist" aria-label="通知分类" className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1.5">
+      <div role="tablist" aria-label="通知分类" className="scrollbar-hidden flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-3 py-1.5">
         {(['team', 'mentions', 'platform', 'invites'] as const).map((key) => {
           const count = key === 'team'
             ? teamUnread
@@ -616,12 +624,12 @@ export default function RailNotifications({ className, enabled = true }: { class
               aria-selected={category === key}
               onClick={() => { setCategory(key); setExpanded(null) }}
               className={cn(
-                'relative rounded px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'relative shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 category === key ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
               {CATEGORY_LABEL[key]}
-              {count > 0 && <span className="ml-1 rounded-full bg-destructive/10 px-1 text-[10px] text-destructive">{count > 99 ? '99+' : count}</span>}
+              {count > 0 && <span className="ml-0.5 rounded-full bg-destructive/10 px-1 text-[9px] text-destructive">{count > 99 ? '99+' : count}</span>}
             </button>
           )
         })}
@@ -629,12 +637,12 @@ export default function RailNotifications({ className, enabled = true }: { class
 
       {category !== 'invites' && (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5">
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={() => setFilter('all')}
               aria-pressed={filter === 'all'}
-              className={cn('rounded px-2 py-0.5 transition-colors', filter === 'all' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[13px] transition-colors', filter === 'all' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
             >
               全部
             </button>
@@ -642,7 +650,7 @@ export default function RailNotifications({ className, enabled = true }: { class
               type="button"
               onClick={() => setFilter('unread')}
               aria-pressed={filter === 'unread'}
-              className={cn('rounded px-2 py-0.5 transition-colors', filter === 'unread' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[13px] transition-colors', filter === 'unread' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground')}
             >
               未读{currentUnread > 0 ? ` ${currentUnread}` : ''}
             </button>
@@ -651,7 +659,7 @@ export default function RailNotifications({ className, enabled = true }: { class
             type="button"
             onClick={markAllRead}
             disabled={markableUnread === 0}
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:hover:text-muted-foreground"
+            className="shrink-0 whitespace-nowrap text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:hover:text-muted-foreground"
           >
             全部标记为已读
           </button>
@@ -769,7 +777,7 @@ export default function RailNotifications({ className, enabled = true }: { class
           </div>
         ) : null}
 
-        {(category === 'team' || category === 'mentions') && currentFeed?.nextCursor ? (
+        {(category === 'team' || category === 'mentions') && feeds[category]?.nextCursor ? (
           <div className="px-2 py-2">
             <button
               type="button"
