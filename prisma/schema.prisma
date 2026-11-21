@@ -1926,3 +1926,16 @@ model UserNotificationDelivery {
   @@index([channel, sentAt])
   @@index([success, sentAt])
 }
+
+model DocsSsoCode {
+  id          String   @id @default(cuid())
+  codeHash    String   @unique
+  userId      String
+  state       String
+  redirectUri String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
+}
