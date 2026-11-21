@@ -89,6 +89,7 @@
     "next": {
       "postcss": "$postcss",
       "sharp": "$sharp"
-    }
+    },
+    "effect": "3.22.1"
   }
 }
