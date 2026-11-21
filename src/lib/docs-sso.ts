@@ -4,13 +4,32 @@ import { prisma } from '@/lib/db'
 export { DOCS_SSO_REDIRECT_URI, DOCS_SSO_TTL_MS } from '@/lib/docs-sso-constants'
 import { DOCS_SSO_REDIRECT_URI, DOCS_SSO_TTL_MS } from '@/lib/docs-sso-constants'
 
+/**
+ * The only failures a caller is allowed to see verbatim: both are input
+ * validation, both are client-safe. Anything else (Prisma, crypto, DB outage)
+ * must stay server-side — see `describeSsoCodeError`.
+ */
+export class DocsSsoValidationError extends Error {
+  constructor(message: 'invalid redirect uri' | 'invalid state') {
+    super(message)
+    this.name = 'DocsSsoValidationError'
+  }
+}
+
+export const DOCS_SSO_CODE_INTERNAL_ERROR = '授权失败，请稍后再试'
+
+export function describeSsoCodeError(error: unknown): { status: 400 | 500; body: { error: string } } {
+  if (error instanceof DocsSsoValidationError) return { status: 400, body: { error: error.message } }
+  return { status: 500, body: { error: DOCS_SSO_CODE_INTERNAL_ERROR } }
+}
+
 export function hashSsoCode(code: string) {
   return crypto.createHash('sha256').update(code).digest('base64url')
 }
 
 export async function createSsoCode(userId: string, state: string, redirectUri: string) {
-  if (redirectUri !== DOCS_SSO_REDIRECT_URI) throw new Error('invalid redirect uri')
-  if (!/^[A-Za-z0-9_-]{16,128}$/.test(state)) throw new Error('invalid state')
+  if (redirectUri !== DOCS_SSO_REDIRECT_URI) throw new DocsSsoValidationError('invalid redirect uri')
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(state)) throw new DocsSsoValidationError('invalid state')
   const code = crypto.randomBytes(32).toString('base64url')
   await prisma.docsSsoCode.create({
     data: {
