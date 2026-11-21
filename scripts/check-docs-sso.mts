@@ -4,6 +4,8 @@
  *
  *   BASE_URL=http://localhost:3010 npm run check:docs-sso
  *   BASE_URL=http://localhost:3010 node --env-file=.env --import tsx scripts/check-docs-sso.mts
+ *
+ * Set DOCS_API_BASE to also verify the project-document teamId backfill.
  */
 import { prisma } from '../src/lib/db'
 import {
@@ -244,6 +246,65 @@ if (refreshError.headers.get('access-control-allow-origin') !== docsOrigin) {
   throw new Error('refresh error response missing docs origin')
 }
 console.log('docs token CORS check passed')
+
+// --- Project document teamId backfill (Task 5) --------------------------------
+// Documents created from the project page predate team support, so docs-api
+// needs the Project(id, teamId) mapping to make them visible to team views.
+const docsApiBase = (process.env.DOCS_API_BASE || '').replace(/\/+$/, '')
+if (docsApiBase) {
+  const serviceSecret = process.env.DOCS_TOKEN_SECRET || process.env.JWT_SECRET
+  if (!serviceSecret) {
+    throw new Error('DOCS_API_BASE is set but DOCS_TOKEN_SECRET/JWT_SECRET is missing')
+  }
+
+  const projects = await prisma.project.findMany({ select: { id: true, teamId: true } })
+  const projectTeams = new Map(projects.map((item) => [item.id, item.teamId]))
+
+  async function backfill() {
+    return json(`${docsApiBase}/api/admin/backfill-teams`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceSecret}` },
+      body: JSON.stringify({ projects }),
+    })
+  }
+
+  const firstBackfill = await backfill()
+  if (firstBackfill.res.status !== 200) {
+    throw new Error(`docs backfill failed: ${firstBackfill.res.status} ${JSON.stringify(firstBackfill.body)}`)
+  }
+  if (typeof firstBackfill.body.updated !== 'number') {
+    throw new Error(`docs backfill response missing updated count: ${JSON.stringify(firstBackfill.body)}`)
+  }
+
+  const secondBackfill = await backfill()
+  if (secondBackfill.res.status !== 200) {
+    throw new Error(`docs backfill rerun failed: ${secondBackfill.res.status} ${JSON.stringify(secondBackfill.body)}`)
+  }
+  if (secondBackfill.body.updated !== 0) {
+    throw new Error(`docs backfill is not idempotent: rerun updated ${String(secondBackfill.body.updated)}`)
+  }
+
+  const teamDocs = await json(`${docsApiBase}/api/docs?teamId=${encodeURIComponent(team.id)}`, {
+    headers: { Authorization: `Bearer ${teamToken.body.token}` },
+  })
+  if (teamDocs.res.status !== 200) {
+    throw new Error(`docs list for team failed: ${teamDocs.res.status} ${JSON.stringify(teamDocs.body)}`)
+  }
+  if (!Array.isArray(teamDocs.body.docs)) throw new Error('docs list response missing docs array')
+  for (const doc of teamDocs.body.docs as Array<{ id: string; teamId: string | null; projectId: string | null }>) {
+    if (!doc.projectId) continue
+    if (doc.teamId !== team.id) {
+      throw new Error(`doc ${doc.id} should carry teamId ${team.id}, got ${String(doc.teamId)}`)
+    }
+    const mappedTeamId = projectTeams.get(doc.projectId)
+    if (mappedTeamId && mappedTeamId !== team.id) {
+      throw new Error(`doc ${doc.id} project ${doc.projectId} belongs to team ${mappedTeamId}`)
+    }
+  }
+  console.log('docs backfill check passed')
+} else {
+  console.log('docs backfill check skipped (DOCS_API_BASE unset)')
+}
 
 await prisma.$disconnect()
 console.log('docs sso check passed')
