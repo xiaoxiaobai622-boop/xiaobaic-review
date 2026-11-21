@@ -25,6 +25,7 @@ import VideoDisplayMenu from '@/components/projects/VideoDisplayMenu'
 import VideoSortMenu from '@/components/projects/VideoSortMenu'
 import ProjectSwitcher from '@/components/projects/ProjectSwitcher'
 import { ProjectWorkspaceSkeleton } from '@/components/projects/ProjectWorkspaceSkeleton'
+import { ProjectDocsWorkspace } from '@/components/projects/ProjectDocsWorkspace'
 import FilterDropdown from '@/components/FilterDropdown'
 import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
 import { groupBy } from '@/lib/array-compat'
@@ -36,7 +37,7 @@ import {
   type VideoDisplayPrefs,
   type VideoSortPrefs,
 } from '@/lib/video-view-prefs'
-import { ArrowLeft, ArrowUpDown, Settings, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck, PanelRight, MonitorPlay, Search } from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, Settings, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck, PanelRight, MonitorPlay, Search, FileText } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -372,7 +373,8 @@ export default function ProjectPage() {
   const [videoQuery, setVideoQuery] = useState('')
   const [videoStatuses, setVideoStatuses] = useState<Set<VideoReviewStatus>>(new Set())
   const [albumSortMode, setAlbumSortMode] = useState<'date' | 'alphabetical'>('date')
-  const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'photos' | 'uploads' | 'shares' | 'trash'>('videos')
+  const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'documents' | 'photos' | 'uploads' | 'shares' | 'trash'>('videos')
+  const [docsResetKey, setDocsResetKey] = useState(0)
   const [photoCounts, setPhotoCounts] = useState<{ albums: number; photos: number } | null>(null)
   const [uploadsCount, setUploadsCount] = useState<number | null>(null)
   const [recycleBinCount, setRecycleBinCount] = useState<number | null>(null)
@@ -525,7 +527,7 @@ export default function ProjectPage() {
   // restored: opening a project from the center always starts on videos.
   useEffect(() => {
     const requestedWorkspace = searchParams?.get('workspace')
-    if (requestedWorkspace === 'videos' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads' || requestedWorkspace === 'shares' || requestedWorkspace === 'trash') {
+    if (requestedWorkspace === 'videos' || requestedWorkspace === 'documents' || requestedWorkspace === 'photos' || requestedWorkspace === 'uploads' || requestedWorkspace === 'shares' || requestedWorkspace === 'trash') {
       setActiveWorkspace(requestedWorkspace)
       return
     }
@@ -577,8 +579,9 @@ export default function ProjectPage() {
   useEffect(() => { saveVideoDisplayPrefs(videoDisplay) }, [videoDisplay])
   useEffect(() => { saveVideoSortPrefs(videoSort) }, [videoSort])
 
-  const changeWorkspace = (workspace: 'videos' | 'photos' | 'uploads' | 'shares' | 'trash') => {
+  const changeWorkspace = (workspace: 'videos' | 'documents' | 'photos' | 'uploads' | 'shares' | 'trash') => {
     setActiveWorkspace(workspace)
+    if (workspace === 'documents') setDocsResetKey((value) => value + 1)
     if (workspace === 'trash') setRecycleBinRefreshKey((value) => value + 1)
     if (workspace !== 'videos') setSelectedVideoGroupName(null)
     const nextParams = new URLSearchParams(searchParams?.toString() || '')
@@ -1681,6 +1684,7 @@ export default function ProjectPage() {
             <nav className="scrollbar-hidden flex gap-1 overflow-x-auto rounded-[8px] bg-popover p-2 lg:flex-col lg:overflow-y-auto lg:py-4">
               {([
                 { id: 'videos' as const, label: t('videos'), count: videoGroupNames.length, icon: Video },
+                { id: 'documents' as const, label: '文档', count: 0, icon: FileText },
                 { id: 'photos' as const, label: t('photoAlbums'), count: photoCounts?.albums || 0, icon: Images },
                 ...(canShare ? [
                   { id: 'uploads' as const, label: t('collection'), count: uploadsCount || 0, icon: FolderUp },
@@ -1984,6 +1988,12 @@ export default function ProjectPage() {
               />
                 </div>
             </section>
+
+            {activeWorkspace === 'documents' && (
+              <section>
+                <ProjectDocsWorkspace projectId={project.id} resetKey={docsResetKey} />
+              </section>
+            )}
 
             <section className={activeWorkspace === 'photos' ? undefined : 'hidden'}>
               <div className="mb-4 flex items-center justify-between gap-3">

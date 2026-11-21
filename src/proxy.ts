@@ -72,6 +72,9 @@ export async function proxy(request: NextRequest) {
   const wechatSdkOrigin = isWechatHandoffPath ? ' https://res.wx.qq.com' : ''
   // 开放标签由微信以 *.qq.com / webcompt: 组件渲染；frame-src 不放行时标签静默不渲染。
   const wechatOpenTagFrameSrc = isWechatHandoffPath ? ' https://*.qq.com webcompt:' : ''
+  // 项目工作区的「文档」页要嵌 office.vidx.cn 的编辑器并调用其文档 API。
+  const isDocsEmbedPage = /^\/studio\/projects\/[^/]+$/.test(url.pathname)
+  const docsEmbedSrc = isDocsEmbedPage ? ' https://office.vidx.cn' : ''
 
   const connectSrc = [
     "'self'",
@@ -81,6 +84,7 @@ export async function proxy(request: NextRequest) {
     mediaCdnOrigin,
     s3Origin,
     s3BucketOrigin,
+    docsEmbedSrc,
   ].filter(Boolean).join(' ')
 
   // Next/Turbopack's React development diagnostics use eval() for source
@@ -111,7 +115,7 @@ export async function proxy(request: NextRequest) {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    `frame-src 'self'${wechatOpenTagFrameSrc}`,
+    `frame-src 'self'${wechatOpenTagFrameSrc}${docsEmbedSrc}`,
   ]
 
   if (isHttpsEnabled) {

@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Video, Images, FolderUp, Trash2 } from 'lucide-react'
+import { Video, Images, FolderUp, Trash2, FileText } from 'lucide-react'
 import {
   VIDEO_CARD_MAX_WIDTH,
   VIDEO_GRID_TEMPLATE,
@@ -36,7 +36,7 @@ export function ProjectWorkspaceSkeleton({
 }: {
   label: string
   activeWorkspace?: string
-  onOpenWorkspace?: (workspace: 'videos' | 'photos' | 'uploads' | 'trash') => void
+  onOpenWorkspace?: (workspace: 'videos' | 'documents' | 'photos' | 'uploads' | 'trash') => void
 }) {
   const t = useTranslations('projects')
   // 卡片尺寸与封面比例是用户偏好，存在 localStorage 里。放到 layout effect 读：
@@ -53,6 +53,7 @@ export function ProjectWorkspaceSkeleton({
   // 四枚工作区入口只吃路由和页内状态，不吃项目详情，所以加载期就该能点。
   const nav = [
     { id: 'videos' as const, label: t('videos'), icon: Video },
+    { id: 'documents' as const, label: '文档', icon: FileText },
     { id: 'photos' as const, label: t('photoAlbums'), icon: Images },
     { id: 'uploads' as const, label: t('collection'), icon: FolderUp },
     { id: 'trash' as const, label: t('recycleBin'), icon: Trash2 },
