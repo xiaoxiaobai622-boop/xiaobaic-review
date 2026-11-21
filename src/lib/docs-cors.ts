@@ -4,7 +4,7 @@ export const DOCS_APP_ORIGIN = 'https://docs.vidx.cn'
 const HEADERS = {
   'Access-Control-Allow-Origin': DOCS_APP_ORIGIN,
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-ViTransfer-Device-ID',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-ViTransfer-Device-ID, X-Team-Id',
   'Access-Control-Max-Age': '600',
   Vary: 'Origin',
 }

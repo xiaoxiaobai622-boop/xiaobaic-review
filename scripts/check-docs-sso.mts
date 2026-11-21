@@ -121,5 +121,129 @@ if (foreignOrigin.res.status !== 403) throw new Error(`exchange with foreign Ori
 const afterRejection = await exchangeRequest(originCode, state)
 if (afterRejection.res.status !== 200) throw new Error(`rejected exchange consumed the code: ${afterRejection.res.status}`)
 
+// --- Team-scoped docs tokens (Task 2) ----------------------------------------
+// Every exchange registers a new session for this device and revokes the
+// previous one, so the last successful exchange is the live access token.
+const exchangeAccess = afterRejection.body.tokens.accessToken as string
+const exchangeUserId = afterRejection.body.user.id as string
+const team = afterRejection.body.teams[0] as { id: string; name: string }
+const docsOrigin = 'https://docs.vidx.cn'
+
+function tokenPayload(token: string): Record<string, unknown> {
+  return JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString())
+}
+
+// Pick a project the token route's authorization accepts, so the project-token
+// check proves team derivation rather than accidentally landing on a 403.
+const membership = await prisma.teamMember.findUnique({
+  where: { teamId_userId: { teamId: team.id, userId: exchangeUserId } },
+  select: { role: true, projectAccessScope: true },
+})
+const project = await prisma.project.findFirst({
+  where: {
+    teamId: team.id,
+    OR: [{ restricted: false }, { members: { some: { userId: exchangeUserId } } }],
+    ...(membership?.role === 'MEMBER' && membership.projectAccessScope === 'ASSIGNED_ONLY'
+      ? { members: { some: { userId: exchangeUserId } } }
+      : {}),
+  },
+  select: { id: true },
+})
+if (!project) throw new Error('docs token check needs an accessible project in the first team')
+
+const teamToken = await json(`${BASE}/api/docs/token?teamId=${encodeURIComponent(team.id)}&purpose=api`, {
+  headers: { Authorization: `Bearer ${exchangeAccess}`, 'X-Team-Id': team.id, Origin: docsOrigin },
+})
+if (teamToken.res.status !== 200 || !teamToken.body.token) {
+  throw new Error(`team docs token failed: ${teamToken.res.status} ${JSON.stringify(teamToken.body)}`)
+}
+if (tokenPayload(teamToken.body.token).teamId !== team.id) throw new Error('team token missing teamId')
+if (teamToken.res.headers.get('access-control-allow-origin') !== docsOrigin) {
+  throw new Error('team docs token missing docs CORS header')
+}
+console.log('team docs token check passed')
+
+// Project page regression: projectId alone still works and derives teamId.
+const projectToken = await json(`${BASE}/api/docs/token?projectId=${encodeURIComponent(project.id)}&purpose=api`, {
+  headers: { Authorization: `Bearer ${exchangeAccess}`, 'X-Team-Id': team.id },
+})
+if (projectToken.res.status !== 200 || !projectToken.body.token) {
+  throw new Error(`project docs token failed: ${projectToken.res.status} ${JSON.stringify(projectToken.body)}`)
+}
+const projectPayload = tokenPayload(projectToken.body.token)
+if (projectPayload.teamId !== team.id) {
+  throw new Error(`project token should derive teamId ${team.id}, got ${String(projectPayload.teamId)}`)
+}
+if (projectPayload.projectId !== project.id) throw new Error('project token missing projectId')
+console.log('project docs token check passed')
+
+const bogusTeamId = `check-no-team-${Date.now()}`
+const bogusTeam = await json(`${BASE}/api/docs/token?teamId=${encodeURIComponent(bogusTeamId)}&purpose=api`, {
+  headers: { Authorization: `Bearer ${exchangeAccess}`, Origin: docsOrigin },
+})
+if (bogusTeam.res.status !== 403) throw new Error(`bogus team token should be 403, got ${bogusTeam.res.status}`)
+if (bogusTeam.res.headers.get('access-control-allow-origin') !== docsOrigin) {
+  throw new Error('docs token error response missing docs CORS header')
+}
+
+const foreignTeam = await prisma.team.findFirst({
+  where: { id: { not: team.id }, members: { none: { userId: exchangeUserId } } },
+  select: { id: true },
+})
+if (foreignTeam) {
+  const nonMember = await json(`${BASE}/api/docs/token?teamId=${encodeURIComponent(foreignTeam.id)}&purpose=api`, {
+    headers: { Authorization: `Bearer ${exchangeAccess}` },
+  })
+  if (nonMember.res.status !== 403) throw new Error(`non-member team token should be 403, got ${nonMember.res.status}`)
+}
+console.log('non-member team token check passed')
+
+// Query teamId wins over nothing: a valid project plus another team must not
+// mint a token for either side.
+const mismatchTeamId = foreignTeam?.id || bogusTeamId
+const mismatch = await json(
+  `${BASE}/api/docs/token?teamId=${encodeURIComponent(mismatchTeamId)}&projectId=${encodeURIComponent(project.id)}&purpose=api`,
+  { headers: { Authorization: `Bearer ${exchangeAccess}`, 'X-Team-Id': team.id } },
+)
+if (mismatch.res.status !== 403) throw new Error(`project/team mismatch should be 403, got ${mismatch.res.status}`)
+if (mismatch.body.error !== '项目与团队不匹配') throw new Error(`unexpected mismatch error: ${JSON.stringify(mismatch.body)}`)
+console.log('project/team mismatch check passed')
+
+const preflight = await fetch(`${BASE}/api/docs/token`, {
+  method: 'OPTIONS',
+  headers: {
+    Origin: docsOrigin,
+    'Access-Control-Request-Method': 'GET',
+    'Access-Control-Request-Headers': 'authorization,x-team-id',
+  },
+})
+if (preflight.status !== 204) throw new Error(`docs token preflight should be 204, got ${preflight.status}`)
+const allowedHeaders = (preflight.headers.get('access-control-allow-headers') || '').toLowerCase()
+if (!allowedHeaders.includes('x-team-id')) throw new Error(`docs token preflight should allow X-Team-Id, got ${allowedHeaders}`)
+
+const refreshPreflight = await fetch(`${BASE}/api/auth/refresh`, {
+  method: 'OPTIONS',
+  headers: {
+    Origin: docsOrigin,
+    'Access-Control-Request-Method': 'POST',
+    'Access-Control-Request-Headers': 'authorization,x-vitransfer-device-id',
+  },
+})
+if (refreshPreflight.status !== 204) throw new Error(`refresh preflight should be 204, got ${refreshPreflight.status}`)
+if (refreshPreflight.headers.get('access-control-allow-origin') !== docsOrigin) {
+  throw new Error('refresh preflight missing docs origin')
+}
+
+// The docs app must be able to read refresh failures, not just preflight them.
+const refreshError = await fetch(`${BASE}/api/auth/refresh`, {
+  method: 'POST',
+  headers: { Origin: docsOrigin },
+})
+if (refreshError.status !== 401) throw new Error(`refresh without token should be 401, got ${refreshError.status}`)
+if (refreshError.headers.get('access-control-allow-origin') !== docsOrigin) {
+  throw new Error('refresh error response missing docs origin')
+}
+console.log('docs token CORS check passed')
+
 await prisma.$disconnect()
 console.log('docs sso check passed')

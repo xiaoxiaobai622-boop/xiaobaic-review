@@ -5,6 +5,7 @@ import { parseBearerToken, refreshAdminTokens, revokePresentedTokens } from '@/l
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
 import { logError } from '@/lib/logging'
 import { getAdminDeviceFingerprint } from '@/lib/studio-device'
+import { docsPreflight, withDocsCors } from '@/lib/docs-cors'
 
 export const runtime = 'nodejs'
 
@@ -12,6 +13,11 @@ export const runtime = 'nodejs'
 
 
 export const dynamic = 'force-dynamic'
+
+export async function OPTIONS(request: NextRequest) {
+  return docsPreflight(request) ?? new NextResponse(null, { status: 204 })
+}
+
 export async function POST(request: NextRequest) {
   const locale = await getConfiguredLocale().catch(() => 'en')
   const messages = await loadLocaleMessages(locale).catch(() => null)
@@ -20,10 +26,10 @@ export async function POST(request: NextRequest) {
   try {
     const presentedToken = parseBearerToken(request)
     if (!presentedToken) {
-      return NextResponse.json(
+      return withDocsCors(NextResponse.json(
         { error: authMessages.noRefreshTokenProvided || 'No refresh token provided' },
         { status: 401 }
-      )
+      ))
     }
 
     const tokenHash = hashToken(presentedToken)
@@ -33,17 +39,17 @@ export async function POST(request: NextRequest) {
       maxRequests: 8,
       message: authMessages.tooManyRefreshAttempts || 'Too many refresh attempts. Please wait a moment.',
     }, `auth-refresh:${tokenHash}`)
-    if (rateLimitResult) return rateLimitResult
+    if (rateLimitResult) return withDocsCors(rateLimitResult)
 
     const fingerprint = getAdminDeviceFingerprint(request)
     const tokens = await refreshAdminTokens({ refreshToken: presentedToken, fingerprintHash: fingerprint })
 
     if (!tokens) {
       await revokePresentedTokens({ refreshToken: presentedToken })
-      return NextResponse.json({ error: authMessages.invalidOrExpiredRefreshToken || 'Invalid or expired refresh token' }, { status: 401 })
+      return withDocsCors(NextResponse.json({ error: authMessages.invalidOrExpiredRefreshToken || 'Invalid or expired refresh token' }, { status: 401 }))
     }
 
-    return NextResponse.json({
+    return withDocsCors(NextResponse.json({
       success: true,
       tokens: {
         accessToken: tokens.accessToken,
@@ -51,13 +57,13 @@ export async function POST(request: NextRequest) {
         accessExpiresAt: tokens.accessExpiresAt,
         refreshExpiresAt: tokens.refreshExpiresAt,
       }
-    })
+    }))
   } catch (error) {
     logError('[AUTH] Token refresh error:', error)
-    return NextResponse.json(
+    return withDocsCors(NextResponse.json(
       { error: authMessages.tokenRefreshFailed || 'Token refresh failed' },
       { status: 500 }
-    )
+    ))
   }
 }
 
