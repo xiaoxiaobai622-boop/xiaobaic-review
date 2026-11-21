@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { issueAdminTokens } from '@/lib/auth'
 import { consumeSsoCode } from '@/lib/docs-sso'
-import { docsPreflight, withDocsCors } from '@/lib/docs-cors'
+import { isDocsOriginAllowed, docsPreflight, withDocsCors } from '@/lib/docs-cors'
 import { getAdminDeviceFingerprint } from '@/lib/studio-device'
 
 export const runtime = 'nodejs'
@@ -12,6 +12,12 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Spec §5: only the docs origin may redeem a code. Checked before consuming,
+  // so a rejected request cannot burn the code.
+  if (!isDocsOriginAllowed(request)) {
+    return NextResponse.json({ error: 'origin not allowed' }, { status: 403 })
+  }
+
   const body = await request.json().catch(() => ({}))
   const code = typeof body.code === 'string' ? body.code : ''
   const state = typeof body.state === 'string' ? body.state : ''

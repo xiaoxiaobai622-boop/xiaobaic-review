@@ -64,6 +64,13 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
   const router = useRouter()
   const pathname = usePathname()
 
+  // The query string is part of the destination: /sso/authorize carries
+  // redirect_uri/state there, so dropping it breaks the round trip after login.
+  const currentPathWithSearch = useCallback(() => {
+    const search = typeof window === 'undefined' ? '' : window.location.search
+    return `${pathname || '/'}${search}`
+  }, [pathname])
+
   const checkAuth = useCallback(async () => {
     try {
       const response = await apiFetch('/api/auth/session')
@@ -120,9 +127,9 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
 
   useEffect(() => {
     if (requireAuth && !loading && !user) {
-      router.push(`/login?returnUrl=${encodeURIComponent(pathname || '/')}`)
+      router.push(`/login?returnUrl=${encodeURIComponent(currentPathWithSearch())}`)
     }
-  }, [requireAuth, loading, user, pathname, router])
+  }, [requireAuth, loading, user, router, currentPathWithSearch])
 
   useEffect(() => {
     if (!requireAuth || loading || !user || pathname === '/onboarding') return
@@ -199,7 +206,7 @@ export function AuthProvider({ children, requireAuth = false }: AuthProviderProp
   }
 
   function login() {
-    router.push(`/login?returnUrl=${encodeURIComponent(pathname || '/')}`)
+    router.push(`/login?returnUrl=${encodeURIComponent(currentPathWithSearch())}`)
   }
 
   // SECURITY: Show loading state while checking auth OR when unauthenticated (before redirect)

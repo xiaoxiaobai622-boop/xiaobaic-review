@@ -9,9 +9,13 @@ const HEADERS = {
   Vary: 'Origin',
 }
 
+export function isDocsOriginAllowed(request: NextRequest) {
+  return request.headers.get('origin') === DOCS_APP_ORIGIN
+}
+
 export function docsPreflight(request: NextRequest) {
   if (request.method !== 'OPTIONS') return null
-  if (request.headers.get('origin') !== DOCS_APP_ORIGIN) return new NextResponse(null, { status: 403 })
+  if (!isDocsOriginAllowed(request)) return new NextResponse(null, { status: 403 })
   return new NextResponse(null, { status: 204, headers: HEADERS })
 }
 
