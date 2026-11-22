@@ -763,9 +763,16 @@ export default function ProjectPage() {
   useEffect(() => {
     if (!project?.videos) return
 
-    // Check if any videos are currently processing
+    // Check if any videos are currently processing. The background 1080 MP4
+    // starts after the main video is READY, so the review page must keep
+    // polling while local1080Status is PENDING/PROCESSING or the quality menu
+    // would never see it flip to READY without a manual reload.
     const hasProcessingVideos = project.videos.some(
-      (video: any) => video.status === 'PROCESSING' || video.status === 'UPLOADING'
+      (video: any) =>
+        video.status === 'PROCESSING' ||
+        video.status === 'UPLOADING' ||
+        video.local1080Status === 'PENDING' ||
+        video.local1080Status === 'PROCESSING'
     )
 
     if (hasProcessingVideos) {
@@ -863,7 +870,7 @@ export default function ProjectPage() {
     reviewVersionsRef.current = reviewVersions
   }, [reviewVersions])
 
-  const mintReviewToken = useCallback(async (videoId: string, quality: '720p' | 'hls' | 'source', force = false): Promise<string> => {
+  const mintReviewToken = useCallback(async (videoId: string, quality: '720p' | 'hls' | 'source' | '1080p', force = false): Promise<string> => {
     const cacheKey = `${videoId}:${quality}`
     const cached = reviewTokenCacheRef.current.get(cacheKey)
     if (!force && cached && Date.now() - cached.mintedAt < REVIEW_STREAM_TTL_MS) return cached.token
@@ -981,7 +988,8 @@ export default function ProjectPage() {
       return
     }
     // 轮询每 5 秒换掉整个 project 对象，所以按版本身份判断要不要重签，而不是按数组身份。
-    const signature = `${selectedVideoGroupName}|${reviewVersions.map((video: any) => `${video.id}@${video.version}`).join('')}|${reviewStreamAttempt}`
+    // local1080Status 也进签名：转码状态一变就要重签 1080 流（READY 才有流，其他状态清空）。
+    const signature = `${selectedVideoGroupName}|${reviewVersions.map((video: any) => `${video.id}@${video.version}@${video.local1080Status ?? 'NONE'}`).join('')}|${reviewStreamAttempt}`
     if (signature === reviewStreamSignatureRef.current) return
     reviewStreamSignatureRef.current = signature
 
@@ -996,11 +1004,18 @@ export default function ProjectPage() {
           : ''
         const hls = video.hlsPath ? await mintReviewToken(video.id, 'hls').catch(() => '') : ''
         const source = video.hasSourceQuality ? await mintReviewToken(video.id, 'source').catch(() => '') : ''
+        // The background 1080 MP4 only exists after its callback stores both
+        // the key and READY. Minting earlier hands the player a URL that can
+        // only answer 415/404; every other state keeps the option disabled.
+        const local1080 = video.local1080Status === 'READY' && video.preview1080Path
+          ? await mintReviewToken(video.id, '1080p').catch(() => '')
+          : ''
         return {
           ...video,
           streamUrl720p: progressive ? `/api/content/${progressive}` : '',
           hlsUrl720p: hls ? `/api/content/${hls}` : '',
           sourceUrl: source ? `/api/content/${source}` : '',
+          streamUrl1080p: local1080 ? `/api/content/${local1080}` : '',
         }
       }))
       if (cancelled) return
@@ -1019,17 +1034,22 @@ export default function ProjectPage() {
     reviewTokenCacheRef.current.delete(`${videoId}:720p`)
     reviewTokenCacheRef.current.delete(`${videoId}:hls`)
     reviewTokenCacheRef.current.delete(`${videoId}:source`)
+    reviewTokenCacheRef.current.delete(`${videoId}:1080p`)
     try {
       const progressive = hasProgressivePlayback(video)
         ? await mintReviewToken(videoId, '720p', true).catch(() => '')
         : ''
       const hls = video.hlsPath ? await mintReviewToken(videoId, 'hls', true).catch(() => '') : ''
       const source = video.hasSourceQuality ? await mintReviewToken(videoId, 'source', true).catch(() => '') : ''
+      const local1080 = video.local1080Status === 'READY' && video.preview1080Path
+        ? await mintReviewToken(videoId, '1080p', true).catch(() => '')
+        : ''
       setReviewStreams((current) => current.map((item: any) => item.id === videoId ? {
         ...item,
         streamUrl720p: progressive ? `/api/content/${progressive}` : '',
         hlsUrl720p: hls ? `/api/content/${hls}` : '',
         sourceUrl: source ? `/api/content/${source}` : '',
+        streamUrl1080p: local1080 ? `/api/content/${local1080}` : '',
       } : item))
       return true
     } catch {

@@ -20,6 +20,12 @@ import { filterCommentsForVideo } from '@/lib/video-comment-filter'
 import { useHlsSource, type PlaybackFailureCause, type PlaybackFailureInfo, type PlaybackRecoveryInfo } from '@/hooks/useHlsSource'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 import { reportPlaybackFailure } from '@/lib/playback-telemetry'
+import {
+  clipPreferredQuality,
+  isLocal1080StatusKnown,
+  resolvePlaybackSource,
+  type PlaybackQuality,
+} from '@/lib/playback-quality'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -28,78 +34,6 @@ type CommentWithReplies = Comment & {
 type PendingSeek = {
   time: number
   resume: boolean
-}
-
-type PlaybackQuality = '720p' | '1080p' | '2160p'
-
-interface PlaybackSource {
-  videoId: string | null
-  url: string
-  hlsUrl: string
-  quality: PlaybackQuality
-}
-
-function resolvePlaybackSource(
-  video: {
-    id?: string
-    streamUrl720p?: string | null
-    streamUrl1080p?: string | null
-    streamUrl2160p?: string | null
-    hlsUrl720p?: string | null
-    sourceUrl?: string | null
-  } | null,
-  defaultQuality: PlaybackQuality,
-  supportsHls: boolean,
-  preferSourceQuality = false,
-): PlaybackSource {
-  if (!video) {
-    return { videoId: null, url: '', hlsUrl: '', quality: defaultQuality }
-  }
-
-  if (preferSourceQuality && video.sourceUrl) {
-    return { videoId: video.id || null, url: video.sourceUrl, hlsUrl: '', quality: defaultQuality }
-  }
-
-  let url = ''
-  let quality: PlaybackQuality = defaultQuality
-
-  if (defaultQuality === '2160p') {
-    if (video.streamUrl2160p) {
-      url = video.streamUrl2160p
-      quality = '2160p'
-    } else if (video.streamUrl1080p) {
-      url = video.streamUrl1080p
-      quality = '1080p'
-    } else {
-      url = video.streamUrl720p || ''
-      quality = '720p'
-    }
-  } else if (defaultQuality === '1080p') {
-    if (video.streamUrl1080p) {
-      url = video.streamUrl1080p
-      quality = '1080p'
-    } else if (video.streamUrl720p) {
-      url = video.streamUrl720p
-      quality = '720p'
-    } else {
-      url = video.streamUrl2160p || ''
-      quality = '2160p'
-    }
-  } else if (video.streamUrl720p) {
-    url = video.streamUrl720p
-    quality = '720p'
-  } else if (video.streamUrl1080p) {
-    url = video.streamUrl1080p
-    quality = '1080p'
-  } else {
-    url = video.streamUrl2160p || ''
-    quality = '2160p'
-  }
-
-  const hlsUrl = supportsHls ? (video.hlsUrl720p || '') : ''
-  if (hlsUrl) quality = '720p'
-
-  return { videoId: video.id || null, url, hlsUrl, quality }
 }
 
 const POSITION_EVENT_INTERVAL_MS = 200
@@ -253,9 +187,20 @@ export default function VideoPlayer({
   const [sourceQualityNotice, setSourceQualityNotice] = useState<string | null>(null)
   const [qualityFallbackNotice, setQualityFallbackNotice] = useState<string | null>(null)
   const [forcePreviewForQuality, setForcePreviewForQuality] = useState(false)
+  // The rendition the viewer asked for. Kept separate from `defaultQuality`
+  // because the menu can change it at runtime; it is clipped to what the
+  // selected video can actually play before it reaches resolvePlaybackSource.
+  const [preferredQuality, setPreferredQuality] = useState<PlaybackQuality>(defaultQuality)
   const [retryNonce, setRetryNonce] = useState(0)
   const [retryStartTime, setRetryStartTime] = useState<number | null>(null)
   const sourceQualitySwitchRef = useRef<PendingSeek | null>(null)
+  // A quality switch replaces the media source just like the source-quality
+  // toggle; carry the playhead so 720 <-> 1080 does not restart at zero.
+  const qualitySwitchRef = useRef<PendingSeek | null>(null)
+  // Last playhead seen before a source swap. A replacement that never loads
+  // metadata (dead 1080 URL) resets the element to 0 before the error arrives,
+  // so the failure fallback reads this instead of starting over.
+  const lastInstalledPositionRef = useRef(0)
   const sourceQualityResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [videoCrossOrigin, setVideoCrossOrigin] = useState<'anonymous' | null>('anonymous')
   const [videoLoadFailed, setVideoLoadFailed] = useState(false)
@@ -512,11 +457,25 @@ export default function VideoPlayer({
   const selectedStreamUrl2160p = selectedVideoData?.streamUrl2160p || ''
   const selectedHlsUrl720p = selectedVideoData?.hlsUrl720p || ''
   const selectedSourceUrl = selectedVideoData?.sourceUrl || ''
+  const selectedLocal1080Status = selectedVideoData?.local1080Status ?? null
+  // Only the project review payload carries local1080Status; share links do not
+  // expose it, so they keep their old playback behaviour and no menu.
+  const local1080StatusKnown = isLocal1080StatusKnown(selectedLocal1080Status)
+  const local1080Ready = local1080StatusKnown
+    && selectedLocal1080Status === 'READY'
+    && Boolean(selectedStreamUrl1080p)
+  const effectivePreferredQuality = clipPreferredQuality(preferredQuality, {
+    local1080Status: local1080StatusKnown ? selectedLocal1080Status : null,
+    streamUrl1080p: selectedStreamUrl1080p,
+  })
+  // 1080 is a progressive MP4 with no HLS ladder; the HLS manifest must not
+  // hijack the selection. Share links never take this branch.
+  const use1080Mp4 = local1080StatusKnown && effectivePreferredQuality === '1080p'
   const sourceQualityAvailable = Boolean(selectedSourceUrl) && !sourceQualityFailed
   const sourceQualityActive = sourceQualityMode && sourceQualityAvailable
   const sourceMatchesSelectedVideo = sourceVideoId === (selectedVideo?.id ?? null)
   const activeVideoUrl = sourceMatchesSelectedVideo ? videoUrl : ''
-  const activeHlsUrl = supportsHls && !forcePreviewForQuality && sourceMatchesSelectedVideo ? hlsUrl : ''
+  const activeHlsUrl = supportsHls && !forcePreviewForQuality && !use1080Mp4 && sourceMatchesSelectedVideo ? hlsUrl : ''
   const playbackSource = useMemo(() => {
     return resolvePlaybackSource(
       selectedVideoIdValue ? {
@@ -527,12 +486,12 @@ export default function VideoPlayer({
         hlsUrl720p: selectedHlsUrl720p,
         sourceUrl: selectedSourceUrl,
       } : null,
-      defaultQuality,
-      supportsHls && !forcePreviewForQuality,
+      effectivePreferredQuality,
+      supportsHls && !forcePreviewForQuality && !use1080Mp4,
       sourceQualityActive,
     )
   }, [
-    defaultQuality,
+    effectivePreferredQuality,
     selectedVideoIdValue,
     selectedStreamUrl720p,
     selectedStreamUrl1080p,
@@ -542,18 +501,53 @@ export default function VideoPlayer({
     sourceQualityActive,
     supportsHls,
     forcePreviewForQuality,
+    use1080Mp4,
   ])
   const selectedVideoComments = useMemo(
     () => filterCommentsForVideo(comments, selectedVideo?.id),
     [comments, selectedVideo?.id],
   )
 
+  // A READY 1080 rendition can disappear while the page is open: the 5s poll
+  // may deliver ERROR/NONE after a reprocess, or the viewer picks a version
+  // that has no 1080 MP4 yet. Keep them on a playable rendition and preserve
+  // the position instead of leaving a dead 1080 <video> behind.
+  const wasOnInstalledSource = sourceMatchesSelectedVideo && Boolean(activeVideoUrl || hlsUrl)
+  useEffect(() => {
+    if (!selectedVideoIdValue) return
+    if (!local1080StatusKnown) return
+    if (preferredQuality !== '1080p' || local1080Ready) return
+
+    const video = videoRef.current
+    const time = video && Number.isFinite(video.currentTime) && video.currentTime > 0
+      ? video.currentTime
+      : currentTimeRef.current
+    const resume = video ? !video.paused || playIntentRef.current : playIntentRef.current
+    qualitySwitchRef.current = { time, resume }
+    pendingSeekRef.current = { time, resume }
+    playIntentRef.current = resume
+    setPreferredQuality('720p')
+    if (wasOnInstalledSource) setQualityFallbackNotice(t('qualityFallback'))
+  }, [
+    activeVideoUrl,
+    hlsUrl,
+    local1080Ready,
+    local1080StatusKnown,
+    preferredQuality,
+    selectedVideoIdValue,
+    sourceMatchesSelectedVideo,
+    wasOnInstalledSource,
+    t,
+  ])
+
   const handlePlaybackError = useCallback((info: PlaybackFailureInfo) => {
     const videoAtError = videoRef.current
     const wasPlaying = playIntentRef.current || Boolean(videoAtError && !videoAtError.paused)
     const failureTime = videoAtError && Number.isFinite(videoAtError.currentTime) && videoAtError.currentTime > 0
       ? videoAtError.currentTime
-      : currentTimeRef.current
+      : currentTimeRef.current > 0
+        ? currentTimeRef.current
+        : lastInstalledPositionRef.current
     lastFailureAtRef.current = failureTime
     playIntentRef.current = false
     pendingSeekRef.current = null
@@ -613,6 +607,32 @@ export default function VideoPlayer({
       })
     }
 
+    // The 1080 MP4 is an extra rendition, not the only one. If it is refused,
+    // undecodable or its token cannot be renewed, go back to the 720 source at
+    // the same playhead instead of leaving the failure overlay on a dead <video>.
+    const fallback1080To720 = () => {
+      qualitySwitchRef.current = { time: failureTime, resume: wasPlaying }
+      pendingSeekRef.current = { time: failureTime, resume: wasPlaying }
+      playIntentRef.current = wasPlaying
+      setPreferredQuality('720p')
+      setQualityFallbackNotice(t('qualityFallback'))
+      setVideoLoadFailed(false)
+      setVideoLoadFailure(null)
+      reportPlaybackFailure({
+        cause: info.cause,
+        httpStatus: info.httpStatus,
+        mediaErrorCode: info.mediaErrorCode,
+        hlsErrorType: info.hlsErrorType,
+        hlsErrorDetails: info.hlsErrorDetails,
+        videoId: selectedVideo?.id,
+        projectId,
+        quality: '1080p',
+        sourceQuality: false,
+        recovered: true,
+        fallback: true,
+      })
+    }
+
     // Dropping crossOrigin only helps a refusal whose HTTP status the browser
     // hid (CORS/format). A probed 401/403 is auth, and a real network failure
     // must keep its cause instead of becoming a second code-4 "unsupported".
@@ -638,6 +658,10 @@ export default function VideoPlayer({
         onStreamAuthExpired(selectedId).then((recovered) => {
           if (!recovered) {
             authRecoveryInFlightRef.current = false
+            if (use1080Mp4) {
+              fallback1080To720()
+              return
+            }
             // The HLS token could not be renewed. A still-valid progressive
             // rendition is a better outcome than a dead player; keep the
             // position, switch quality and say so instead of silently
@@ -692,11 +716,19 @@ export default function VideoPlayer({
             if (sourceGenerationRef.current !== generation) return
             authRecoveryInFlightRef.current = false
             if (!videoRef.current?.error) return
+            if (use1080Mp4) {
+              fallback1080To720()
+              return
+            }
             fail(false)
           }, 2500)
         })
         return
       }
+    }
+    if (use1080Mp4) {
+      fallback1080To720()
+      return
     }
     fail(false)
   }, [
@@ -709,6 +741,7 @@ export default function VideoPlayer({
     resolvedPlaybackQuality,
     videoUrl,
     activeHlsUrl,
+    use1080Mp4,
   ])
 
   const handlePlaybackRecovered = useCallback((recovery?: PlaybackRecoveryInfo) => {
@@ -999,6 +1032,7 @@ export default function VideoPlayer({
     if (video) video.currentTime = 0
 
     currentTimeRef.current = 0
+    lastInstalledPositionRef.current = 0
     lastTimeUpdateRef.current = 0
     previousSampleRef.current = null
     seekDriftRef.current = null
@@ -1040,6 +1074,7 @@ export default function VideoPlayer({
     hasInitiallySeenRef.current = false
     streamAuthRetryRef.current = null
     sourceQualitySwitchRef.current = null
+    qualitySwitchRef.current = null
     setSourceQualityFailed(false)
     setSourceQualityNotice(null)
     if (sourceQualityResumeTimerRef.current !== null) {
@@ -1096,8 +1131,17 @@ export default function VideoPlayer({
       authRecoveryInFlightRef.current = false
     }
     hadHlsRef.current = nextHasHls
-    const switchIntent = sourceQualitySwitchRef.current
-    if (!switchIntent) currentTimeRef.current = 0
+    const sourceSwitchIntent = sourceQualitySwitchRef.current
+    const qualitySwitchIntent = qualitySwitchRef.current
+    const switchIntent = sourceSwitchIntent ?? qualitySwitchIntent
+    if (!switchIntent) {
+      const videoBeforeSwap = videoRef.current
+      const positionBeforeSwap = videoBeforeSwap && Number.isFinite(videoBeforeSwap.currentTime)
+        ? videoBeforeSwap.currentTime
+        : 0
+      if (positionBeforeSwap > 0.1) lastInstalledPositionRef.current = positionBeforeSwap
+      currentTimeRef.current = 0
+    }
     setResolvedPlaybackQuality(playbackSource.quality)
     setVideoCrossOrigin('anonymous')
     setVideoLoadFailed(false)
@@ -1109,6 +1153,7 @@ export default function VideoPlayer({
     if (switchIntent) {
       pendingSeekRef.current = { time: switchIntent.time, resume: switchIntent.resume }
       sourceQualitySwitchRef.current = null
+      qualitySwitchRef.current = null
     } else if (recoverySeekRef.current) {
       pendingSeekRef.current = recoverySeekRef.current
       recoverySeekRef.current = null
@@ -1162,6 +1207,25 @@ export default function VideoPlayer({
     }
     setSourceQualityMode((previous) => !previous)
   }, [sourceQualityAvailable])
+
+  // The menu only offers renditions that exist. 720 keeps HLS/720 MP4, 1080
+  // swaps to the progressive MP4 and turns the original-quality mode off so the
+  // source URL cannot win over the explicit choice.
+  const handleSelectQuality = useCallback((quality: '720p' | '1080p') => {
+    if (quality === '1080p' && !local1080Ready) return
+    if (quality === effectivePreferredQuality && !sourceQualityActive) return
+
+    const video = videoRef.current
+    const time = video && Number.isFinite(video.currentTime) ? video.currentTime : currentTimeRef.current
+    const resume = video ? !video.paused || playIntentRef.current : playIntentRef.current
+    const switchTarget = { time, resume }
+    qualitySwitchRef.current = switchTarget
+    pendingSeekRef.current = switchTarget
+    playIntentRef.current = resume
+    if (sourceQualityMode) setSourceQualityMode(false)
+    setQualityFallbackNotice(null)
+    setPreferredQuality(quality)
+  }, [effectivePreferredQuality, local1080Ready, sourceQualityActive, sourceQualityMode])
 
   const handleTimelineSeek = useCallback((timestamp: number, resume = false) => {
     const video = videoRef.current
@@ -2142,6 +2206,10 @@ export default function VideoPlayer({
                     sourceQualityAvailable={sourceQualityAvailable}
                     isSourceQuality={sourceQualityActive}
                     onToggleSourceQuality={handleToggleSourceQuality}
+                    local1080Status={local1080StatusKnown ? selectedLocal1080Status : undefined}
+                    is1080Available={local1080Ready}
+                    currentQuality={effectivePreferredQuality === '1080p' ? '1080p' : '720p'}
+                    onSelectQuality={local1080StatusKnown ? handleSelectQuality : undefined}
                     comments={selectedVideoComments}
                     videoFps={selectedVideo?.fps || 24}
                     videoId={selectedVideo?.id}

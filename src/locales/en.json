@@ -2505,6 +2505,11 @@
     "loop": "Loop",
     "sourceQuality": "Source quality",
     "previewQuality": "Preview",
+    "quality": "Quality",
+    "quality720": "720P",
+    "quality1080": "1080P",
+    "qualityTranscoding": "Transcoding",
+    "qualityUnavailable": "Unavailable",
     "moreComments": "+{count} more",
 
     "showDrawingTools": "Show Drawing Tools",

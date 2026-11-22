@@ -7,6 +7,12 @@
  */
 import { POST as local1080Callback } from '../src/app/api/internal/local-1080/callback/route'
 import {
+  clipPreferredQuality,
+  isLocal1080Ready,
+  local1080MenuState,
+  resolvePlaybackSource,
+} from '../src/lib/playback-quality'
+import {
   LOCAL_1080_ERROR_MAX_LENGTH,
   buildLocal1080JobPayload,
   local1080CallbackUrl,
@@ -137,5 +143,87 @@ try {
   if (originalSecret === undefined) delete process.env.LOCAL_1080_WORKER_SECRET
   else process.env.LOCAL_1080_WORKER_SECRET = originalSecret
 }
+
+// --- Player quality menu (pure selection helpers) ---------------------------
+// PENDING/PROCESSING stay disabled with the "transcoding" label; READY only
+// counts once the token-minted MP4 URL exists; every other state is not usable.
+equal(local1080MenuState('PENDING', false), 'processing', 'PENDING menu row is transcoding')
+equal(local1080MenuState('PROCESSING', false), 'processing', 'PROCESSING menu row is transcoding')
+equal(local1080MenuState('READY', true), 'ready', 'READY with a stream enables 1080')
+equal(local1080MenuState('READY', false), 'unavailable', 'READY without a stream is unavailable')
+equal(local1080MenuState('ERROR', false), 'unavailable', 'ERROR menu row is unavailable')
+equal(local1080MenuState('NONE', false), 'unavailable', 'NONE menu row is unavailable')
+equal(local1080MenuState(undefined, false), 'unavailable', 'missing status menu row is unavailable')
+
+check(isLocal1080Ready({ local1080Status: 'READY', streamUrl1080p: '/api/content/t' }), 'READY + URL is playable')
+check(!isLocal1080Ready({ local1080Status: 'READY', streamUrl1080p: '' }), 'READY without URL is not playable')
+check(!isLocal1080Ready({ local1080Status: 'PROCESSING', streamUrl1080p: '/api/content/t' }), 'PROCESSING is not playable')
+
+equal(
+  clipPreferredQuality('1080p', { local1080Status: 'PROCESSING', streamUrl1080p: '' }),
+  '720p',
+  'preferred 1080 clips to 720 while transcoding',
+)
+equal(
+  clipPreferredQuality('1080p', { local1080Status: 'READY', streamUrl1080p: '/api/content/t' }),
+  '1080p',
+  'preferred 1080 survives a READY rendition',
+)
+equal(
+  clipPreferredQuality('1080p', { local1080Status: 'READY', streamUrl1080p: '' }),
+  '720p',
+  'preferred 1080 clips when no URL was minted',
+)
+equal(
+  clipPreferredQuality('1080p', { local1080Status: undefined, streamUrl1080p: '/api/content/t' }),
+  '1080p',
+  'share payloads without status keep their 1080 default',
+)
+equal(
+  clipPreferredQuality('1080p', { local1080Status: null, streamUrl1080p: '' }),
+  '1080p',
+  'null status keeps legacy behaviour',
+)
+equal(
+  clipPreferredQuality('720p', { local1080Status: 'READY', streamUrl1080p: '/api/content/t' }),
+  '720p',
+  '720 stays 720',
+)
+equal(
+  clipPreferredQuality('2160p', { local1080Status: 'PROCESSING', streamUrl1080p: '' }),
+  '2160p',
+  'other qualities are untouched',
+)
+
+const menuVideo = {
+  id: 'v1',
+  streamUrl720p: '/api/content/720',
+  streamUrl1080p: '/api/content/1080',
+  hlsUrl720p: '/api/content/hls',
+}
+const chosen1080 = resolvePlaybackSource(menuVideo, '1080p', false)
+equal(chosen1080.url, '/api/content/1080', '1080 preference plays the MP4 URL')
+equal(chosen1080.hlsUrl, '', '1080 preference does not attach HLS')
+equal(chosen1080.quality, '1080p', '1080 preference reports 1080')
+const legacy1080 = resolvePlaybackSource(menuVideo, '1080p', true)
+equal(legacy1080.hlsUrl, '/api/content/hls', 'HLS still wins when supportsHls is true')
+equal(legacy1080.quality, '720p', 'HLS playback still reports 720')
+const chosen720 = resolvePlaybackSource(menuVideo, '720p', true)
+equal(chosen720.url, '/api/content/720', '720 preference keeps the progressive 720 URL')
+equal(chosen720.hlsUrl, '/api/content/hls', '720 preference keeps HLS')
+const fallback720 = resolvePlaybackSource(
+  { id: 'v1', streamUrl720p: '/api/content/720', hlsUrl720p: '/api/content/hls' },
+  '1080p',
+  false,
+)
+equal(fallback720.url, '/api/content/720', 'missing 1080 stream falls back to 720 MP4')
+equal(fallback720.quality, '720p', 'missing 1080 stream reports 720')
+const sourcePreferred = resolvePlaybackSource(
+  { id: 'v1', sourceUrl: '/api/content/source', streamUrl1080p: '/api/content/1080' },
+  '1080p',
+  false,
+  true,
+)
+equal(sourcePreferred.url, '/api/content/source', 'source quality still wins over 1080')
 
 console.log('local-1080 checks passed')

@@ -3,7 +3,7 @@
 import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Repeat } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Repeat, Check, ChevronDown } from 'lucide-react'
 import { getUserColor } from '@/lib/utils'
 import { timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
 import { formatTimeDisplay } from '@/lib/time-format'
@@ -12,6 +12,7 @@ import TimeFormatSwitch from './TimeFormatSwitch'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import TimelineHoverPreview from './TimelineHoverPreview'
 import { useMediaPosition } from '@/hooks/useMediaPosition'
+import { local1080MenuState } from '@/lib/playback-quality'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -37,6 +38,11 @@ interface CustomVideoControlsProps {
   sourceQualityAvailable?: boolean
   isSourceQuality?: boolean
   onToggleSourceQuality?: () => void
+  /** Background 1080p MP4 state. Undefined = payload has no local-1080 data (share links). */
+  local1080Status?: string | null
+  is1080Available?: boolean
+  currentQuality?: '720p' | '1080p'
+  onSelectQuality?: (quality: '720p' | '1080p') => void
   comments?: CommentWithReplies[]
   videoFps?: number
   videoId?: string
@@ -502,6 +508,119 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
   )
 })
 
+interface QualityMenuProps {
+  local1080Status: string | null
+  is1080Available: boolean
+  currentQuality: '720p' | '1080p'
+  onSelectQuality: (quality: '720p' | '1080p') => void
+}
+
+const QualityMenu = memo(function QualityMenu({
+  local1080Status,
+  is1080Available,
+  currentQuality,
+  onSelectQuality,
+}: QualityMenuProps) {
+  const t = useTranslations('controls')
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  // Escape closes from anywhere in the page; a pointer down outside the menu
+  // closes it too. Both restore focus to the trigger for keyboard users.
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  const state1080 = local1080MenuState(local1080Status, is1080Available)
+  const disabled1080 = state1080 !== 'ready'
+  const state1080Label = state1080 === 'processing' ? t('qualityTranscoding') : t('qualityUnavailable')
+  const currentLabel = currentQuality === '1080p' ? t('quality1080') : t('quality720')
+
+  const choose = (quality: '720p' | '1080p') => {
+    setOpen(false)
+    triggerRef.current?.focus()
+    onSelectQuality(quality)
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        data-review-popup-trigger
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${t('quality')}: ${currentLabel}`}
+        title={t('quality')}
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-8 items-center justify-center gap-0.5 rounded-md px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:text-[12px]"
+      >
+        {currentLabel}
+        <ChevronDown
+          aria-hidden="true"
+          className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          data-review-popup
+          aria-label={t('quality')}
+          className="absolute bottom-full right-0 z-50 mb-2 w-40 overflow-hidden rounded-lg border border-white/20 bg-black/90 p-1 text-white shadow-xl backdrop-blur-sm"
+        >
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={currentQuality === '720p'}
+            onClick={() => choose('720p')}
+            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none"
+          >
+            <span>{t('quality720')}</span>
+            {currentQuality === '720p' && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+          </button>
+
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={currentQuality === '1080p'}
+            disabled={disabled1080}
+            aria-disabled={disabled1080}
+            title={disabled1080 ? `${t('quality1080')} · ${state1080Label}` : t('quality1080')}
+            onClick={() => choose('1080p')}
+            className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 enabled:focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {disabled1080 ? (
+              <span>{t('quality1080')} · {state1080Label}</span>
+            ) : (
+              <>
+                <span>{t('quality1080')}</span>
+                {currentQuality === '1080p' && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+              </>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+})
+
 interface UtilityPlaybackButtonsProps {
   volume: number
   isMuted: boolean
@@ -509,6 +628,10 @@ interface UtilityPlaybackButtonsProps {
   isLooping: boolean
   sourceQualityAvailable: boolean
   isSourceQuality: boolean
+  local1080Status?: string | null
+  is1080Available: boolean
+  currentQuality: '720p' | '1080p'
+  onSelectQuality?: (quality: '720p' | '1080p') => void
   showVolume: boolean
   onVolumeMouseEnter: () => void
   onVolumeMouseLeave: () => void
@@ -526,6 +649,10 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
   isLooping,
   sourceQualityAvailable,
   isSourceQuality,
+  local1080Status,
+  is1080Available,
+  currentQuality,
+  onSelectQuality,
   showVolume,
   onVolumeMouseEnter,
   onVolumeMouseLeave,
@@ -549,6 +676,14 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
         >
           {isSourceQuality ? t('previewQuality') : t('sourceQuality')}
         </button>
+      )}
+      {onSelectQuality && (
+        <QualityMenu
+          local1080Status={local1080Status ?? null}
+          is1080Available={is1080Available}
+          currentQuality={currentQuality}
+          onSelectQuality={onSelectQuality}
+        />
       )}
       <div
         className="relative"
@@ -634,6 +769,10 @@ function CustomVideoControls({
   sourceQualityAvailable = false,
   isSourceQuality = false,
   onToggleSourceQuality = () => {},
+  local1080Status,
+  is1080Available = false,
+  currentQuality = '720p',
+  onSelectQuality,
   comments = [],
   videoFps = 24,
   videoId = '',
@@ -1194,6 +1333,10 @@ function CustomVideoControls({
           isLooping={isLooping}
           sourceQualityAvailable={sourceQualityAvailable}
           isSourceQuality={isSourceQuality}
+          local1080Status={local1080Status}
+          is1080Available={is1080Available}
+          currentQuality={currentQuality}
+          onSelectQuality={onSelectQuality}
           showVolume={showVolume}
           onVolumeMouseEnter={handleVolumeMouseEnter}
           onVolumeMouseLeave={handleVolumeMouseLeave}
