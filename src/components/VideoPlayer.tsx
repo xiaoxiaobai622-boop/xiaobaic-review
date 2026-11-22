@@ -23,6 +23,7 @@ import { reportPlaybackFailure } from '@/lib/playback-telemetry'
 import {
   clipPreferredQuality,
   isLocal1080StatusKnown,
+  local1080TierLabel,
   resolvePlaybackSource,
   type PlaybackQuality,
 } from '@/lib/playback-quality'
@@ -458,6 +459,7 @@ export default function VideoPlayer({
   const selectedHlsUrl720p = selectedVideoData?.hlsUrl720p || ''
   const selectedSourceUrl = selectedVideoData?.sourceUrl || ''
   const selectedLocal1080Status = selectedVideoData?.local1080Status ?? null
+  const selectedLocal1080Label = local1080TierLabel(selectedVideoData?.width, selectedVideoData?.height)
   // Only the project review payload carries local1080Status; share links do not
   // expose it, so they keep their old playback behaviour and no menu.
   const local1080StatusKnown = isLocal1080StatusKnown(selectedLocal1080Status)
@@ -2208,6 +2210,7 @@ export default function VideoPlayer({
                     onToggleSourceQuality={handleToggleSourceQuality}
                     local1080Status={local1080StatusKnown ? selectedLocal1080Status : undefined}
                     is1080Available={local1080Ready}
+                    local1080Label={selectedLocal1080Label}
                     currentQuality={effectivePreferredQuality === '1080p' ? '1080p' : '720p'}
                     onSelectQuality={local1080StatusKnown ? handleSelectQuality : undefined}
                     comments={selectedVideoComments}

@@ -31,14 +31,17 @@ export interface Local1080Config {
 
 /**
  * Full-HD sources qualify when either side reaches 1920 (covers 1920x800
- * ultrawide screen recordings) or the short side reaches 1080. The worker
- * never upscales, so lower-resolution sources stay skipped.
+ * ultrawide screen recordings). 900p-class sources also qualify so the worker
+ * can produce a native-resolution 4 Mbps MP4 instead of upscaling them.
+ * The worker never upscales, so 720p/480p sources stay skipped.
  */
+export const LOCAL_1080_MIN_NATIVE_SHORT_SIDE = 900
+
 export function sourceSupportsLocal1080(width: number, height: number): boolean {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false
   const longSide = Math.max(width, height)
   const shortSide = Math.min(width, height)
-  return longSide >= 1920 || shortSide >= 1080
+  return longSide >= 1920 || shortSide >= LOCAL_1080_MIN_NATIVE_SHORT_SIDE
 }
 
 /** Canonical key for the single 1080 MP4 rendition. Callback validation recomputes it. */

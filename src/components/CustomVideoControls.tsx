@@ -41,6 +41,7 @@ interface CustomVideoControlsProps {
   /** Background 1080p MP4 state. Undefined = payload has no local-1080 data (share links). */
   local1080Status?: string | null
   is1080Available?: boolean
+  local1080Label?: string
   currentQuality?: '720p' | '1080p'
   onSelectQuality?: (quality: '720p' | '1080p') => void
   comments?: CommentWithReplies[]
@@ -511,6 +512,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
 interface QualityMenuProps {
   local1080Status: string | null
   is1080Available: boolean
+  local1080Label: string
   currentQuality: '720p' | '1080p'
   onSelectQuality: (quality: '720p' | '1080p') => void
 }
@@ -518,6 +520,7 @@ interface QualityMenuProps {
 const QualityMenu = memo(function QualityMenu({
   local1080Status,
   is1080Available,
+  local1080Label,
   currentQuality,
   onSelectQuality,
 }: QualityMenuProps) {
@@ -550,7 +553,8 @@ const QualityMenu = memo(function QualityMenu({
   const state1080 = local1080MenuState(local1080Status, is1080Available)
   const disabled1080 = state1080 !== 'ready'
   const state1080Label = state1080 === 'processing' ? t('qualityTranscoding') : t('qualityUnavailable')
-  const currentLabel = currentQuality === '1080p' ? t('quality1080') : t('quality720')
+  const topQualityLabel = local1080Label === '1080P' ? t('quality1080') : local1080Label
+  const currentLabel = currentQuality === '1080p' ? topQualityLabel : t('quality720')
 
   const choose = (quality: '720p' | '1080p') => {
     setOpen(false)
@@ -602,15 +606,15 @@ const QualityMenu = memo(function QualityMenu({
             aria-checked={currentQuality === '1080p'}
             disabled={disabled1080}
             aria-disabled={disabled1080}
-            title={disabled1080 ? `${t('quality1080')} · ${state1080Label}` : t('quality1080')}
+            title={disabled1080 ? `${topQualityLabel} · ${state1080Label}` : topQualityLabel}
             onClick={() => choose('1080p')}
             className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 enabled:focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
           >
             {disabled1080 ? (
-              <span>{t('quality1080')} · {state1080Label}</span>
+              <span>{topQualityLabel} · {state1080Label}</span>
             ) : (
               <>
-                <span>{t('quality1080')}</span>
+                <span>{topQualityLabel}</span>
                 {currentQuality === '1080p' && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
               </>
             )}
@@ -630,6 +634,7 @@ interface UtilityPlaybackButtonsProps {
   isSourceQuality: boolean
   local1080Status?: string | null
   is1080Available: boolean
+  local1080Label: string
   currentQuality: '720p' | '1080p'
   onSelectQuality?: (quality: '720p' | '1080p') => void
   showVolume: boolean
@@ -651,6 +656,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
   isSourceQuality,
   local1080Status,
   is1080Available,
+  local1080Label,
   currentQuality,
   onSelectQuality,
   showVolume,
@@ -681,6 +687,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
         <QualityMenu
           local1080Status={local1080Status ?? null}
           is1080Available={is1080Available}
+          local1080Label={local1080Label}
           currentQuality={currentQuality}
           onSelectQuality={onSelectQuality}
         />
@@ -771,6 +778,7 @@ function CustomVideoControls({
   onToggleSourceQuality = () => {},
   local1080Status,
   is1080Available = false,
+  local1080Label = '1080P',
   currentQuality = '720p',
   onSelectQuality,
   comments = [],
@@ -1335,6 +1343,7 @@ function CustomVideoControls({
           isSourceQuality={isSourceQuality}
           local1080Status={local1080Status}
           is1080Available={is1080Available}
+          local1080Label={local1080Label}
           currentQuality={currentQuality}
           onSelectQuality={onSelectQuality}
           showVolume={showVolume}

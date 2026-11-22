@@ -36,6 +36,21 @@ export function isLocal1080Ready(input: {
   return input.local1080Status === 'READY' && Boolean(input.streamUrl1080p)
 }
 
+/**
+ * Menu label for the local top-quality MP4. Full-HD sources keep the 1080P
+ * tier name; 900p-class sources are re-encoded at native resolution and are
+ * labelled by their short side instead of pretending to be 1080p.
+ */
+export function local1080TierLabel(width?: number | null, height?: number | null): string {
+  const w = Number(width ?? 0)
+  const h = Number(height ?? 0)
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return '1080P'
+  const longSide = Math.max(w, h)
+  const shortSide = Math.min(w, h)
+  if (longSide >= 1920 || shortSide >= 1080) return '1080P'
+  return `${shortSide}P`
+}
+
 export type Local1080MenuState = 'ready' | 'processing' | 'unavailable'
 
 /**
