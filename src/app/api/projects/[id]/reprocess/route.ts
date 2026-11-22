@@ -127,6 +127,10 @@ export async function POST(
           cleanPreview1080Path: null,
           sourceQualityPath: null,
           sourceQualityError: null,
+          // The background 1080 MP4 was just deleted with the previews, so its
+          // READY/PROCESSING state cannot survive the re-run.
+          local1080Status: 'NONE',
+          local1080Error: null,
           // Keep custom thumbnails; regenerate only system thumbnails
           thumbnailPath: hasCustomThumbnail ? video.thumbnailPath : null,
         },

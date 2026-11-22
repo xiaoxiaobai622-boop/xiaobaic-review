@@ -7,6 +7,11 @@ import { isCdnPrefetchEnabled, prefetchHlsRendition } from '../lib/tencent-cdn'
 import { s3GetObjectSize } from '../lib/s3-storage'
 import { prisma } from '../lib/db'
 import {
+  dispatchLocal1080Rendition,
+  readLocal1080Config,
+  sanitizeLocal1080Error,
+} from '../lib/local-1080'
+import {
   TempFiles,
   downloadAndValidateVideo,
   fetchProcessingSettings,
@@ -79,6 +84,30 @@ export async function processVideo(job: Job<VideoProcessingJob>) {
           .catch((emitError) => {
             logError('[WORKER] Failed to emit in-app video-ready notification', emitError)
           })
+
+        // Background 1080p MP4 for the docs transcode server. READY is already
+        // committed above, so this is strictly after the video became playable
+        // and stays fire-and-forget: a failed dispatch only touches local1080*,
+        // never the video status or the 720p HLS path.
+        if (readLocal1080Config()) {
+          void (async () => {
+            const row = await prisma.video.findUnique({
+              where: { id: videoId },
+              select: { preview1080Path: true },
+            })
+            await dispatchLocal1080Rendition({
+              videoId,
+              projectId,
+              teamId: project.teamId,
+              originalStoragePath,
+              width: videoInfo.metadata.width,
+              height: videoInfo.metadata.height,
+              preview1080Path: row?.preview1080Path ?? null,
+            })
+          })().catch((error) => {
+            logMessage(`[WORKER] local-1080 dispatch skipped for ${videoId}: ${sanitizeLocal1080Error(error)}`)
+          })
+        }
 
         // A prefetch rejection says nothing about the transcode, so it is contained
         // here rather than allowed to reach the catch below — that would mark the

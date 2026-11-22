@@ -14,6 +14,7 @@
     "check:member-permissions": "tsx scripts/check-member-permissions.mts",
     "check:member-access": "node --env-file=.env --import tsx scripts/check-member-access.mts",
     "check:docs-sso": "node --env-file=.env --import tsx scripts/check-docs-sso.mts",
+    "check:local-1080": "node --import tsx scripts/check-local-1080.mts",
     "check:audit-retention": "node --env-file=.env --import tsx scripts/check-team-audit-retention.mts",
     "playback:failure-report": "tsx scripts/playback-failure-report.mts",
     "postinstall": "prisma generate",

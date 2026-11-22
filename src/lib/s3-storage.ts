@@ -755,3 +755,23 @@ export async function s3GetPresignedOriginStreamUrl(
     { expiresIn: expirySeconds }
   )
 }
+
+// ─── Presigned PUT URLs ───────────────────────────────────────────────────────
+
+/**
+ * Presigned single-object PUT. Used by the outbound docs transcode worker, which
+ * uploads one finished file directly instead of driving a multipart session.
+ * ContentType is part of the signature, so the uploader must send exactly this
+ * value. Large-file callers keep using the multipart helpers above.
+ */
+export async function s3GetPresignedPutUrl(
+  key: string,
+  contentType: string = 'application/octet-stream',
+  expirySeconds: number = 3600
+): Promise<string> {
+  return getSignedUrl(
+    getS3Client(),
+    new PutObjectCommand({ Bucket: getS3Bucket(), Key: key, ContentType: contentType }),
+    { expiresIn: expirySeconds }
+  )
+}

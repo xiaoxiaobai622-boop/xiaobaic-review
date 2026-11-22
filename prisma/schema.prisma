@@ -583,6 +583,13 @@ model Video {
   preview720Path  String?
   thumbnailPath   String?
 
+  // Background 1080p MP4 rendition produced by the docs transcode worker
+  // (scripts/local-1080-worker.py). Status values live in src/lib/local-1080.ts:
+  // NONE, PENDING, PROCESSING, READY, ERROR. Existing videos stay NONE — there
+  // is deliberately no backfill.
+  local1080Status String  @default("NONE")
+  local1080Error  String?
+
   // Clean (non-watermarked) previews for approved playback
   cleanPreview2160Path String?
   cleanPreview1080Path String?

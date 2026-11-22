@@ -525,6 +525,9 @@ export async function fetchProjectWithVideos(
     cleanPreview2160Path: true,
     cleanPreview1080Path: true,
     cleanPreview720Path: true,
+    // Background 1080p MP4 state for the review player's quality menu.
+    local1080Status: true,
+    local1080Error: true,
     folderId: true,
     createdAt: true,
     updatedAt: true,

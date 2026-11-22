@@ -201,6 +201,10 @@ export async function GET(
       memberCount,
       videos: project.videos.map((video: any) => ({
         ...video,
+        // Background 1080p MP4 state, read by the review player's quality menu.
+        // Kept explicit so the payload contract survives a narrower select later.
+        local1080Status: video.local1080Status ?? 'NONE',
+        local1080Error: video.local1080Error ?? null,
         hasSourceQuality: Boolean(
           sourceQualityEnabled &&
           video.sourceQualityPath &&
