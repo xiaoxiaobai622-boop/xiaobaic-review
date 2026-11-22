@@ -263,6 +263,11 @@ export async function GET(
       // Must match the content endpoint: an HLS-only video with no preview is
       // a 415, not a progressive fallback (even when the original exists).
       hasProgressivePlayback: hasProgressivePlayback(video as any),
+      // Expose only the states that can become playable; NONE (legacy uploads)
+      // and ERROR stay hidden so the share player does not grow a dead menu.
+      ...(video.local1080Status === 'READY' || video.local1080Status === 'PENDING' || video.local1080Status === 'PROCESSING'
+        ? { local1080Status: video.local1080Status }
+        : {}),
       createdAt: video.createdAt instanceof Date ? video.createdAt.toISOString() : video.createdAt ?? null,
       updatedAt: video.updatedAt instanceof Date ? video.updatedAt.toISOString() : video.updatedAt ?? null,
       hasAssets: (video._count?.assets ?? 0) > 0,
@@ -370,6 +375,7 @@ export async function GET(
         folderId: video.folderId,
         hasSourceQuality: video.hasSourceQuality,
         sourceQualityUnavailableReason: video.sourceQualityUnavailableReason,
+        ...((video as any).local1080Status ? { local1080Status: (video as any).local1080Status } : {}),
         hasHls: Boolean((video as any).hlsPath),
         hasProgressivePlayback: Boolean(
           (video as any).preview2160Path ||

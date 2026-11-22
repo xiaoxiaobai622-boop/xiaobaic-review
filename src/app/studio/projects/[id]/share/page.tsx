@@ -497,7 +497,7 @@ export default function AdminSharePage() {
           video.cleanPreview1080Path ||
           video.cleanPreview720Path,
         )
-        const [tokenHls, preferredToken, tokenSource] = await Promise.all([
+        const [tokenHls, preferredToken, tokenSource, local1080Token] = await Promise.all([
           supportsHls && hasHls ? fetchAdminVideoTokenWithRetry(video.id, 'hls', sessionId, signal) : Promise.resolve(''),
           hasProgressivePlayback
             ? fetchAdminVideoTokenWithRetry(video.id, qualityOrder[0], sessionId, signal)
@@ -505,9 +505,13 @@ export default function AdminSharePage() {
           video.hasSourceQuality
             ? fetchAdminVideoTokenWithRetry(video.id, 'source', sessionId, signal).catch(() => '')
             : Promise.resolve(''),
+          video.local1080Status === 'READY' && qualityOrder[0] !== '1080p'
+            ? fetchAdminVideoTokenWithRetry(video.id, '1080p', sessionId, signal)
+            : Promise.resolve(''),
         ])
         if (signal?.aborted) return
         streamTokens[qualityOrder[0]] = preferredToken
+        if (local1080Token) streamTokens['1080p'] = local1080Token
 
         if (!preferredToken && hasProgressivePlayback) {
           for (const quality of qualityOrder.slice(1)) {

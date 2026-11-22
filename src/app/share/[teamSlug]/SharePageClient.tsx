@@ -888,7 +888,7 @@ export default function SharePageClient({ token }: SharePageClientProps) {
         // HLS and the preferred progressive rendition are independent
         // requests. Start them together so the first playable source is not
         // delayed by a serial token round trip.
-        const [hlsToken, preferredToken, sourceToken] = await Promise.all([
+        const [hlsToken, preferredToken, sourceToken, local1080Token] = await Promise.all([
           supportsHls && video.hasHls ? fetchVideoToken(video.id, 'hls', signal, force) : Promise.resolve(''),
           video.hasProgressivePlayback === false
             ? Promise.resolve('')
@@ -896,12 +896,19 @@ export default function SharePageClient({ token }: SharePageClientProps) {
           video.hasSourceQuality && canDownloadOriginal
             ? fetchVideoToken(video.id, 'source', signal, force).catch(() => '')
             : Promise.resolve(''),
+          // The share menu is available whenever the project payload carries a
+          // local-1080 state; 720p stays the default, so mint 1080 in parallel
+          // only for videos the worker already finished.
+          video.local1080Status === 'READY' && qualityOrder[0] !== '1080p'
+            ? fetchVideoToken(video.id, '1080p', signal, force)
+            : Promise.resolve(''),
         ])
         if (signal?.aborted) return
         streamTokenHls = hlsToken
         if (qualityOrder[0] === '720p') streamToken720p = preferredToken
         if (qualityOrder[0] === '1080p') streamToken1080p = preferredToken
         if (qualityOrder[0] === '2160p') streamToken2160p = preferredToken
+        if (local1080Token) streamToken1080p = local1080Token
 
         // Fetch a fallback rendition only when the configured quality is not
         // available. A successful preferred token already gives the player an
