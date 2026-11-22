@@ -30,12 +30,15 @@ export interface Local1080Config {
 }
 
 /**
- * The source check is the same one the local 1080 preview path uses: the short
- * side has to reach 1080, otherwise the worker would only upscale.
+ * Full-HD sources qualify when either side reaches 1920 (covers 1920x800
+ * ultrawide screen recordings) or the short side reaches 1080. The worker
+ * never upscales, so lower-resolution sources stay skipped.
  */
 export function sourceSupportsLocal1080(width: number, height: number): boolean {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false
-  return height > width ? width >= 1080 : height >= 1080
+  const longSide = Math.max(width, height)
+  const shortSide = Math.min(width, height)
+  return longSide >= 1920 || shortSide >= 1080
 }
 
 /** Canonical key for the single 1080 MP4 rendition. Callback validation recomputes it. */

@@ -67,16 +67,17 @@ const payload = buildLocal1080JobPayload({
 })
 equal(payload.contentType, 'video/mp4', 'payload content type')
 
-// --- Source support (same short-side >= 1080 rule as local previews) ---------
+// --- Source support (long side >= 1920 OR short side >= 1080) ----------------
 const sourceCases: Array<[number, number, boolean, string]> = [
   [1920, 1080, true, '1080p landscape'],
   [3840, 2160, true, '4K landscape'],
   [2560, 1440, true, '1440p landscape'],
   [1080, 1920, true, '1080x1920 portrait'],
   [2160, 3840, true, '2160x3840 portrait'],
+  [1920, 800, true, '1920-wide ultrawide'],
   [1280, 720, false, '720p landscape'],
   [720, 1280, false, '720x1280 portrait'],
-  [1920, 800, false, 'ultrawide below 1080 short side'],
+  [1600, 900, false, '900p below both thresholds'],
   [0, 1080, false, 'zero dimension'],
 ]
 for (const [width, height, expected, label] of sourceCases) {
