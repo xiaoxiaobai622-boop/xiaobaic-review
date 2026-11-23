@@ -27,6 +27,8 @@ import {
   resolvePlaybackSource,
   type PlaybackQuality,
 } from '@/lib/playback-quality'
+import { containedVideoRect, guideRectWithin, type GuideAspect, type GuideRect } from '@/lib/player-guides'
+import { type PreviewPlatform } from '@/lib/platform-preview'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -131,6 +133,146 @@ interface VideoPlayerProps {
   hasNextVideo?: boolean
 }
 
+function useVideoContentRect(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  containerRef: React.RefObject<HTMLDivElement | null>,
+) {
+  const [contentRect, setContentRect] = useState<GuideRect | null>(null)
+
+  useEffect(() => {
+    const update = () => {
+      const video = videoRef.current
+      const box = containerRef.current
+      if (!video || !box) return
+      const rect = box.getBoundingClientRect()
+      setContentRect(containedVideoRect(rect.width, rect.height, video.videoWidth, video.videoHeight))
+    }
+    update()
+    const video = videoRef.current
+    video?.addEventListener('loadedmetadata', update)
+    const observer = containerRef.current ? new ResizeObserver(update) : null
+    if (observer && containerRef.current) observer.observe(containerRef.current)
+    window.addEventListener('resize', update)
+    document.addEventListener('fullscreenchange', update)
+    return () => {
+      video?.removeEventListener('loadedmetadata', update)
+      observer?.disconnect()
+      window.removeEventListener('resize', update)
+      document.removeEventListener('fullscreenchange', update)
+    }
+  }, [videoRef, containerRef])
+
+  return contentRect
+}
+
+function GuideOverlay({
+  videoRef,
+  containerRef,
+  aspect,
+  maskVisible,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>
+  containerRef: React.RefObject<HTMLDivElement | null>
+  aspect: GuideAspect
+  maskVisible: boolean
+}) {
+  const contentRect = useVideoContentRect(videoRef, containerRef)
+  const guide = contentRect ? guideRectWithin(contentRect, aspect) : null
+  if (!guide) return null
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[4] overflow-hidden" aria-hidden="true">
+      <div
+        className="absolute border border-white/85"
+        style={{
+          left: `${guide.left}px`,
+          top: `${guide.top}px`,
+          width: `${guide.width}px`,
+          height: `${guide.height}px`,
+          boxShadow: maskVisible ? '0 0 0 9999px rgba(0, 0, 0, 0.55)' : 'none',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-[5%] border border-white/30" />
+        <div className="pointer-events-none absolute inset-[10%] border border-white/45" />
+      </div>
+    </div>
+  )
+}
+
+// Geometry traced from 剪映 11.8's 抖音预览 at a 171x304 preview frame.
+// The platform chrome is a flat 50% white skeleton, not a recreation of the
+// Douyin app UI: top/bottom chrome, action rail, and author/caption blocks.
+function DouyinPreviewChrome() {
+  return (
+    <svg
+      className="absolute inset-0 h-full w-full"
+      viewBox="0 0 171 304"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <g fill="#fff" fillOpacity="0.5">
+        <rect x="0" y="0" width="171" height="16.5" />
+        <rect x="0" y="285.5" width="171" height="18.5" />
+        <circle cx="155.5" cy="136" r="9.75" />
+        <circle cx="155.5" cy="273" r="9" />
+        <circle cx="10" cy="240.5" r="7.5" />
+        <rect x="3" y="253" width="59" height="8" rx="2" />
+        <rect x="3" y="263" width="130" height="20" rx="2" />
+        <rect x="148.5" y="171" width="16" height="6" rx="2" />
+        <rect x="148.5" y="197" width="16" height="6" rx="2" />
+        <rect x="148.5" y="223" width="16" height="6" rx="2" />
+        <rect x="148.5" y="251" width="16" height="6" rx="2" />
+        <svg x="149" y="157" width="14" height="12" viewBox="2 3 20 18.35" preserveAspectRatio="none">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+        </svg>
+        <svg x="149" y="183" width="14" height="12" viewBox="3 3 18 18" preserveAspectRatio="none">
+          <path
+            fillRule="evenodd"
+            d="M12 3C6.5 3 3 6.6 3 11c0 1.9.7 3.6 1.9 5L4 21l4.6-1.4c1 .3 2.1.4 3.4.4 5.5 0 9-3.6 9-8s-3.5-8.9-9-8.9zM8.2 9.7a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 1 0 0-2.5zM12 9.7a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 1 0 0-2.5zM15.8 9.7a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 1 0 0-2.5z"
+          />
+        </svg>
+        <svg x="150" y="209" width="13" height="12" viewBox="2 2 20 19" preserveAspectRatio="none">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+        </svg>
+        <svg x="150" y="238" width="13" height="11" viewBox="2 3 20.5 15" preserveAspectRatio="none">
+          <path d="M14 4.1c0-.9 1.1-1.4 1.7-.7l6.1 6.3c.4.4.4 1.1 0 1.5l-6.1 6.3c-.6.7-1.7.2-1.7-.7v-2.9c-5.3 0-8.8 1.5-11.4 4.8-.3.4-.9.2-.9-.2.1-6.3 4.3-11 12.3-11.4V4.1z" />
+        </svg>
+      </g>
+    </svg>
+  )
+}
+
+function PlatformPreviewOverlay({
+  videoRef,
+  containerRef,
+  platform,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>
+  containerRef: React.RefObject<HTMLDivElement | null>
+  platform: PreviewPlatform
+}) {
+  const contentRect = useVideoContentRect(videoRef, containerRef)
+  const frame = contentRect ? guideRectWithin(contentRect, '9:16') : null
+  if (!frame || platform === 'off') return null
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[5] overflow-hidden" aria-hidden="true">
+      <div
+        className="absolute overflow-hidden"
+        style={{
+          left: `${frame.left}px`,
+          top: `${frame.top}px`,
+          width: `${frame.width}px`,
+          height: `${frame.height}px`,
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.62)',
+        }}
+      >
+        <DouyinPreviewChrome />
+      </div>
+    </div>
+  )
+}
+
 export default function VideoPlayer({
   videos,
   projectId,
@@ -220,6 +362,9 @@ export default function VideoPlayer({
   }, [t])
   const [resolvedPlaybackQuality, setResolvedPlaybackQuality] = useState<PlaybackQuality>(defaultQuality)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
+  const [guideAspect, setGuideAspect] = useState<GuideAspect>('off')
+  const [guideMaskVisible, setGuideMaskVisible] = useState(false)
+  const [previewPlatform, setPreviewPlatform] = useState<PreviewPlatform>('off')
   const [videoDuration, setVideoDuration] = useState(0)
   const [currentTimeState, setCurrentTimeState] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -2026,6 +2171,9 @@ export default function VideoPlayer({
                 x-webkit-airplay="allow"
               />
 
+              <GuideOverlay videoRef={videoRef} containerRef={videoWrapperRef} aspect={guideAspect} maskVisible={guideMaskVisible} />
+              <PlatformPreviewOverlay videoRef={videoRef} containerRef={videoWrapperRef} platform={previewPlatform} />
+
               {isBuffering && !videoLoadFailed && (
                 <div
                   className="pointer-events-none absolute inset-0 z-[15] flex items-center justify-center"
@@ -2211,8 +2359,16 @@ export default function VideoPlayer({
                     local1080Status={local1080StatusKnown ? selectedLocal1080Status : undefined}
                     is1080Available={local1080Ready}
                     local1080Label={selectedLocal1080Label}
+                    playbackSpeed={playbackSpeed}
+                    onPlaybackSpeedChange={setPlaybackSpeed}
+                    guideAspect={guideAspect}
+                    onGuideAspectChange={setGuideAspect}
+                    guideMaskVisible={guideMaskVisible}
+                    onToggleGuideMask={() => setGuideMaskVisible((value) => !value)}
+                    previewPlatform={previewPlatform}
+                    onPreviewPlatformChange={setPreviewPlatform}
                     currentQuality={effectivePreferredQuality === '1080p' ? '1080p' : '720p'}
-                    onSelectQuality={local1080StatusKnown ? handleSelectQuality : undefined}
+                    onSelectQuality={handleSelectQuality}
                     comments={selectedVideoComments}
                     videoFps={selectedVideo?.fps || 24}
                     videoId={selectedVideo?.id}

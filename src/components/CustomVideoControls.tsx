@@ -3,7 +3,7 @@
 import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Comment } from '@prisma/client'
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Repeat, Check, ChevronDown } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, SkipBack, SkipForward, Repeat, Check, ChevronRight, Gauge, Settings, Frame, Smartphone, Keyboard } from 'lucide-react'
 import { getUserColor } from '@/lib/utils'
 import { timecodeToSeconds, timecodeToSeekSeconds } from '@/lib/timecode'
 import { formatTimeDisplay } from '@/lib/time-format'
@@ -13,6 +13,8 @@ import { InitialsAvatar } from '@/components/InitialsAvatar'
 import TimelineHoverPreview from './TimelineHoverPreview'
 import { useMediaPosition } from '@/hooks/useMediaPosition'
 import { local1080MenuState } from '@/lib/playback-quality'
+import { GUIDE_ASPECT_OPTIONS, type GuideAspect } from '@/lib/player-guides'
+import { PLATFORM_PREVIEW_OPTIONS, platformLabel, type PreviewPlatform } from '@/lib/platform-preview'
 
 type CommentWithReplies = Comment & {
   replies?: Comment[]
@@ -42,6 +44,14 @@ interface CustomVideoControlsProps {
   local1080Status?: string | null
   is1080Available?: boolean
   local1080Label?: string
+  playbackSpeed?: number
+  onPlaybackSpeedChange?: (speed: number) => void
+  guideAspect?: GuideAspect
+  onGuideAspectChange?: (aspect: GuideAspect) => void
+  guideMaskVisible?: boolean
+  onToggleGuideMask?: () => void
+  previewPlatform?: PreviewPlatform
+  onPreviewPlatformChange?: (platform: PreviewPlatform) => void
   currentQuality?: '720p' | '1080p'
   onSelectQuality?: (quality: '720p' | '1080p') => void
   comments?: CommentWithReplies[]
@@ -474,10 +484,10 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
   const t = useTranslations('controls')
 
   return (
-    <div data-player-button-group className="hidden sm:flex h-[32px] items-center gap-1">
+    <div data-player-button-group className="hidden sm:flex h-[29px] items-center gap-1">
       <button
         onClick={() => onFrameStep('backward')}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100 sm:h-[32px] sm:w-[32px]"
+        className="flex h-[29px] w-[29px] items-center justify-center rounded-md text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100"
         aria-label={t('previousFrame')}
         title={`${t('previousFrame')} (Ctrl+J)`}
       >
@@ -486,7 +496,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
 
       <button
         onClick={onPlayPause}
-        className="mx-1 flex h-[32px] w-[32px] items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-foreground/15 active:transition-none"
+        className="mx-1 flex h-[29px] w-[29px] items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:bg-foreground/15 active:transition-none"
         aria-label={isPlaying ? t('pauseVideo') : t('playVideo')}
         title={isPlaying ? `${t('pauseVideo')} (Ctrl+Space)` : `${t('playVideo')} (Ctrl+Space)`}
       >
@@ -499,7 +509,7 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
 
       <button
         onClick={() => onFrameStep('forward')}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100 sm:h-[32px] sm:w-[32px]"
+        className="flex h-[29px] w-[29px] items-center justify-center rounded-md text-foreground opacity-80 transition-[opacity,background-color] hover:bg-foreground/10 hover:opacity-100 active:bg-foreground/20 active:opacity-100"
         aria-label={t('nextFrame')}
         title={`${t('nextFrame')} (Ctrl+L)`}
       >
@@ -509,37 +519,107 @@ const FramePlaybackButtons = memo(function FramePlaybackButtons({
   )
 })
 
-interface QualityMenuProps {
+interface PlayerSettingsMenuProps {
+  playbackSpeed: number
+  onPlaybackSpeedChange: (speed: number) => void
+  guideAspect: GuideAspect
+  onGuideAspectChange: (aspect: GuideAspect) => void
+  guideMaskVisible: boolean
+  onToggleGuideMask: () => void
+  previewPlatform: PreviewPlatform
+  onPreviewPlatformChange: (platform: PreviewPlatform) => void
   local1080Status: string | null
   is1080Available: boolean
   local1080Label: string
   currentQuality: '720p' | '1080p'
-  onSelectQuality: (quality: '720p' | '1080p') => void
+  onSelectQuality?: (quality: '720p' | '1080p') => void
+  sourceQualityAvailable?: boolean
+  isSourceQuality?: boolean
+  onToggleSourceQuality?: () => void
 }
 
-const QualityMenu = memo(function QualityMenu({
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
+type HoverPoint = { x: number; y: number }
+
+function pointInRect(point: HoverPoint, rect: DOMRect): boolean {
+  return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
+}
+
+function pointInTriangle(point: HoverPoint, a: HoverPoint, b: HoverPoint, c: HoverPoint): boolean {
+  const side = (p1: HoverPoint, p2: HoverPoint, p3: HoverPoint) =>
+    (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y)
+  const d1 = side(point, a, b)
+  const d2 = side(point, b, c)
+  const d3 = side(point, c, a)
+  const hasNegative = d1 < 0 || d2 < 0 || d3 < 0
+  const hasPositive = d1 > 0 || d2 > 0 || d3 > 0
+  return !(hasNegative && hasPositive)
+}
+
+
+const PlayerSettingsMenu = memo(function PlayerSettingsMenu({
+  playbackSpeed,
+  onPlaybackSpeedChange,
+  guideAspect,
+  onGuideAspectChange,
+  guideMaskVisible,
+  onToggleGuideMask,
+  previewPlatform,
+  onPreviewPlatformChange,
   local1080Status,
   is1080Available,
   local1080Label,
   currentQuality,
   onSelectQuality,
-}: QualityMenuProps) {
+  sourceQualityAvailable = false,
+  isSourceQuality = false,
+  onToggleSourceQuality,
+}: PlayerSettingsMenuProps) {
   const t = useTranslations('controls')
   const [open, setOpen] = useState(false)
+  const [activeSection, setActiveSection] = useState<'quality' | 'guides' | 'platform' | 'speed' | null>(null)
+  const [flyoutSide, setFlyoutSide] = useState<'right' | 'left'>('right')
   const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const submenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const submenuRef = useRef<HTMLDivElement>(null)
+  const rowRefs = useRef<Partial<Record<'quality' | 'guides' | 'platform' | 'speed', HTMLDivElement | null>>>({})
+  const safeStartRef = useRef<HoverPoint | null>(null)
 
-  // Escape closes from anywhere in the page; a pointer down outside the menu
-  // closes it too. Both restore focus to the trigger for keyboard users.
+  const cancelSubmenuClose = useCallback(() => {
+    if (submenuCloseTimerRef.current) {
+      clearTimeout(submenuCloseTimerRef.current)
+      submenuCloseTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleSubmenuClose = useCallback((delay = 160) => {
+    cancelSubmenuClose()
+    submenuCloseTimerRef.current = setTimeout(() => {
+      setActiveSection(null)
+      safeStartRef.current = null
+    }, delay)
+  }, [cancelSubmenuClose])
+
+  useEffect(() => {
+    return () => {
+      cancelSubmenuClose()
+    }
+  }, [cancelSubmenuClose])
+
   useEffect(() => {
     if (!open) return
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      if (rootRef.current?.contains(event.target as Node)) return
+      setOpen(false)
+      setActiveSection(null)
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.stopPropagation()
       setOpen(false)
+      setActiveSection(null)
       triggerRef.current?.focus()
     }
     document.addEventListener('pointerdown', handlePointerDown)
@@ -550,17 +630,98 @@ const QualityMenu = memo(function QualityMenu({
     }
   }, [open])
 
+  // Safe triangle: after the pointer leaves a row, keep the flyout open while
+  // it travels inside the triangle formed by the exit point and the flyout's
+  // near corners. This is the same guard Amazon-style menus use.
+  useEffect(() => {
+    if (!activeSection) return
+    const handleMove = (event: MouseEvent) => {
+      const row = rowRefs.current[activeSection]
+      const submenu = submenuRef.current
+      const point = { x: event.clientX, y: event.clientY }
+      if (row && pointInRect(point, row.getBoundingClientRect())) {
+        cancelSubmenuClose()
+        safeStartRef.current = null
+        return
+      }
+      if (submenu && pointInRect(point, submenu.getBoundingClientRect())) {
+        cancelSubmenuClose()
+        safeStartRef.current = null
+        return
+      }
+      const start = safeStartRef.current
+      if (start && submenu) {
+        const rect = submenu.getBoundingClientRect()
+        const nearX = flyoutSide === 'right' ? rect.left : rect.right
+        if (pointInTriangle(point, start, { x: nearX, y: rect.top }, { x: nearX, y: rect.bottom })) {
+          cancelSubmenuClose()
+          return
+        }
+      }
+      scheduleSubmenuClose(140)
+    }
+    document.addEventListener('mousemove', handleMove)
+    return () => document.removeEventListener('mousemove', handleMove)
+  }, [activeSection, flyoutSide, cancelSubmenuClose, scheduleSubmenuClose])
+
   const state1080 = local1080MenuState(local1080Status, is1080Available)
   const disabled1080 = state1080 !== 'ready'
   const state1080Label = state1080 === 'processing' ? t('qualityTranscoding') : t('qualityUnavailable')
-  const topQualityLabel = local1080Label === '1080P' ? t('quality1080') : local1080Label
-  const currentLabel = currentQuality === '1080p' ? topQualityLabel : t('quality720')
+  const topQualityLabel =
+    local1080Label === '1080P' || local1080Label === '720P' ? t('quality1080') : local1080Label
+  const currentQualityLabel = currentQuality === '1080p' ? topQualityLabel : t('quality720')
+  const qualitySummary = isSourceQuality ? t('qualityOriginal') : currentQualityLabel
+  const showQualityRow = Boolean(onSelectQuality)
 
-  const choose = (quality: '720p' | '1080p') => {
+  const closeMenu = () => {
+    cancelSubmenuClose()
     setOpen(false)
+    setActiveSection(null)
     triggerRef.current?.focus()
-    onSelectQuality(quality)
   }
+
+  const chooseQuality = (quality: '720p' | '1080p') => {
+    if (quality === '1080p' && disabled1080) return
+    onSelectQuality?.(quality)
+    closeMenu()
+  }
+
+  const chooseSpeed = (speed: number) => {
+    onPlaybackSpeedChange(speed)
+    closeMenu()
+  }
+
+  const choosePlatform = (platform: PreviewPlatform) => {
+    onPreviewPlatformChange(platform)
+    closeMenu()
+  }
+
+  // Prefer the flyout on the right, like the reference player. Flip it only
+  // when the panel is already near the viewport's right edge.
+  const openSection = (section: 'quality' | 'guides' | 'platform' | 'speed') => {
+    cancelSubmenuClose()
+    safeStartRef.current = null
+    const rect = menuRef.current?.getBoundingClientRect()
+    const roomRight = rect ? window.innerWidth - rect.right : 0
+    setFlyoutSide(roomRight >= 176 ? 'right' : 'left')
+    setActiveSection(section)
+  }
+
+  // A safe triangle sits in the gap between a row and its flyout. The pointer
+  // can cut diagonally into the submenu without passing over dead space, which
+  // would otherwise collapse the flyout mid-travel.
+  const flyoutTriangle = (
+    <span
+      aria-hidden="true"
+      className={`absolute top-0 h-full w-2 ${flyoutSide === 'right' ? '-left-2' : '-right-2'}`}
+      style={{
+        clipPath: flyoutSide === 'right'
+          ? 'polygon(100% 0, 0 50%, 100% 100%)'
+          : 'polygon(0 0, 100% 50%, 0 100%)',
+        pointerEvents: 'auto',
+      }}
+    />
+  )
 
   return (
     <div ref={rootRef} className="relative">
@@ -570,54 +731,322 @@ const QualityMenu = memo(function QualityMenu({
         data-review-popup-trigger
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`${t('quality')}: ${currentLabel}`}
-        title={t('quality')}
-        onClick={() => setOpen((value) => !value)}
-        className="flex h-8 items-center justify-center gap-0.5 rounded-md px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:text-[12px]"
+        aria-label={t('settings')}
+        title={t('settings')}
+        onClick={() => {
+          if (open) {
+            closeMenu()
+          } else {
+            setOpen(true)
+          }
+        }}
+        className="flex h-[29px] w-[29px] items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation"
       >
-        {currentLabel}
-        <ChevronDown
-          aria-hidden="true"
-          className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
+        <Settings className="h-4 w-4 text-foreground sm:h-5 sm:w-5" />
       </button>
 
       {open && (
         <div
+          ref={menuRef}
           role="menu"
           data-review-popup
-          aria-label={t('quality')}
-          className="absolute bottom-full right-0 z-50 mb-2 w-40 overflow-hidden rounded-lg border border-white/20 bg-black/90 p-1 text-white shadow-xl backdrop-blur-sm"
+          aria-label={t('settings')}
+          className="absolute bottom-full right-0 z-50 mb-2 w-64 overflow-visible rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl"
         >
-          <button
-            type="button"
-            role="menuitemradio"
-            aria-checked={currentQuality === '720p'}
-            onClick={() => choose('720p')}
-            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none"
+          <span
+            aria-hidden="true"
+            className="absolute -bottom-2 right-3 h-2 w-8"
+            style={{ clipPath: 'polygon(50% 100%, 0 0, 100% 0)', pointerEvents: 'auto' }}
+          />
+
+          {showQualityRow && (
+            <div
+              ref={(node) => { rowRefs.current.quality = node }}
+              className="relative"
+              onMouseEnter={() => openSection('quality')}
+              onMouseLeave={(event) => {
+                safeStartRef.current = { x: event.clientX, y: event.clientY }
+                scheduleSubmenuClose(220)
+              }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={activeSection === 'quality'}
+                onClick={() => { if (activeSection !== 'quality') { openSection('quality') } else { cancelSubmenuClose() } }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-muted"
+              >
+                <Play className="h-4 w-4 shrink-0" />
+                <span className="flex-1">{t('qualitySetting')}</span>
+                <span className="text-[12px] text-muted-foreground">{qualitySummary}</span>
+                <ChevronRight
+                  className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${activeSection === 'quality' ? (flyoutSide === 'left' ? 'rotate-180' : 'rotate-90') : ''}`}
+                />
+              </button>
+
+              {activeSection === 'quality' && (
+                <div
+                  ref={submenuRef}
+                  role="menu"
+                  aria-label={t('qualitySetting')}
+                  onMouseEnter={cancelSubmenuClose}
+                  onMouseLeave={() => scheduleSubmenuClose(140)}
+                  className={`absolute bottom-0 w-36 max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl ${flyoutSide === 'right' ? 'left-full ml-2' : 'right-full mr-2'}`}
+                >
+                  {flyoutTriangle}
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={currentQuality === '720p'}
+                    onClick={() => chooseQuality('720p')}
+                    className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  >
+                    <span>{t('quality720')}</span>
+                    {currentQuality === '720p' && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={currentQuality === '1080p'}
+                    disabled={disabled1080}
+                    aria-disabled={disabled1080}
+                    onClick={() => chooseQuality('1080p')}
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-muted enabled:focus-visible:bg-muted enabled:focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span>{topQualityLabel}</span>
+                    {disabled1080 ? (
+                      <span className="text-[11px] text-muted-foreground">{state1080Label}</span>
+                    ) : currentQuality === '1080p' ? (
+                      <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />
+                    ) : null}
+                  </button>
+
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={isSourceQuality}
+                    disabled={!sourceQualityAvailable}
+                    aria-disabled={!sourceQualityAvailable}
+                    onClick={() => {
+                      if (!isSourceQuality) onToggleSourceQuality?.()
+                      closeMenu()
+                    }}
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-muted enabled:focus-visible:bg-muted enabled:focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span>{t('qualityOriginal')}</span>
+                    {!sourceQualityAvailable ? (
+                      <span className="text-[11px] text-muted-foreground">{t('qualityUnavailable')}</span>
+                    ) : isSourceQuality ? (
+                      <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />
+                    ) : null}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {showQualityRow && <div className="mx-2 my-1 h-px bg-border" />}
+
+          <div
+            ref={(node) => { rowRefs.current.guides = node }}
+            className="relative"
+            onMouseEnter={() => openSection('guides')}
+            onMouseLeave={(event) => {
+              safeStartRef.current = { x: event.clientX, y: event.clientY }
+              scheduleSubmenuClose(220)
+            }}
           >
-            <span>{t('quality720')}</span>
-            {currentQuality === '720p' && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
-          </button>
+            <button
+              type="button"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={activeSection === 'guides'}
+              onClick={() => { if (activeSection !== 'guides') { openSection('guides') } else { cancelSubmenuClose() } }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-muted"
+            >
+              <Frame className="h-4 w-4 shrink-0" />
+              <span className="flex-1">{t('guides')}</span>
+              <span className="text-[12px] text-muted-foreground">{guideAspect === 'off' ? 'Off' : guideAspect}</span>
+              <ChevronRight
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${activeSection === 'guides' ? (flyoutSide === 'left' ? 'rotate-180' : 'rotate-90') : ''}`}
+              />
+            </button>
+
+            {activeSection === 'guides' && (
+              <div
+                ref={submenuRef}
+                role="menu"
+                aria-label={t('guides')}
+                onMouseEnter={cancelSubmenuClose}
+                onMouseLeave={() => scheduleSubmenuClose(140)}
+                className={`absolute bottom-0 w-36 max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl ${flyoutSide === 'right' ? 'left-full ml-2' : 'right-full mr-2'}`}
+              >
+                {flyoutTriangle}
+                {GUIDE_ASPECT_OPTIONS.map((aspect) => (
+                  <button
+                    key={aspect}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={guideAspect === aspect}
+                    onClick={() => onGuideAspectChange(aspect)}
+                    className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  >
+                    <span>{aspect === 'off' ? 'Off' : aspect}</span>
+                    {guideAspect === aspect && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+                  </button>
+                ))}
+                <div className="mx-2 my-1 h-px bg-border" />
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={guideMaskVisible}
+                  onClick={onToggleGuideMask}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                >
+                  <span>{t('showMask')}</span>
+                  {guideMaskVisible && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mx-2 my-1 h-px bg-border" />
+
+          <div
+            ref={(node) => { rowRefs.current.platform = node }}
+            className="relative"
+            onMouseEnter={() => openSection('platform')}
+            onMouseLeave={(event) => {
+              safeStartRef.current = { x: event.clientX, y: event.clientY }
+              scheduleSubmenuClose(220)
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={activeSection === 'platform'}
+              onClick={() => { if (activeSection !== 'platform') { openSection('platform') } else { cancelSubmenuClose() } }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-muted"
+            >
+              <Smartphone className="h-4 w-4 shrink-0" />
+              <span className="flex-1">{t('platformPreview')}</span>
+              <span className="text-[12px] text-muted-foreground">{platformLabel(previewPlatform)}</span>
+              <ChevronRight
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${activeSection === 'platform' ? (flyoutSide === 'left' ? 'rotate-180' : 'rotate-90') : ''}`}
+              />
+            </button>
+
+            {activeSection === 'platform' && (
+              <div
+                ref={submenuRef}
+                role="menu"
+                aria-label={t('platformPreview')}
+                onMouseEnter={cancelSubmenuClose}
+                onMouseLeave={() => scheduleSubmenuClose(140)}
+                className={`absolute bottom-0 w-44 max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl ${flyoutSide === 'right' ? 'left-full ml-2' : 'right-full mr-2'}`}
+              >
+                {flyoutTriangle}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={previewPlatform === 'off'}
+                  onClick={() => choosePlatform('off')}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                >
+                  <span>Off</span>
+                  {previewPlatform === 'off' && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+                </button>
+                {PLATFORM_PREVIEW_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={previewPlatform === option.value}
+                    onClick={() => choosePlatform(option.value)}
+                    className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  >
+                    <span>{option.label}</span>
+                    {previewPlatform === option.value && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+                  </button>
+                ))}
+                <div className="mx-2 my-1 h-px bg-border" />
+                <p className="px-2 py-1 text-[10px] leading-snug text-muted-foreground">
+                  {t('platformPreviewNote')}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="mx-2 my-1 h-px bg-border" />
+
+          <div
+            ref={(node) => { rowRefs.current.speed = node }}
+            className="relative"
+            onMouseEnter={() => openSection('speed')}
+            onMouseLeave={(event) => {
+              safeStartRef.current = { x: event.clientX, y: event.clientY }
+              scheduleSubmenuClose(220)
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={activeSection === 'speed'}
+              onClick={() => { if (activeSection !== 'speed') { openSection('speed') } else { cancelSubmenuClose() } }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-muted"
+            >
+              <Gauge className="h-4 w-4 shrink-0" />
+              <span className="flex-1">{t('playbackSpeed')}</span>
+              <span className="text-[12px] text-muted-foreground">{playbackSpeed}×</span>
+              <ChevronRight
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${activeSection === 'speed' ? (flyoutSide === 'left' ? 'rotate-180' : 'rotate-90') : ''}`}
+              />
+            </button>
+
+            {activeSection === 'speed' && (
+              <div
+                ref={submenuRef}
+                role="menu"
+                aria-label={t('playbackSpeed')}
+                onMouseEnter={cancelSubmenuClose}
+                onMouseLeave={() => scheduleSubmenuClose(140)}
+                className={`absolute bottom-0 w-36 max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl ${flyoutSide === 'right' ? 'left-full ml-2' : 'right-full mr-2'}`}
+              >
+                {flyoutTriangle}
+                {SPEED_OPTIONS.map((speed) => (
+                  <button
+                    key={speed}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={Math.abs(playbackSpeed - speed) < 0.001}
+                    onClick={() => chooseSpeed(speed)}
+                    className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  >
+                    <span>{speed}×</span>
+                    {Math.abs(playbackSpeed - speed) < 0.001 && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mx-2 my-1 h-px bg-border" />
 
           <button
             type="button"
-            role="menuitemradio"
-            aria-checked={currentQuality === '1080p'}
-            disabled={disabled1080}
-            aria-disabled={disabled1080}
-            title={disabled1080 ? `${topQualityLabel} · ${state1080Label}` : topQualityLabel}
-            onClick={() => choose('1080p')}
-            className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 enabled:focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            role="menuitem"
+            onClick={() => {
+              closeMenu()
+              window.dispatchEvent(new CustomEvent('openShortcutsDialog'))
+            }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-muted"
           >
-            {disabled1080 ? (
-              <span>{topQualityLabel} · {state1080Label}</span>
-            ) : (
-              <>
-                <span>{topQualityLabel}</span>
-                {currentQuality === '1080p' && <Check aria-hidden="true" className="h-3.5 w-3.5 text-primary" />}
-              </>
-            )}
+            <Keyboard className="h-4 w-4 shrink-0" />
+            <span className="flex-1">{t('shortcuts')}</span>
           </button>
         </div>
       )}
@@ -635,6 +1064,14 @@ interface UtilityPlaybackButtonsProps {
   local1080Status?: string | null
   is1080Available: boolean
   local1080Label: string
+  playbackSpeed: number
+  onPlaybackSpeedChange: (speed: number) => void
+  guideAspect: GuideAspect
+  onGuideAspectChange: (aspect: GuideAspect) => void
+  guideMaskVisible: boolean
+  onToggleGuideMask: () => void
+  previewPlatform: PreviewPlatform
+  onPreviewPlatformChange: (platform: PreviewPlatform) => void
   currentQuality: '720p' | '1080p'
   onSelectQuality?: (quality: '720p' | '1080p') => void
   showVolume: boolean
@@ -657,6 +1094,14 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
   local1080Status,
   is1080Available,
   local1080Label,
+  playbackSpeed,
+  onPlaybackSpeedChange,
+  guideAspect,
+  onGuideAspectChange,
+  guideMaskVisible,
+  onToggleGuideMask,
+  previewPlatform,
+  onPreviewPlatformChange,
   currentQuality,
   onSelectQuality,
   showVolume,
@@ -683,15 +1128,6 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
           {isSourceQuality ? t('previewQuality') : t('sourceQuality')}
         </button>
       )}
-      {onSelectQuality && (
-        <QualityMenu
-          local1080Status={local1080Status ?? null}
-          is1080Available={is1080Available}
-          local1080Label={local1080Label}
-          currentQuality={currentQuality}
-          onSelectQuality={onSelectQuality}
-        />
-      )}
       <div
         className="relative"
         onMouseEnter={onVolumeMouseEnter}
@@ -699,7 +1135,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
       >
         <button
           onClick={onToggleMute}
-          className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:w-[32px]"
+          className="flex h-[29px] w-[29px] items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation"
           aria-label={isMuted ? t('unmute') : t('mute')}
           title={isMuted ? t('unmute') : t('mute')}
         >
@@ -732,7 +1168,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
 
       <button
         onClick={onToggleLoop}
-        className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:w-[32px] ${isLooping ? 'bg-foreground/10' : ''}`}
+        className={`flex h-[29px] w-[29px] items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation ${isLooping ? 'bg-foreground/10' : ''}`}
         aria-label={t('loop')}
         aria-pressed={isLooping}
         title={t('loop')}
@@ -742,7 +1178,7 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
 
       <button
         onClick={onToggleFullscreen}
-        className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation sm:h-[32px] sm:w-[32px]"
+        className="flex h-[29px] w-[29px] items-center justify-center rounded-md transition-colors hover:bg-foreground/10 active:bg-foreground/20 touch-manipulation"
         aria-label={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
         title={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
       >
@@ -752,6 +1188,25 @@ const UtilityPlaybackButtons = memo(function UtilityPlaybackButtons({
           <Maximize className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
         )}
       </button>
+
+      <PlayerSettingsMenu
+        playbackSpeed={playbackSpeed}
+        onPlaybackSpeedChange={onPlaybackSpeedChange}
+        guideAspect={guideAspect}
+        onGuideAspectChange={onGuideAspectChange}
+        guideMaskVisible={guideMaskVisible}
+        onToggleGuideMask={onToggleGuideMask}
+        previewPlatform={previewPlatform}
+        onPreviewPlatformChange={onPreviewPlatformChange}
+        local1080Status={local1080Status ?? null}
+        is1080Available={is1080Available}
+        local1080Label={local1080Label}
+        currentQuality={currentQuality}
+        onSelectQuality={onSelectQuality}
+        sourceQualityAvailable={sourceQualityAvailable}
+        isSourceQuality={isSourceQuality}
+        onToggleSourceQuality={onToggleSourceQuality}
+      />
     </div>
   )
 })
@@ -779,6 +1234,14 @@ function CustomVideoControls({
   local1080Status,
   is1080Available = false,
   local1080Label = '1080P',
+  playbackSpeed = 1,
+  onPlaybackSpeedChange = () => {},
+  guideAspect = 'off',
+  onGuideAspectChange = () => {},
+  guideMaskVisible = false,
+  onToggleGuideMask = () => {},
+  previewPlatform = 'off',
+  onPreviewPlatformChange = () => {},
   currentQuality = '720p',
   onSelectQuality,
   comments = [],
@@ -1344,6 +1807,14 @@ function CustomVideoControls({
           local1080Status={local1080Status}
           is1080Available={is1080Available}
           local1080Label={local1080Label}
+          playbackSpeed={playbackSpeed}
+          onPlaybackSpeedChange={onPlaybackSpeedChange}
+          guideAspect={guideAspect}
+          onGuideAspectChange={onGuideAspectChange}
+          guideMaskVisible={guideMaskVisible}
+          onToggleGuideMask={onToggleGuideMask}
+          previewPlatform={previewPlatform}
+          onPreviewPlatformChange={onPreviewPlatformChange}
           currentQuality={currentQuality}
           onSelectQuality={onSelectQuality}
           showVolume={showVolume}

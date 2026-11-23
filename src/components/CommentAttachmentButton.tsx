@@ -2,8 +2,8 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Loader2, Paperclip } from 'lucide-react'
-import { Button } from './ui/button'
+import { Loader2 } from 'lucide-react'
+import { AttachmentSparkleIcon } from './comment-composer-icons'
 import * as tus from 'tus-js-client'
 import { createTusAfterResponseHandler, createTusShouldRetryHandler, getTusUploadErrorMessage, resetTusAuthRetry } from '@/lib/tus-error'
 import { getTusChunkSizeBytes, TUS_RETRY_DELAYS_MS } from '@/lib/transfer-tuning'
@@ -310,19 +310,17 @@ const CommentAttachmentButton = forwardRef<CommentAttachmentHandle, CommentAttac
 
   return (
     <>
-      <Button
+      <button
         type="button"
-        variant="ghost"
-        size="icon"
         onClick={() => fileInputRef.current?.click()}
         disabled={disabled || uploading}
-        className="h-8 w-8 flex-shrink-0"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
         title={uploading ? uploadingLabel : t('attachFiles')}
         aria-label={uploading ? uploadingLabel : t('attachFiles')}
         aria-busy={uploading}
       >
-        {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-      </Button>
+        {uploading ? <Loader2 className="h-[24px] w-[24px] animate-spin" /> : <AttachmentSparkleIcon className="h-[24px] w-[24px]" />}
+      </button>
       <input
         ref={fileInputRef}
         type="file"

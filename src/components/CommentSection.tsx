@@ -59,8 +59,10 @@ interface CommentSectionProps {
   showInfoButton?: boolean
   /** 审片页右栏切换「讨论 / 信息」用；传入后信息在栏内直接渲染，不再弹窗。 */
   infoContent?: ReactNode
-  /** 批注可见范围选择器（公开/内部）：共享链接客户端页传 false——服务端对共享端一律强制公开。 */
+  /** 批注可见范围选择器（公开/内部）：无权限时仍显示，由 visibilitySelectorDisabled 置灰。 */
   showVisibilitySelector?: boolean
+  /** 访客等无可见范围权限的身份：选择器保留但不可点。 */
+  visibilitySelectorDisabled?: boolean
   /** 底部输入框是否展开；审片页收起右侧批注栏时一起折叠，但保留输入状态。 */
   showComposer?: boolean
   /** 「Enter 发送」提示 + 发送钮搬进输入框内、和画笔同一排；页内批注栏传 true，审片页保持原样。 */
@@ -93,6 +95,7 @@ export default function CommentSection({
   showInfoButton = true,
   infoContent,
   showVisibilitySelector = true,
+  visibilitySelectorDisabled = false,
   showComposer = true,
   sendInsideComposer = false,
   onMobileExpandedChange,
@@ -1132,6 +1135,7 @@ export default function CommentSection({
                 visibility={commentVisibility}
                 onVisibilityChange={setCommentVisibility}
                 showVisibilitySelector={showVisibilitySelector}
+                visibilitySelectorDisabled={visibilitySelectorDisabled}
                 sendInsideComposer={sendInsideComposer}
                 selectedTimestamp={selectedTimestamp}
                 selectedVideoFps={selectedVideoFps}
@@ -1158,8 +1162,6 @@ export default function CommentSection({
                 shareSlug={projectSlug}
                 pendingAnnotation={pendingAnnotation}
                 onStartDrawing={handleStartDrawing}
-                showShortcutsButton={showShortcutsButton}
-                onShowShortcuts={handleOpenShortcuts}
               />
             </div>
           </div>,

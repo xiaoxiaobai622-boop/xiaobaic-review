@@ -4,7 +4,8 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 're
 import { useTranslations } from 'next-intl'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
-import { Clock, Send, X, Keyboard, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square, Smile, Globe, Users, ChevronDown, Check, Loader2 } from 'lucide-react'
+import { Clock, X, Paperclip, Pencil, ArrowRight, ArrowUpRight, Square, Globe, Users, ChevronDown, Check, Loader2 } from 'lucide-react'
+import { CommentEmojiIcon, DrawAnnotationIcon, SendPlaneIcon } from './comment-composer-icons'
 import { formatTimecodeAs, formatTimeDisplay } from '@/lib/time-format'
 import { useTimeFormat } from '@/hooks/useTimeFormat'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
@@ -21,10 +22,12 @@ interface CommentInputProps {
   onSubmit: () => void
   loading: boolean
 
-  /** 批注可见范围（对标 frame.io 的 公共/内部）；只在工作室侧渲染，共享端由服务端强制公开。 */
+  /** 批注可见范围（对标 frame.io 的 公共/内部）；共享端访客固定公开。 */
   visibility?: 'PUBLIC' | 'INTERNAL'
   onVisibilityChange?: (visibility: 'PUBLIC' | 'INTERNAL') => void
   showVisibilitySelector?: boolean
+  /** 不能改可见范围时仍保留选择器，置灰不可点。 */
+  visibilitySelectorDisabled?: boolean
   /** 「Enter 发送」提示 + 发送钮搬进输入框内、和左下角画笔同一圈；页内批注栏传 true，审片页保持原样。 */
   sendInsideComposer?: boolean
 
@@ -70,10 +73,6 @@ interface CommentInputProps {
   // Annotation drawing
   pendingAnnotation?: boolean
   onStartDrawing?: (tool: DrawingTool) => void
-
-  // Optional shortcuts UI (share pages)
-  showShortcutsButton?: boolean
-  onShowShortcuts?: () => void
 }
 
 function findMentionToken(value: string, cursor: number): { start: number; query: string } | null {
@@ -92,6 +91,7 @@ export default function CommentInput({
   visibility = 'PUBLIC',
   onVisibilityChange,
   showVisibilitySelector = true,
+  visibilitySelectorDisabled = false,
   sendInsideComposer = false,
   selectedTimestamp,
   selectedVideoFps,
@@ -120,16 +120,20 @@ export default function CommentInput({
   maxCommentAttachments,
   pendingAnnotation = false,
   onStartDrawing,
-  showShortcutsButton = false,
-  onShowShortcuts,
 }: CommentInputProps) {
   const t = useTranslations('comments')
   const tCommon = useTranslations('common')
   const format = useTimeFormat()
   const isInlineReply = variant === 'inlineReply'
+  const visibilityLocked = !showVisibilitySelector || visibilitySelectorDisabled
+  const visibilityPillVisible = Boolean(onVisibilityChange) && (showVisibilitySelector || visibilitySelectorDisabled)
+  const visibilityTitle = visibilityLocked
+    ? '评论可见性：当前身份发布的批注固定公开'
+    : `评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [visOpen, setVisOpen] = useState(false)
+  const [drawOpen, setDrawOpen] = useState(false)
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionIndex, setMentionIndex] = useState(0)
@@ -137,11 +141,13 @@ export default function CommentInput({
   const editorRef = useRef<HTMLDivElement | null>(null)
   const emojiBtnRef = useRef<HTMLButtonElement | null>(null)
   const visBtnRef = useRef<HTMLButtonElement | null>(null)
+  const drawBtnRef = useRef<HTMLButtonElement | null>(null)
   const [isWideComposer, setIsWideComposer] = useState(false)
   const [simulatedText, setSimulatedText] = useState('')
   const [simulationSentence, setSimulationSentence] = useState('')
   const [simulationVisible, setSimulationVisible] = useState(false)
   const [isSimulating, setIsSimulating] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
   const [attachmentUploading, setAttachmentUploading] = useState(false)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const attachmentRef = useRef<CommentAttachmentHandle | null>(null)
@@ -151,6 +157,7 @@ export default function CommentInput({
   const hasSimulatedRef = useRef(false)
   const emojiId = useId()
   const visId = useId()
+  const drawId = useId()
 
   function toggleEmojiPicker() {
     setEmojiOpen(open => !open)
@@ -397,18 +404,6 @@ export default function CommentInput({
         />
         <div className="mt-2 flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">该版本已通过，批注功能已锁定</p>
-          {showShortcutsButton && onShowShortcuts && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onShowShortcuts}
-              className="hidden lg:inline-flex"
-            >
-              <Keyboard className="w-4 h-4 lg:mr-2" />
-              <span className="hidden lg:inline">{t('shortcuts')}</span>
-            </Button>
-          )}
         </div>
       </div>
     )
@@ -417,19 +412,19 @@ export default function CommentInput({
   const hasAttachments = pendingAttachments.length > 0
   const canSubmit = !loading && !attachmentUploading && Boolean(newComment.trim() || hasAttachments || pendingAnnotation)
   const canAttachFiles = Boolean(allowClientAssetUpload && selectedVideoIdProp && onAttachmentAdded)
-  const attachmentButton = canAttachFiles ? (
+  const attachmentButton = (
     <CommentAttachmentButton
       ref={attachmentRef}
-      videoId={selectedVideoIdProp as string}
+      videoId={selectedVideoIdProp ?? ''}
       shareToken={shareToken}
       shareSlug={shareSlug}
-      onAttachmentAdded={onAttachmentAdded!}
+      onAttachmentAdded={(attachment) => onAttachmentAdded?.(attachment)}
       onUploadError={onAttachmentErrorChange}
       onUploadingChange={setAttachmentUploading}
-      disabled={loading}
+      disabled={loading || !canAttachFiles}
       maxFiles={maxCommentAttachments}
     />
-  ) : null
+  )
   const timestampLabel =
     selectedTimestamp !== null && selectedTimestamp !== undefined
       ? formatTimeDisplay(selectedTimestamp, selectedVideoFps, selectedVideoDurationSeconds, format)
@@ -469,7 +464,7 @@ export default function CommentInput({
     </div>
   )
 
-  const drawingToolButtons = ([
+  const drawingMenuItems = ([
     ['freehand', Pencil, '画笔'],
     ['arrow', ArrowUpRight, '箭头'],
     ['rectangle', Square, '矩形'],
@@ -477,22 +472,46 @@ export default function CommentInput({
     <button
       key={tool}
       type="button"
+      role="menuitemradio"
+      aria-checked={activeDrawingTool === tool}
       onClick={() => {
         setActiveDrawingTool(tool)
         onStartDrawing?.(tool)
+        setDrawOpen(false)
       }}
       disabled={loading}
       className={cn(
-        'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
-        activeDrawingTool === tool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
+        'flex h-12 w-14 flex-col items-center justify-center gap-1 rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+        activeDrawingTool === tool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
       )}
       title={label}
       aria-label={label}
-      aria-pressed={activeDrawingTool === tool}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+      <span className="text-[10px] leading-none">{label}</span>
     </button>
   ))
+
+  const drawAnnotationTrigger = (
+    <button
+      ref={drawBtnRef}
+      type="button"
+      data-review-popup-trigger
+      aria-label="绘制批注"
+      title="绘制批注"
+      aria-haspopup="menu"
+      aria-expanded={drawOpen}
+      aria-controls={drawOpen ? drawId : undefined}
+      onClick={() => setDrawOpen(open => !open)}
+      disabled={loading}
+      className={cn(
+        'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+        activeDrawingTool && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+      )}
+    >
+      <DrawAnnotationIcon className="h-[24px] w-[24px]" />
+    </button>
+  )
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Allow Ctrl+Space and other Ctrl shortcuts to pass through to VideoPlayer
@@ -584,7 +603,9 @@ export default function CommentInput({
   return (
     <div className={cn(
       'relative flex-shrink-0',
-      isInlineReply ? 'bg-transparent' : 'rounded-[8px] bg-card px-2 pb-1 pt-[6.5px]',
+      isInlineReply
+        ? 'bg-transparent'
+        : 'rounded-[8px] bg-card px-2 pb-1 pt-[6.5px] transition-shadow duration-150 hover:shadow-[inset_0_0_0_9999px_hsl(var(--foreground)/0.05)] focus-within:shadow-none focus-within:hover:shadow-none',
       !sendInsideComposer && !isInlineReply && 'border-t border-border/70',
     )}
       onDragOver={handleAttachmentDragOver}
@@ -646,7 +667,12 @@ export default function CommentInput({
                   if (isSimulating) stopSimulation()
                   handleCommentChangeWithMentions(e.target.value, e.target.selectionStart ?? e.target.value.length)
                 }}
+                onFocus={() => {
+                  setIsFocused(true)
+                  if (isSimulating) stopSimulation()
+                }}
                 onBlur={() => {
+                  setIsFocused(false)
                   if (isSimulating) stopSimulation()
                 }}
                 onKeyDown={handleKeyDown}
@@ -657,8 +683,11 @@ export default function CommentInput({
                   'resize-none rounded-md text-sm',
                   isInlineReply
                     ? 'h-[64px] min-h-[64px] pb-2'
-                    : cn('h-[75px] min-h-[75px] text-center', sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2'),
-                  !isInlineReply && (isSimulating || newComment.length === 0) && 'caret-transparent',
+                    : cn(
+                        'h-[75px] min-h-[75px] border-0 bg-transparent text-center shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
+                        sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2',
+                      ),
+                  !isInlineReply && isSimulating && !isFocused && 'caret-transparent',
                 )}
                 rows={2}
               />
@@ -698,7 +727,7 @@ export default function CommentInput({
                   className={cn(
                     'pointer-events-none absolute top-2 select-none transition-opacity duration-150 ease-[var(--ease-standard)]',
                     isInlineReply ? 'left-3' : 'inset-x-0 flex justify-center',
-                    isSimulating ? 'opacity-0' : 'opacity-100',
+                    isSimulating || isFocused ? 'opacity-0' : 'opacity-100',
                   )}
                 >
                   <span className="comment-placeholder-shimmer select-none text-sm">
@@ -724,15 +753,6 @@ export default function CommentInput({
                   </span>
                 </span>
               )}
-              {onStartDrawing && !sendInsideComposer && (
-                <div
-                  className="absolute bottom-1 left-2 flex h-8 items-center gap-0.5 bg-transparent"
-                  role="toolbar"
-                  aria-label="画面批注工具"
-                >
-                  {drawingToolButtons}
-                </div>
-              )}
               <div
                 id="review-annotation-properties"
                 className="pointer-events-none absolute inset-x-1 top-1 z-10 flex justify-center overflow-x-auto [&>*]:pointer-events-auto"
@@ -741,18 +761,14 @@ export default function CommentInput({
                 // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
                 // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
                 <div className="pointer-events-none absolute bottom-1 inset-x-2 flex h-8 items-center justify-end gap-1.5">
-                  {/* 画笔/箭头/矩形 + 表情和时间码算一组：宽输入框里整体居中，窄栏仍靠左。 */}
+                  {/* 绘制批注入口 + 表情和时间码算一组：宽输入框里整体居中，窄栏仍靠左。 */}
                   <div
                     className={cn(
                       'pointer-events-auto flex min-w-0 items-center gap-1.5',
                       isWideComposer ? 'absolute left-1/2 top-0 -translate-x-1/2' : 'mr-auto',
                     )}
                   >
-                    {onStartDrawing && (
-                      <div className="flex h-8 items-center gap-0.5" role="toolbar" aria-label="画面批注工具">
-                        {drawingToolButtons}
-                      </div>
-                    )}
+                    {attachmentButton}
                     {onVisibilityChange && !commentsDisabled && (
                       <button
                         ref={emojiBtnRef}
@@ -766,52 +782,36 @@ export default function CommentInput({
                         data-review-popup-trigger
                         title="添加表情符号"
                       >
-                        <Smile className="h-4 w-4" />
+                        <CommentEmojiIcon className="h-[24px] w-[24px]" />
                       </button>
                     )}
-                    {attachmentButton}
+                    {onStartDrawing && drawAnnotationTrigger}
                     {sendInsideComposer && showTimecodePill && (
                       <div className={cn('shrink-0', isWideComposer && 'absolute left-full top-0 ml-2')}>
                         {renderTimecodePill(true)}
                       </div>
                     )}
                   </div>
-                  <p
-                    title={t('enterToSend')}
-                    className="hidden min-w-0 truncate text-right text-[10px] text-muted-foreground lg:block"
-                  >
-                    {t('enterToSend')}
-                  </p>
-                  {showVisibilitySelector && onVisibilityChange && (
+                  {visibilityPillVisible && onVisibilityChange && (
                     <button
                       ref={visBtnRef}
                       type="button"
                       data-review-mint-outline
                       onClick={toggleVisibilityDropdown}
-                      className={cn(styles.trigger, 'pointer-events-auto inline-flex h-[28px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-accent')}
+                      disabled={visibilityLocked}
+                      aria-disabled={visibilityLocked}
+                      className={cn(styles.trigger, 'pointer-events-auto inline-flex h-[28px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground/80 transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50')}
                       aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                       aria-expanded={visOpen}
                       aria-haspopup="menu"
                       aria-controls={visOpen ? visId : undefined}
                       data-review-popup-trigger
-                      title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}
+                      title={visibilityTitle}
                     >
                       {visibility === 'INTERNAL' ? <Users className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
                       <span>{visibility === 'INTERNAL' ? '内部' : '公共'}</span>
                       <ChevronDown className="h-3 w-3 text-muted-foreground" />
                     </button>
-                  )}
-                  {showShortcutsButton && onShowShortcuts && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={onShowShortcuts}
-                      className="pointer-events-auto hidden h-[28px] px-2 text-[11px] lg:inline-flex"
-                    >
-                      <Keyboard className="h-3.5 w-3.5 lg:mr-1" />
-                      <span>{t('shortcuts')}</span>
-                    </Button>
                   )}
                   <Button
                     data-review-mint-outline
@@ -819,11 +819,11 @@ export default function CommentInput({
                     variant="default"
                     disabled={!canSubmit}
                     size="icon"
-                    className="pointer-events-auto h-[28px] w-[28px] shrink-0"
+                    className="pointer-events-auto h-[28px] w-[40px] shrink-0"
                     aria-label={loading ? tCommon('sending') : tCommon('send')}
                     aria-busy={loading}
                   >
-                    {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    {loading ? <Loader2 style={{ width: 24, height: 24 }} className="animate-spin" /> : <SendPlaneIcon style={{ width: 24, height: 24 }} />}
                   </Button>
                 </div>
               )}
@@ -845,7 +845,7 @@ export default function CommentInput({
                       data-review-popup-trigger
                       title="添加表情符号"
                     >
-                      <Smile className="h-4 w-4" />
+                      <CommentEmojiIcon className="h-[24px] w-[24px]" />
                     </button>
                   )}
                 </div>
@@ -868,7 +868,7 @@ export default function CommentInput({
                     aria-label={loading ? tCommon('sending') : tCommon('send')}
                     aria-busy={loading}
                   >
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    {loading ? <Loader2 style={{ width: 24, height: 24 }} className="animate-spin" /> : <SendPlaneIcon style={{ width: 24, height: 24 }} />}
                   </Button>
                 </div>
               </div>
@@ -889,38 +889,32 @@ export default function CommentInput({
                     data-review-popup-trigger
                     title="添加表情符号"
                   >
-                    <Smile className="h-4 w-4" />
+                    <CommentEmojiIcon className="h-[24px] w-[24px]" />
                   </button>
                 )}
+                {!sendInsideComposer && onStartDrawing && drawAnnotationTrigger}
                 {!sendInsideComposer && showTimecodePill && renderTimecodePill(false)}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {!sendInsideComposer && (
-                  <p className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block">{t('enterToSend')}</p>
-                )}
-                {!sendInsideComposer && showVisibilitySelector && onVisibilityChange && (
+                {!sendInsideComposer && visibilityPillVisible && onVisibilityChange && (
                   <button
                     ref={visBtnRef}
                     type="button"
                     onClick={toggleVisibilityDropdown}
-                    className={cn(styles.trigger, 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-accent')}
+                    disabled={visibilityLocked}
+                    aria-disabled={visibilityLocked}
+                    className={cn(styles.trigger, 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground/80 transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50')}
                     aria-label={`评论可见性：${visibility === 'INTERNAL' ? '内部' : '公共'}`}
                     aria-expanded={visOpen}
                     aria-haspopup="menu"
                     aria-controls={visOpen ? visId : undefined}
                     data-review-popup-trigger
-                    title={`评论可见性：${visibility === 'INTERNAL' ? '仅限拥有权限的成员查看' : '所有成员及共享链接查看者均可见'}`}
+                    title={visibilityTitle}
                   >
                     {visibility === 'INTERNAL' ? <Users className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
                     <span>{visibility === 'INTERNAL' ? '内部' : '公共'}</span>
                     <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
-                )}
-                {!sendInsideComposer && showShortcutsButton && onShowShortcuts && (
-                  <Button type="button" variant="outline" size="sm" onClick={onShowShortcuts} className="hidden h-[28px] px-2 text-[11px] lg:inline-flex">
-                    <Keyboard className="h-4 w-4 lg:mr-2" />
-                    <span className="hidden lg:inline">{t('shortcuts')}</span>
-                  </Button>
                 )}
                 {!sendInsideComposer && (
                   <Button
@@ -928,15 +922,20 @@ export default function CommentInput({
                     variant="default"
                     disabled={!canSubmit}
                     size="icon"
-                    className="h-[28px] w-[28px] shrink-0"
+                    className="h-[28px] w-[40px] shrink-0"
                   >
-                    <Send className="w-4 h-4" />
+                    <SendPlaneIcon style={{ width: 24, height: 24 }} />
                   </Button>
                 )}
               </div>
             </div>
             ) : null}
 
+            {!isInlineReply && onStartDrawing && (
+              <ReviewPopup id={drawId} open={drawOpen} onOpenChange={setDrawOpen} anchor={drawBtnRef} label="绘制批注" role="menu" align="start" width={192}>
+                <div className="flex items-center gap-0.5">{drawingMenuItems}</div>
+              </ReviewPopup>
+            )}
             <ReviewPopup id={emojiId} open={emojiOpen} onOpenChange={setEmojiOpen} anchor={emojiBtnRef} returnFocus={textareaRef} label="选择表情符号" align="center" width={298}>
               <EmojiPicker onSelect={insertEmoji} onClose={() => setEmojiOpen(false)} />
             </ReviewPopup>
@@ -968,13 +967,6 @@ export default function CommentInput({
             </p>
           )}
 
-          {!isInlineReply && (
-            <div className="mt-1 sm:hidden">
-              <p className="text-xs text-muted-foreground">
-                {t('enterToSend')}
-              </p>
-            </div>
-          )}
         </>
       )}
     </div>

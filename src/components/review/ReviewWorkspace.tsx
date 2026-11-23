@@ -381,6 +381,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
                     onToggleVisibility={actions.onToggleComments}
                     showToggleButton={false}
                     showVisibilitySelector={capabilities.canSetCommentVisibility}
+                    visibilitySelectorDisabled={!capabilities.canSetCommentVisibility}
                     showComposer={showCommentPanel}
                     infoContent={(
                       <ReviewInfoPanel
