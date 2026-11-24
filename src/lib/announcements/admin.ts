@@ -39,6 +39,16 @@ import {
 } from './stats'
 import { addHours, announcementNow } from './time'
 import { validateAnnouncementPayload, type NormalizedAnnouncementPayload } from './validation'
+import {
+  copyAnnouncementContentHtml,
+  loadAnnouncementContentHtml,
+  saveAnnouncementContentHtml,
+} from './rich-content'
+import {
+  copyAnnouncementCategories,
+  loadAnnouncementCategories,
+  saveAnnouncementCategories,
+} from './category-content'
 import { maskPhoneDisplay } from '@/lib/phone-display'
 
 const adminInclude = {
@@ -168,6 +178,8 @@ function mapAdminAnnouncement(
   stats: ReturnType<typeof toListStats>,
   currentAudience: number | null,
   currentAudienceError: string | null,
+  contentHtml: string | null = null,
+  categories: string[] = [],
 ) {
   const source = audienceSourceOf(announcement)
   const target = announcement.user
@@ -179,6 +191,8 @@ function mapAdminAnnouncement(
     id: announcement.id,
     title: announcement.title,
     content: announcement.content,
+    contentHtml,
+    categories,
     type: announcement.type,
     typeLabel: TYPE_LABELS[announcement.type as AnnouncementType] || announcement.type,
     status: announcement.status,
@@ -279,7 +293,7 @@ export async function getAdminAnnouncement(id: string, statsFilters: StatsFilter
   })
   if (!announcement) return null
 
-  const [audience, stats, audit] = await Promise.all([
+  const [audience, stats, audit, contentHtml, categories] = await Promise.all([
     currentAudienceFor(announcement),
     loadStatsForAnnouncement({
       id: announcement.id,
@@ -289,6 +303,8 @@ export async function getAdminAnnouncement(id: string, statsFilters: StatsFilter
       filters: statsFilters,
     }),
     listAnnouncementAudit(announcement.id),
+    loadAnnouncementContentHtml(announcement.id),
+    loadAnnouncementCategories(announcement.id),
   ])
 
   const totals = await loadEventTotalsForAnnouncements([announcement.id])
@@ -303,6 +319,8 @@ export async function getAdminAnnouncement(id: string, statsFilters: StatsFilter
     }),
     audience.count,
     audience.error,
+    contentHtml,
+    categories,
   )
 
   return { item, stats, audit }
@@ -330,19 +348,32 @@ function payloadData(payload: NormalizedAnnouncementPayload) {
 }
 
 export async function createAnnouncementDraft(payload: NormalizedAnnouncementPayload, actor: AuditActor): Promise<string> {
-  const created = await prisma.platformAnnouncement.create({
-    data: {
-      ...payloadData(payload),
-      status: 'DRAFT',
-      publishedAt: null,
-      audienceCount: null,
-      audienceResolvedAt: null,
-      createdBy: actor.id,
-      version: 1,
-      isTest: false,
-      rules: { create: rulesCreate(payload.audienceRules) },
-    },
-    select: { id: true },
+  const created = await prisma.$transaction(async (tx) => {
+    const row = await tx.platformAnnouncement.create({
+      data: {
+        ...payloadData(payload),
+        status: 'DRAFT',
+        publishedAt: null,
+        audienceCount: null,
+        audienceResolvedAt: null,
+        createdBy: actor.id,
+        version: 1,
+        isTest: false,
+        rules: { create: rulesCreate(payload.audienceRules) },
+      },
+      select: { id: true },
+    })
+    await saveAnnouncementContentHtml(
+      row.id,
+      payload.type === 'RELEASE' ? payload.contentHtml : null,
+      tx,
+    )
+    await saveAnnouncementCategories(
+      row.id,
+      payload.type === 'RELEASE' ? payload.categories : [],
+      tx,
+    )
+    return row
   })
 
   await recordAnnouncementAudit({
@@ -373,12 +404,15 @@ export async function updateDraftAnnouncement(
     }
   }
 
+  const existingCategories = await loadAnnouncementCategories(id)
+  const nextCategories = payload.type === 'RELEASE' ? payload.categories : []
   const changed = [
     existing.title !== payload.title ? 'title' : null,
     existing.content !== payload.content ? 'content' : null,
     existing.type !== payload.type ? 'type' : null,
     existing.primaryMode !== payload.primaryMode ? 'primaryMode' : null,
     existing.priority !== payload.priority ? 'priority' : null,
+    JSON.stringify(existingCategories) !== JSON.stringify(nextCategories) ? 'categories' : null,
     'audienceRules',
   ].filter(Boolean)
 
@@ -391,6 +425,12 @@ export async function updateDraftAnnouncement(
     await tx.announcementAudienceRule.createMany({
       data: rulesCreate(payload.audienceRules).map((rule) => ({ ...rule, announcementId: id })),
     })
+    await saveAnnouncementContentHtml(
+      id,
+      payload.type === 'RELEASE' ? payload.contentHtml : null,
+      tx,
+    )
+    await saveAnnouncementCategories(id, nextCategories, tx)
   })
 
   await recordAnnouncementAudit({
@@ -564,33 +604,38 @@ export async function copyAnnouncement(id: string, actor: AuditActor): Promise<A
   })
   if (!source) return { ok: false, status: 404, code: 'NOT_FOUND', error: '公告不存在' }
 
-  const created = await prisma.platformAnnouncement.create({
-    data: {
-      title: source.title,
-      content: source.content,
-      locale: source.locale,
-      type: source.type,
-      primaryMode: source.primaryMode,
-      priority: source.priority,
-      startAt: null,
-      endAt: null,
-      ackRequired: source.ackRequired,
-      ctaLabel: source.ctaLabel,
-      ctaUrl: source.ctaUrl,
-      imageUrl: source.imageUrl,
-      status: 'DRAFT',
-      publishedAt: null,
-      audienceCount: null,
-      audienceResolvedAt: null,
-      version: source.version + 1,
-      copiedFromId: source.id,
-      createdBy: actor.id,
-      isTest: false,
-      rules: {
-        create: source.rules.map((rule) => ({ kind: rule.kind, value: rule.value, mode: rule.mode })),
+  const created = await prisma.$transaction(async (tx) => {
+    const row = await tx.platformAnnouncement.create({
+      data: {
+        title: source.title,
+        content: source.content,
+        locale: source.locale,
+        type: source.type,
+        primaryMode: source.primaryMode,
+        priority: source.priority,
+        startAt: null,
+        endAt: null,
+        ackRequired: source.ackRequired,
+        ctaLabel: source.ctaLabel,
+        ctaUrl: source.ctaUrl,
+        imageUrl: source.imageUrl,
+        status: 'DRAFT',
+        publishedAt: null,
+        audienceCount: null,
+        audienceResolvedAt: null,
+        version: source.version + 1,
+        copiedFromId: source.id,
+        createdBy: actor.id,
+        isTest: false,
+        rules: {
+          create: source.rules.map((rule) => ({ kind: rule.kind, value: rule.value, mode: rule.mode })),
+        },
       },
-    },
-    select: { id: true },
+      select: { id: true },
+    })
+    await copyAnnouncementContentHtml(source.id, row.id, tx)
+    await copyAnnouncementCategories(source.id, row.id, tx)
+    return row
   })
 
   await recordAnnouncementAudit({
@@ -637,19 +682,24 @@ export async function testSendAnnouncement(id: string, actor: AuditActor): Promi
     return { ok: false, status: 400, code: 'INVALID_TEST', error: testPayload.errors.join('；') }
   }
 
-  const created = await prisma.platformAnnouncement.create({
-    data: {
-      ...payloadData(testPayload.data),
-      status: 'ACTIVE',
-      publishedAt: now,
-      audienceCount: 1,
-      audienceResolvedAt: now,
-      createdBy: actor.id,
-      version: 1,
-      isTest: true,
-      rules: { create: rulesCreate(testPayload.data.audienceRules) },
-    },
-    select: { id: true },
+  const created = await prisma.$transaction(async (tx) => {
+    const row = await tx.platformAnnouncement.create({
+      data: {
+        ...payloadData(testPayload.data),
+        status: 'ACTIVE',
+        publishedAt: now,
+        audienceCount: 1,
+        audienceResolvedAt: now,
+        createdBy: actor.id,
+        version: 1,
+        isTest: true,
+        rules: { create: rulesCreate(testPayload.data.audienceRules) },
+      },
+      select: { id: true },
+    })
+    await copyAnnouncementContentHtml(source.id, row.id, tx)
+    await copyAnnouncementCategories(source.id, row.id, tx)
+    return row
   })
 
   await recordAnnouncementAudit({

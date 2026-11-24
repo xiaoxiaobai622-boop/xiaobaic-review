@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bell, Settings } from 'lucide-react'
 import RailPanel from '@/components/RailPanel'
@@ -173,7 +173,10 @@ export default function RailNotifications({ className, enabled = true }: { class
   const [inAppLoading, setInAppLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const feedState = useAnnouncementFeed()
-  const platformItems = feedState.data?.items ?? EMPTY_PLATFORM_ITEMS
+  const platformItems = useMemo(
+    () => (feedState.data?.items ?? EMPTY_PLATFORM_ITEMS).filter((item) => item.type !== 'RELEASE'),
+    [feedState.data?.items],
+  )
   const platformFailed = feedState.error && !feedState.data
   const historyHasMore = feedState.data?.historyHasMore ?? false
   const historyLoading = feedState.historyLoading

@@ -3,7 +3,7 @@
 import { PlatformAuthProvider } from '@/components/PlatformAuthProvider'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Headphones, LayoutDashboard, Megaphone, MessageSquarePlus, Settings2, ShieldCheck, UserCog, Users, type LucideIcon } from 'lucide-react'
+import { Headphones, LayoutDashboard, Megaphone, MessageSquarePlus, Settings2, ShieldCheck, Sparkles, UserCog, Users, type LucideIcon } from 'lucide-react'
 
 const sections: Array<{ label: string; href: string; icon: LucideIcon }> = [
   { label: '团队总览', href: '/platform', icon: LayoutDashboard },
@@ -11,6 +11,7 @@ const sections: Array<{ label: string; href: string; icon: LucideIcon }> = [
   { label: '平台账号', href: '/platform/users', icon: UserCog },
   { label: '平台设置', href: '/platform/settings', icon: Settings2 },
   { label: '公告', href: '/platform/announcements', icon: Megaphone },
+  { label: '新增功能', href: '/platform/whats-new', icon: Sparkles },
   { label: '客服', href: '/platform/support', icon: Headphones },
   { label: '消息与反馈', href: '/platform/messages', icon: MessageSquarePlus },
   { label: '安全', href: '/platform/security', icon: ShieldCheck },

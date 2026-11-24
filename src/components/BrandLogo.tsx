@@ -8,13 +8,14 @@ type BrandLogoProps = {
   height?: number // preferred height; width auto for custom SVGs
   className?: string
   ariaHidden?: boolean
+  alt?: string
 }
 
 /**
  * Displays a configured company logo, otherwise the 逐帧审阅 product mark.
  * Fetches brandingLogoPath from /api/settings/theme (cached in localStorage).
  */
-function BrandLogo({ size = 64, height, className, ariaHidden = false }: BrandLogoProps) {
+function BrandLogo({ size = 64, height, className, ariaHidden = false, alt }: BrandLogoProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const resolvedHeight = height || size
 
@@ -46,7 +47,7 @@ function BrandLogo({ size = 64, height, className, ariaHidden = false }: BrandLo
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={logoUrl}
-        alt="Company logo"
+        alt={alt ?? 'Company logo'}
         height={resolvedHeight}
         style={{ height: `${resolvedHeight}px`, width: 'auto', maxWidth: `${resolvedHeight * 3}px` }}
         className={cn('shrink-0', className)}
@@ -67,7 +68,7 @@ function BrandLogo({ size = 64, height, className, ariaHidden = false }: BrandLo
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src="/brand/logo.png"
-      alt="逐帧审阅"
+      alt={alt ?? '逐帧审阅'}
       width={resolvedHeight}
       height={resolvedHeight}
       className={cn('shrink-0 object-contain', className)}

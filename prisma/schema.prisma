@@ -1509,7 +1509,12 @@ model OrderEvent {
 model PlatformAnnouncement {
   id        String   @id @default(cuid())
   title     String
+  // Plain-text excerpt: cards, inbox and the legacy carriers keep using this.
   content   String
+  // Sanitized rich HTML for RELEASE articles; nullable for old rows and other types.
+  contentHtml String?
+  // Slug list from ANNOUNCEMENT_CATEGORIES; empty means the article page falls back to product-updates.
+  categories String[] @default([])
   // Legacy direct-message target. New announcements use AnnouncementAudienceRule.
   // null = broadcast (legacy); non-null = targeted at that one user.
   userId    String?

@@ -5,6 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, Loader2, Plus, Save, Send, Trash2, UploadCloud } from 'lucide-react'
 import { appNotice } from '@/components/AppDialogProvider'
+import AnnouncementImageField from '@/components/announcements/AnnouncementImageField'
+import RichTextEditor from '@/components/announcements/RichTextEditor'
+import WhatsNewArticle from '@/components/announcements/WhatsNewArticle'
+import WhatsNewCard from '@/components/announcements/WhatsNewCard'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -34,6 +38,13 @@ import {
   TYPE_LABELS,
   ANNOUNCEMENT_TYPES,
 } from '@/lib/announcements/constants'
+import { WHATS_NEW_CARD_SUMMARY_MAX } from '@/lib/announcements/card-summary'
+import {
+  ANNOUNCEMENT_CATEGORIES,
+  DEFAULT_RELEASE_CATEGORY_SLUG,
+  type AnnouncementCategorySlug,
+} from '@/lib/announcements/categories'
+import { plainTextToArticleHtml } from '@/lib/announcements/rich-text'
 import { fromBeijingInputValue, toBeijingInputValue } from '@/lib/announcements/time'
 import { validateAnnouncementPayload } from '@/lib/announcements/validation'
 import type {
@@ -50,6 +61,7 @@ interface FeatureOption { key: string; name: string }
 const EMPTY_VALUES: AnnouncementFormValues = {
   title: '',
   content: '',
+  contentHtml: '',
   locale: 'zh',
   type: 'ANNOUNCEMENT',
   primaryMode: 'INBOX',
@@ -60,7 +72,53 @@ const EMPTY_VALUES: AnnouncementFormValues = {
   ctaLabel: '',
   ctaUrl: '',
   imageUrl: '',
+  categories: [],
   audienceRules: [{ kind: 'ALL', value: '', mode: 'INCLUDE' }],
+}
+
+const RELEASE_PRESET_VALUES: AnnouncementFormValues = {
+  ...EMPTY_VALUES,
+  type: 'RELEASE',
+  primaryMode: 'INBOX',
+  categories: [DEFAULT_RELEASE_CATEGORY_SLUG],
+}
+
+function articleHtmlFromItem(item: AdminAnnouncementDetail['item']): string {
+  if (item.contentHtml) return item.contentHtml
+  return item.type === 'RELEASE' ? plainTextToArticleHtml(item.content) : ''
+}
+
+function whatsNewPreviewDate(values: AnnouncementFormValues): string {
+  const start = values.startAt ? fromBeijingInputValue(values.startAt) : null
+  return (start ?? new Date()).toISOString()
+}
+
+function ReleasePreviewCard({
+  values,
+  width,
+  compact = false,
+  className,
+}: {
+  values: AnnouncementFormValues
+  width?: number
+  compact?: boolean
+  className?: string
+}) {
+  return (
+    <div className={cn('mx-auto w-full', className)} style={width ? { width, maxWidth: '100%' } : undefined}>
+      <WhatsNewCard
+        title={values.title || '功能标题'}
+        content={values.content || '功能介绍会显示在这里。'}
+        imageUrl={values.imageUrl || null}
+        ctaLabel={values.ctaLabel}
+        ctaUrl={values.ctaUrl}
+        date={whatsNewPreviewDate(values)}
+        interactive={false}
+        compact={compact}
+        priority
+      />
+    </div>
+  )
 }
 
 const fieldClass = 'h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring'
@@ -71,6 +129,7 @@ function initialValuesFromDetail(detail: AdminAnnouncementDetail): AnnouncementF
   return {
     title: item.title,
     content: item.content,
+    contentHtml: articleHtmlFromItem(item),
     locale: item.locale,
     type: item.type,
     primaryMode: item.primaryMode,
@@ -81,6 +140,7 @@ function initialValuesFromDetail(detail: AdminAnnouncementDetail): AnnouncementF
     ctaLabel: item.ctaLabel || '',
     ctaUrl: item.ctaUrl || '',
     imageUrl: item.imageUrl || '',
+    categories: Array.isArray(item.categories) ? item.categories : [],
     audienceRules: item.audienceRules.length > 0
       ? item.audienceRules.map((rule) => ({
           kind: rule.kind,
@@ -97,6 +157,7 @@ function payloadFromValues(values: AnnouncementFormValues) {
   return {
     title: values.title,
     content: values.content,
+    contentHtml: values.contentHtml || null,
     locale: values.locale,
     type: values.type,
     primaryMode: values.primaryMode,
@@ -107,6 +168,7 @@ function payloadFromValues(values: AnnouncementFormValues) {
     ctaLabel: values.ctaLabel || null,
     ctaUrl: values.ctaUrl || null,
     imageUrl: values.imageUrl || null,
+    categories: values.categories,
     audienceRules: values.audienceRules.map((rule) => ({
       kind: rule.kind,
       value: rule.kind === 'ALL' ? null : (rule.value || null),
@@ -191,12 +253,91 @@ function PreviewBody({ values }: { values: AnnouncementFormValues }) {
   )
 }
 
+function ReleasePreviewPanel({ values }: { values: AnnouncementFormValues }) {
+  const [view, setView] = useState<'card' | 'article'>('card')
+  const [width, setWidth] = useState<360 | 390>(360)
+  const articleHtml = values.contentHtml || plainTextToArticleHtml(values.content)
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div role="tablist" aria-label="预览类型" className="flex rounded-md bg-muted p-0.5">
+          {([
+            ['card', '卡片'],
+            ['article', '文章'],
+          ] as const).map(([nextView, label]) => (
+            <button
+              key={nextView}
+              type="button"
+              role="tab"
+              aria-selected={view === nextView}
+              onClick={() => setView(nextView)}
+              className={cn(
+                'rounded px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                view === nextView ? 'bg-background text-foreground shadow-elevation-sm' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {view === 'card' ? (
+          <div role="tablist" aria-label="预览宽度" className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-[11px] text-muted-foreground">预览宽度</span>
+            {([360, 390] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={width === value}
+                onClick={() => setWidth(value)}
+                className={cn(
+                  'rounded px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  width === value ? 'bg-primary-visible text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                )}
+              >
+                {value}px
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {view === 'card' ? (
+        <div className="w-full overflow-x-auto rounded-lg border border-border bg-muted/30 p-3">
+          <div className="mx-auto rounded-lg bg-popover" style={{ width, maxWidth: '100%' }}>
+            <ReleasePreviewCard values={values} className="px-3 py-4" />
+          </div>
+        </div>
+      ) : (
+        <div className="w-full overflow-x-auto rounded-lg border border-border bg-muted/30 p-3">
+          <div className="mx-auto w-[640px] max-w-full rounded-xl bg-popover p-5 sm:p-7">
+            <WhatsNewArticle
+              title={values.title || '功能标题'}
+              content={values.content || '功能介绍会显示在这里。'}
+              contentHtml={articleHtml}
+              imageUrl={values.imageUrl || null}
+              ctaLabel={values.ctaLabel}
+              ctaUrl={values.ctaUrl}
+              date={whatsNewPreviewDate(values)}
+              interactive={false}
+            />
+          </div>
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">
+        与工作台「新增功能」面板/文章页共用当前内容；预览不会写入曝光、已读或点击，也不会发布。
+      </p>
+    </div>
+  )
+}
+
 function PublishDialog({
   open,
   onOpenChange,
   values,
   audienceCount,
   audienceCurrent,
+  releaseMode,
   onConfirm,
   publishing,
 }: {
@@ -205,6 +346,7 @@ function PublishDialog({
   values: AnnouncementFormValues
   audienceCount: number | null
   audienceCurrent: number | null
+  releaseMode: boolean
   onConfirm: (confirmAllModal: boolean) => void
   publishing: boolean
 }) {
@@ -229,14 +371,22 @@ function PublishDialog({
         <div className="space-y-2 text-sm">
           <p className="font-medium text-foreground">{values.title}</p>
           <dl className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-1.5 text-xs">
-            <dt className="text-muted-foreground">类型</dt><dd>{TYPE_LABELS[values.type as keyof typeof TYPE_LABELS]}</dd>
+            <dt className="text-muted-foreground">类型</dt><dd>{releaseMode ? '新增功能' : TYPE_LABELS[values.type as keyof typeof TYPE_LABELS]}</dd>
             <dt className="text-muted-foreground">主承载</dt><dd>{MODE_LABELS[values.primaryMode as keyof typeof MODE_LABELS]}</dd>
-            <dt className="text-muted-foreground">优先级</dt><dd>{values.priority}</dd>
+            {!releaseMode ? <><dt className="text-muted-foreground">优先级</dt><dd>{values.priority}</dd></> : null}
             <dt className="text-muted-foreground">受众</dt><dd>{audienceCount === null ? '未知' : `${audienceCount} 人`}{audienceCurrent !== null && audienceCurrent !== audienceCount ? `（发布时快照；当前解析 ${audienceCurrent} 人）` : ''}</dd>
             <dt className="text-muted-foreground">开始</dt><dd>{values.startAt ? formatBeijingDateTime(fromBeijingInputValue(values.startAt) || new Date()) : '立即'}</dd>
             <dt className="text-muted-foreground">结束</dt><dd>{values.endAt ? formatBeijingDateTime(fromBeijingInputValue(values.endAt) || new Date()) : '不设结束'}</dd>
-            <dt className="text-muted-foreground">需已知晓</dt><dd>{values.ackRequired ? '是' : '否'}</dd>
+            {!releaseMode ? <><dt className="text-muted-foreground">需已知晓</dt><dd>{values.ackRequired ? '是' : '否'}</dd></> : null}
           </dl>
+          {values.type === 'RELEASE' ? (
+            <div className="rounded-md border border-border bg-muted/30 p-3">
+              <p className="mb-2 text-[11px] text-muted-foreground">发布后的「新增功能」卡片</p>
+              <div className="mx-auto w-[280px] max-w-full rounded-lg bg-popover px-3 py-3">
+                <ReleasePreviewCard values={values} compact />
+              </div>
+            </div>
+          ) : null}
           {allModal ? (
             <label className="mt-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive-visible p-2 text-xs text-destructive">
               <input
@@ -266,9 +416,22 @@ function PublishDialog({
   )
 }
 
-export default function AnnouncementForm({ announcementId }: { announcementId?: string }) {
+export default function AnnouncementForm({
+  announcementId,
+  presetType,
+}: {
+  announcementId?: string
+  /** RELEASE-only console route; reuses this form instead of a second publish page. */
+  presetType?: 'RELEASE'
+}) {
   const router = useRouter()
-  const [values, setValues] = useState<AnnouncementFormValues>(EMPTY_VALUES)
+  const isReleasePreset = presetType === 'RELEASE'
+  const basePath = isReleasePreset ? '/platform/whats-new' : '/platform/announcements'
+  const [values, setValues] = useState<AnnouncementFormValues>(
+    () => (isReleasePreset ? RELEASE_PRESET_VALUES : EMPTY_VALUES),
+  )
+  const [editorInitialHtml, setEditorInitialHtml] = useState('')
+  const isReleaseType = values.type === 'RELEASE'
   const [detail, setDetail] = useState<AdminAnnouncementDetail | null>(null)
   const [loading, setLoading] = useState(Boolean(announcementId))
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -317,9 +480,15 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
         const data = await response.json() as AdminAnnouncementDetail
         if (cancelled) return
         setDetail(data)
-        setValues(initialValuesFromDetail(data))
+        const nextValues = initialValuesFromDetail(data)
+        setValues(nextValues)
+        setEditorInitialHtml(nextValues.contentHtml)
         setSavedId(data.item.id)
-        if (data.item.status !== 'DRAFT') setLoadError('这条公告已发布/已排期，不能直接编辑；请复制成新版本。')
+        if (isReleasePreset && data.item.type !== 'RELEASE') {
+          setLoadError('这条公告不是新增功能；请到「公告」里编辑，或返回新增功能列表。')
+        } else if (data.item.status !== 'DRAFT') {
+          setLoadError('这条公告已发布/已排期，不能直接编辑；请复制成新版本。')
+        }
       } catch {
         if (!cancelled) setLoadError('公告读取失败，请返回列表重试。')
       } finally {
@@ -327,11 +496,26 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
       }
     })()
     return () => { cancelled = true }
-  }, [announcementId])
+  }, [announcementId, isReleasePreset])
 
   const setValue = <K extends keyof AnnouncementFormValues>(key: K, value: AnnouncementFormValues[K]) => {
     setValues((current) => ({ ...current, [key]: value }))
   }
+
+  const handleEditorChange = (html: string, plainText: string) => {
+    setValues((current) => ({
+      ...current,
+      contentHtml: html,
+      content: plainText.slice(0, ANNOUNCEMENT_CONTENT_MAX),
+    }))
+  }
+
+  const payloadForValues = useCallback(() => {
+    const payload = payloadFromValues(values)
+    return isReleasePreset
+      ? { ...payload, type: 'RELEASE', ackRequired: false }
+      : payload
+  }, [isReleasePreset, values])
 
   const rulePayload = useMemo(() => values.audienceRules.map((rule) => ({
     kind: rule.kind,
@@ -383,30 +567,30 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
   }
 
   const validate = useCallback((publishingNow: boolean): boolean => {
-    const validated = validateAnnouncementPayload(payloadFromValues(values), { publishing: publishingNow })
+    const validated = validateAnnouncementPayload(payloadForValues(), { publishing: publishingNow })
     if (validated.ok) {
       setErrors([])
       return true
     }
     setErrors(validated.errors)
     return false
-  }, [values])
+  }, [payloadForValues])
 
   const saveDraft = useCallback(async (redirectOnCreate = false): Promise<string | null> => {
     if (!validate(false)) return null
     setSaving(true)
     try {
-      const payload = payloadFromValues(values)
+      const payload = payloadForValues()
       if (savedId) {
         await apiPatch(`/api/platform/announcements/${savedId}`, payload)
-        if (redirectOnCreate && !announcementId) router.replace(`/platform/announcements/${savedId}/edit`)
+        if (redirectOnCreate && !announcementId) router.replace(`${basePath}/${savedId}/edit`)
         return savedId
       }
       const response = await apiPost<{ item: { id: string } }>('/api/platform/announcements', payload)
       const id = response.item?.id
       if (!id) throw new Error('保存失败')
       setSavedId(id)
-      if (redirectOnCreate) router.replace(`/platform/announcements/${id}/edit`)
+      if (redirectOnCreate) router.replace(`${basePath}/${id}/edit`)
       return id
     } catch (error) {
       setErrors([error instanceof Error ? error.message : '保存失败，请稍后重试'])
@@ -414,7 +598,7 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
     } finally {
       setSaving(false)
     }
-  }, [announcementId, router, savedId, validate, values])
+  }, [announcementId, basePath, payloadForValues, router, savedId, validate])
 
   const handleSave = async () => {
     const id = await saveDraft(true)
@@ -443,7 +627,7 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
         confirmAllModal,
       })
       setPublishOpen(false)
-      router.push(`/platform/announcements/${response.id || id}`)
+      router.push(isReleasePreset ? basePath : `/platform/announcements/${response.id || id}`)
     } catch (error) {
       appNotice({ tone: 'error', message: error instanceof Error ? error.message : '发布失败，请稍后重试' })
     } finally {
@@ -458,7 +642,9 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
       const response = await apiPost<{ id: string }>(`/api/platform/announcements/${id}/lifecycle`, { action: 'test' })
       appNotice({
         tone: 'success',
-        message: `测试公告已发送给你（${response.id}）。到工作台左侧「通知 → 平台」查看；如果主模式是弹窗，会在工作台壳层弹出。`,
+        message: isReleasePreset
+          ? `测试新增功能已发送给你（${response.id}）。测试项只进入收件箱/主承载，不会出现在前台「新增功能」面板。`
+          : `测试公告已发送给你（${response.id}）。到工作台左侧「通知 → 平台」查看；如果主模式是弹窗，会在工作台壳层弹出。`,
       })
     } catch (error) {
       appNotice({ tone: 'error', message: error instanceof Error ? error.message : '测试发送失败，请稍后重试' })
@@ -470,6 +656,18 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
       ...current,
       audienceRules: current.audienceRules.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule),
     }))
+  }
+
+  const toggleCategory = (slug: AnnouncementCategorySlug) => {
+    setValues((current) => {
+      const checked = current.categories.includes(slug)
+      return {
+        ...current,
+        categories: checked
+          ? current.categories.filter((value) => value !== slug)
+          : [...current.categories, slug],
+      }
+    })
   }
 
   const addRule = () => {
@@ -488,8 +686,13 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
   }
 
   const changeType = (type: string) => {
+    const nextArticleHtml = type === 'RELEASE'
+      ? (values.contentHtml || plainTextToArticleHtml(values.content))
+      : ''
+    if (type === 'RELEASE') setEditorInitialHtml(nextArticleHtml)
     setValues((current) => {
       const next = { ...current, type }
+      if (type === 'RELEASE' && !next.contentHtml) next.contentHtml = nextArticleHtml
       if (type === 'MESSAGE') {
         next.primaryMode = 'INBOX'
         // A direct message must target one user; keeping the default ALL rule
@@ -531,7 +734,7 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
         <p>{loadError}</p>
         <div className="mt-3 flex gap-2">
           <Button asChild variant="outline" size="sm" className="h-8 px-3 text-xs">
-            <Link href="/platform/announcements">返回列表</Link>
+            <Link href={basePath}>{isReleasePreset ? '返回新增功能' : '返回列表'}</Link>
           </Button>
           {detail ? (
             <Button asChild size="sm" className="h-8 px-3 text-xs">
@@ -547,8 +750,16 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
     <div className="flex flex-col gap-4 pb-20">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-foreground">{announcementId ? `编辑公告${detail ? ` · v${detail.item.version}` : ''}` : '新建公告'}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">保存草稿后可测试发送给自己；发布后内容与受众锁定，需要修改请复制新版本。</p>
+          <h1 className="text-lg font-semibold text-foreground">
+            {isReleasePreset
+              ? (announcementId ? `编辑新增功能${detail ? ` · v${detail.item.version}` : ''}` : '发布新增功能')
+              : (announcementId ? `编辑公告${detail ? ` · v${detail.item.version}` : ''}` : '新建公告')}
+          </h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {isReleasePreset
+              ? '写一篇新增功能文章：封面、富文本正文和 CTA 会进入工作台「新增功能」面板与文章页，并保留收件箱存档。发布后内容与受众锁定，需要修改请复制新版本。'
+              : '保存草稿后可测试发送给自己；发布后内容与受众锁定，需要修改请复制新版本。'}
+          </p>
         </div>
         <span className="rounded bg-muted px-2 py-1 text-[11px] text-muted-foreground">{detail ? STATUS_LABELS[detail.item.status as keyof typeof STATUS_LABELS] : '草稿'}</span>
       </div>
@@ -572,40 +783,100 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
                 onChange={(event) => setValue('title', event.target.value)}
                 maxLength={ANNOUNCEMENT_TITLE_MAX}
                 className={fieldClass}
-                placeholder="例如：10 月 31 日晚间维护通知"
+                placeholder={isReleasePreset ? '例如：支持批量下载 4K 素材' : '例如：10 月 31 日晚间维护通知'}
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              正文（纯文本） <span className="ml-auto text-[10px]">{values.content.length}/{ANNOUNCEMENT_CONTENT_MAX}</span>
-              <textarea
-                value={values.content}
-                onChange={(event) => setValue('content', event.target.value)}
-                maxLength={ANNOUNCEMENT_CONTENT_MAX}
-                rows={9}
-                className={textareaClass}
-                placeholder="公告正文…"
-              />
-            </label>
+            {isReleaseType ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>分类</span>
+                  <span className="text-[10px]">可多选；未选择时文章页回退为「产品更新」</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {ANNOUNCEMENT_CATEGORIES.map((category) => {
+                    const checked = values.categories.includes(category.slug)
+                    return (
+                      <label
+                        key={category.slug}
+                        className={cn(
+                          'inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-within:ring-2 focus-within:ring-ring',
+                          checked
+                            ? 'border-primary bg-primary/10 font-medium text-primary'
+                            : 'border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleCategory(category.slug)}
+                          className="sr-only"
+                        />
+                        {category.label}
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {isReleaseType ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>正文（文章）</span>
+                  <span className="text-[10px]">卡片描述自动取前 {WHATS_NEW_CARD_SUMMARY_MAX} 字</span>
+                </div>
+                <RichTextEditor
+                  initialHtml={editorInitialHtml}
+                  onChange={handleEditorChange}
+                  disabled={saving || publishing}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  支持小标题、加粗、列表、引用、链接和正文图片；卡片描述自动取正文前 {WHATS_NEW_CARD_SUMMARY_MAX} 字并限制 3 行，完整正文进入文章页。
+                </p>
+              </div>
+            ) : (
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                正文（纯文本） <span className="ml-auto text-[10px]">{values.content.length}/{ANNOUNCEMENT_CONTENT_MAX}</span>
+                <textarea
+                  value={values.content}
+                  onChange={(event) => setValue('content', event.target.value)}
+                  maxLength={ANNOUNCEMENT_CONTENT_MAX}
+                  rows={9}
+                  className={textareaClass}
+                  placeholder="公告正文…"
+                />
+              </label>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                 CTA 文案（可选）
-                <input value={values.ctaLabel} onChange={(event) => setValue('ctaLabel', event.target.value)} maxLength={40} className={fieldClass} placeholder="查看详情" />
+                <input value={values.ctaLabel} onChange={(event) => setValue('ctaLabel', event.target.value)} maxLength={40} className={fieldClass} placeholder={isReleasePreset ? '了解详情' : '查看详情'} />
               </label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                 CTA 链接（http/https 或 /站内路径）
                 <input value={values.ctaUrl} onChange={(event) => setValue('ctaUrl', event.target.value)} className={fieldClass} placeholder="/studio/projects 或 https://…" />
               </label>
             </div>
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              图片 URL（可选，http/https 或 /站内路径）
-              <input value={values.imageUrl} onChange={(event) => setValue('imageUrl', event.target.value)} className={fieldClass} placeholder="https://…" />
-            </label>
-            {values.imageUrl ? (
-              <div className="rounded-md border border-border p-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={values.imageUrl} alt="公告图片预览" className="max-h-48 rounded object-cover" />
-              </div>
-            ) : null}
+            {isReleaseType ? (
+              <AnnouncementImageField
+                label="封面图（可选）"
+                value={values.imageUrl}
+                onChange={(url) => setValue('imageUrl', url)}
+                disabled={saving || publishing}
+              />
+            ) : (
+              <>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  图片 URL（可选，http/https 或 /站内路径）
+                  <input value={values.imageUrl} onChange={(event) => setValue('imageUrl', event.target.value)} className={fieldClass} placeholder="https://…" />
+                </label>
+                {values.imageUrl ? (
+                  <div className="rounded-md border border-border p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={values.imageUrl} alt="公告图片预览" className="max-h-48 rounded object-cover" />
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         </section>
 
@@ -614,31 +885,49 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
             <h2 className="text-sm font-semibold text-foreground">发布设置</h2>
           </div>
           <div className="flex flex-col gap-3 p-4">
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              类型
-              <select value={values.type} onChange={(event) => changeType(event.target.value)} className={fieldClass}>
-                {ANNOUNCEMENT_TYPES.map((value) => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
-              </select>
-            </label>
+            {isReleasePreset ? (
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-foreground">新增功能</span>
+                  <span className="rounded bg-primary-visible px-1.5 py-0.5 text-[10px] font-medium text-primary">RELEASE</span>
+                </div>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  类型固定为 RELEASE；发布后会进入工作台「新增功能」面板，并保留收件箱存档。
+                </p>
+              </div>
+            ) : (
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                类型
+                <select value={values.type} onChange={(event) => changeType(event.target.value)} className={fieldClass}>
+                  {ANNOUNCEMENT_TYPES.map((value) => <option key={value} value={value}>{TYPE_LABELS[value]}</option>)}
+                </select>
+              </label>
+            )}
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               主承载
               <select value={values.primaryMode} onChange={(event) => changeMode(event.target.value)} className={fieldClass}>
                 {PRIMARY_MODES.map((value) => <option key={value} value={value}>{MODE_LABELS[value]}</option>)}
               </select>
             </label>
-            <p className="text-[10px] text-muted-foreground">弹窗要求优先级 ≥ 50；轻提示 ≤ 30；个人消息只能是收件箱。收件箱始终留档。</p>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                优先级 0–100
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={values.priority}
-                  onChange={(event) => setValue('priority', Number(event.target.value))}
-                  className={fieldClass}
-                />
-              </label>
+            <p className="text-[10px] text-muted-foreground">
+              {isReleasePreset
+                ? '新增功能默认收件箱留档；优先级与「已知晓」不适用于该模式。'
+                : '弹窗要求优先级 ≥ 50；轻提示 ≤ 30；个人消息只能是收件箱。收件箱始终留档。'}
+            </p>
+            <div className={cn('grid gap-3', isReleasePreset ? 'grid-cols-1' : 'grid-cols-2')}>
+              {!isReleasePreset ? (
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  优先级 0–100
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={values.priority}
+                    onChange={(event) => setValue('priority', Number(event.target.value))}
+                    className={fieldClass}
+                  />
+                </label>
+              ) : null}
               <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                 内容语言
                 <select value={values.locale} onChange={(event) => setValue('locale', event.target.value)} className={fieldClass}>
@@ -654,16 +943,20 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
               结束时间（北京时间，留空不设结束）
               <input type="datetime-local" value={values.endAt} onChange={(event) => setValue('endAt', event.target.value)} className={fieldClass} />
             </label>
-            <label className={cn('flex items-center gap-2 text-xs', ['INBOX', 'MODAL'].includes(values.primaryMode) ? 'text-foreground' : 'text-muted-foreground opacity-60')}>
-              <input
-                type="checkbox"
-                checked={values.ackRequired}
-                disabled={!['INBOX', 'MODAL'].includes(values.primaryMode)}
-                onChange={(event) => setValue('ackRequired', event.target.checked)}
-              />
-              要求用户点「我已知晓」
-            </label>
-            <p className="text-[10px] text-muted-foreground">全员 + 弹窗发布时会要求再次确认。</p>
+            {!isReleasePreset ? (
+              <>
+                <label className={cn('flex items-center gap-2 text-xs', ['INBOX', 'MODAL'].includes(values.primaryMode) ? 'text-foreground' : 'text-muted-foreground opacity-60')}>
+                  <input
+                    type="checkbox"
+                    checked={values.ackRequired}
+                    disabled={!['INBOX', 'MODAL'].includes(values.primaryMode)}
+                    onChange={(event) => setValue('ackRequired', event.target.checked)}
+                  />
+                  要求用户点「我已知晓」
+                </label>
+                <p className="text-[10px] text-muted-foreground">全员 + 弹窗发布时会要求再次确认。</p>
+              </>
+            ) : null}
           </div>
         </section>
       </div>
@@ -822,10 +1115,14 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>预览为收件人</DialogTitle>
-            <DialogDescription>这是本地预览，不会发送，也不会写曝光/已读。</DialogDescription>
+            <DialogTitle>{isReleaseType ? '新增功能预览' : '预览为收件人'}</DialogTitle>
+            <DialogDescription>
+              {isReleaseType
+                ? '预览使用当前表单内容；不会写曝光/已读/点击，也不会发布。'
+                : '这是本地预览，不会发送，也不会写曝光/已读。'}
+            </DialogDescription>
           </DialogHeader>
-          <PreviewBody values={values} />
+          {isReleaseType ? <ReleasePreviewPanel values={values} /> : <PreviewBody values={values} />}
         </DialogContent>
       </Dialog>
 
@@ -835,6 +1132,7 @@ export default function AnnouncementForm({ announcementId }: { announcementId?: 
         values={values}
         audienceCount={audiencePreview?.audience.count ?? null}
         audienceCurrent={audiencePreview?.audience.count ?? null}
+        releaseMode={isReleasePreset}
         onConfirm={(confirmAllModal) => void confirmPublish(confirmAllModal)}
         publishing={publishing}
       />

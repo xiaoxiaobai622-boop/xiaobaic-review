@@ -15,9 +15,26 @@ import {
   ANNOUNCEMENT_HISTORY_PAGE_SIZE,
 } from './constants'
 import { syncAnnouncementLifecycles } from './lifecycle'
+import { loadCategoryAnnouncementIds } from './category-content'
+import type { AnnouncementCategorySlug } from './categories'
 import { announcementNow, beijingDayKey, startOfBeijingDay } from './time'
 
 export type AnnouncementWithRules = Prisma.PlatformAnnouncementGetPayload<{ include: { rules: true } }>
+
+/**
+ * The inbox/banner/modal/toast feed and the 「新增功能」 rail share one model
+ * but must not share one 100-row budget: a flood of activity announcements
+ * would otherwise push release notes out before the type filter is applied.
+ */
+export type AnnouncementFeedSurface = 'whats-new' | 'notifications'
+
+function surfaceWhere(surface?: AnnouncementFeedSurface): Prisma.PlatformAnnouncementWhereInput {
+  if (surface === 'whats-new') return { type: 'RELEASE', isTest: false }
+  // Release notes live in the WhatsNew rail and its article page, never in the
+  // inbox/bell platform tab. `notifications` is explicit; undefined is the same
+  // safe default for every existing caller.
+  return { type: { not: 'RELEASE' } }
+}
 
 export interface AnnouncementFeedItem {
   id: string
@@ -118,8 +135,9 @@ function sortHistory(items: AnnouncementFeedItem[]): AnnouncementFeedItem[] {
   })
 }
 
-function historyWhere(now: Date): Prisma.PlatformAnnouncementWhereInput {
+function historyWhere(now: Date, surface?: AnnouncementFeedSurface): Prisma.PlatformAnnouncementWhereInput {
   return {
+    ...surfaceWhere(surface),
     publishedAt: { not: null },
     OR: [
       { status: { in: ['PAUSED', 'EXPIRED', 'ARCHIVED'] } },
@@ -183,12 +201,18 @@ function mapFeedItems(
  * One feed for inbox, banner, modal and toast. INBOX keeps paused/expired/
  * archived history; the host only acts on items whose `active` flag is true.
  */
-export async function loadAnnouncementFeed(userId: string): Promise<AnnouncementFeedPayload | null> {
+export async function loadAnnouncementFeed(
+  userId: string,
+  options: { surface?: AnnouncementFeedSurface; category?: AnnouncementCategorySlug } = {},
+): Promise<AnnouncementFeedPayload | null> {
   await syncAnnouncementLifecycles()
 
   const now = announcementNow()
   const context = await loadUserAudienceContext(userId)
   if (!context) return null
+
+  const categoryIds = options.category ? await loadCategoryAnnouncementIds(options.category) : null
+  const categoryWhere: Prisma.PlatformAnnouncementWhereInput = categoryIds ? { id: { in: categoryIds } } : {}
 
   const startWindow: Prisma.PlatformAnnouncementWhereInput[] = [
     { startAt: null },
@@ -198,6 +222,8 @@ export async function loadAnnouncementFeed(userId: string): Promise<Announcement
   const [activeCandidates, historyCandidates, control] = await Promise.all([
     prisma.platformAnnouncement.findMany({
       where: {
+        ...surfaceWhere(options.surface),
+        ...categoryWhere,
         status: 'ACTIVE',
         publishedAt: { not: null },
         OR: startWindow,
@@ -208,7 +234,7 @@ export async function loadAnnouncementFeed(userId: string): Promise<Announcement
       include: { rules: true },
     }),
     prisma.platformAnnouncement.findMany({
-      where: historyWhere(now),
+      where: { ...historyWhere(now, options.surface), ...categoryWhere },
       orderBy: historyOrderBy,
       take: ANNOUNCEMENT_HISTORY_PAGE_SIZE + 1,
       include: { rules: true },
@@ -278,12 +304,16 @@ export async function loadAnnouncementHistoryPage(
   userId: string,
   cursor: string,
   limit: number = ANNOUNCEMENT_HISTORY_PAGE_SIZE,
+  options: { surface?: AnnouncementFeedSurface; category?: AnnouncementCategorySlug } = {},
 ): Promise<AnnouncementHistoryPagePayload | null> {
   await syncAnnouncementLifecycles()
 
   const now = announcementNow()
   const context = await loadUserAudienceContext(userId)
   if (!context) return null
+
+  const categoryIds = options.category ? await loadCategoryAnnouncementIds(options.category) : null
+  const categoryWhere: Prisma.PlatformAnnouncementWhereInput = categoryIds ? { id: { in: categoryIds } } : {}
 
   const pageSize = Math.max(1, Math.min(
     ANNOUNCEMENT_HISTORY_PAGE_MAX,
@@ -305,7 +335,7 @@ export async function loadAnnouncementHistoryPage(
   }
 
   const candidates = await prisma.platformAnnouncement.findMany({
-    where: historyWhere(now),
+    where: { ...historyWhere(now, options.surface), ...categoryWhere },
     orderBy: historyOrderBy,
     cursor: { id: cursor },
     skip: 1,

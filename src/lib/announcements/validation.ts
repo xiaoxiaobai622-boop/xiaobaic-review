@@ -3,6 +3,7 @@ import {
   ACTIVE_STATUS_VALUES,
   ANNOUNCEMENT_CONTENT_MAX,
   ANNOUNCEMENT_CTA_LABEL_MAX,
+  ANNOUNCEMENT_HTML_MAX,
   ANNOUNCEMENT_LOCALES,
   ANNOUNCEMENT_RULES_MAX,
   ANNOUNCEMENT_TITLE_MAX,
@@ -20,6 +21,11 @@ import {
   type PrimaryMode,
 } from './constants'
 import { fromBeijingInputValue, fromIsoOrNull } from './time'
+import {
+  ANNOUNCEMENT_CATEGORY_SLUGS,
+  normalizeAnnouncementCategorySlugs,
+  type AnnouncementCategorySlug,
+} from './categories'
 import { isSafeAnnouncementUrl } from './url'
 
 const optionalText = (max: number) => z.preprocess(
@@ -46,6 +52,7 @@ const audienceRuleSchema = z.object({
 export const announcementPayloadSchema = z.object({
   title: z.string().trim().min(1, '标题不能为空').max(ANNOUNCEMENT_TITLE_MAX, `标题不能超过 ${ANNOUNCEMENT_TITLE_MAX} 字`),
   content: z.string().trim().min(1, '正文不能为空').max(ANNOUNCEMENT_CONTENT_MAX, `正文不能超过 ${ANNOUNCEMENT_CONTENT_MAX} 字`),
+  contentHtml: optionalText(ANNOUNCEMENT_HTML_MAX),
   locale: z.enum(ANNOUNCEMENT_LOCALES).default('zh'),
   type: z.enum(ANNOUNCEMENT_TYPES).default('ANNOUNCEMENT'),
   primaryMode: z.enum(PRIMARY_MODES).default('INBOX'),
@@ -56,6 +63,10 @@ export const announcementPayloadSchema = z.object({
   ctaLabel: optionalText(ANNOUNCEMENT_CTA_LABEL_MAX),
   ctaUrl: optionalText(ANNOUNCEMENT_URL_MAX),
   imageUrl: optionalText(ANNOUNCEMENT_URL_MAX),
+  categories: z.array(z.enum(ANNOUNCEMENT_CATEGORY_SLUGS)).max(
+    ANNOUNCEMENT_CATEGORY_SLUGS.length,
+    `分类不能超过 ${ANNOUNCEMENT_CATEGORY_SLUGS.length} 个`,
+  ).default([]),
   audienceRules: z.array(audienceRuleSchema).max(ANNOUNCEMENT_RULES_MAX, `受众规则不能超过 ${ANNOUNCEMENT_RULES_MAX} 条`).default([]),
 })
 
@@ -68,6 +79,7 @@ export interface NormalizedAudienceRule {
 export interface NormalizedAnnouncementPayload {
   title: string
   content: string
+  contentHtml: string | null
   locale: string
   type: AnnouncementType
   primaryMode: PrimaryMode
@@ -78,6 +90,7 @@ export interface NormalizedAnnouncementPayload {
   ctaLabel: string | null
   ctaUrl: string | null
   imageUrl: string | null
+  categories: AnnouncementCategorySlug[]
   audienceRules: NormalizedAudienceRule[]
 }
 
@@ -178,6 +191,7 @@ export function validateAnnouncementPayload(
   if (ctaUrl && !isSafeAnnouncementUrl(ctaUrl)) errors.push('CTA 链接只允许 http/https 或站内相对路径')
   const imageUrl = payload.imageUrl ?? null
   if (imageUrl && !isSafeAnnouncementUrl(imageUrl)) errors.push('图片链接只允许 http/https 或站内相对路径')
+  const categories = normalizeAnnouncementCategorySlugs(payload.categories)
 
   const rules: NormalizedAudienceRule[] = []
   const seen = new Set<string>()
@@ -214,6 +228,7 @@ export function validateAnnouncementPayload(
     data: {
       title: payload.title,
       content: payload.content,
+      contentHtml: payload.contentHtml ?? null,
       locale: payload.locale,
       type: payload.type,
       primaryMode: payload.primaryMode,
@@ -224,6 +239,7 @@ export function validateAnnouncementPayload(
       ctaLabel,
       ctaUrl,
       imageUrl,
+      categories,
       audienceRules: rules,
     },
   }

@@ -35,6 +35,8 @@ export interface AdminAnnouncementItem {
   id: string
   title: string
   content: string
+  contentHtml: string | null
+  categories: string[]
   type: string
   typeLabel: string
   status: string
@@ -135,6 +137,7 @@ export interface AudienceRuleDraft {
 export interface AnnouncementFormValues {
   title: string
   content: string
+  contentHtml: string
   locale: string
   type: string
   primaryMode: string
@@ -145,5 +148,6 @@ export interface AnnouncementFormValues {
   ctaLabel: string
   ctaUrl: string
   imageUrl: string
+  categories: string[]
   audienceRules: AudienceRuleDraft[]
 }

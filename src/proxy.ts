@@ -92,6 +92,11 @@ export async function proxy(request: NextRequest) {
   // remains nonce-based without unsafe-eval.
   const developmentScriptSource = process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''
 
+  // 公告/新增功能允许运营粘贴外链图片（校验仍只收 http/https）。这里只放宽被动图片加载，
+  // 脚本与 connect-src 不放宽；生产页面是 https，http 图片会被浏览器按混合内容拦截，
+  // 所以 http 只在本地开发放行。
+  const externalImageSource = process.env.NODE_ENV === 'development' ? ' https: http:' : ' https:'
+
   // Env-derived origins are appended to both media-facing directives, in the
   // same order, so the two lists can never drift apart.
   const extraMediaOrigins = [PUBLIC_MEDIA_CDN_ORIGIN, mediaCdnOrigin, s3Origin, s3BucketOrigin]
@@ -107,7 +112,7 @@ export async function proxy(request: NextRequest) {
     `script-src 'self' 'nonce-${nonce}'${developmentScriptSource}${assetOrigin}${wechatSdkOrigin}`,
     "script-src-attr 'none'",
     `style-src 'self' 'unsafe-inline'${assetOrigin}`,
-    `img-src 'self' data: blob:${extraMediaOrigins}${assetOrigin}`,
+    `img-src 'self' data: blob:${externalImageSource}${extraMediaOrigins}${assetOrigin}`,
     `font-src 'self' data:${assetOrigin}`,
     `connect-src ${connectSrc}`,
     `media-src 'self' blob: ${PUBLIC_MEDIA_ORIGIN}${extraMediaOrigins}`,
@@ -132,7 +137,12 @@ export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-nonce', nonce)
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } })
+  // `/whats-new/category` has no category to render; rewrite to an ungenerated slug so
+  // Next returns its real 404 status instead of a streamed 200 shell.
+  const categoryIndexMiss = url.pathname === '/whats-new/category' || url.pathname === '/whats-new/category/'
+  const response = categoryIndexMiss
+    ? NextResponse.rewrite(new URL('/whats-new/category/__not-found__', url))
+    : NextResponse.next({ request: { headers: requestHeaders } })
 
   response.headers.set('Content-Security-Policy', csp)
   response.headers.set('X-DNS-Prefetch-Control', 'on')

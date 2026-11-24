@@ -60,7 +60,11 @@
     "tsx": "^4.22.4",
     "tus-js-client": "^4.3.1",
     "web-push": "^3.6.7",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@tiptap/extension-image": "^3.35.0",
+    "@tiptap/pm": "^3.35.0",
+    "@tiptap/react": "^3.35.0",
+    "@tiptap/starter-kit": "^3.35.0"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",

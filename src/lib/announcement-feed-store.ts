@@ -157,7 +157,7 @@ export async function refreshAnnouncementFeed(force = false): Promise<void> {
   setState({ loading: true })
   inFlight = (async () => {
     try {
-      const response = await apiFetch('/api/announcements', { cache: 'no-store' })
+      const response = await apiFetch('/api/announcements?surface=notifications', { cache: 'no-store' })
       if (!response.ok) throw new Error(String(response.status))
       const data = await response.json() as FeedPayload
       lastFetchAt = Date.now()
@@ -217,7 +217,7 @@ export async function loadMoreAnnouncementHistory(): Promise<{ ok: boolean; coun
   try {
     const cursor = data.historyNextCursor
     const response = await apiFetch(
-      `/api/announcements?historyCursor=${encodeURIComponent(cursor)}&historyLimit=50`,
+      `/api/announcements?surface=notifications&historyCursor=${encodeURIComponent(cursor)}&historyLimit=50`,
       { cache: 'no-store' },
     )
     if (!response.ok) throw new Error(String(response.status))

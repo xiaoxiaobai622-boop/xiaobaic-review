@@ -61,6 +61,7 @@ export const ANNOUNCEMENT_LOCALES = ['zh', 'en', 'nl', 'de'] as const
 
 export const ANNOUNCEMENT_TITLE_MAX = 60
 export const ANNOUNCEMENT_CONTENT_MAX = 2000
+export const ANNOUNCEMENT_HTML_MAX = 50000
 export const ANNOUNCEMENT_CTA_LABEL_MAX = 40
 export const ANNOUNCEMENT_URL_MAX = 2000
 export const ANNOUNCEMENT_RULES_MAX = 30
