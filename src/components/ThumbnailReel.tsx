@@ -42,6 +42,8 @@ interface ThumbnailReelProps {
   // Optional action before the overview button (e.g. return to source page)
   leadingAction?: React.ReactNode
   comments?: Array<{ videoId?: string | null }>
+  /** Backstage review pages expose 客服 in the More menu; public share pages don't. */
+  showSupport?: boolean
 }
 
 export default function ThumbnailReel({
@@ -65,6 +67,7 @@ export default function ThumbnailReel({
   beforeToolbarAction,
   leadingAction,
   comments = [],
+  showSupport = false,
 }: ThumbnailReelProps) {
   const tShare = useTranslations('share')
   const tVideos = useTranslations('videos')
@@ -188,11 +191,12 @@ export default function ThumbnailReel({
     <div className="relative z-20 shrink-0">
       {/* Compact Control Bar - Always visible */}
       <div
-        className="h-[39px] rounded-[8px] px-3 sm:h-[50px] sm:px-4"
+        className="rounded-[8px] px-2 py-1.5 sm:h-[50px] sm:px-4 sm:py-0"
         style={{ backgroundColor: 'hsl(var(--review-chrome, var(--card)))' }}
       >
-        <div className="flex h-full items-center gap-1.5 sm:gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+        {/* 手机：位置行（返回/素材/版本）与操作行分开，返回永远不会被右侧工具盖住。 */}
+        <div className="flex h-full flex-wrap items-center gap-x-1.5 gap-y-1 sm:flex-nowrap sm:gap-2">
+          <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-1">
             {leadingAction}
             {showBackButton && onBackToGrid && (
               <Button
@@ -260,7 +264,7 @@ export default function ThumbnailReel({
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-0.5 sm:w-auto sm:shrink-0 sm:flex-nowrap sm:justify-end sm:gap-3">
             {showComparisonAction && playableVideos.length > 1 && (
               <Button
                 variant="outline"
@@ -275,7 +279,7 @@ export default function ThumbnailReel({
 
             {beforeToolbarAction}
             {trailingAction}
-            <ReviewMoreMenu />
+            <ReviewMoreMenu showSupport={showSupport} />
             <span aria-hidden="true" className="h-[20px] w-px shrink-0 rounded-full bg-border" />
 
             {/* Language and theme toggles */}
@@ -289,7 +293,7 @@ export default function ThumbnailReel({
                     aria-disabled="true"
                     aria-label={tComments('exportComments')}
                     onClick={(event) => event.preventDefault()}
-                    className="inline-flex h-[28px] w-[28px] shrink-0 cursor-default items-center justify-center rounded-[6px] text-muted-foreground opacity-60 outline-none transition-colors hover:bg-transparent hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    className="hidden h-[28px] w-[28px] shrink-0 cursor-default items-center justify-center rounded-[6px] text-muted-foreground opacity-60 outline-none transition-colors hover:bg-transparent hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
                   >
                     <FileDown className="h-[20px] w-[20px]" aria-hidden="true" />
                   </button>
@@ -345,7 +349,7 @@ export default function ThumbnailReel({
         inert={!isExpanded ? true : undefined}
         data-video-menu-panel
         data-open={isExpanded ? 'true' : 'false'}
-        className="scrollbar-hidden absolute left-2 top-full z-40 mt-1 max-h-[calc(100dvh-47px)] w-[270px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-md border border-border/70 bg-background/95 p-1.5 shadow-lg backdrop-blur-md sm:max-h-[calc(100dvh-58px)]"
+        className="scrollbar-hidden absolute left-2 top-full z-40 mt-1 max-h-[calc(100dvh-84px)] w-[270px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-md border border-border/70 bg-background/95 p-1.5 shadow-lg backdrop-blur-md sm:max-h-[calc(100dvh-58px)]"
       >
           {videoNames.map((name) => {
             const videos = videosByName[name]

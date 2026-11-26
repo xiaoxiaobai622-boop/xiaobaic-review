@@ -6,10 +6,9 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Video, MessageSquare, Pin, PinOff, Link2, Check, Archive, ArchiveRestore, Trash2, MoreHorizontal, AlertTriangle, Layers, CheckCircle2, FolderKanban, FolderInput, FolderOpen, Plus } from 'lucide-react'
-import { apiDelete, apiFetch, apiPatch } from '@/lib/api-client'
+import { Video, MessageSquare, Pin, PinOff, Check, Archive, ArchiveRestore, Trash2, MoreHorizontal, AlertTriangle, Layers, CheckCircle2, FolderKanban, FolderInput, FolderOpen, Plus } from 'lucide-react'
+import { apiDelete, apiPatch } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
-import { copyTextToClipboard } from '@/lib/clipboard'
 import { formatDate } from '@/lib/utils'
 import { clientKeyFor, clientLabelFor, NO_CLIENT_KEY, type ProjectListItem } from '@/lib/projects-filter'
 import { PROJECT_DND_MIME, folderOptions, folderPathLabels, type FolderNode } from '@/lib/project-folders'
@@ -67,6 +66,10 @@ function pillClass(kind: 'hot' | 'warn' | 'soon' | 'calm'): string {
 function Progress({ approved, total }: { approved: number; total: number }) {
   const t = useTranslations('projects')
   const pct = total > 0 ? Math.round((approved / total) * 100) : 0
+  // An empty project has no delivery progress to report; 0/0 would read like one.
+  if (total === 0) {
+    return <p className="mt-2.5 text-[11px] text-muted-foreground">{t('progressEmpty')}</p>
+  }
   return (
     <div className="flex items-center gap-2 mt-2.5">
       <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden" aria-hidden>
@@ -75,7 +78,7 @@ function Progress({ approved, total }: { approved: number; total: number }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[11px] whitespace-nowrap tabular-nums text-muted-foreground">
+      <span className="text-[11px] whitespace-nowrap tabular-nums text-muted-foreground" title="按版本统计，不是整项目交付进度">
         {t('progressApproved', { approved, total })}
       </span>
     </div>
@@ -241,7 +244,6 @@ interface ProjectCardProps {
   onOpenContextMenu: (project: ProjectListItem, point: ContextMenuPoint) => void
   onCloseContextMenu: () => void
   onTogglePin: (id: string) => void
-  onCopyLink: (project: ProjectListItem) => void
   onSetStatus: (project: ProjectListItem, status: string) => void
   onMove: (project: ProjectListItem, folderId: string | null) => void
   onDragStart: (project: ProjectListItem, e: React.DragEvent) => void
@@ -252,7 +254,7 @@ interface ProjectCardProps {
 function ProjectCard({
   project, href, isAdmin, pinned, batchMode, selected, menuOpen, showClient, showStatus, showProgress,
   showFolderChip, hasUnread, folderLabel, folderOptions, dragging, contextMenuPoint,
-  onToggleSelect, onToggleMenu, onOpenContextMenu, onCloseContextMenu, onTogglePin, onCopyLink, onSetStatus, onMove, onDragStart, onDragEnd, onDeleteRequest,
+  onToggleSelect, onToggleMenu, onOpenContextMenu, onCloseContextMenu, onTogglePin, onSetStatus, onMove, onDragStart, onDragEnd, onDeleteRequest,
 }: ProjectCardProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -267,10 +269,6 @@ function ProjectCard({
       <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onTogglePin(project.id)}>
         {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
         {pinned ? t('menuUnpin') : t('menuPin')}
-      </button>
-      <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onCopyLink(project)}>
-        <Link2 className="w-3.5 h-3.5" />
-        {t('menuCopyLink')}
       </button>
       <div className="mt-1 pt-1 border-t border-border">
         <FolderPickList
@@ -481,7 +479,6 @@ export default function ProjectsDashboard({
   const batchBarRef = useRef<HTMLDivElement>(null)
   const [archOpen, setArchOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProjectListItem | null>(null)
   const [actionError, setActionError] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -534,9 +531,8 @@ export default function ProjectsDashboard({
     setMenuOpen(id)
   }
 
-  const projectHref = (project: ProjectListItem) => isAdmin
-    ? `/studio/projects/${project.id}`
-    : project.shareCode ? `/${project.shareCode}` : `/share/${project.slug}`
+  // 项目主链接已下掉（2026-11-25 决策 1A）：卡片不再把任何角色送到公开地址。
+  const projectHref = (project: ProjectListItem) => `/studio/projects/${project.id}`
 
   const active = useMemo(() => projects.filter((p) => p.status !== 'ARCHIVED'), [projects])
   const archived = useMemo(() => projects.filter((p) => p.status === 'ARCHIVED'), [projects])
@@ -595,22 +591,6 @@ export default function ProjectsDashboard({
       return next
     })
     setMenuOpen(null)
-  }
-
-  const handleCopyLink = async (project: ProjectListItem) => {
-    setMenuOpen(null)
-    // 每次复制都向服务端要一次地址：列表里的短码可能是「重置地址」之前的旧值，
-    // 服务端给的才是当下真正生效的那一条。
-    try {
-      const response = await apiFetch(`/api/share/url?projectId=${project.id}`)
-      const shareUrl = response.ok ? (await response.json()).shareUrl : ''
-      if (shareUrl && await copyTextToClipboard(shareUrl)) {
-        setCopiedId(project.id)
-        setTimeout(() => setCopiedId(null), 1500)
-      }
-    } catch (error) {
-      logError('Failed to copy project link', error)
-    }
   }
 
   async function applyStatus(project: ProjectListItem, status: string) {
@@ -760,7 +740,6 @@ export default function ProjectsDashboard({
     onOpenContextMenu: openCardContextMenu,
     onCloseContextMenu: () => setCardContextMenu(null),
     onTogglePin: togglePin,
-    onCopyLink: handleCopyLink,
     onSetStatus: applyStatus,
     onMove: (project: ProjectListItem, folderId: string | null) => moveProjects([project.id], folderId),
     onDragStart: startDrag,
@@ -946,13 +925,6 @@ export default function ProjectsDashboard({
               ))}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Copied hint */}
-      {copiedId && (
-        <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background text-[13px] px-4 py-2 rounded-full shadow-lg">
-          {t('linkCopied')}
         </div>
       )}
 

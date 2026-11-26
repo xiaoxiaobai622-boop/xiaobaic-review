@@ -244,6 +244,10 @@ export default function AdminVideoManager({
     hlsUrl?: string
     failure?: 'hls-unsupported' | 'playback'
   } | null>(null)
+  const [previewingGroup, setPreviewingGroup] = useState<string | null>(null)
+  const previewAbortRef = useRef<AbortController | null>(null)
+  const previewGenerationRef = useRef(0)
+  const previewTriggerRef = useRef<HTMLElement | null>(null)
   const [comparisonVideos, setComparisonVideos] = useState<any[] | null>(null)
   const [comparisonComments, setComparisonComments] = useState<VideoComparisonComment[]>([])
   const [actionMenuGroup, setActionMenuGroup] = useState<string | null>(null)
@@ -509,10 +513,21 @@ export default function AdminVideoManager({
       return
     }
 
+    // Esc or another click while the token is in flight must win over this
+    // request; the dialog may only open for the latest preview intent.
+    previewAbortRef.current?.abort()
+    const controller = new AbortController()
+    previewAbortRef.current = controller
+    const generation = ++previewGenerationRef.current
+    previewTriggerRef.current = e.currentTarget as HTMLElement
+    setPreviewingGroup(groupName)
+
     try {
       const quality = source === 'hls' ? 'hls' : '720p'
-      const res = await apiFetch(videoTokenUrl(latest.id, quality), { cache: 'no-store' })
+      const res = await apiFetch(videoTokenUrl(latest.id, quality), { cache: 'no-store', signal: controller.signal })
+      if (controller.signal.aborted || generation !== previewGenerationRef.current) return
       const data = res.ok ? await res.json() : null
+      if (controller.signal.aborted || generation !== previewGenerationRef.current) return
       if (!data?.token) {
         setPreview({ name: groupName, label, source, failure: 'playback' })
         return
@@ -525,10 +540,34 @@ export default function AdminVideoManager({
           ? { hlsUrl: `/api/content/${data.token}` }
           : { progressiveUrl: `/api/content/${data.token}` }),
       })
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted || generation !== previewGenerationRef.current) return
       setPreview({ name: groupName, label, source, failure: 'playback' })
+    } finally {
+      if (generation === previewGenerationRef.current) setPreviewingGroup(null)
+      if (previewAbortRef.current === controller) previewAbortRef.current = null
     }
   }
+
+  // While the preview token is pending there is no dialog yet, so Esc has to
+  // cancel the request itself and put the button back to its idle state.
+  useEffect(() => {
+    if (!previewingGroup) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      previewAbortRef.current?.abort()
+      previewAbortRef.current = null
+      previewGenerationRef.current += 1
+      setPreviewingGroup(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [previewingGroup])
+
+  useEffect(() => () => {
+    previewAbortRef.current?.abort()
+  }, [])
 
 
   const handleCompare = async (groupName: string, e: React.MouseEvent) => {
@@ -1267,10 +1306,12 @@ export default function AdminVideoManager({
               <button
                 type="button"
                 onClick={(event) => { event.stopPropagation(); void handlePreview(groupName, event) }}
-                className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded bg-background/90 px-1.5 text-[10px] font-medium text-foreground shadow-sm hover:bg-background"
+                disabled={previewingGroup === groupName}
+                aria-busy={previewingGroup === groupName}
+                className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded bg-background/90 px-1.5 text-[10px] font-medium text-foreground shadow-sm hover:bg-background disabled:cursor-wait disabled:opacity-80"
                 aria-label={tu('hoverPreview')}
               >
-                <Play className="h-3 w-3" />{tu('hoverPreview')}
+                {previewingGroup === groupName ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}{tu('hoverPreview')}
               </button>
               <button
                 type="button"
@@ -1303,8 +1344,8 @@ export default function AdminVideoManager({
                 <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setActionMenuGroup(null); setShareTypeMenuGroup(null); onCreateShare?.('DELIVERY', { scopeType: 'VIDEO', scopeId: latestVideo.id, name: groupName, versions: groupVideos.map(video => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })) }) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"><CheckCircle2 className="h-4 w-4" />交付分享</button>
               </div>}
             </div>
-            <button type="button" role="menuitem" onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
-              <Play className="h-4 w-4" />{t('previewVideo')}
+            <button type="button" role="menuitem" disabled={previewingGroup === groupName} aria-busy={previewingGroup === groupName} onClick={(e) => { setActionMenuGroup(null); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); handlePreview(groupName, e) }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-wait disabled:opacity-70">
+              {previewingGroup === groupName ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{t('previewVideo')}
             </button>
             <button type="button" role="menuitem" onClick={(e) => handleOpenReview(groupName, e)} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent">
               <ExternalLink className="h-4 w-4" />{t('openReviewPage')}
@@ -1619,9 +1660,15 @@ export default function AdminVideoManager({
                           </span>
                         )}
                         {hasErrorVideos && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-destructive-visible text-destructive border border-destructive-visible flex-shrink-0">
-                            {errorCount} {t('error')}
-                          </span>
+                          latestVideo.status === 'ERROR' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-destructive-visible text-destructive border border-destructive-visible flex-shrink-0">
+                              {errorCount} {t('error')}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border flex-shrink-0">
+                              {t('historicalErrors', { count: errorCount })}
+                            </span>
+                          )
                         )}
                       </>
                     )}
@@ -1917,7 +1964,13 @@ export default function AdminVideoManager({
       </Dialog>
 
       <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent
+          className="sm:max-w-3xl"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            previewTriggerRef.current?.focus()
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="truncate">{preview?.name} — {preview?.label}</DialogTitle>
           </DialogHeader>

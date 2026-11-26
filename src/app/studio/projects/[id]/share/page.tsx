@@ -14,13 +14,13 @@ import { ArrowLeft, Check, LoaderCircle, Share2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { groupBy } from '@/lib/array-compat'
 import { useStudioTitle } from '@/lib/use-studio-title'
-import { copyTextToClipboard } from '@/lib/clipboard'
 import ThemeToggle from '@/components/ThemeToggle'
 import LanguageToggle from '@/components/LanguageToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
 import ReviewMoreMenu from '@/components/ReviewMoreMenu'
 import { InitialsAvatar } from '@/components/InitialsAvatar'
 import ReviewWorkspace from '@/components/review/ReviewWorkspace'
+import CreateShareDialog from '@/components/CreateShareDialog'
 import { getReviewCapabilities, viewerFromAdminUser } from '@/lib/review-capabilities'
 import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
@@ -175,7 +175,8 @@ export default function AdminSharePage() {
   const [adminUser, setAdminUser] = useState<any>(null)
   const [hideComments, setHideComments] = useState(false)
   const [viewState, setViewState] = useState<'grid' | 'player'>('grid')
-  const [shareCopied, setShareCopied] = useState(false)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [shareDialogVideo, setShareDialogVideo] = useState<{ id: string; name: string } | null>(null)
   const [thumbnailsByName, setThumbnailsByName] = useState<Map<string, string>>(new Map())
   const [thumbnailsLoading, setThumbnailsLoading] = useState(true)
   const tokenCacheRef = useRef<Map<string, any>>(new Map())
@@ -906,33 +907,12 @@ export default function AdminSharePage() {
 
   const projectUrl = `/studio/projects/${id}`
 
-  const copyShareLink = useCallback(async (video?: any) => {
+  // “分享”只打开面板；真正写入链接必须由面板里的“创建并复制链接”触发。
+  const openShareDialog = useCallback((video?: any) => {
     if (!video?.id) return
-    try {
-      const response = await apiFetch(`/api/projects/${id}/share-links`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'REVIEW',
-          scopeType: 'VIDEO',
-          scopeId: video.id,
-          name: video.name ? `${video.name} · 审阅分享` : '审阅分享',
-          permissions: ['view', 'comment', 'attach'],
-          authMode: 'NONE',
-        }),
-      })
-      if (!response.ok) return
-      const data = await response.json().catch(() => null)
-      const url = data?.shareLink?.url
-      if (!url) return
-      const copied = await copyTextToClipboard(url)
-      if (!copied) return
-      setShareCopied(true)
-      window.setTimeout(() => setShareCopied(false), 1600)
-    } catch {
-      // 创建单视频分享失败时不误报「已复制」。
-    }
-  }, [id])
+    setShareDialogVideo({ id: video.id, name: video.name })
+    setShareDialogOpen(true)
+  }, [])
 
   const handleReturnToSource = useCallback(() => {
     if (window.history.length > 1) {
@@ -1061,7 +1041,7 @@ export default function AdminSharePage() {
           <div className="relative z-10 ml-auto flex shrink-0 items-center gap-2">
             <ShareViewToggle viewMode={viewMode} onChange={setViewMode} />
             <ReviewLoginActions compact />
-            <ReviewMoreMenu />
+            <ReviewMoreMenu showSupport />
             <span aria-hidden="true" className="h-[20px] w-px shrink-0 rounded-full bg-border" />
             <LanguageToggle compact />
             <ThemeToggle compact />
@@ -1103,8 +1083,21 @@ export default function AdminSharePage() {
     )
   }
 
+  const shareDialogTarget = shareDialogVideo ? {
+    scopeType: 'VIDEO' as const,
+    scopeId: shareDialogVideo.id,
+    name: shareDialogVideo.name,
+    versions: (project.videosByName?.[shareDialogVideo.name] || []).map((video: any) => ({
+      id: video.id,
+      version: video.version,
+      versionLabel: video.versionLabel,
+    })),
+  } : null
+
   return (
+    <>
     <ReviewWorkspace
+      showSupportMenu
       project={{
         id: project.id,
         title: project.title,
@@ -1137,8 +1130,7 @@ export default function AdminSharePage() {
         onStreamAuthExpired: recoverStreamAuth,
         onApprove: refreshProject,
         onRefresh: refreshProject,
-        onShareLink: copyShareLink,
-        shareCopied,
+        onShareLink: openShareDialog,
         onCommentFocus: setFocusCommentId,
         onToggleComments: showCommentPanel ? () => setHideComments(value => !value) : undefined,
       }}
@@ -1183,5 +1175,17 @@ export default function AdminSharePage() {
       timestampDisplayMode={timestampDisplayMode}
       usePreviewForApprovedPlayback={project.usePreviewForApprovedPlayback}
     />
+    <CreateShareDialog
+      projectId={id}
+      open={shareDialogOpen}
+      preset="REVIEW"
+      target={shareDialogTarget}
+      onOpenChange={(open) => {
+        setShareDialogOpen(open)
+        if (!open) setShareDialogVideo(null)
+      }}
+      onCreated={() => window.dispatchEvent(new Event('shareLinksChanged'))}
+    />
+    </>
   )
 }

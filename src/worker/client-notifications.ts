@@ -2,7 +2,7 @@ import { prisma } from '../lib/db'
 import { getEmailSettings, getRecipientLocale, sendEmail } from '../lib/email'
 import { generateNotificationSummaryEmail } from '../lib/email-templates'
 import { getProjectRecipients } from '../lib/recipients'
-import { generateProjectShareUrlById } from '../lib/url'
+import { generateProjectExplicitShareUrl } from '../lib/url'
 import { getRedis } from '../lib/redis'
 import { buildUnsubscribeUrl, generateRecipientUnsubscribeToken } from '../lib/unsubscribe'
 import { getPeriodString, shouldSendNow, sendNotificationsWithRetry, normalizeNotificationDataTimecode } from './notification-helpers'
@@ -96,7 +96,11 @@ export async function processClientNotifications() {
       }
 
       const period = getPeriodString(project.clientNotificationSchedule)
-      const shareUrl = await generateProjectShareUrlById(project.id)
+      const shareUrl = await generateProjectExplicitShareUrl(project.id)
+      if (!shareUrl) {
+        logMessage(`[CLIENT]   Skipped - no explicit project review link`)
+        continue
+      }
 
       // Filter out cancelled notifications
       const redis = getRedis()

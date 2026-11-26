@@ -31,9 +31,8 @@ export default async function RootSharePage({
   const { mode, web, debug } = await searchParams
   const resolved = await resolveActiveShareLink(shareCode)
 
-  // Only a `ShareLink` row answers at the root, project master link included.
-  // A project's internal API token has no row, so it cannot be replayed here as
-  // a path, and an unknown or revoked code falls through to the 404.
+  // Only an explicit `ShareLink` row answers at the root. Legacy project slugs
+  // and retired master rows resolve to nothing and fall through to the 404.
   if (!resolved) notFound()
 
   // 收录链接的访客端由 ?mode=collect 决定画上传面板还是素材网格，而发出去的地址要能被

@@ -25,6 +25,22 @@ interface PendingAttachment {
   category: string
 }
 
+/**
+ * A comment draft belongs to one video version. Keeping the text, the target
+ * range and the drawing together prevents a v3 draft from being sent to v2
+ * with v2's playhead.
+ */
+interface VideoDraft {
+  content: string
+  mentionedUserIds: string[]
+  timestamp: number | null
+  timecodeEnd: string | null
+  isSelectingTimecodeEnd: boolean
+  rangeAdjusted: boolean
+  annotation: AnnotationData | null
+  attachments: PendingAttachment[]
+}
+
 interface UseCommentManagementProps {
   projectId: string
   initialComments: CommentWithReplies[]
@@ -77,9 +93,52 @@ export function useCommentManagement({
   const submittingCommentRef = useRef(false)
   const previousVideoIdRef = useRef<string | null>(null)
   const rangeWasAdjustedRef = useRef(false)
+  const draftByVideoRef = useRef<Map<string, VideoDraft>>(new Map())
+  const restoredDraftStorageRef = useRef(false)
 
   const authorName = adminUser?.name || adminUser?.phone || adminUser?.email || authenticatedName || ''
   const effectiveShareSlug = shareSlug || shareSlugFromToken(shareToken)
+  const draftOwner = adminUser?.id || effectiveShareSlug || authenticatedName || 'anon'
+  const draftStorageKey = `vitransfer-comment-drafts:${projectId}:${draftOwner}`
+
+  const currentDraftRef = useRef<VideoDraft>({
+    content: '',
+    mentionedUserIds: [],
+    timestamp: null,
+    timecodeEnd: null,
+    isSelectingTimecodeEnd: false,
+    rangeAdjusted: false,
+    annotation: null,
+    attachments: [],
+  })
+  // Keep a fresh snapshot for the version-switch effect without writing refs
+  // during render.
+  useEffect(() => {
+    currentDraftRef.current = {
+      content: newComment,
+      mentionedUserIds,
+      timestamp: selectedTimestamp,
+      timecodeEnd: selectedTimecodeEnd,
+      isSelectingTimecodeEnd,
+      rangeAdjusted: rangeWasAdjustedRef.current,
+      annotation: pendingAnnotation,
+      attachments: pendingAttachments,
+    }
+  })
+
+  const persistDrafts = useCallback(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const entries: Record<string, VideoDraft> = {}
+      draftByVideoRef.current.forEach((draft, videoId) => {
+        if (draft.content.trim() || draft.annotation || draft.attachments.length > 0) entries[videoId] = draft
+      })
+      if (Object.keys(entries).length === 0) window.sessionStorage.removeItem(draftStorageKey)
+      else window.sessionStorage.setItem(draftStorageKey, JSON.stringify(entries))
+    } catch {
+      // Storage can be full or blocked; the in-memory draft still works.
+    }
+  }, [draftStorageKey])
 
   const shareErrorMessage = (error: unknown, fallback: string): string => {
     const code = (error as { code?: string } | null)?.code
@@ -162,27 +221,112 @@ export function useCommentManagement({
     }
   }, [videos, selectedVideoId])
 
-  // Clear pending attachments when user switches to a different video context.
+  // Restore per-version drafts saved for this project + identity before the
+  // first video auto-select runs.
+  useEffect(() => {
+    if (restoredDraftStorageRef.current) return
+    restoredDraftStorageRef.current = true
+    try {
+      const raw = window.sessionStorage.getItem(draftStorageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as Record<string, Partial<VideoDraft>>
+      Object.entries(parsed).forEach(([videoId, draft]) => {
+        if (!draft) return
+        draftByVideoRef.current.set(videoId, {
+          content: draft.content || '',
+          mentionedUserIds: draft.mentionedUserIds || [],
+          timestamp: draft.timestamp ?? null,
+          timecodeEnd: draft.timecodeEnd ?? null,
+          isSelectingTimecodeEnd: draft.isSelectingTimecodeEnd ?? false,
+          rangeAdjusted: draft.rangeAdjusted ?? false,
+          annotation: draft.annotation ?? null,
+          attachments: draft.attachments || [],
+        })
+      })
+    } catch {
+      // A corrupt draft entry must not block the review page.
+    }
+  }, [draftStorageKey])
+
+  // Drafts are per version: stash the outgoing draft, then restore the
+  // incoming version's own draft (text, range, attachments and drawing).
   useEffect(() => {
     const previousVideoId = previousVideoIdRef.current
-    if (
-      previousVideoId &&
-      selectedVideoId &&
-      selectedVideoId !== previousVideoId &&
-      pendingAttachments.length > 0
-    ) {
-      const staleAttachments = pendingAttachments.filter(a => a.videoId !== selectedVideoId)
-      if (staleAttachments.length > 0) {
-        setPendingAttachments(prev => prev.filter(a => a.videoId === selectedVideoId))
-        setAttachmentError(null)
-        setAttachmentNotice('Attachments were cleared because you switched videos.')
-        staleAttachments.forEach((attachment) => {
-          void cleanupAttachmentAsset(attachment)
-        })
-      }
+    if (previousVideoId === selectedVideoId) return
+
+    const outgoing = currentDraftRef.current
+    const hadOutgoing = Boolean(outgoing.content.trim() || outgoing.annotation || outgoing.attachments.length > 0)
+    if (previousVideoId) {
+      if (hadOutgoing) draftByVideoRef.current.set(previousVideoId, outgoing)
+      else draftByVideoRef.current.delete(previousVideoId)
+      persistDrafts()
     }
     previousVideoIdRef.current = selectedVideoId
-  }, [selectedVideoId, pendingAttachments, cleanupAttachmentAsset])
+    if (!selectedVideoId) return
+
+    const next = draftByVideoRef.current.get(selectedVideoId) ?? null
+    const previousVideo = previousVideoId ? videos.find(v => v.id === previousVideoId) : null
+    const nextVideo = videos.find(v => v.id === selectedVideoId)
+    // Let the player finish resetting its drawing state for the new version.
+    const applied = window.setTimeout(() => {
+      if (next) {
+        setNewComment(next.content)
+        setMentionedUserIds(next.mentionedUserIds)
+        setSelectedTimestamp(next.timestamp)
+        setSelectedTimecodeEnd(next.timecodeEnd)
+        setIsSelectingTimecodeEnd(next.isSelectingTimecodeEnd)
+        rangeWasAdjustedRef.current = next.rangeAdjusted
+        setPendingAnnotation(next.annotation)
+        setPendingAttachments(next.attachments)
+        setHasAutoFilledTimestamp(next.timestamp !== null)
+        setAttachmentError(null)
+        setAttachmentNotice(`已切到 ${nextVideo?.versionLabel || '该版本'}，已恢复这个版本未发送的草稿。`)
+        if (next.annotation) {
+          window.dispatchEvent(new CustomEvent('restoreAnnotationDraft', {
+            detail: {
+              videoId: selectedVideoId,
+              annotations: next.annotation,
+              timecodeStart: next.timestamp !== null
+                ? secondsToTimecode(next.timestamp, nextVideo?.fps || 24)
+                : '00:00:00:00',
+              timecodeEnd: next.timecodeEnd,
+            },
+          }))
+        }
+      } else {
+        setNewComment('')
+        setMentionedUserIds([])
+        setSelectedTimestamp(null)
+        setSelectedTimecodeEnd(null)
+        setIsSelectingTimecodeEnd(false)
+        rangeWasAdjustedRef.current = false
+        setPendingAnnotation(null)
+        setPendingAttachments([])
+        setHasAutoFilledTimestamp(false)
+        setAttachmentError(null)
+        setAttachmentNotice(
+          hadOutgoing
+            ? `已从 ${previousVideo?.versionLabel || '上一版本'} 切到 ${nextVideo?.versionLabel || '新版本'}；上一版本的草稿已单独保留，切回可继续。`
+            : null,
+        )
+      }
+    }, 0)
+    return () => window.clearTimeout(applied)
+  }, [selectedVideoId, videos, persistDrafts])
+
+  // A reload or tab close must not silently discard unsent text.
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const live = currentDraftRef.current
+      const hasUnsent = draftByVideoRef.current.size > 0
+        || Boolean(live.content.trim() || live.annotation || live.attachments.length > 0)
+      if (!hasUnsent) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [])
 
   // Sync with the video player once per selected-video change. The player
   // emits `videoChanged` for subsequent changes, so a polling timer is not
@@ -572,9 +716,10 @@ export function useCommentManagement({
       )
     }
 
-    const commentTimestamp = !rangeWasAdjustedRef.current && playerTime !== null
-      ? playerTime
-      : selectedTimestamp
+    // The pill in the composer shows `selectedTimestamp`; submit that exact
+    // value so the request can never disagree with the visible range. The
+    // player is only a fallback for drafts that never captured a position.
+    const commentTimestamp = selectedTimestamp !== null ? selectedTimestamp : playerTime
     const commentTimecodeEnd = rangeWasAdjustedRef.current ? selectedTimecodeEnd : null
     const commentVideo = videos.find(v => v.id === validatedVideoId)
     const fps = commentVideo?.fps || 24
@@ -599,7 +744,7 @@ export function useCommentManagement({
     setPendingAttachments(prev => prev.filter(a => !assetIds.includes(a.assetId)))
 
     try {
-      await submitComment({
+      const submitted = await submitComment({
         content: draftContent,
         parentId: null,
         videoId: validatedVideoId,
@@ -622,6 +767,10 @@ export function useCommentManagement({
           return toRestore.length > 0 ? [...prev, ...toRestore] : prev
         })
       })
+      if (submitted) {
+        draftByVideoRef.current.delete(validatedVideoId)
+        persistDrafts()
+      }
     } finally {
       submittingCommentRef.current = false
       setLoading(false)
@@ -914,6 +1063,11 @@ export function useCommentManagement({
   // Get FPS of currently selected video
   const selectedVideo = videos.find(v => v.id === selectedVideoId)
   const selectedVideoFps = selectedVideo?.fps || 24
+  // Drafts keep every version's attachments in memory; the composer only
+  // shows the ones that belong to the version currently on screen.
+  const visiblePendingAttachments = selectedVideoId
+    ? pendingAttachments.filter(a => a.videoId === selectedVideoId)
+    : pendingAttachments
 
   return {
     comments,
@@ -929,7 +1083,7 @@ export function useCommentManagement({
     selectedVideoFps,
     loading,
     replyingToCommentId,
-    pendingAttachments,
+    pendingAttachments: visiblePendingAttachments,
     attachmentError,
     attachmentNotice,
     pendingAnnotation: !!pendingAnnotation,

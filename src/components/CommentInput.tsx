@@ -143,6 +143,7 @@ export default function CommentInput({
   const visBtnRef = useRef<HTMLButtonElement | null>(null)
   const drawBtnRef = useRef<HTMLButtonElement | null>(null)
   const [isWideComposer, setIsWideComposer] = useState(false)
+  const isLongDraft = !isInlineReply && (newComment.length > 120 || newComment.includes('\n'))
   const [simulatedText, setSimulatedText] = useState('')
   const [simulationSentence, setSimulationSentence] = useState('')
   const [simulationVisible, setSimulationVisible] = useState(false)
@@ -264,6 +265,19 @@ export default function CommentInput({
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (isInlineReply) return
+    const el = textareaRef.current
+    if (!el) return
+    if (!isLongDraft) {
+      el.style.height = ''
+      return
+    }
+    el.style.height = 'auto'
+    const cap = Math.max(120, Math.min(Math.round(window.innerHeight * 0.4), 320))
+    el.style.height = `${Math.min(el.scrollHeight + 2, cap)}px`
+  }, [newComment, isInlineReply, isLongDraft])
 
   useEffect(() => {
     return () => {
@@ -685,7 +699,8 @@ export default function CommentInput({
                     ? 'h-[64px] min-h-[64px] pb-2'
                     : cn(
                         'h-[75px] min-h-[75px] border-0 bg-transparent text-center shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
-                        sendInsideComposer || onStartDrawing ? 'pb-9' : 'pb-2',
+                        isLongDraft && 'max-h-[40vh] overflow-y-auto',
+                        sendInsideComposer || onStartDrawing ? (isLongDraft ? 'pb-2' : 'pb-9') : 'pb-2',
                       ),
                   !isInlineReply && isSimulating && !isFocused && 'caret-transparent',
                 )}
@@ -760,7 +775,10 @@ export default function CommentInput({
               {sendInsideComposer && (
                 // 和左边那排画笔同一条内嵌工具栏；整条 pointer-events-none，
                 // 只有按钮自己接指针，压在文字区上也不会挡住点字定位光标。
-                <div className="pointer-events-none absolute bottom-1 inset-x-2 flex h-8 items-center justify-end gap-1.5">
+                <div className={cn(
+                  'pointer-events-none flex h-8 items-center justify-end gap-1.5',
+                  isLongDraft ? 'relative mt-1.5' : 'absolute bottom-1 inset-x-2',
+                )}>
                   {/* 绘制批注入口 + 表情和时间码算一组：宽输入框里整体居中，窄栏仍靠左。 */}
                   <div
                     className={cn(

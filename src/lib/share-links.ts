@@ -5,8 +5,6 @@ import { beijingDayKey } from '@/lib/announcements/time'
 
 export const SHARE_LINK_STATUSES = ['ACTIVE', 'REVOKED', 'EXPIRED'] as const
 
-export const PROJECT_MASTER_LINK_NAME = '项目主链接'
-
 /**
  * A share address is the bare code at the root of the domain
  * (`https://vidx.cn/<token>`) so it can be read off a screen and typed on a
@@ -55,13 +53,11 @@ const SHARE_LINK_POLICY_FIELDS = {
 } as const
 
 /**
- * The rules a request is judged by. They come from a `ShareLink` row, except for
- * the project's legacy `/share/<teamKey>/<shareSlug>` address, which has no row
- * and is synthesised from the project. The project's master link does have a row
- * (`masterOfProjectId`), so it gets expiry, revocation and access records like
- * any other link while its comment/download rules still come from the project.
+ * The rules a request is judged by. Every share address must be an explicit
+ * `ShareLink` row; the old project-slug and master-link addresses no longer
+ * resolve (2026-11-25 决策 1A).
  */
-export type SharePolicy = ShareLinkRecord & { isProjectMaster: boolean }
+export type SharePolicy = ShareLinkRecord
 
 /** Fields `isShareLinkActive` needs; both a link row and a policy satisfy it. */
 type ShareValidity = Pick<ShareLinkRecord, 'status' | 'expiresAt' | 'maxViews' | 'viewCount'>
@@ -102,54 +98,11 @@ export type ResolvedShareMetadata = {
   policy: SharePolicy | null
 }
 
-/**
- * A project address without a row must not therefore escape the per-link guards:
- * the project's own settings become the policy. Archiving is the owner's kill
- * switch, and `hideFeedback`/`allowAssetDownload` are what retire comment/download
- * instead of granting them unconditionally. Also the source of the permissions a
- * master row inherits.
- */
-export function projectMasterPolicy(project: any): SharePolicy {
-  return {
-    id: '',
-    token: project.slug,
-    name: 'project-master',
-    type: 'REVIEW',
-    scopeType: 'PROJECT',
-    scopeId: null,
-    masterOfProjectId: null,
-    permissions: [
-      'view',
-      ...(project.hideFeedback ? [] : ['comment']),
-      ...(project.allowAssetDownload ? ['download'] : []),
-    ],
-    authMode: project.authMode ?? 'PASSWORD',
-    sharePassword: project.sharePassword ?? null,
-    expiresAt: null,
-    maxViews: null,
-    viewCount: 0,
-    status: project.status === 'ARCHIVED' ? 'REVOKED' : 'ACTIVE',
-    isProjectMaster: true,
-  }
-}
-
 function toPolicy(link: ShareLinkRecord, project: any | null): SharePolicy {
   // Archiving a project is the owner's kill switch for everything it exposes, so
   // an explicit link must not keep working after the project is archived.
   const status = project?.status === 'ARCHIVED' ? 'REVOKED' : link.status
-  if (!link.masterOfProjectId || !project) return { ...link, isProjectMaster: false, status }
-  // The master row owns the address, the expiry and the access records. Who may
-  // comment or download is still set on the project's settings page, so those
-  // rules keep coming from the project instead of drifting into the row.
-  const master = projectMasterPolicy(project)
-  return {
-    ...link,
-    permissions: master.permissions,
-    authMode: master.authMode,
-    sharePassword: master.sharePassword,
-    status,
-    isProjectMaster: true,
-  }
+  return { ...link, status }
 }
 
 /** Resolve only link/project metadata; no videos or folders are loaded. */
@@ -158,13 +111,10 @@ export async function resolveShareMetadata(token: string): Promise<ResolvedShare
     where: { token },
     select: { ...SHARE_LINK_POLICY_FIELDS, project: { select: SHARE_PROJECT_METADATA_SELECT } },
   })
-  if (link) return { link, project: link.project, policy: toPolicy(link, link.project) }
-
-  const project = await prisma.project.findUnique({
-    where: { slug: token },
-    select: SHARE_PROJECT_METADATA_SELECT,
-  })
-  return { link: null, project, policy: project ? projectMasterPolicy(project) : null }
+  // Legacy master rows may still exist in the database; they are no longer an
+  // address. Refuse them here so every share endpoint rejects them centrally.
+  if (!link || link.masterOfProjectId) return { link: null, project: null, policy: null }
+  return { link, project: link.project, policy: toPolicy(link, link.project) }
 }
 
 /**
@@ -213,6 +163,7 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
       viewCount: true,
       authMode: true,
       masterOfProjectId: true,
+      scopeType: true,
       createdAt: true,
       project: {
         select: {
@@ -227,6 +178,7 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
 
   if (
     !link ||
+    link.masterOfProjectId ||
     !link.project ||
     link.project.status === 'ARCHIVED' ||
     !isShareLinkActive(link)
@@ -234,16 +186,13 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
     return null
   }
 
-  // A master row takes its gate from the project, matching toPolicy().
-  const authMode = link.masterOfProjectId
-    ? (link.project.authMode ?? 'PASSWORD')
-    : link.authMode
+  const authMode = link.authMode
   const protectedShare = authMode !== 'NONE'
 
-  // Covers come from the whole project, so only the public master address may
+  // Covers come from the whole project, so only a public whole-project link may
   // show them; scoped or password links keep the generic card.
   const covers =
-    !protectedShare && link.masterOfProjectId
+    !protectedShare && link.scopeType === 'PROJECT'
       ? await prisma.video.findMany({
           where: { projectId: link.projectId, status: 'READY', thumbnailPath: { not: null } },
           orderBy: [{ updatedAt: 'desc' }, { version: 'desc' }],
@@ -264,89 +213,23 @@ export async function resolveHandoffShare(token: string): Promise<HandoffShare |
 }
 
 /**
- * Every project has one master link row, created the first time something needs
- * its address rather than in a migration: the container runs `prisma migrate
- * deploy` on boot, so a backfill that trips over an existing token would stop the
- * app from starting. The address is allocated, never derived from the title.
+ * The address a notification may carry: an explicit whole-project review link
+ * the owner created and can see in 分享记录. There is no auto-created master
+ * address any more, so a project without such a link has no public URL to send.
  */
-export async function ensureProjectMasterLink(projectId: string): Promise<ShareLinkRecord | null> {
-  const existing = await prisma.shareLink.findUnique({
-    where: { masterOfProjectId: projectId },
+export async function getProjectExplicitShareLink(projectId: string): Promise<ShareLinkRecord | null> {
+  const rows = await prisma.shareLink.findMany({
+    where: {
+      projectId,
+      masterOfProjectId: null,
+      type: 'REVIEW',
+      scopeType: 'PROJECT',
+      status: 'ACTIVE',
+    },
+    orderBy: { createdAt: 'desc' },
     select: SHARE_LINK_POLICY_FIELDS,
   })
-  if (existing) return existing
-
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: SHARE_PROJECT_METADATA_SELECT,
-  })
-  if (!project) return null
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const master = projectMasterPolicy(project)
-      return await prisma.shareLink.create({
-        data: {
-          projectId,
-          masterOfProjectId: projectId,
-          token: await allocateShareToken(prisma),
-          name: PROJECT_MASTER_LINK_NAME,
-          type: master.type,
-          scopeType: master.scopeType,
-          permissions: master.permissions,
-          authMode: master.authMode,
-          sharePassword: master.sharePassword,
-        },
-        select: SHARE_LINK_POLICY_FIELDS,
-      })
-    } catch (error) {
-      // Two notifications for the same project can race here; the loser reads the
-      // row the winner created instead of minting a second address.
-      if ((error as { code?: string })?.code !== 'P2002') throw error
-      const row = await prisma.shareLink.findUnique({
-        where: { masterOfProjectId: projectId },
-        select: SHARE_LINK_POLICY_FIELDS,
-      })
-      if (row) return row
-    }
-  }
-  return null
-}
-
-/**
- * Pull the project's current address out of circulation and hand it a new one.
- * The old code stops matching any row, so a leaked address is dead from the
- * moment this returns, without touching the videos it exposes.
- */
-export async function rotateProjectMasterToken(projectId: string): Promise<ShareLinkRecord | null> {
-  const master = await ensureProjectMasterLink(projectId)
-  if (!master) return null
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await prisma.shareLink.update({
-        where: { id: master.id },
-        data: { token: await allocateShareToken(prisma) },
-        select: SHARE_LINK_POLICY_FIELDS,
-      })
-    } catch (error) {
-      if ((error as { code?: string })?.code !== 'P2002') throw error
-    }
-  }
-  return null
-}
-
-/**
- * Read-only addresses for a page of projects, so list views can link straight to
- * the short URL. A project nobody has opened yet simply has no row and is missing
- * from the map: loading a list must not mint share rows.
- */
-export async function masterTokensByProject(projectIds: string[]): Promise<Map<string, string>> {
-  if (projectIds.length === 0) return new Map()
-  const rows = await prisma.shareLink.findMany({
-    where: { masterOfProjectId: { in: projectIds } },
-    select: { masterOfProjectId: true, token: true },
-  })
-  return new Map(rows.map(row => [row.masterOfProjectId as string, row.token]))
+  return rows.find((row) => isShareLinkActive(row)) ?? null
 }
 
 export function isShareLinkActive(link: ShareValidity | null): boolean {
@@ -489,7 +372,6 @@ export function sharePolicyFingerprint(
     sharePassword: policy.sharePassword ?? null,
     expiresAt: policy.expiresAt ? new Date(policy.expiresAt).getTime() : null,
     status: policy.status,
-    master: policy.isProjectMaster,
     allowReverseShare: Boolean(project?.allowReverseShare),
   }))
 }
@@ -513,7 +395,6 @@ export function shareAllowsUploads(
   if (!policy || !project) return false
   if (project.status === 'ARCHIVED') return false
   if (!project.allowReverseShare) return false
-  if (policy.isProjectMaster) return true
   return policy.type === 'COLLECT' && policy.permissions.includes('upload')
 }
 

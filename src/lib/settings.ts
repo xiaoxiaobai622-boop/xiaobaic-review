@@ -122,21 +122,8 @@ export async function getAutoApproveProject(): Promise<boolean> {
 }
 
 export async function getProjectDefaults(teamId: string) {
-  const [teamSettings, globalSettings, video1080, video2160, skipTranscoding, reverseShare] = await Promise.all([
-    prisma.teamSettings.findUnique({
-      where: { teamId },
-      select: {
-        defaultApplyPreviewLut: true,
-        maxUploadSizeGB: true,
-        defaultTimestampDisplay: true,
-        defaultUsePreviewForApprovedPlayback: true,
-        defaultAllowReverseShare: true,
-        defaultShowClientTutorial: true,
-        defaultAllowAssetDownload: true,
-        defaultClientCanApprove: true,
-        autoApproveProject: true,
-      },
-    }),
+  // 2026-11-25 决策 5B：新项目只读平台默认值，团队级覆盖已下掉。
+  const [globalSettings, video1080, video2160, skipTranscoding, reverseShare] = await Promise.all([
     prisma.settings.findUnique({
       where: { id: 'default' },
       select: {
@@ -169,15 +156,15 @@ export async function getProjectDefaults(teamId: string) {
   return {
     defaultPreviewResolution: previewResolution,
     defaultSkipTranscoding: skipTranscoding ? (globalSettings?.defaultSkipTranscoding ?? false) : false,
-    defaultApplyPreviewLut: teamSettings?.defaultApplyPreviewLut ?? globalSettings?.defaultApplyPreviewLut ?? true,
-    maxUploadSizeGB: teamSettings?.maxUploadSizeGB ?? globalSettings?.maxUploadSizeGB ?? 1,
-    defaultTimestampDisplay: teamSettings?.defaultTimestampDisplay || globalSettings?.defaultTimestampDisplay || 'TIMECODE',
-    defaultUsePreviewForApprovedPlayback: teamSettings?.defaultUsePreviewForApprovedPlayback ?? globalSettings?.defaultUsePreviewForApprovedPlayback ?? false,
-    defaultAllowReverseShare: reverseShare ? (teamSettings?.defaultAllowReverseShare ?? globalSettings?.defaultAllowReverseShare ?? true) : false,
-    defaultShowClientTutorial: teamSettings?.defaultShowClientTutorial ?? globalSettings?.defaultShowClientTutorial ?? true,
-    defaultAllowAssetDownload: teamSettings?.defaultAllowAssetDownload ?? globalSettings?.defaultAllowAssetDownload ?? true,
-    defaultClientCanApprove: teamSettings?.defaultClientCanApprove ?? globalSettings?.defaultClientCanApprove ?? true,
-    autoApproveProject: teamSettings?.autoApproveProject ?? globalSettings?.autoApproveProject ?? true,
+    defaultApplyPreviewLut: globalSettings?.defaultApplyPreviewLut ?? true,
+    maxUploadSizeGB: globalSettings?.maxUploadSizeGB ?? 1,
+    defaultTimestampDisplay: globalSettings?.defaultTimestampDisplay || 'TIMECODE',
+    defaultUsePreviewForApprovedPlayback: globalSettings?.defaultUsePreviewForApprovedPlayback ?? false,
+    defaultAllowReverseShare: reverseShare ? (globalSettings?.defaultAllowReverseShare ?? true) : false,
+    defaultShowClientTutorial: globalSettings?.defaultShowClientTutorial ?? true,
+    defaultAllowAssetDownload: globalSettings?.defaultAllowAssetDownload ?? true,
+    defaultClientCanApprove: globalSettings?.defaultClientCanApprove ?? true,
+    autoApproveProject: globalSettings?.autoApproveProject ?? true,
   }
 }
 

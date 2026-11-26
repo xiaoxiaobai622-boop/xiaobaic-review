@@ -366,7 +366,8 @@ async function quotaMany(teamIds: string[]): Promise<Map<string, TeamQuotaView>>
 async function linksForTeams(teamIds: string[]): Promise<LinkRow[]> {
   if (teamIds.length === 0) return []
   return prisma.shareLink.findMany({
-    where: { project: { teamId: { in: teamIds } } },
+    // Legacy master rows are not an address any more (2026-11-25 决策 1A).
+    where: { masterOfProjectId: null, project: { teamId: { in: teamIds } } },
     select: {
       id: true,
       projectId: true,
@@ -855,7 +856,7 @@ export async function getTeamProjects(teamId: string, params: { page?: number; p
   const [activityMap, linkRows] = await Promise.all([
     projectActivityRows(ids),
     ids.length ? prisma.shareLink.findMany({
-      where: { projectId: { in: ids } },
+      where: { projectId: { in: ids }, masterOfProjectId: null },
       select: {
         id: true, projectId: true, token: true, name: true, type: true, scopeType: true, scopeId: true,
         permissions: true, authMode: true, expiresAt: true, maxViews: true, viewCount: true, status: true,
@@ -1041,7 +1042,7 @@ export async function getTeamActivity(teamId: string, days: number): Promise<Tea
 
 export async function getTeamLinkForReveal(teamId: string, linkId: string, baseUrl: string): Promise<{ link: LinkView; url: string } | null> {
   const row = await prisma.shareLink.findFirst({
-    where: { id: linkId, project: { teamId } },
+    where: { id: linkId, masterOfProjectId: null, project: { teamId } },
     select: {
       id: true, projectId: true, token: true, name: true, type: true, scopeType: true, scopeId: true,
       permissions: true, authMode: true, expiresAt: true, maxViews: true, viewCount: true, status: true,

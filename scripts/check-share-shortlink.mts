@@ -402,140 +402,48 @@ try {
   check(pastPw.status === 200 && (pastPw.json?.videos ?? []).length >= 1,
     'K5 口令过了真的拿到素材（不是只回一个成功）', `→ ${pastPw.status} / ${(pastPw.json?.videos ?? []).length} 条`)
 
-  // ── M 项目主链接：现在是一行真实的 ShareLink ─────────────────────────
-  // 「全换短链」之后，项目自己的地址不再是 `/share/{团队}/{slug}` 那种合成路径，
-  // 而是一行真的 ShareLink：有效期、查看次数、访问记录、撤销全都挂在这一行上，
-  // 而谁能批注、谁能下载仍然只在设置页改。这两件事必须同时成立。
+  // ── M 项目主链接已彻底下掉（2026-11-25 决策 1A）────────────────────
   const shareLib = await import('../src/lib/share-links')
-  const urlLib = await import('../src/lib/url')
-  const pathOf = (u?: string) => { try { return new URL(String(u)).pathname } catch { return '' } }
+  check(await prisma.shareLink.count({ where: { masterOfProjectId: project.id } }) === 0,
+    'M1 新项目创建不再铸主链接行')
+  check(await prisma.shareLink.count({ where: { masterOfProjectId: project2.id } }) === 0,
+    'M2 第二个项目同样没有主链接行')
 
-  // 脚本里没有请求上下文，本机的 Settings.appDomain 也还没配域名，所以按「带请求头」这条路
-  // 喂一枚只有 host 的假请求：M1 量的是这条地址的**形状**，与域名从哪来无关。
-  const standIn = { url: `${BASE}/api/x`, headers: new Headers({ host: 'localhost:3000' }) } as any
-  const masterUrl = await urlLib.generateProjectShareUrlById(project.id, standIn)
-  const masterCode = pathOf(masterUrl).slice(1)
-  check(pathOf(masterUrl) === `/${masterCode}` && codeShape(masterCode),
-    'M1 项目自己的地址就是根级短链 {域名}/{code}', `→ ${masterUrl}`)
-
-  const masterRows = await prisma.shareLink.findMany({ where: { masterOfProjectId: project.id }, select: { id: true, token: true } })
-  check(masterRows.length === 1 && masterRows[0].token === masterCode,
-    'M2 一枚项目只有一行主链接，且铸的就是 M1 那枚短码', `→ ${masterRows.length} 行`)
-
-  const reminted = await shareLib.ensureProjectMasterLink(project.id)
-  check(reminted?.id === masterRows[0]?.id && await prisma.shareLink.count({ where: { masterOfProjectId: project.id } }) === 1,
-    'M3 再要一次地址不铸第二枚（通知重发、面板刷新都不许多生一个入口）')
-
-  const masterResolved = await shareLib.resolveShareMetadata(masterCode)
-  check(masterResolved.link !== null && masterResolved.policy?.isProjectMaster === true,
-    'M4 短码解得出「这是项目主链接」这个身份（访客端那几道按身份分叉的闸门全靠它）')
-  check(await pageStatus(`/${masterCode}`) === 200, 'M5 项目主链接的根级地址出页')
-  check(await pageStatus(`/share/${teamSlug}/${project.shareSlug}`) === 200,
-    'M6 旧的 /share/{团队}/{shareSlug} 地址照常能开（搬家的规矩是不撇下已经发出去的信）')
-
-  // 唯一的改权限的地方还是设置页：项目那一列改了，主链接这一行当场跟着变，两边不许各存一套。
-  await prisma.project.update({
-    where: { id: project.id },
-    data: { authMode: 'NONE', guestMode: true, allowReverseShare: true, allowAssetDownload: true },
-  })
-  check((await shareLib.resolveShareMetadata(masterCode)).policy?.permissions.includes('download') === true,
-    'M7 设置页勾「允许下载」→ 主链接立刻有 download（行的权限是从项目派生的）')
-  await prisma.project.update({ where: { id: project.id }, data: { allowAssetDownload: false } })
-  check((await shareLib.resolveShareMetadata(masterCode)).policy?.permissions.includes('download') === false,
-    'M8 取消勾选立刻收回（派生不能只单向生效）')
-
-  // 打开一次就要留下次数与访问记录：这两样以前主地址根本没有行可挂，现在有了。
-  // 访客有两条路，两条都得量到：免密直接打开，和开了「访客身份」之后先换会话令牌再打开。
-  await prisma.project.update({ where: { id: project.id }, data: { guestMode: false } })
-  const masterOpened = await call('GET', `/api/share/${masterCode}`, '')
-  check(masterOpened.status === 200 && masterOpened.json?.shareExpiresAt === null && masterOpened.json?.shareViewsRemaining === null,
-    'M9 免密的主链接匿名可开，且没设限制时如实报 null（页面据此画「长期有效」）', `→ ${masterOpened.status}`)
-  const noneRows = await prisma.sharePageAccess.count({ where: { shareLinkId: masterRows[0]?.id, accessMethod: 'NONE' } })
-  check(noneRows >= 1, 'M10 免密那条路留下的访问记录挂在这枚主链接上（面板的「访问记录」按钮点得开）', `→ ${noneRows} 行`)
-
-  await prisma.project.update({ where: { id: project.id }, data: { guestMode: true } })
-  const masterGuest = await call('POST', `/api/share/${masterCode}/guest`, '')
-  const guestOpened = await call('GET', `/api/share/${masterCode}`, masterGuest.json?.shareToken as string ?? '')
-  check(guestOpened.status === 200 && (guestOpened.json?.videos ?? []).length >= 1,
-    'M9b 访客身份开主链接：先换令牌再打开真的出内容（裸请求被访客闸门挡在 401，所以这条要单独量）',
-    `→ ${guestOpened.status} / ${(guestOpened.json?.videos ?? []).length} 条`)
-  const guestRows = await prisma.sharePageAccess.count({ where: { shareLinkId: masterRows[0]?.id, accessMethod: 'GUEST' } })
-  check(guestRows >= 1, 'M10b 访客身份那条路也认得出是哪枚链接带来的（漏掉链接段＝主地址点开是空列表）', `→ ${guestRows} 行`)
-
-  await call('GET', `/api/projects/${project.id}/share-links`, adminToken)
   const panel = await call('GET', `/api/projects/${project.id}/share-links`, adminToken)
-  const panelMaster = panel.json?.masterLink
-  check(panel.status === 200 && pathOf(panelMaster?.url) === `/${masterCode}`,
-    'M11 分享记录面板把主链接单独给一行（表格首行）', `→ ${panelMaster?.url}`)
-  // 断言里带上「这一组真的有行」：面板 500 时 `?? []` 会让 every() 空过。
-  check(Array.isArray(panel.json?.shareLinks) && panel.json.shareLinks.length > 0
-    && panel.json.shareLinks.every((l: any) => pathOf(l.url) !== `/${masterCode}`),
-    'M12 主链接不在普通分享记录里再出现一遍',
-    `→ ${panel.json?.shareLinks?.length ?? '无列表'} 行`)
-  // 查看次数在这一组里被打开过好几次（免密、访客身份、页面本身），所以不写死数字，
-  // 量的是「面板那一行等于库里那一行」。
-  const masterRowNow = await prisma.shareLink.findUnique({ where: { id: masterRows[0]?.id ?? '' }, select: { viewCount: true } })
-  check(panelMaster?.viewCount === masterRowNow?.viewCount && panelMaster?.expiresAt === null && panelMaster?.maxViews === null,
-    'M13 那一行带出有效期/次数/查看次数三个栏位，且查看次数与库里的行一致（面板那句「长期有效 · N」才不是编的）',
-    `→ 面板 ${panelMaster?.viewCount} / 库 ${masterRowNow?.viewCount} / expiresAt ${JSON.stringify(panelMaster?.expiresAt)}`)
+  check(panel.status === 200 && !('masterLink' in (panel.json ?? {})),
+    'M3 分享记录接口不再返回 masterLink')
 
-  // 这两条是「主链接变成真行」最容易踩的坑：原来靠「有没有链接行」区分的分支，现在必须按身份判断。
-  const guestOnMaster = await call('POST', `/api/share/${masterCode}/guest`, '')
-  check(guestOnMaster.status === 200 && !!guestOnMaster.json?.shareToken,
-    'M14 主地址的「访客身份」入口没被误关（它现在也是一行 ShareLink，判断要看身份）', `→ ${guestOnMaster.status}`)
-  const guestOnLink = await call('POST', `/api/share/${linkB?.token}/guest`, '')
-  check(guestOnLink.status === 403, 'M15 单独创建的分享链接照旧不给访客身份（这条闸门不能跟着放宽）', `→ ${guestOnLink.status}`)
-  const uploadOnReview = await call('POST', `/api/share/${linkB?.token}/project-uploads`, '')
-  check(uploadOnReview.status === 403, 'M16 审阅链接不收素材', `→ ${uploadOnReview.status}`)
-  const uploadOnMaster = await call('POST', `/api/share/${masterCode}/project-uploads`, '')
-  check(uploadOnMaster.status === 401,
-    'M17 主地址收素材：链接这道闸门放过去了，只停在「先登录」（脚本没有登录 cookie）', `→ ${uploadOnMaster.status}`)
+  check(await pageStatus(`/share/${project.shareSlug}`) === 404,
+    'M4 旧 /share/{团队}/{projectSlug} 地址 404')
+  check(await pageStatus(`/${project.slug}`) === 404,
+    'M5 旧项目 slug 的根地址 404')
+  check((await call('GET', `/api/projects/${project.id}/share-slug/rotate`, adminToken)).status === 404,
+    'M6 rotate 接口已删除')
+  check((await call('GET', `/api/share/url?projectId=${project.id}`, adminToken)).status === 404,
+    'M7 /api/share/url 已删除')
 
-  // 归档是本人的总开关：面板那一行不许继续说「有效」，根级地址也要开不出。
-  const statusBeforeArchive = (await prisma.project.findUnique({ where: { id: project.id }, select: { status: true } }))?.status
-  await prisma.project.update({ where: { id: project.id }, data: { status: 'ARCHIVED' } })
-  const archivedPanel = await call('GET', `/api/projects/${project.id}/share-links`, adminToken)
-  check(archivedPanel.json?.masterLink?.status === 'ARCHIVED',
-    'M18 归档项目的主链接行状态改成 ARCHIVED（访客已经打不开，界面不许还说「有效」）',
-    `→ ${JSON.stringify(archivedPanel.json?.masterLink?.status)}`)
-  check(await pageStatus(`/${masterCode}`) === 404, 'M19 归档后主链接的根级地址 404')
-  await prisma.project.update({ where: { id: project.id }, data: { status: statusBeforeArchive ?? 'IN_REVIEW' } })
+  const slugResolved = await shareLib.resolveShareMetadata(project.slug)
+  check(slugResolved.link === null && slugResolved.policy === null,
+    'M8 项目 slug 不再被解析成分享地址')
 
-  // 列表页要给卡片显示短链，但读列表不许铸行（整改 D1）：没打开过的项目就是没有。
+  const legacyMaster = await prisma.shareLink.findFirst({
+    where: { masterOfProjectId: { not: null } },
+    select: { token: true },
+  })
+  if (legacyMaster) {
+    const legacyResolved = await shareLib.resolveShareMetadata(legacyMaster.token)
+    check(legacyResolved.link === null && legacyResolved.policy === null,
+      'M9 库里遗留的 master 行不再解析成链接')
+    check(await pageStatus(`/${legacyMaster.token}`) === 404,
+      'M10 遗留 master token 的根地址 404')
+  }
+
   const projectsList = await call('GET', '/api/projects', adminToken)
   const rowOf = (id: string) => (projectsList.json?.projects ?? []).find((p: any) => p.id === id)
-  check(projectsList.status === 200 && rowOf(project.id)?.shareCode === masterCode,
-    'M20 项目列表接口带出 shareCode，卡片直接就能拼出短链', `→ ${JSON.stringify(rowOf(project.id)?.shareCode)}`)
-  check(rowOf(project2.id)?.shareCode === null
-    && await prisma.shareLink.count({ where: { masterOfProjectId: project2.id } }) === 0,
-    'M21 没被打开过的项目在列表里是 null，且读列表没有替它铸出一行',
-    `→ ${JSON.stringify(rowOf(project2.id)?.shareCode)}`)
-
-  // 访客身份项目的裸请求注定被 401 挡回去（见 M9b），那种「没人看见任何东西」的一发不许记查看
-  // 次数：记了就是限 N 次只进得来 N/2 个人。计数必须排在闸门之后，闸门本身不许松。
-  const masterViews = async () => (await prisma.shareLink.findUnique({
-    where: { id: masterRows[0]?.id ?? '' }, select: { viewCount: true },
-  }))?.viewCount ?? -1
-  const guestVisit = async () => {
-    const t = (await call('POST', `/api/share/${masterCode}/guest`, '')).json?.shareToken as string
-    return call('GET', `/api/share/${masterCode}`, t)
-  }
-  const budgetBase = await masterViews()
-  await prisma.shareLink.update({ where: { id: masterRows[0]?.id ?? '' }, data: { maxViews: budgetBase + 2 } })
-  const knocked = await call('GET', `/api/share/${masterCode}`, '')
-  check(knocked.status === 401 && await masterViews() === budgetBase,
-    'M22 被访客闸门挡回去的那一发不记查看次数（401 那一发没人看见任何东西）',
-    `→ ${knocked.status} / viewCount ${await masterViews()}（应为 ${budgetBase}）`)
-  const visit1 = await guestVisit()
-  check(visit1.status === 200 && await masterViews() === budgetBase + 1,
-    'M23 真的进来了才记一次（该记的一条都不许少）', `→ ${visit1.status} / viewCount ${await masterViews()}`)
-  await call('GET', `/api/share/${masterCode}`, '')
-  const visit2 = await guestVisit()
-  check(visit2.status === 200 && await masterViews() === budgetBase + 2,
-    'M24 限 2 次就正好进 2 个人（中间两次被拒不吃预算）', `→ ${visit2.status} / viewCount ${await masterViews()}`)
-  const visit3 = await guestVisit()
-  check(visit3.status === 410, 'M25 次数真的用满之后访客身份也拦得住（不计数不等于不闸门）', `→ ${visit3.status}`)
-  await prisma.shareLink.update({ where: { id: masterRows[0]?.id ?? '' }, data: { maxViews: null } })
+  check(projectsList.status === 200 && !('shareCode' in (rowOf(project.id) ?? {})),
+    'M11 项目列表接口不再带 shareCode')
+  check(!('shareCode' in (rowOf(project2.id) ?? {})),
+    'M12 未打开过的项目列表同样不再带 shareCode')
 
   // ── R 收录改用 COLLECT 短链 ───────────────────────────────────────────
   // A4 那条 `?mode=collect` 的长地址删了，收录改由一枚真的链接承载。访客页（冻结文件）

@@ -57,9 +57,9 @@ export async function GET(
     }
     const projectMeta = resolvedProject && policy ? {
       id: resolvedProject.id,
-      // Guest entry is a project-level gate. An explicit share link carries its
-      // own permissions, so it must not additionally inherit guest limits.
-      guestMode: policy.isProjectMaster ? resolvedProject.guestMode : false,
+      // Master links are gone; every resolvable link is explicit and carries its
+      // own permissions, so it must not inherit project-level guest limits.
+      guestMode: false,
       guestLatestOnly: resolvedProject.guestLatestOnly,
       guestShowPhotos: resolvedProject.guestShowPhotos,
       sharePassword: policy.sharePassword || resolvedProject.sharePassword,

@@ -1,20 +1,21 @@
 'use client'
 
 import { useId, useRef, useState } from 'react'
-import { BookOpen, MoreHorizontal } from 'lucide-react'
+import { BookOpen, LifeBuoy, MoreHorizontal } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import ReviewPopup from './ReviewPopup'
 import popupStyles from './review-popup.module.css'
 
 const HELP_DOC_URL = 'https://scnqe74t5owc.feishu.cn/wiki/UOxownMcRiBLeekZwcEc3BBAnc2?from=from_copylink'
 
-/** 顶栏「更多」占位：先只放帮助，后续动作继续加在这里。 */
-export default function ReviewMoreMenu() {
+/** 顶栏「更多」：客服（仅后台审片页传 showSupport）与帮助。 */
+export default function ReviewMoreMenu({ showSupport = false }: { showSupport?: boolean }) {
   const t = useTranslations('comments')
   const locale = useLocale()
   const isChinese = locale.startsWith('zh')
   const moreLabel = isChinese ? '更多' : t('more')
   const helpLabel = isChinese ? '帮助' : t('help')
+  const supportLabel = isChinese ? '客服' : 'Support'
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const id = useId()
@@ -47,6 +48,20 @@ export default function ReviewMoreMenu() {
         width={180}
       >
         <p className={popupStyles.heading}>{moreLabel}</p>
+        {showSupport && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              window.dispatchEvent(new Event('vidx-open-support'))
+            }}
+            className={popupStyles.item}
+          >
+            <LifeBuoy className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{supportLabel}</span>
+          </button>
+        )}
         <a
           role="menuitem"
           href={HELP_DOC_URL}

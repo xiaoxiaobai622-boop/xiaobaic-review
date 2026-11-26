@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { sendNewVersionEmail, sendProjectGeneralNotificationEmail, sendPasswordEmail, getRecipientLocale } from '@/lib/email'
-import { generateProjectShareUrlById } from '@/lib/url'
+import { generateProjectExplicitShareUrl } from '@/lib/url'
 import { requireProjectAction } from '@/lib/project-authorization'
 import { decrypt } from '@/lib/encryption'
 import { getProjectRecipients, type Recipient } from '@/lib/recipients'
@@ -75,8 +75,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: projectMessages.noRecipientsConfigured || 'No recipients configured for this project' }, { status: 400 })
     }
 
-    // Generate share URL
-    const shareUrl = await generateProjectShareUrlById(projectId)
+    // Client mail must link to an explicit share link the owner can manage.
+    // There is no auto-created project master address any more.
+    const shareUrl = await generateProjectExplicitShareUrl(projectId)
+    if (!shareUrl) {
+      return NextResponse.json(
+        { error: projectMessages.noActiveShareLink || 'Create an active project review link before sending notifications.' },
+        { status: 400 }
+      )
+    }
     const isPasswordProtected = !!project.sharePassword
 
     // Prepare video data if specific video notification

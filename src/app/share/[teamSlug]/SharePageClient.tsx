@@ -28,6 +28,7 @@ import SharePhotoSection from '@/components/SharePhotoSection'
 import ShareViewToggle, { loadShareViewMode, type ShareViewMode } from '@/components/ShareViewToggle'
 import ReviewLoginActions from '@/components/ReviewLoginActions'
 import ReviewMoreMenu from '@/components/ReviewMoreMenu'
+import { ShareTutorial } from '@/components/ShareTutorial'
 import { useStorageProvider } from '@/components/StorageConfigProvider'
 
 interface SharePageClientProps {
@@ -1581,6 +1582,18 @@ export default function SharePageClient({ token }: SharePageClientProps) {
             <LanguageToggle compact />
             <ThemeToggle compact />
             <ShareViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
+            {project.showClientTutorial && (
+              <ShareTutorial
+                projectId={project.id || token}
+                showTutorial={project.showClientTutorial}
+                watermarkEnabled={project.watermarkEnabled}
+                hideFeedback={project.hideFeedback}
+                clientCanApprove={project.clientCanApprove}
+                allowAssetDownload={project.allowAssetDownload}
+                isGuest={isGuest}
+                inPlayerView={false}
+              />
+            )}
           </div>
         </div>
 
@@ -1728,6 +1741,18 @@ export default function SharePageClient({ token }: SharePageClientProps) {
               className="mr-1 hidden sm:block"
             />
           ),
+          toolbarExtra: project.showClientTutorial ? (
+            <ShareTutorial
+              projectId={project.id || token}
+              showTutorial={project.showClientTutorial}
+              watermarkEnabled={project.watermarkEnabled}
+              hideFeedback={project.hideFeedback}
+              clientCanApprove={project.clientCanApprove}
+              allowAssetDownload={project.allowAssetDownload}
+              isGuest={isGuest}
+              inPlayerView
+            />
+          ) : null,
         }}
         initialSeekTime={initialSeekTime}
         initialVideoIndex={initialVideoIndex}

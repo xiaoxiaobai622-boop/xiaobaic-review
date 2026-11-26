@@ -1377,6 +1377,24 @@ function CustomVideoControls({
     if (video && (isPlaying || !video.paused)) onPlayPause()
   }, [isPlaying, onPlayPause, videoRef])
 
+
+  // Any newer seek intent wins: drop the queued timeline seek and the preview
+  // value that would otherwise keep masking the real readout.
+  const cancelPendingTimelineSeek = useCallback(() => {
+    if (timelineSeekTimerRef.current !== null) {
+      clearTimeout(timelineSeekTimerRef.current)
+      timelineSeekTimerRef.current = null
+    }
+    pendingTimelineSeekRef.current = null
+    resumeAfterTimelineSeekRef.current = false
+    setDragPreviewTime(null)
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('externalSeekIntent', cancelPendingTimelineSeek)
+    return () => window.removeEventListener('externalSeekIntent', cancelPendingTimelineSeek)
+  }, [cancelPendingTimelineSeek])
+
   const queueTimelineSeek = useCallback((time: number, resume: boolean) => {
     pendingTimelineSeekRef.current = time
     resumeAfterTimelineSeekRef.current = resumeAfterTimelineSeekRef.current || resume

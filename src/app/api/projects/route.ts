@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO, LIVE_COMMENT } from '@/lib/db'
 import { generateUniqueProjectSlugs } from '@/lib/share-tokens'
-import { ensureProjectMasterLink, masterTokensByProject } from '@/lib/share-links'
 import { getProjectDefaults } from '@/lib/settings'
 import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
 import { requireTeamWritable } from '@/lib/team-writeable'
@@ -109,11 +108,9 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const masterTokens = await masterTokensByProject(projects.map(project => project.id))
     const sanitizedProjects = projects.map(({ sharePassword, recipients, ...project }) => ({
       ...project,
       sharePassword: Boolean(sharePassword),
-      shareCode: masterTokens.get(project.id) || null,
       recipients,
     }))
 
@@ -314,11 +311,6 @@ export async function POST(request: NextRequest) {
       return newProject
     })
 
-    // 项目自己的地址从此是一行真实分享记录，建好项目就铸出来，这样项目卡片和第一封
-    // 邮件给的都是短链。失败不影响项目本身：面板与通知在真正需要时会再补一次。
-    await ensureProjectMasterLink(project.id).catch((error) =>
-      logError('[API] Failed to mint project master link', error)
-    )
 
     return NextResponse.json(project)
   } catch (error) {

@@ -1378,6 +1378,10 @@ export default function VideoPlayer({
     const video = videoRef.current
     if (!video || !Number.isFinite(timestamp)) return
 
+    // A queued timeline debounce belongs to an older intent; tell the controls
+    // to drop it (and its preview value) before this seek takes effect.
+    window.dispatchEvent(new CustomEvent('externalSeekIntent'))
+
     const target = clampMediaTime(video, timestamp)
     const shouldResume = resume === true
 
@@ -2189,7 +2193,11 @@ export default function VideoPlayer({
 
               {videoLoadFailed && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 p-4 text-center text-sm text-muted-foreground">
-                  <div>{PLAYBACK_FAILURE_MESSAGES[videoLoadFailure?.cause ?? 'network']}</div>
+                  <div>{PLAYBACK_FAILURE_MESSAGES[
+                    videoLoadFailure?.cause === 'unsupported' && typeof navigator !== 'undefined' && navigator.onLine === false
+                      ? 'network'
+                      : (videoLoadFailure?.cause ?? 'network')
+                  ]}</div>
                   <button
                     type="button"
                     onClick={(event) => {

@@ -77,6 +77,8 @@ export interface ReviewWorkspaceProps {
     onToggleComments?: () => void
   }
   hideComments?: boolean
+  /** 审片页右上「更多」里出现「客服」；公开分享页保持 false。 */
+  showSupportMenu?: boolean
   /** 当前入口是否允许出现批注栏（权限/反馈开关）；和用户手动收起区分，收起时保留输入状态。 */
   commentPanelAvailable?: boolean
   focusCommentId?: string | null
@@ -88,6 +90,8 @@ export interface ReviewWorkspaceProps {
     leadingAction?: ReactNode
     /** 顶栏右侧身份前的补充信息（例如分享链接剩余次数）。 */
     toolbarMeta?: ReactNode
+    /** 顶栏右侧的额外动作（例如客户教程帮助按钮）。 */
+    toolbarExtra?: ReactNode
     /** 头像菜单里额外的管理项（例如推送本集）。 */
     menuExtra?: ReactNode
     emptyState?: ReactNode
@@ -118,6 +122,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
     isPasswordProtected = false, identity, actions, hideComments = false, commentPanelAvailable = true, slots,
     initialSeekTime, initialVideoIndex, followLatestVersion = true, focusCommentId = null, restrictCommentsToLatestVersion = false, smtpConfigured = false, hidePlayerDownload = false,
     usePreviewForApprovedPlayback = false, timestampDisplayMode,
+    showSupportMenu = false,
   } = props
   const tu = useTranslations('videoUi')
   const tv = useTranslations('videos')
@@ -203,6 +208,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
   return (
     <div data-review-surface data-review-shell className="min-h-screen sm:fixed sm:inset-0 bg-background flex flex-col sm:overflow-hidden">
       <ThumbnailReel
+        showSupport={showSupportMenu}
         videosByName={videosByName}
         thumbnailsByName={thumbnailsByName}
         activeVideoName={activeVideoName}
@@ -269,6 +275,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
         }
         trailingAction={
           <div className="flex items-center gap-2">
+            {slots?.toolbarExtra}
             {slots?.toolbarMeta}
             <ReviewLoginActions
               compact
@@ -294,7 +301,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
           )
         ) : (
           <>
-            <div data-review-player-column data-video-menu-open={videoMenuOpen ? 'true' : undefined} className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] sm:h-full sm:min-h-0 sm:flex-1 sm:px-[2px] sm:pt-[10px] sm:pb-[10px] ${videoMenuOpen ? 'lg:pl-[275px]' : ''} ${showCommentPanel ? 'sm:flex-[2] 2xl:flex-[2.5]' : ''}`}>
+            <div data-review-player-column data-tutorial="video-player" data-video-menu-open={videoMenuOpen ? 'true' : undefined} className={`flex min-w-0 flex-col rounded-[8px] bg-[hsl(var(--review-gutter))] sm:h-full sm:min-h-0 sm:flex-1 sm:px-[2px] sm:pt-[10px] sm:pb-[10px] ${videoMenuOpen ? 'lg:pl-[275px]' : ''} ${showCommentPanel ? 'sm:flex-[2] 2xl:flex-[2.5]' : ''}`}>
               <VideoPlayer
                 videos={stableVideos}
                 projectId={project.id}
@@ -343,6 +350,7 @@ export default function ReviewWorkspace(props: ReviewWorkspaceProps) {
             {commentPanelAvailable && (
               <div
                 data-comment-panel
+                data-tutorial="comments"
                 aria-hidden={!showCommentPanel ? true : undefined}
                 inert={!showCommentPanel ? true : undefined}
                 className={`max-h-[calc(100vh-56px)] overflow-hidden rounded-[8px] bg-card sm:h-full sm:max-h-full sm:flex-none ${

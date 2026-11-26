@@ -4,7 +4,7 @@ import { sendCommentNotificationEmail, sendAdminCommentNotificationEmail, sendPr
 import { generateNotificationSummaryEmail, generateAdminSummaryEmail } from './email-templates'
 import { getProjectRecipients, type Recipient } from './recipients'
 import { getProjectTeamAdminContacts } from './team-notification-recipients'
-import { generateProjectShareUrlById } from './url'
+import { generateProjectAdminUrl, generateProjectExplicitShareUrl } from './url'
 import { getRedis } from './redis'
 import { enqueueExternalNotification } from '@/lib/external-notifications/enqueueExternalNotification'
 import { buildUnsubscribeUrl, generateRecipientUnsubscribeToken } from './unsubscribe'
@@ -85,7 +85,6 @@ export async function sendImmediateNotification(context: NotificationContext, ta
     return
   }
 
-  const shareUrl = await generateProjectShareUrlById(project.id)
   const videoName = video?.name || 'Unknown Video'
   const versionLabel = video?.versionLabel || 'Unknown Version'
   const authorEmail = comment.authorEmail?.toLowerCase() || null
@@ -111,6 +110,14 @@ export async function sendImmediateNotification(context: NotificationContext, ta
     logMessage(`[IMMEDIATE→CLIENT] Sending to ${recipients.length} recipient(s) for "${project.title}"`)
     logMessage(`[IMMEDIATE→CLIENT]   Video: ${videoName} (${versionLabel})`)
     logMessage(`[IMMEDIATE→CLIENT]   Author: ${comment.authorName || (comment.isInternal ? 'Admin' : 'Client')}`)
+
+    // Client mail must carry a link the owner actually created and can manage.
+    // Without one, skip the client side rather than minting a hidden address.
+    const shareUrl = await generateProjectExplicitShareUrl(project.id)
+    if (!shareUrl) {
+      logMessage('[IMMEDIATE→CLIENT] Skipped - no explicit project review link')
+      return
+    }
 
     const emailPromises = recipients.map(async (recipient) => {
       const unsubscribeUrl = buildRecipientUnsubscribeUrl(recipient, comment.projectId, shareUrl)
@@ -162,6 +169,7 @@ export async function sendImmediateNotification(context: NotificationContext, ta
     logMessage(`[IMMEDIATE→ADMIN]   Video: ${videoName} (${versionLabel})`)
     logMessage(`[IMMEDIATE→ADMIN]   Author: ${comment.authorName || (comment.isInternal ? 'Admin' : 'Client')}`)
 
+    const adminUrl = await generateProjectAdminUrl(project.id)
     const result = await sendAdminCommentNotificationEmail({
       adminEmails: targetAdmins.map(a => a.email),
       clientName: comment.authorName || (comment.isInternal ? 'Admin' : 'Client'),
@@ -175,7 +183,7 @@ export async function sendImmediateNotification(context: NotificationContext, ta
       timecode: comment.timecode,
       fps: video?.fps,
       commentId: comment.id,
-      shareUrl,
+      shareUrl: adminUrl,
       attachmentNames,
     })
 
@@ -285,10 +293,9 @@ export async function handleApprovalNotification(context: ApprovalNotificationCo
 async function sendApprovalImmediately(context: ApprovalNotificationContext) {
   const { project, video, approvedVideos, approved, authorName, authorEmail, isComplete = false } = context
 
-  const shareUrl = await generateProjectShareUrlById(project.id)
   let adminShareUrl = ''
   try {
-    const origin = new URL(shareUrl).origin
+    const origin = new URL(await generateProjectAdminUrl(project.id)).origin
     const returnUrl = `/studio/projects/${project.id}/share`
     adminShareUrl = `${origin}/login?returnUrl=${encodeURIComponent(returnUrl)}`
   } catch {
@@ -302,6 +309,10 @@ async function sendApprovalImmediately(context: ApprovalNotificationContext) {
   // Send to clients ONLY if complete project approval (all videos approved)
   // Don't send for partial approvals - client knows they just clicked approve
   if (recipients.length > 0 && isComplete && approved) {
+    const shareUrl = await generateProjectExplicitShareUrl(project.id)
+    if (!shareUrl) {
+      logMessage('[IMMEDIATE→CLIENT] Skipped - no explicit project review link')
+    } else {
     logMessage(`[IMMEDIATE→CLIENT] Sending complete project approval to ${recipients.length} recipient(s)`)
 
     const emailPromises = recipients.map(async (recipient) => {
@@ -333,6 +344,7 @@ async function sendApprovalImmediately(context: ApprovalNotificationContext) {
     })
 
     await Promise.allSettled(emailPromises)
+    }
   } else if (recipients.length > 0 && !isComplete) {
     logMessage(`[IMMEDIATE→CLIENT] Skipped - partial approval (${approvedVideos?.length || 0} videos), not sending to client`)
   }
@@ -372,7 +384,7 @@ async function sendApprovalImmediately(context: ApprovalNotificationContext) {
       `${authorName || 'A client'}${authorEmail ? ` (${authorEmail})` : ''} ${approved ? 'approved' : 'unapproved'} ${videoNames}`,
       `Project: ${project.title}`,
       isComplete ? 'All videos are now approved' : null,
-      adminShareUrl ? `Link: ${adminShareUrl}` : shareUrl ? `Link: ${shareUrl}` : null,
+      adminShareUrl ? `Link: ${adminShareUrl}` : null,
     ]
       .filter(Boolean)
       .join('\n'),
@@ -428,7 +440,7 @@ export async function flushPendingAdminNotifications(): Promise<void> {
         projectGroups[projectId] = {
           projectId,
           projectTitle: notification.project.title,
-          shareUrl: await generateProjectShareUrlById(notification.project.id),
+          shareUrl: await generateProjectAdminUrl(notification.project.id),
           notifications: []
         }
       }
@@ -543,9 +555,14 @@ export async function flushPendingClientNotifications(projectId: string): Promis
       return
     }
 
+    const shareUrl = await generateProjectExplicitShareUrl(project.id)
+    if (!shareUrl) {
+      logMessage(`[FLUSH-CLIENT] Skipped - no explicit project review link for ${projectId}`)
+      return
+    }
+
     const emailSettings = await getEmailSettings()
     const companyName = emailSettings.companyName || 'FrameReview'
-    const shareUrl = await generateProjectShareUrlById(project.id)
     const notifications = validNotifications.map(n =>
       normalizeNotificationDataTimecode(n.data as any)
     )
