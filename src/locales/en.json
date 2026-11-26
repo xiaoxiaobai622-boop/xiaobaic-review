@@ -289,6 +289,7 @@
 
   "projects": {
     "dashboard": "Projects Dashboard",
+    "progressEmpty": "No videos yet",
     "dashboardDescription": "Manage video projects and deliverables",
     "newProject": "New Project",
     "createNew": "Create New Project",
@@ -905,6 +906,7 @@
     "versionLabelWarning": "The change will only apply to newly uploaded videos.",
     "previewVideo": "Play preview",
     "videoActions": "Video actions",
+    "historicalErrors": "Older versions: {count} failed",
     "openReviewPage": "Open review page",
     "copyReviewLink": "Copy review link",
     "editVideoName": "Edit Video Name",

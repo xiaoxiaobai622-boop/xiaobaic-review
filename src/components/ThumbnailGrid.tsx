@@ -3,8 +3,7 @@
 import Image from 'next/image'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Film, Files, Download, Loader2, ChevronRight, MessageSquare } from 'lucide-react'
-import { Button } from './ui/button'
+import { Film, Files, ChevronRight, MessageSquare } from 'lucide-react'
 import { Card, CardContent } from './ui/card'
 import type { ShareViewMode } from './ShareViewToggle'
 import { cn } from '@/lib/utils'
@@ -20,10 +19,6 @@ interface ThumbnailGridProps {
   projectDescription?: string
   clientName?: string
   allowAssetDownload?: boolean
-  /** Download-all-videos action, shown in the section header (like the photos section) */
-  onDownloadAll?: () => void
-  downloadingAll?: boolean
-  downloadAllLabel?: string
   /** Page-level view mode, owned by the page top bar */
   viewMode?: ShareViewMode
   /** Album count for the hero meta line (0 hides the entry) */
@@ -72,24 +67,18 @@ export default function ThumbnailGrid({
   onVideoSelect,
   projectTitle,
   allowAssetDownload = false,
-  onDownloadAll,
-  downloadingAll = false,
-  downloadAllLabel,
   viewMode = 'grid',
   comments = [],
 }: ThumbnailGridProps) {
   const t = useTranslations('share')
   const tv = useTranslations('videos')
 
-  const [showApproveHint, setShowApproveHint] = useState(false)
-  const approveHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [activatingName, setActivatingName] = useState<string | null>(null)
   const activationLockRef = useRef(false)
   const activationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
-      if (approveHintTimer.current) clearTimeout(approveHintTimer.current)
       if (activationTimerRef.current) clearTimeout(activationTimerRef.current)
     }
   }, [])
@@ -116,23 +105,9 @@ export default function ThumbnailGrid({
   }, [videosByName])
 
   const videoCount = videoNames.length
-  const approvedCount = videoNames.filter(name =>
-    videosByName[name].some((v: any) => v.approved === true)
-  ).length
   const commentCountByName = useMemo(() => {
     return countCommentsByLatestVideoName(videosByName, comments)
   }, [comments, videosByName])
-
-  // With nothing approved yet, the button explains the workflow instead of downloading
-  const handleDownloadAllClick = () => {
-    if (approvedCount === 0) {
-      setShowApproveHint(true)
-      if (approveHintTimer.current) clearTimeout(approveHintTimer.current)
-      approveHintTimer.current = setTimeout(() => setShowApproveHint(false), 5000)
-      return
-    }
-    onDownloadAll?.()
-  }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -169,15 +144,6 @@ export default function ThumbnailGrid({
             )}
           </h2>
           <div className="flex-1" />
-          {onDownloadAll && (
-            <Button variant="outline" size="sm" onClick={handleDownloadAllClick} disabled={downloadingAll} data-tutorial="download-all">
-              {downloadingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              <span className="hidden sm:inline">{downloadAllLabel || t('videos')}</span>
-            </Button>
-          )}
-          {showApproveHint && (
-            <p className="w-full text-xs text-muted-foreground text-right">{t('approveToDownloadHint')}</p>
-          )}
         </div>
 
         {videoCount === 0 && (

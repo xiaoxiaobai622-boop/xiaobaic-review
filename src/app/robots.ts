@@ -37,14 +37,13 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
    * 等于花掉抓取机会去换一个已经生效的指令。
    * 表里的路径**一律不带尾斜杠**：`Disallow: /studio/` 匹配不到裸 `/studio`，而裸路径实测 200 可抓
    * （`/studio`、`/platform`、`/device` 三段都真实存在），前缀写法会留下一个刚好没人看的缝。
-   * `/api/`、`/share/`、`/lab/` 保持带斜杠——它们没有"裸路径本身可看"的形态。
-   * `/lab/` 是设计实验页，不给抓；`/privacy`、`/terms` 要能被抓（它们在 sitemap 里）。
+   * `/api/`、`/share/` 保持带斜杠——它们没有"裸路径本身可看"的形态。
+   * 设计实验页 /lab 已删除（2026-11-25 决策 8A）；`/privacy`、`/terms` 要能被抓（它们在 sitemap 里）。
    */
   const disallow = [
     '/studio',
     '/platform',
     '/device',
-    '/lab/',
     '/forgot-password',
     '/reset-password',
     '/wechat-mini-login',

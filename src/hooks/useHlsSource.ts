@@ -821,6 +821,19 @@ export function useHlsSource({
         const failureStatus = status ?? lastNetworkStatus
         const mediaErrorCode = video.error?.code
         let cause = classifyPlaybackFailure(failureStatus, mediaErrorCode)
+        // A dead connection has no HTTP status, and the media element reports
+        // it as code 4 — the same code a truly unsupported source uses. The
+        // browser's own reachability flag is the tiebreaker; a real format
+        // refusal resolves to 415/unsupported once the network is back.
+        const browserOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+        if (browserOffline && cause !== 'auth') cause = 'network'
+        if (
+          cause === 'unsupported' &&
+          data.type === ErrorTypes.NETWORK_ERROR &&
+          failureStatus === undefined
+        ) {
+          cause = 'network'
+        }
         if (cause === 'network' && data.type === ErrorTypes.MEDIA_ERROR) {
           // A fatal media error after recoverMediaError() means the buffer
           // could not be parsed/appended, not that the connection died. A

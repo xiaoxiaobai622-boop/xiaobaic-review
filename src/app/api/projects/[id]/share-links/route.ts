@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireProjectAction } from '@/lib/project-authorization'
 import { encrypt } from '@/lib/encryption'
 import { getAppUrl } from '@/lib/url'
-import { ensureProjectMasterLink, sanitizeSharePermissions, formatShareLinkUrl } from '@/lib/share-links'
+import { sanitizeSharePermissions, formatShareLinkUrl } from '@/lib/share-links'
 import { allocateShareToken } from '@/lib/share-tokens'
 import { logError } from '@/lib/logging'
 
@@ -46,48 +46,18 @@ function serialize(link: any, baseUrl: string) {
   }
 }
 
-/**
- * The project's own address is a real row (`masterOfProjectId`), so the panel can
- * show its expiry, view count and access records the same way as a created link.
- * Its comment/download rules still come from the project settings page, which is
- * what `ensureProjectMasterLink` mirrors into the row.
- */
-async function serializeMasterLink(projectId: string, baseUrl: string, archived: boolean) {
-  const master = await ensureProjectMasterLink(projectId)
-  if (!master) return null
-  // 归档的项目对访客已经打不开，这一行不能继续显示「有效」。
-  const status = archived
-    ? 'ARCHIVED'
-    : master.expiresAt && new Date(master.expiresAt).getTime() <= Date.now() ? 'EXPIRED' : master.status
-  return {
-    id: master.id,
-    name: master.name,
-    url: formatShareLinkUrl(master.token, baseUrl),
-    authMode: master.authMode,
-    hasPassword: Boolean(master.sharePassword),
-    permissions: master.permissions,
-    status,
-    expiresAt: master.expiresAt,
-    maxViews: master.maxViews,
-    viewCount: master.viewCount,
-  }
-}
-
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const access = await requireProjectAction(request, id, 'share')
   if (access instanceof Response) return access
   const baseUrl = await getAppUrl(request)
-  const [links, project] = await Promise.all([
-    // The master row is shown as its own pinned line, not twice.
-    prisma.shareLink.findMany({ where: { projectId: id, masterOfProjectId: null }, orderBy: { createdAt: 'desc' } }),
-    prisma.project.findUnique({ where: { id }, select: { status: true } }),
-  ])
-  const masterLink = await serializeMasterLink(id, baseUrl, project?.status === 'ARCHIVED')
-  return NextResponse.json({
-    shareLinks: links.map(link => serialize(link, baseUrl)),
-    masterLink,
+  // Legacy master rows may still be in the table, but they are no longer an
+  // address and must not appear as a manageable row.
+  const links = await prisma.shareLink.findMany({
+    where: { projectId: id, masterOfProjectId: null },
+    orderBy: { createdAt: 'desc' },
   })
+  return NextResponse.json({ shareLinks: links.map(link => serialize(link, baseUrl)) })
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

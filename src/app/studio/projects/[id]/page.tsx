@@ -366,7 +366,6 @@ export default function ProjectPage() {
   const [project, setProject] = useState<any>(null)
   useStudioTitle(project?.title)
   const [loading, setLoading] = useState(true)
-  const [shareUrl, setShareUrl] = useState('')
   const [videoViewMode, setVideoViewMode] = useState<'list' | 'grid'>('grid')
   const [videoDisplay, setVideoDisplay] = useState<VideoDisplayPrefs>(() => loadVideoDisplayPrefs())
   const [videoSort, setVideoSort] = useState<VideoSortPrefs>(() => loadVideoSortPrefs())
@@ -785,26 +784,6 @@ export default function ProjectPage() {
     }
   }, [project?.videos, fetchProject])
 
-  // Fetch share URL
-  useEffect(() => {
-    async function fetchShareUrl() {
-      if (!id) return
-
-      try {
-        const response = await apiFetch(`/api/share/url?projectId=${id}`)
-        if (response.ok) {
-          const data = await response.json()
-          if (data.shareUrl) setShareUrl(data.shareUrl)
-        }
-      } catch (error) {
-        logError('Error fetching share URL:', error)
-      }
-    }
-
-    fetchShareUrl()
-  }, [id])
-
-
   // The video grid and its effects key off these arrays, so their identities
   // have to survive unrelated re-renders (a poll replaces `project` with a new
   // object on every tick).
@@ -1182,20 +1161,47 @@ export default function ProjectPage() {
     }
   }
 
-  const copyFolderShareLink = async (folderId: string) => {
+  const copyFolderShareLink = async (folderId: string, folderName: string) => {
     setFolderMenu(null)
-    if (!shareUrl) {
+    try {
+      const listResponse = await apiFetch(`/api/projects/${id}/share-links`, { cache: 'no-store' })
+      if (listResponse.ok) {
+        const list = await listResponse.json().catch(() => null)
+        const existing = (Array.isArray(list?.shareLinks) ? list.shareLinks : []).find(
+          (link: any) => link.type === 'REVIEW' && link.scopeType === 'FOLDER' && link.scopeId === folderId && link.status === 'ACTIVE',
+        )
+        if (existing?.url) {
+          const copied = await copyTextToClipboard(existing.url)
+          if (!copied) throw new Error('copy failed')
+          setCopiedFolderId(folderId)
+          window.setTimeout(() => setCopiedFolderId((current) => current === folderId ? null : current), 1600)
+          return
+        }
+      }
+
+      const createResponse = await apiFetch(`/api/projects/${id}/share-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'REVIEW',
+          scopeType: 'FOLDER',
+          scopeId: folderId,
+          name: folderName ? `${folderName} · 审阅分享` : '文件夹审阅分享',
+          permissions: ['view', 'comment'],
+          authMode: 'NONE',
+        }),
+      })
+      const created = await createResponse.json().catch(() => null)
+      const url = created?.shareLink?.url
+      if (!createResponse.ok || !url) throw new Error('create failed')
+      const copied = await copyTextToClipboard(url)
+      if (!copied) throw new Error('copy failed')
+      setCopiedFolderId(folderId)
+      window.setTimeout(() => setCopiedFolderId((current) => current === folderId ? null : current), 1600)
+    } catch (error) {
+      logError('Failed to copy folder share link', error)
       appAlert(tc('errorTryAgain'))
-      return
     }
-    const separator = shareUrl.includes('?') ? '&' : '?'
-    const copied = await copyTextToClipboard(`${shareUrl}${separator}folder=${encodeURIComponent(folderId)}`)
-    if (!copied) {
-      appAlert(tc('errorTryAgain'))
-      return
-    }
-    setCopiedFolderId(folderId)
-    window.setTimeout(() => setCopiedFolderId((current) => current === folderId ? null : current), 1600)
   }
 
   const openFolderInNewTab = (folderId: string) => {
@@ -1950,7 +1956,7 @@ export default function ProjectPage() {
                     <button type="button" role="menuitem" className={menuItemClass} onClick={() => openFolderInNewTab(folder.id)}>
                       <ExternalLink className="h-4 w-4" />新标签页打开
                     </button>
-                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyFolderShareLink(folder.id)}>
+                    <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyFolderShareLink(folder.id, folder.name)}>
                       {copiedFolderId === folder.id ? <Check className="h-4 w-4 text-success" /> : <Link2 className="h-4 w-4" />}
                       {copiedFolderId === folder.id ? tc('copied') : '复制文件链接'}
                     </button>

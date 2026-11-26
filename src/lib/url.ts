@@ -1,7 +1,7 @@
 import { prisma } from './db'
 import { NextRequest } from 'next/server'
 import { headers } from 'next/headers'
-import { ensureProjectMasterLink, formatShareLinkUrl } from './share-links'
+import { formatShareLinkUrl, getProjectExplicitShareLink } from './share-links'
 
 /**
  * Get the application URL from request headers
@@ -66,18 +66,26 @@ export async function getAppDomain(): Promise<string> {
 }
 
 /**
- * The address every notification, email and webhook carries for a project. It is
- * the project's master link — a real `ShareLink` row created on first need — so
- * the same address the owner sees in 分享记录 is the one the client receives, and
- * it can be expired, revoked and read for access records from there.
+ * The public address a client notification may carry: an explicit whole-project
+ * review link the owner created and can manage in 分享记录. Returns null when the
+ * project has none — notifications then skip the client side instead of minting
+ * a hidden master link (2026-11-25 决策 1A).
  */
-export async function generateProjectShareUrlById(
+export async function generateProjectExplicitShareUrl(
+  projectId: string,
+  request?: NextRequest,
+): Promise<string | null> {
+  const link = await getProjectExplicitShareLink(projectId)
+  if (!link) return null
+  return formatShareLinkUrl(link.token, await getAppUrl(request))
+}
+
+/** Internal, always-available address for admin-facing notifications. */
+export async function generateProjectAdminUrl(
   projectId: string,
   request?: NextRequest,
 ): Promise<string> {
-  const master = await ensureProjectMasterLink(projectId)
-  if (!master) throw new Error('Project not found')
-  return formatShareLinkUrl(master.token, await getAppUrl(request))
+  return `${await getAppUrl(request)}/studio/projects/${projectId}`
 }
 
 /**

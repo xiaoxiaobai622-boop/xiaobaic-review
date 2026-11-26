@@ -182,7 +182,7 @@ function MessageBubble({
     <div className="relative z-10 w-full">
       <div
         className={cn(
-          'relative rounded-[8px] px-[12px] py-[12px] transition-[transform,box-shadow,background-color] duration-150 ease-[var(--ease-standard)] motion-reduce:transition-none',
+          'relative rounded-[8px] px-[12px] py-[10px] transition-[transform,box-shadow,background-color] duration-150 ease-[var(--ease-standard)] motion-reduce:transition-none',
           comment.timecode && onSeekToTimecode && 'cursor-pointer active:scale-[0.997] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 motion-reduce:active:scale-100',
           seekPulse && 'ring-2 ring-inset ring-primary/30',
         )}
@@ -197,7 +197,7 @@ function MessageBubble({
           <div className="absolute bottom-8 left-8 top-10 w-px bg-border/60" aria-hidden="true" />
         )}
 
-        <div className="grid grid-cols-[32px_1fr] items-start gap-x-2.5 gap-y-4">
+        <div className="grid grid-cols-[32px_1fr] items-start gap-x-2.5 gap-y-3">
           <div className="flex justify-center">
             <div className="group relative">
               <InitialsAvatar
@@ -220,7 +220,7 @@ function MessageBubble({
             </div>
           </div>
           <div className="min-w-0">
-            <div className="mb-1 flex min-w-0 items-center gap-2 pr-8">
+            <div className="mb-0.5 flex min-w-0 items-center gap-2 pr-8">
               <span className="truncate text-sm font-semibold text-foreground">
                 {effectiveAuthorName || t('anonymous')}
               </span>
@@ -258,7 +258,7 @@ function MessageBubble({
             )}
 
             {!isReply && timestampLabel && (
-              <div className="flex items-center gap-1.5 mb-1.5">
+              <div className="mb-1 flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={handleSeek}
@@ -281,7 +281,7 @@ function MessageBubble({
               <div
                 className={`break-words text-sm leading-relaxed text-foreground whitespace-pre-wrap ${
                   comment.timecode && onSeekToTimecode
-                    ? 'cursor-pointer rounded-md -mx-2 px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+                    ? 'cursor-pointer rounded-md -mx-2 px-2 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
                     : ''
                 }`}
               >
@@ -300,8 +300,8 @@ function MessageBubble({
               />
             )}
 
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
                 {(comment as any).visibility === 'INTERNAL' && (
                   <span
                     className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
@@ -322,7 +322,7 @@ function MessageBubble({
                     aria-controls={isReplyOpen ? `inline-reply-${comment.id}` : undefined}
                     data-reply-open={isReplyOpen || undefined}
                     className={cn(
-                      '-mx-1.5 inline-flex h-[20px] items-center rounded-md px-1.5 text-xs font-medium transition-[color,background-color,transform] duration-150 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100',
+                      'inline-flex h-[24px] items-center rounded-md px-1.5 text-xs font-medium transition-[color,background-color,transform] duration-150 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100',
                       isReplyOpen
                         ? 'bg-primary/10 text-foreground'
                         : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
@@ -335,7 +335,7 @@ function MessageBubble({
                   <button
                     type="button"
                     onClick={onDelete}
-                    className="-mx-1.5 flex min-h-[20px] items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,transform] duration-150 hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100"
+                    className="flex min-h-[24px] items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,transform] duration-150 hover:bg-destructive/10 hover:text-destructive active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:active:scale-100"
                     title={t('deleteComment')}
                   >
                     <Trash2 className="w-4 h-4" />

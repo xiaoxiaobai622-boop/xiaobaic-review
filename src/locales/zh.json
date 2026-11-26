@@ -281,6 +281,7 @@
   },
   "projects": {
     "dashboard": "项目中心",
+    "progressEmpty": "暂无视频",
     "dashboardDescription": "管理视频项目、审片反馈和最终交付",
     "newProject": "新建项目",
     "createNew": "创建新项目",
@@ -875,6 +876,7 @@
     "versionLabelWarning": "此更改仅适用于新上传的视频。",
     "previewVideo": "播放预览",
     "videoActions": "视频操作",
+    "historicalErrors": "历史版本：{count} 个处理失败",
     "openReviewPage": "打开审片页面",
     "copyReviewLink": "复制审片链接",
     "editVideoName": "修改视频名称",

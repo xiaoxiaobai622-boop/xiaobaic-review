@@ -63,9 +63,8 @@ export default function ProjectsList({
     SHARE_ONLY: t('statusShareOnly'),
     ARCHIVED: t('statusArchived'),
   }
-  const projectHref = (project: ProjectListItem) => user?.role === 'ADMIN'
-    ? `/studio/projects/${project.id}`
-    : project.shareCode ? `/${project.shareCode}` : `/share/${project.slug}`
+  // 主链接已下掉（2026-11-25 决策 1A）：任何角色都进项目工作区，不再发公开地址。
+  const projectHref = (project: ProjectListItem) => `/studio/projects/${project.id}`
 
   // Rows drag to the sidebar tree exactly like the grid cards do, so filing a project
   // never depends on switching back to the grid view.

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Image from 'next/image'
 import QRCode from 'qrcode'
 import { Check, Copy, Download, ExternalLink, Link2, Loader2, MessageSquare, Paperclip, QrCode, ShieldCheck } from 'lucide-react'
@@ -57,10 +57,11 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
   const [maxViews, setMaxViews] = useState('')
   const [submitting, setSubmitting] = useState<'link' | 'qr' | null>(null)
   const [error, setError] = useState('')
-  const [created, setCreated] = useState<{ url: string; copyText: string; qrImage?: string } | null>(null)
+  const [created, setCreated] = useState<{ url: string; copyText: string; qrImage?: string; copied?: boolean } | null>(null)
   // 现成的有效链接：紧凑列表供挑选复制，避免重复创建；列表限高内滚，不把弹窗撑长。
   const [existingLinks, setExistingLinks] = useState<{ id: string; name: string; url: string; createdAt: string }[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copyTimerRef = useRef<number | null>(null)
   // 两个视图：create=新建表单（图2），copy=旧链接列表（复制）。底部两按钮切换。
   const [mode, setMode] = useState<'create' | 'copy'>('create')
 
@@ -109,12 +110,17 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
 
   const copyLink = async (link: { id: string; url: string }) => {
     if (await copyTextToClipboard(link.url)) {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
       setCopiedId(link.id)
-      window.setTimeout(() => setCopiedId(current => current === link.id ? null : current), 1500)
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopiedId(null)
+        copyTimerRef.current = null
+      }, 1500)
     }
   }
 
   const create = async (method: 'link' | 'qr') => {
+    if (submitting) return
     if (!target || !name.trim()) { setError('请输入分享名称'); return }
     if (expiryEnabled && !expiresAt) { setError('请选择过期时间'); return }
     if (limitEnabled && (!maxViews || Number(maxViews) < 1)) { setError('请输入有效的查看次数'); return }
@@ -135,17 +141,24 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
       const copyText = collect
         ? `请点击链接，上传素材到${target.name}\n链接：${url}${effectivePassword ? `\n密码：${effectivePassword}` : ''}`
         : `请点击链接，审阅${target.name}${onlyVersion ? `（${versionName(onlyVersion)}）` : ''}\n链接：${url}${effectivePassword ? `\n密码：${effectivePassword}` : ''}`
-      if (method === 'link') await copyTextToClipboard(copyText)
+      // The link already exists at this point. A clipboard failure must be
+      // reported as such and retried on the same link, never by creating again.
+      const copied = method === 'link' ? await copyTextToClipboard(copyText) : false
       const qrImage = method === 'qr' ? await QRCode.toDataURL(url, { width: 240, margin: 1, color: { dark: '#111827', light: '#ffffff' } }) : undefined
-      setCreated({ url, copyText, qrImage })
+      setCreated({ url, copyText, qrImage, copied })
       onCreated?.()
     } catch (reason) { setError(reason instanceof Error ? reason.message : '创建分享失败') } finally { setSubmitting(null) }
   }
 
   const copy = async (text: string) => {
-    await copyTextToClipboard(text)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 2000)
+    const ok = await copyTextToClipboard(text)
+    setCopied(ok)
+    if (ok) setCreated(current => current && current.copyText === text ? { ...current, copied: true } : current)
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopied(false)
+      copyTimerRef.current = null
+    }, 2000)
   }
 
   const versions = toSorted(target?.versions ?? [], (a, b) => b.version - a.version)
@@ -157,9 +170,9 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
         <DialogDescription>{target?.name || ''}</DialogDescription>
       </DialogHeader>
       {created ? <div className="px-6 py-6">
-        <div className="flex flex-col items-center text-center">{created.qrImage ? <Image src={created.qrImage} alt="分享二维码" width={208} height={208} unoptimized className="h-52 w-52 rounded-md border border-border bg-white p-2" /> : <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600"><Check className="h-6 w-6" /></span>}<h3 className="mt-4 font-semibold">{created.qrImage ? '通过扫码分享' : '通过链接分享'}</h3><p className="mt-1 text-sm text-muted-foreground">{created.qrImage ? '扫码即可打开分享页面' : '分享内容已复制到剪贴板'}</p></div>
+        <div className="flex flex-col items-center text-center">{created.qrImage ? <Image src={created.qrImage} alt="分享二维码" width={208} height={208} unoptimized className="h-52 w-52 rounded-md border border-border bg-white p-2" /> : <span className={`flex h-12 w-12 items-center justify-center rounded-full ${created.copied === false ? 'bg-destructive/10 text-destructive' : 'bg-emerald-500/10 text-emerald-600'}`}><Check className="h-6 w-6" /></span>}<h3 className="mt-4 font-semibold">{created.qrImage ? '通过扫码分享' : created.copied === false ? '链接已创建，复制失败' : '通过链接分享'}</h3><p className="mt-1 text-sm text-muted-foreground">{created.qrImage ? '扫码即可打开分享页面' : created.copied === false ? '链接已创建成功，但复制到剪贴板失败。点下方“重试复制”即可，不会新建链接。' : '分享内容已复制到剪贴板'}</p></div>
         <p role="status" aria-live="polite" className="mt-2 min-h-4 text-center text-xs text-muted-foreground">{copied ? '已复制到剪贴板' : ''}</p>
-        {created.qrImage ? <div className="mt-1 flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2"><Link2 className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-xs">{created.url}</span><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void copy(created.url)} title="复制链接" aria-label="复制链接"><Copy className="h-4 w-4" /></Button></div> : <div className="mt-1 rounded-md border border-border bg-background p-3"><p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{created.copyText}</p><Button className="mt-3 h-9 w-full" onClick={() => void copy(created.copyText)}><Copy className="mr-2 h-4 w-4" />复制</Button></div>}
+        {created.qrImage ? <div className="mt-1 flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2"><Link2 className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-xs">{created.url}</span><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void copy(created.url)} title="复制链接" aria-label="复制链接"><Copy className="h-4 w-4" /></Button></div> : <div className="mt-1 rounded-md border border-border bg-background p-3"><p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{created.copyText}</p><Button className="mt-3 h-9 w-full" onClick={() => void copy(created.copyText)}><Copy className="mr-2 h-4 w-4" />{created.copied === false ? '重试复制' : '复制'}</Button></div>}
         <Button variant="outline" className="mt-4 w-full" onClick={() => onOpenChange(false)}>完成</Button>
       </div> : <>
         <div className="border-b border-border px-6 py-3">
@@ -228,8 +241,8 @@ export default function CreateShareDialog({ projectId, open, preset, target, ini
           </div>
         </div>
         <DialogFooter className="grid grid-cols-2 gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:grid-cols-2">
-          <Button variant="outline" disabled={Boolean(submitting)} onClick={() => void create('qr')}>{submitting === 'qr' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}扫码分享</Button>
-          <Button disabled={Boolean(submitting)} onClick={() => void create('link')}>{submitting === 'link' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}链接分享</Button>
+          <Button variant="outline" disabled={Boolean(submitting)} onClick={() => void create('qr')}>{submitting === 'qr' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}创建二维码链接</Button>
+          <Button disabled={Boolean(submitting)} onClick={() => void create('link')}>{submitting === 'link' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}创建并复制链接</Button>
         </DialogFooter>
       </>}
     </DialogContent>

@@ -2,7 +2,7 @@ import { prisma } from '../lib/db'
 import { getProjectTeamAdminContacts } from '../lib/team-notification-recipients'
 import { getEmailSettings, sendEmail } from '../lib/email'
 import { generateAdminSummaryEmail } from '../lib/email-templates'
-import { generateProjectShareUrlById } from '../lib/url'
+import { generateProjectAdminUrl } from '../lib/url'
 import { getRedis } from '../lib/redis'
 import { getPeriodString, shouldSendNow, sendNotificationsWithRetry, normalizeNotificationDataTimecode } from './notification-helpers'
 import { logError, logMessage } from '../lib/logging'
@@ -116,7 +116,7 @@ export async function processAdminNotifications() {
         projectGroups[projectId] = {
           projectId,
           projectTitle: notification.project.title,
-          shareUrl: await generateProjectShareUrlById(projectId),
+          shareUrl: await generateProjectAdminUrl(projectId),
           notifications: []
         }
       }

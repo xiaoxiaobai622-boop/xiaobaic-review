@@ -1,7 +1,7 @@
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import SharePageClient from './SharePageClient'
-import { ensureProjectMasterLink, isShareLinkActive, resolveShareMetadata } from '@/lib/share-links'
+import { resolveActiveShareLink } from '@/lib/share-links'
 import { isMobileHandoffUserAgent } from '@/lib/share-handoff'
 
 export const dynamic = 'force-dynamic'
@@ -11,34 +11,23 @@ interface SharePageProps {
   searchParams: Promise<{ web?: string; debug?: string }>
 }
 
+/**
+ * Legacy single-segment entry: `/share/<code>` keeps working only for a real
+ * `ShareLink` token. Project slugs and retired master rows have no row and 404;
+ * `/share/<team>/<projectSlug>` was removed with 1A.
+ */
 export default async function SharePage({ params, searchParams }: SharePageProps) {
   const { teamSlug } = await params
   const { web, debug } = await searchParams
 
-  // Server-side validation: check if slug exists and is not archived
-  const resolved = await resolveShareMetadata(teamSlug)
-  const project = resolved.project
-
-  // Show not-found for non-existent or archived projects
-  // Archived projects appear as if they don't exist (security)
-  if (!project || project.status === 'ARCHIVED' || !isShareLinkActive(resolved.policy)) {
-    notFound()
-  }
+  const resolved = await resolveActiveShareLink(teamSlug)
+  if (!resolved) notFound()
 
   if (web !== '1') {
     const userAgent = (await headers()).get('user-agent')
     if (isMobileHandoffUserAgent(userAgent)) {
-      // A real link row keeps its own scope and permissions; only the legacy
-      // project-only address needs the project's master code.
-      let handoffToken = resolved.link?.token ?? null
-      if (!handoffToken) {
-        const master = await ensureProjectMasterLink(project.id)
-        if (master && isShareLinkActive(master)) handoffToken = master.token
-      }
-      if (handoffToken) {
-        const debugQuery = debug === '1' ? '?debug=1' : ''
-        redirect(`/open/${encodeURIComponent(handoffToken)}${debugQuery}`)
-      }
+      const debugQuery = debug === '1' ? '?debug=1' : ''
+      redirect(`/open/${encodeURIComponent(resolved.link.token)}${debugQuery}`)
     }
   }
 

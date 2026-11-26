@@ -281,6 +281,7 @@
   },
   "projects": {
     "promoteUploadFailed": "Videoversion konnte nicht erstellt werden",
+    "progressEmpty": "Noch keine Videos",
     "bulkOverwrite": "Gleichnamige Videos überschreiben",
     "overwriteConfirmTitle": "Gleichnamige Videos überschreiben",
     "overwriteConfirmDescription": "Jede dieser {count} Dateien wird eine neue Version des gleichnamigen Videos. Ältere Versionen bleiben in der Versionshistorie erhalten.",
@@ -796,6 +797,7 @@
     "copyReviewLink": "Prüflink kopieren",
     "openReviewPage": "Prüfseite öffnen",
     "videoActions": "Videoaktionen",
+    "historicalErrors": "Ältere Versionen: {count} fehlgeschlagen",
     "versionUploadDescription": "Ein Upload mit diesem Asset-Namen erstellt die nächste Version und behält alle bisherigen Versionen für Prüfung und Vergleich erhalten.",
     "collectionReplaceFailed": "Neue Version aus der gesammelten Datei konnte nicht erstellt werden",
     "collectionLoadFailed": "Gesammelte Dateien konnten nicht geladen werden",
