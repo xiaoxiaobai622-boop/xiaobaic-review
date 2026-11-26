@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
-import { applyThemeChoice, readStoredTheme, resolveDefaultTheme } from '@/lib/theme'
+import { applyThemeChoice, readStoredTheme, readThemeFromDom, resolveDefaultTheme } from '@/lib/theme'
 
 /**
  * Applies the site-wide default theme when the visitor has not picked one.
@@ -11,6 +11,12 @@ import { applyThemeChoice, readStoredTheme, resolveDefaultTheme } from '@/lib/th
 export function AccentColorProvider() {
   const applyAppearanceSettings = useCallback(async () => {
     try {
+      // Production's pre-paint bootstrap already applied a saved choice. In dev
+      // the bootstrap is intentionally skipped (React 19 warns for component
+      // script tags), so hydrate the stored choice here once.
+      const stored = readStoredTheme()
+      if (stored && readThemeFromDom() !== stored) applyThemeChoice(stored)
+
       const response = await fetch('/api/settings/theme')
       if (response.ok) {
         const data = await response.json()

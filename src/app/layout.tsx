@@ -110,9 +110,13 @@ export default async function RootLayout({
         {/* 禁止百度移动搜索把页面转码成它自己的版式（转码页会丢掉 canonical 与 JSON-LD）。
             百度只认 http-equiv 形态；React 19 会把 <meta> 提升进 <head>。 */}
         <meta httpEquiv="Cache-Control" content="no-transform" />
-        {/* Parser-blocking and first in the document, so a saved colour theme is
-            on <html> before any content is painted — no flash of the default. */}
-        <script nonce={cspNonce} dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+        {/* Production keeps the parser-blocking bootstrap so a saved colour
+            theme is on <html> before content paints. React 19's dev renderer
+            warns for component-rendered script tags, so dev relies on the
+            client theme provider instead. */}
+        {process.env.NODE_ENV !== 'development' && (
+          <script nonce={cspNonce} dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+        )}
         <NextIntlClientProvider messages={messages}>
           <StorageConfigProvider provider={storageProvider}>
             <AppDialogProvider>
