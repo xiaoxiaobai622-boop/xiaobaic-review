@@ -145,8 +145,9 @@ check(read('components/KofiWidget.tsx').length > 0,
 
 // ── 7. 改版草稿页不该对全世界开放 ───────────────────────────────────────
 const labLayout = read('app/lab/layout.tsx')
-check(/AuthProvider/.test(labLayout) && /requireAuth/.test(labLayout),
-  'R9 /lab 挂在登录守卫之下（此前匿名 GET /lab/projects 直接 200，草稿页写着「未接生产」）',
+// 8A 已把 /lab 整目录删除；保留“若还存在则必须带守卫”的兜底，防以后误挂回来。
+check(labLayout.length === 0 || (/AuthProvider/.test(labLayout) && /requireAuth/.test(labLayout)),
+  'R9 /lab 已按 8A 删除（若重新出现则必须挂在登录守卫下）',
   `→ layout ${labLayout.length} 字节`)
 
 // ── 8. 边界与闸门 ───────────────────────────────────────────────────────

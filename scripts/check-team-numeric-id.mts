@@ -188,9 +188,10 @@ async function main() {
   check(!!idLine && /分享/.test(idLine), 'D4 团队 ID 的说明把「对外分享走别的地址」这句交代上了（不写清楚，人就会复制这串去发客户）', '')
   // 反过来也钉住：别有人为了「让复制的号能打开」把 id 加进分享路由——那等于把刚清掉的旧号放回对外 URL。
   const shareTwo = source('app/share/[teamSlug]/[projectSlug]/page.tsx')
-  check(/shareKey:\s*teamSlug/.test(shareTwo) && /slug:\s*teamSlug/.test(shareTwo) && !/\{\s*id:\s*teamSlug\s*\}/.test(shareTwo),
-    'D5 分享路由只认分享键与团队标识、不认团队 ID（「需要全改」之后对外地址里不许再出现团队号）',
-    `→ ${JSON.stringify((shareTwo.match(/OR: \[[\s\S]{0,90}/) || [''])[0].replace(/\s+/g, ' '))}`)
+  // 1A 已删除旧的 /share/[teamSlug]/[projectSlug] 路由；对外分享只走显式 token。
+  check(shareTwo.length === 0,
+    'D5 旧 /share/[teamSlug]/[projectSlug] 路由已按 1A 删除；对外分享只走显式 token，不认团队 ID',
+    `→ page ${shareTwo.length} 字节`)
   const consoleSearch = source('app/platform/teams/page.tsx')
   const filterAt = consoleSearch.search(/\.filter\(\(team\)/)
   check(filterAt >= 0 && /team\.id/.test(consoleSearch.slice(filterAt, filterAt + 240)),

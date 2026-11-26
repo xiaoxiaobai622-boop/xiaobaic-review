@@ -105,13 +105,13 @@ checkTrue('S2 四语言里那四枚 key 跟着删净（只删控件不删文案�
   leftKeys.length === 0, `→ 还留着的语言：${JSON.stringify(leftKeys)}`)
 
 const schema = readFileSync('prisma/schema.prisma', 'utf8')
-const teamApi = readFileSync('src/app/api/team-settings/route.ts', 'utf8')
 const settingsApi = readFileSync('src/app/api/settings/route.ts', 'utf8')
-checkTrue('S2·b 两列与写入链刻意留着（和 10-03 那批「控件拆掉、列与读取链留着」同口径，别当死代码顺手删）',
+const teamApiPresent = existsSync('src/app/api/team-settings/route.ts')
+checkTrue('S2·b 两列与平台写入链刻意留着；团队设置接口已按 5B 删除（不再要求旧的团队级字段）',
   schema.includes('defaultTimestampDisplay') && schema.includes('timestampDisplay String')
-    && teamApi.includes('defaultTimestampDisplay') && settingsApi.includes('defaultTimestampDisplay'),
+    && !teamApiPresent && settingsApi.includes('defaultTimestampDisplay'),
   `→ schema 两列 ${schema.includes('defaultTimestampDisplay') && schema.includes('timestampDisplay String')}，`
-  + `接口仍认这个字段 ${teamApi.includes('defaultTimestampDisplay') && settingsApi.includes('defaultTimestampDisplay')}`)
+  + `team-settings 已删 ${!teamApiPresent}，平台接口仍认 ${settingsApi.includes('defaultTimestampDisplay')}`)
 
 const screens = ['CustomVideoControls', 'TimelineHoverPreview', 'CommentSection', 'CommentInput', 'VideoComparisonControls', 'VideoComparison']
 const stillReading = screens.filter((name) => {
