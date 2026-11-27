@@ -1357,3 +1357,296 @@ html.no-scrollbar::-webkit-scrollbar {
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * 项目中心封面卡 + 新建项目卡（option-b）
+ * 动效值来自 option-b.html 的浏览器最终计算样式，作用域只到这两类卡片。
+ * data-project-card 是网格项目卡；data-project-new 是新建项目卡。
+ * ------------------------------------------------------------------------- */
+[data-project-card] {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 18px;
+  background-color: hsl(var(--card));
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+[data-project-card]:hover:not([data-dragging='true']) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 20, 35, .10);
+  border-color: hsl(var(--border));
+}
+[data-project-card][aria-selected='true'] {
+  background-color: hsl(var(--primary-visible));
+}
+[data-project-card][data-dragging='true'] {
+  transform: scale(.96);
+  opacity: .5;
+}
+[data-project-cover] {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 13px;
+  background-color: hsl(var(--card));
+  cursor: pointer;
+  transition: box-shadow .3s;
+}
+[data-project-card]:hover:not([data-dragging='true']) [data-project-cover] {
+  box-shadow: 0 8px 20px rgba(15, 20, 35, .16);
+}
+[data-project-art] {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-image: linear-gradient(135deg, var(--art-b), var(--art-a));
+}
+[data-project-art]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: radial-gradient(130% 100% at 10% 0%, rgba(255, 255, 255, .16), transparent 60%);
+}
+[data-project-art] i {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .13), rgba(255, 255, 255, .01) 70%);
+  box-shadow: inset 2px 3px 10px rgba(255, 255, 255, .14), inset 0 0 0 1px rgba(255, 255, 255, .07);
+  transition: transform .9s cubic-bezier(.2, .8, .2, 1);
+}
+[data-project-art] .art-l1 { width: 120%; left: -78%; top: -30%; opacity: .75 }
+[data-project-art] .art-l2 { width: 95%; right: -38%; top: 30%; opacity: .9 }
+[data-project-art] .art-l3 { width: 62%; left: -22%; bottom: -52%; opacity: .85 }
+[data-project-card]:hover:not([data-dragging='true']) .art-l1 { transform: translate(18px, 8px) }
+[data-project-card]:hover:not([data-dragging='true']) .art-l2 { transform: translate(-16px, -10px) }
+[data-project-card]:hover:not([data-dragging='true']) .art-l3 { transform: translate(14px, -10px) }
+[data-project-cap] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  padding: 34px 14px 12px;
+  pointer-events: none;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(8, 10, 20, .55));
+}
+[data-project-badges] {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+[data-project-badge] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 7px;
+  background: rgba(12, 14, 18, .78);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+[data-project-badge='lock'] {
+  background: #ffd9a0;
+  color: #5a3300;
+}
+[data-project-badge='overdue'] {
+  background: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+}
+[data-project-badge='warn'] {
+  background: hsl(var(--warning));
+  color: hsl(var(--warning-foreground));
+}
+[data-project-check] {
+  position: absolute;
+  left: 22px;
+  top: 22px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(12, 14, 18, .82);
+  cursor: pointer;
+}
+[data-project-check] input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: hsl(var(--primary));
+}
+[data-project-check] input:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+[data-project-foot] {
+  display: grid;
+  gap: 6px;
+  padding: 6px 8px 0;
+}
+[data-project-more] {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+[data-project-more]:hover {
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+[data-project-more]:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+[data-project-card] > a:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 14px;
+}
+[data-project-touch] {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 40px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 14px;
+  font-weight: 600;
+}
+@media (hover: none), (max-width: 720px) {
+  [data-project-touch] { display: flex }
+  [data-project-more] { bottom: 54px }
+}
+@media (max-width: 720px) {
+  [data-project-touch] { height: 44px }
+  [data-project-more] { bottom: 58px }
+}
+
+/* 新建项目卡：交互/动效取自参考站点的 add-new-project。
+   background-color/transform .15s cubic-bezier(.2,.4,.1,1)；hover 圆底 scale(1.17)；
+   active 整卡 scale(.93)；focus-visible 0 0 0 2px。 */
+[data-project-new] {
+  --new-hover-bg: color-mix(in srgb, hsl(var(--secondary)) 94%, hsl(var(--foreground)) 6%);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid hsl(var(--secondary));
+  border-radius: 18px;
+  background-color: hsl(var(--secondary));
+  color: hsl(var(--foreground) / .8);
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transform: scale(1);
+  transition:
+    background-color .15s cubic-bezier(.2, .4, .1, 1),
+    border-color .15s cubic-bezier(.2, .4, .1, 1),
+    transform .15s cubic-bezier(.2, .4, .1, 1);
+}
+[data-project-new]:hover {
+  background-color: var(--new-hover-bg);
+  border-color: var(--new-hover-bg);
+}
+[data-project-new]:active {
+  transform: scale(.93);
+}
+[data-project-new]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--ring));
+}
+[data-project-new] .new-plus {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+[data-project-new] .new-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
+  color: inherit;
+}
+[data-project-new] .new-circ {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: inherit;
+}
+[data-project-new] .new-circ-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: hsl(var(--foreground) / .06);
+  transform: scale(1);
+  transition: transform .15s cubic-bezier(.2, .4, .1, 1);
+}
+[data-project-new] .new-circ-icon {
+  position: relative;
+  z-index: 1;
+}
+[data-project-new]:hover .new-circ-bg {
+  transform: scale(1.17);
+}
+[data-project-new] .new-pad {
+  flex: 1;
+  min-height: 36px;
+}
+
+/* option-b 在 reduced-motion 下关闭卡片抬升与艺术层位移；交互不受影响。 */
+@media (prefers-reduced-motion: reduce) {
+  [data-project-card],
+  [data-project-cover],
+  [data-project-art] i,
+  [data-project-new],
+  [data-project-new] .new-circ-bg {
+    transition: none;
+  }
+  [data-project-card]:hover:not([data-dragging='true']) { transform: none }
+  [data-project-card]:hover:not([data-dragging='true']) [data-project-art] i { transform: none }
+}
+
+/* 紧凑封面：option-b 的 compact 只缩网格与封面标题字号，footer 内容不变。 */
+[data-project-grid='compact'] [data-project-cap] h3 {
+  font-size: 15px;
+}
+
+/* 卡片菜单的文件夹子菜单需要浮出 ReviewPopup 的可滚动边界。 */
+[data-review-popup][data-overflow-visible] {
+  overflow: visible;
+}

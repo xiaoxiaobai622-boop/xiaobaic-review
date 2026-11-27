@@ -16,6 +16,10 @@ interface ReviewPopupProps {
   width: number
   children: ReactNode
   returnFocus?: RefObject<HTMLElement | null>
+  /** 允许需要浮出菜单边界的子菜单（如卡片菜单里的文件夹子菜单）。 */
+  overflowVisible?: boolean
+  /** 卡片菜单与文件夹子菜单需要去掉阴影，保持扁平。 */
+  flat?: boolean
 }
 
 export default function ReviewPopup(props: ReviewPopupProps) {
@@ -26,7 +30,7 @@ export default function ReviewPopup(props: ReviewPopupProps) {
   )
 }
 
-function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', side = 'top', align = 'start', width, children, returnFocus }: ReviewPopupProps) {
+function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', side = 'top', align = 'start', width, children, returnFocus, overflowVisible = false, flat = false }: ReviewPopupProps) {
   const [content, setContent] = useState<HTMLDivElement | null>(null)
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
   const outside = useRef(false)
@@ -115,11 +119,12 @@ function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', 
     <Dialog.Content
       ref={setContent}
       data-review-popup
+      data-overflow-visible={overflowVisible ? '' : undefined}
       id={id}
       role={role}
       aria-label={label}
       aria-describedby={undefined}
-      className={styles.surface}
+      className={`${styles.surface}${flat ? ` ${styles.flat}` : ''}`}
       style={position}
       inert={!open ? true : undefined}
       aria-hidden={!open ? true : undefined}

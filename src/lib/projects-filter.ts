@@ -40,7 +40,10 @@ export interface ProjectListItem {
   shareCode?: string | null
   title: string
   description?: string | null
+  coverImageUrl?: string | null
   status: string
+  /** frame.io-style restricted visibility; only surfaced as a lock badge. */
+  restricted?: boolean
   companyName: string | null
   clientCompanyId?: string | null
   clientCompany?: { name: string } | null

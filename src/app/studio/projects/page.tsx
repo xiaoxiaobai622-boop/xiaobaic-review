@@ -52,6 +52,7 @@ import {
 
 const FILTERS_STORAGE_KEY = 'admin_projects_filters'
 const VIEW_MODE_STORAGE_KEY = 'admin_projects_view'
+const CARD_SIZE_STORAGE_KEY = 'admin_projects_cover_size'
 const FOLDER_RAIL_STORAGE_KEY = 'admin_projects_folder_rail_collapsed'
 
 function loadInitialFilters(searchParams: URLSearchParams): ProjectsFilterState {
@@ -78,6 +79,11 @@ function loadInitialViewMode(): ViewMode {
   if (stored === 'grid' || stored === 'table') return stored
   if (stored === 'list') return 'table'
   return 'grid'
+}
+
+function loadInitialCardSize(): 'large' | 'compact' {
+  if (typeof window === 'undefined') return 'compact'
+  return localStorage.getItem(CARD_SIZE_STORAGE_KEY) === 'large' ? 'large' : 'compact'
 }
 
 export default function AdminPage() {
@@ -113,6 +119,7 @@ export default function AdminPage() {
   )
   const [folderCreateRequest, setFolderCreateRequest] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>(loadInitialViewMode)
+  const [cardSize, setCardSize] = useState<'large' | 'compact'>(loadInitialCardSize)
 
   // New Project Modal state
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
@@ -182,6 +189,10 @@ export default function AdminPage() {
   useEffect(() => {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    localStorage.setItem(CARD_SIZE_STORAGE_KEY, cardSize)
+  }, [cardSize])
 
   useEffect(() => {
     localStorage.setItem(FOLDER_RAIL_STORAGE_KEY, folderRailCollapsed ? '1' : '0')
@@ -923,6 +934,8 @@ export default function AdminPage() {
                 yearOptions={yearOptions}
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
+                cardSize={cardSize}
+                onCardSizeChange={setCardSize}
               />
 
               <ProjectsSearchBar
@@ -952,6 +965,7 @@ export default function AdminPage() {
                 onMutated={() => void loadProjects()}
                 onCreateProject={openNewProjectModal}
                 unreadProjectIds={unreadProjectIds}
+                cardSize={cardSize}
               />
             ) : (
               <ProjectsList

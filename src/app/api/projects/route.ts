@@ -57,6 +57,8 @@ export async function GET(request: NextRequest) {
         slug: true,
         status: true,
         description: true,
+        coverImageUrl: true,
+        restricted: true,
         createdAt: true,
         updatedAt: true,
         watermarkEnabled: true,

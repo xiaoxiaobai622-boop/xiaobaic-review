@@ -395,6 +395,7 @@ model Project {
   slug            String  @unique
   shareSlug       String
   description     String?
+  coverImageUrl   String? // Project cover image (public capability URL, managed from project settings)
   companyName     String? // Optional company/brand name (display priority: companyName → primary recipient → 'Client')
   sharePassword   String?
   authMode        String  @default("PASSWORD") // Authentication mode: PASSWORD, OTP, BOTH, or NONE

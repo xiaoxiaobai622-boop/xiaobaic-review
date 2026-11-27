@@ -1,20 +1,21 @@
 'use client'
+/* eslint-disable @next/next/no-img-element -- 封面已由服务端转成 WebP，按 16:9 固定裁切，不需要 next/image 再优化 */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Video, MessageSquare, Pin, PinOff, Check, Archive, ArchiveRestore, Trash2, MoreHorizontal, AlertTriangle, Layers, CheckCircle2, FolderKanban, FolderInput, FolderOpen, Plus } from 'lucide-react'
+import { Video, MessageSquare, Pin, PinOff, Check, Archive, ArchiveRestore, Trash2, MoreHorizontal, AlertTriangle, Layers, CheckCircle2, FolderKanban, FolderInput, Plus, Calendar, Clock, Lock, Play, Settings2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { apiDelete, apiPatch } from '@/lib/api-client'
 import { logError } from '@/lib/logging'
-import { formatDate } from '@/lib/utils'
 import { clientKeyFor, clientLabelFor, NO_CLIENT_KEY, type ProjectListItem } from '@/lib/projects-filter'
 import { PROJECT_DND_MIME, folderOptions, folderPathLabels, type FolderNode } from '@/lib/project-folders'
 import { isEditableContextTarget, contextMenuPoint as contextMenuPointFromEvent, elementContextPoint, type ContextMenuPoint } from '@/lib/context-menu'
 import OverlayMenu from '@/components/OverlayMenu'
 import ReviewPopup from '@/components/ReviewPopup'
+import ProjectSettingsDialog from './ProjectSettingsDialog'
 
 const GROUP_STORAGE_KEY = 'admin_projects_group'
 const PINNED_STORAGE_KEY = 'admin_projects_pinned'
@@ -63,41 +64,60 @@ function pillClass(kind: 'hot' | 'warn' | 'soon' | 'calm'): string {
   return 'bg-muted text-muted-foreground'
 }
 
-function Progress({ approved, total }: { approved: number; total: number }) {
-  const t = useTranslations('projects')
-  const pct = total > 0 ? Math.round((approved / total) * 100) : 0
-  // An empty project has no delivery progress to report; 0/0 would read like one.
-  if (total === 0) {
-    return <p className="mt-2.5 text-[11px] text-muted-foreground">{t('progressEmpty')}</p>
+function formatCardUpdatedAt(value: string | Date, locale: string): string {
+  const date = new Date(value)
+  const now = new Date()
+  const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((dayStart(now) - dayStart(date)) / 86400000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  if (locale.toLowerCase().startsWith('zh')) {
+    if (days <= 0) return `今天 ${time}`
+    if (days === 1) return `昨天 ${time}`
+    if (days < 7) return `${days} 天前`
+    if (days < 14) return '上周'
+    const monthDay = `${date.getMonth() + 1} 月 ${date.getDate()} 日`
+    return date.getFullYear() === now.getFullYear() ? monthDay : `${date.getFullYear()} 年 ${monthDay}`
   }
-  return (
-    <div className="flex items-center gap-2 mt-2.5">
-      <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden" aria-hidden>
-        <div
-          className={`h-full rounded-full ${pct === 100 ? 'bg-success' : 'bg-primary'}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-[11px] whitespace-nowrap tabular-nums text-muted-foreground" title="按版本统计，不是整项目交付进度">
-        {t('progressApproved', { approved, total })}
-      </span>
-    </div>
-  )
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+  if (days <= 0) return `${relative.format(0, 'day')} ${time}`
+  if (days === 1) return `${relative.format(-1, 'day')} ${time}`
+  if (days < 7) return relative.format(-days, 'day')
+  if (days < 14) return relative.format(-1, 'week')
+  return new Intl.DateTimeFormat(locale, {
+    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date)
 }
 
-function DuePill({ project }: { project: ProjectListItem }) {
+function DuePill({ project, variant = 'default' }: { project: ProjectListItem; variant?: 'default' | 'cover' }) {
   const t = useTranslations('projects')
   const locale = useLocale()
   if (!project.dueDate) return null
   if (project.status !== 'IN_REVIEW') return null
   const diff = dueDaysFrom(project.dueDate)
-  if (diff < 0) return <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${pillClass('hot')}`}>{t('overdueDays', { days: -diff })}</span>
-  if (diff === 0) return <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${pillClass('warn')}`}>{t('dueToday')}</span>
-  if (diff === 1) return <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${pillClass('warn')}`}>{t('dueTomorrow')}</span>
-  const label = new Date(project.dueDate).toLocaleDateString(locale, { month: 'numeric', day: 'numeric' })
+  const label = diff < 0
+    ? t('overdueDays', { days: -diff })
+    : diff === 0
+      ? t('dueToday')
+      : diff === 1
+        ? t('dueTomorrow')
+        : t('dueOn', { date: new Date(project.dueDate).toLocaleDateString(locale, { month: 'numeric', day: 'numeric' }) })
+  if (variant === 'cover') {
+    const tone = diff < 0 ? 'overdue' : diff <= 1 ? 'warn' : 'due'
+    return (
+      <span data-project-badge={tone}>
+        <Calendar className="h-[14px] w-[14px]" aria-hidden />
+        {label}
+      </span>
+    )
+  }
+  if (diff < 0) return <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${pillClass('hot')}`}>{label}</span>
+  if (diff === 0 || diff === 1) return <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${pillClass('warn')}`}>{label}</span>
   return (
     <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${diff <= 7 ? pillClass('soon') : pillClass('calm')}`}>
-      {t('dueOn', { date: label })}
+      {label}
     </span>
   )
 }
@@ -172,19 +192,22 @@ export function ProjectsStats({ projects }: { projects: ProjectListItem[] }) {
  * several places at once and no single row could be ticked.
  */
 function FolderPickList({
-  options, currentFolderId, onSelect,
+  options, currentFolderId, onSelect, hideHeader = false,
 }: {
   options: { id: string; name: string; depth: number }[]
   currentFolderId?: string | null
   onSelect: (folderId: string | null) => void
+  hideHeader?: boolean
 }) {
   const t = useTranslations('projects')
   return (
     <>
-      <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-        <FolderInput className="w-3 h-3" />
-        {t('folderMoveTo')}
-      </div>
+      {!hideHeader && (
+        <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+          <FolderInput className="w-3 h-3" />
+          {t('folderMoveTo')}
+        </div>
+      )}
       {options.length === 0 && (
         <div className="px-2.5 py-1 text-[12px] text-muted-foreground">{t('folderNoFolders')}</div>
       )}
@@ -222,6 +245,27 @@ function FolderPickList({
   )
 }
 
+const CARD_ART_PALETTES = [
+  { a: '#3b2a8f', b: '#7c5cf0' },
+  { a: '#e0566b', b: '#ff8a6b' },
+  { a: '#0f5c73', b: '#1fa0a0' },
+  { a: '#1f3f8f', b: '#3f7be0' },
+  { a: '#5a2d6e', b: '#b0527f' },
+  { a: '#274a3a', b: '#3f8f6a' },
+]
+
+const CARD_ART_BY_CODE: Record<string, number> = {
+  '001': 0, '006': 1, '004': 2, '005': 3, '003': 4, '002': 5,
+}
+
+function cardArtFor(project: ProjectListItem) {
+  const known = CARD_ART_BY_CODE[project.projectCode]
+  if (known !== undefined) return CARD_ART_PALETTES[known]
+  let hash = 0
+  for (let i = 0; i < project.id.length; i += 1) hash = (hash * 31 + project.id.charCodeAt(i)) >>> 0
+  return CARD_ART_PALETTES[hash % CARD_ART_PALETTES.length]
+}
+
 interface ProjectCardProps {
   project: ProjectListItem
   href: string
@@ -249,20 +293,62 @@ interface ProjectCardProps {
   onDragStart: (project: ProjectListItem, e: React.DragEvent) => void
   onDragEnd: () => void
   onDeleteRequest: (project: ProjectListItem) => void
+  onOpenSettings: (project: ProjectListItem) => void
 }
 
 function ProjectCard({
-  project, href, isAdmin, pinned, batchMode, selected, menuOpen, showClient, showStatus, showProgress,
-  showFolderChip, hasUnread, folderLabel, folderOptions, dragging, contextMenuPoint,
-  onToggleSelect, onToggleMenu, onOpenContextMenu, onCloseContextMenu, onTogglePin, onSetStatus, onMove, onDragStart, onDragEnd, onDeleteRequest,
+  project, href, isAdmin, pinned, batchMode, selected, menuOpen,
+  hasUnread, folderOptions, dragging, contextMenuPoint,
+  onToggleSelect, onToggleMenu, onOpenContextMenu, onCloseContextMenu, onTogglePin, onSetStatus, onMove, onDragStart, onDragEnd, onDeleteRequest, onOpenSettings,
 }: ProjectCardProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
-  const approvedVideos = project.videos.filter((v) => v.reviewStatus === 'APPROVED').length
+  const locale = useLocale()
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false)
+  const [folderMenuSide, setFolderMenuSide] = useState<'right' | 'left' | 'inline'>('right')
+  const folderMenuId = `project-folder-menu-${project.id}`
+  const folderCloseTimer = useRef<number | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const cardLinkRef = useRef<HTMLAnchorElement | null>(null)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const clearFolderClose = () => {
+    if (folderCloseTimer.current !== null) {
+      window.clearTimeout(folderCloseTimer.current)
+      folderCloseTimer.current = null
+    }
+  }
+
+  const scheduleFolderClose = () => {
+    clearFolderClose()
+    if (folderMenuSide === 'inline') return
+    folderCloseTimer.current = window.setTimeout(() => {
+      folderCloseTimer.current = null
+      setFolderMenuOpen(false)
+    }, 180)
+  }
+
+  useEffect(() => {
+    if (!menuOpen && !contextMenuPoint) {
+      clearFolderClose()
+      setFolderMenuOpen(false)
+    }
+  }, [menuOpen, contextMenuPoint])
+
+  useEffect(() => () => clearFolderClose(), [])
+
+  const openFolderMenu = (element: HTMLElement) => {
+    clearFolderClose()
+    if (window.innerWidth <= 720) {
+      setFolderMenuSide('inline')
+    } else {
+      const rect = element.getBoundingClientRect()
+      const inset = parseFloat(getComputedStyle(element).getPropertyValue('--folder-panel-inset')) || 7
+      setFolderMenuSide(rect.right + inset + 3 + 190 + 8 <= window.innerWidth ? 'right' : 'left')
+    }
+    setFolderMenuOpen(true)
+  }
 
   const menuItems = (
     <>
@@ -270,12 +356,61 @@ function ProjectCard({
         {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
         {pinned ? t('menuUnpin') : t('menuPin')}
       </button>
-      <div className="mt-1 pt-1 border-t border-border">
-        <FolderPickList
-          options={folderOptions}
-          currentFolderId={project.groupId || null}
-          onSelect={(folderId) => onMove(project, folderId)}
-        />
+      <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onOpenSettings(project)}>
+        <Settings2 className="w-3.5 h-3.5" />
+        {t('projectSettings')}
+      </button>
+      <div
+        className="relative mt-1 pt-1 border-t border-border"
+        onMouseEnter={(event) => openFolderMenu(event.currentTarget)}
+        onMouseLeave={(event) => {
+          const related = event.relatedTarget as Node | null
+          if (related && event.currentTarget.contains(related)) return
+          scheduleFolderClose()
+        }}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          data-menu-keep-open
+          aria-haspopup="menu"
+          aria-expanded={folderMenuOpen}
+          aria-controls={folderMenuOpen ? folderMenuId : undefined}
+          onClick={(event) => openFolderMenu(event.currentTarget)}
+          onMouseEnter={clearFolderClose}
+          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] text-left ${folderMenuOpen ? 'bg-muted' : 'hover:bg-muted'}`}
+        >
+          <FolderInput className="w-3.5 h-3.5" />
+          {t('folderMoveTo')}
+          {folderMenuOpen && folderMenuSide === 'left'
+            ? <ChevronLeft className="ml-auto w-3.5 h-3.5 text-muted-foreground" aria-hidden />
+            : <ChevronRight className={`ml-auto w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${folderMenuOpen && folderMenuSide === 'inline' ? 'rotate-90' : ''}`} aria-hidden />}
+        </button>
+        {folderMenuOpen && (
+          <div
+            id={folderMenuId}
+            role="menu"
+            aria-label={t('folderMoveTo')}
+            className={
+              folderMenuSide === 'inline'
+                ? 'relative mt-0.5 w-full'
+                : `absolute top-[4px] z-20 w-[190px] rounded-[8px] border border-border bg-popover p-1 ${folderMenuSide === 'right' ? 'left-full' : 'right-full'}`
+            }
+            style={folderMenuSide === 'inline' ? undefined : {
+              marginLeft: folderMenuSide === 'right' ? 'calc(var(--folder-panel-inset, 7px) + 3px)' : undefined,
+              marginRight: folderMenuSide === 'left' ? 'calc(var(--folder-panel-inset, 7px) + 3px)' : undefined,
+            }}
+            onMouseEnter={clearFolderClose}
+            onMouseLeave={scheduleFolderClose}
+          >
+            <FolderPickList
+              hideHeader
+              options={folderOptions}
+              currentFolderId={project.groupId || null}
+              onSelect={(folderId) => onMove(project, folderId)}
+            />
+          </div>
+        )}
       </div>
       {project.status !== 'APPROVED' && (
         <button type="button" role="menuitem" className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] hover:bg-muted text-left" onClick={() => onSetStatus(project, 'APPROVED')}>
@@ -331,33 +466,124 @@ function ProjectCard({
     if (point) onOpenContextMenu(project, point)
   }
 
+  const art = cardArtFor(project)
+
   return (
-    <div
+    /* eslint-disable-next-line jsx-a11y/role-supports-aria-props -- option-b 的选中托盘按 aria-selected 着色 */
+    <article
       ref={cardRef}
+      data-project-card
       data-card-root
       data-card-context
+      data-dragging={dragging ? 'true' : undefined}
+      aria-selected={selected}
+      onClick={(event) => {
+        // The 6px tray rim sits outside the Link; a click there is still a card click.
+        if (event.target !== event.currentTarget) return
+        if (batchMode) onToggleSelect(project.id)
+        else cardLinkRef.current?.click()
+      }}
       onContextMenu={isAdmin ? (event) => openContextMenuAt(event, cardRef.current) : undefined}
       onKeyDown={isAdmin ? (event) => {
         if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
         openContextMenuAt(event)
       } : undefined}
-      className={`relative rounded-xl border bg-card shadow-sm transition-[color,background-color,border-color,opacity,transform] duration-150 active:bg-accent/20 ${selected ? 'border-primary ring-2 ring-primary-visible' : 'border-border hover:border-primary/60'} ${dragging ? 'opacity-40 scale-[0.9]' : ''}`}
+      className="group/card"
     >
-      {hasUnread && (
-        <span
-          aria-label="有新消息"
-          className="pointer-events-none absolute right-1.5 top-1.5 z-10 h-2 w-2 rounded-full bg-destructive ring-2 ring-card"
-        />
-      )}
+      <Link
+        ref={cardLinkRef}
+        href={href}
+        aria-label={project.title}
+        onClick={(e) => { if (batchMode) { e.preventDefault(); onToggleSelect(project.id) } }}
+        draggable={isAdmin}
+        onDragStart={(e) => onDragStart(project, e)}
+        onDragEnd={onDragEnd}
+        className="block"
+      >
+        <div data-project-cover>
+          <div
+            data-project-art
+            aria-hidden="true"
+            style={{ '--art-a': art.a, '--art-b': art.b } as CSSProperties}
+          >
+            <i className="art-l1" />
+            <i className="art-l2" />
+            <i className="art-l3" />
+          </div>
+          {project.coverImageUrl && (
+            <img
+              data-project-cover-image
+              src={project.coverImageUrl}
+              alt=""
+              draggable={false}
+              loading="lazy"
+              className="absolute inset-0 z-[4] h-full w-full object-cover"
+              onError={(event) => { event.currentTarget.style.display = 'none' }}
+            />
+          )}
+          <div data-project-badges>
+            {hasUnread && (
+              <span className="inline-flex items-center" title="有新消息">
+                <span className="sr-only">有新消息</span>
+                <span className="h-2 w-2 rounded-full bg-destructive ring-2 ring-white/80" aria-hidden />
+              </span>
+            )}
+            {pinned && (
+              <span data-project-badge="pin" title={t('pinnedSection')} aria-label={t('pinnedSection')}>
+                <Pin className="h-[14px] w-[14px]" aria-hidden />
+              </span>
+            )}
+            <DuePill project={project} variant="cover" />
+            {project.restricted && (
+              <span data-project-badge="lock" title={t('restrictedProject')} aria-label={t('restrictedProject')}>
+                <Lock className="h-[14px] w-[14px]" aria-hidden />
+              </span>
+            )}
+          </div>
+          <div data-project-cap>
+            <h3 className="truncate text-[17px] font-bold leading-[1.3] text-white" title={project.title}>{project.title}</h3>
+            <div className="truncate text-[13px] leading-[1.5] text-white/[0.82]">
+              {clientLabelFor(project) || t('noClientAssigned')}
+            </div>
+          </div>
+        </div>
+        <div data-project-foot>
+          <div className={`flex min-h-[30px] min-w-0 items-center gap-[14px] text-[12.5px] text-muted-foreground ${isAdmin && !batchMode ? 'pr-[34px]' : ''}`}>
+            {project.videos.length > 0 && (
+              <span className="inline-flex items-center gap-[5px]">
+                <Video className="h-3.5 w-3.5" aria-hidden />{project.videos.length}
+              </span>
+            )}
+            {project._count.comments > 0 && (
+              <span className="inline-flex items-center gap-[5px]">
+                <MessageSquare className="h-3.5 w-3.5" aria-hidden />{project._count.comments}
+              </span>
+            )}
+            <span className="inline-flex min-w-0 items-center gap-[5px]">
+              <Clock className="h-3.5 w-3.5 flex-none" aria-hidden />
+              <span className="truncate">{formatCardUpdatedAt(project.updatedAt, locale)}</span>
+            </span>
+          </div>
+        </div>
+        <span data-project-touch aria-hidden="true">
+          <Play className="h-[14px] w-[14px]" />
+          {t('enterReview')}
+        </span>
+      </Link>
       {isAdmin && batchMode && (
-        <button
-          type="button"
-          aria-label={t('selectProject')}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleSelect(project.id) }}
-          className={`absolute -top-1.5 -left-1.5 z-10 w-5 h-5 rounded-full border flex items-center justify-center ${selected ? 'bg-primary border-primary text-primary-foreground' : 'bg-card border-border text-transparent'}`}
+        <label
+          data-project-check
+          onClick={(event) => event.stopPropagation()}
+          title={t('selectProject')}
         >
-          <Check className="w-3 h-3" />
-        </button>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(project.id)}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`${t('selectProject')} ${project.title}`}
+          />
+        </label>
       )}
       {isAdmin && !batchMode && (
         <>
@@ -368,10 +594,10 @@ function ProjectCard({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             data-card-menu
+            data-project-more
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMenu(menuOpen ? null : project.id) }}
-            className="absolute bottom-3 right-2 z-10 w-6 h-6 rounded-md text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground focus:opacity-100 group-hover/card:opacity-100 transition-opacity [@media(pointer:coarse)]:opacity-100"
           >
-            <MoreHorizontal className="w-4 h-4 mx-auto" />
+            <MoreHorizontal className="h-4 w-4" />
           </button>
           <ReviewPopup
             id={`project-menu-${project.id}`}
@@ -383,52 +609,18 @@ function ProjectCard({
             side="bottom"
             align="end"
             width={230}
+            overflowVisible
+            flat
           >
-            <div onClick={(event) => { if ((event.target as HTMLElement).closest('[role="menuitem"]')) onToggleMenu(null) }}>
+            <div
+              style={{ '--folder-panel-inset': '7px' } as CSSProperties}
+              onClick={(event) => { if ((event.target as HTMLElement).closest('[role="menuitem"]:not([data-menu-keep-open])')) onToggleMenu(null) }}
+            >
               {menuItems}
             </div>
           </ReviewPopup>
         </>
       )}
-      <Link
-        ref={cardLinkRef}
-        href={href}
-        onClick={(e) => { if (batchMode) { e.preventDefault(); onToggleSelect(project.id) } }}
-        draggable={isAdmin}
-        onDragStart={(e) => onDragStart(project, e)}
-        onDragEnd={onDragEnd}
-        className="block p-3.5"
-      >
-        <div className="flex items-center gap-2 min-h-[22px]">
-          <span className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
-            ID {project.projectCode}
-          </span>
-          {showClient && <span className="text-[12px] text-muted-foreground truncate">{clientLabelFor(project) || t('noClientAssigned')}</span>}
-          {showStatus && (
-            <span className="ml-auto flex items-center gap-1.5">
-              {pinned && <Pin className="w-3 h-3 text-primary" />}
-              <StatusBadge status={project.status} />
-            </span>
-          )}
-        </div>
-        <div className="font-semibold text-sm mt-0.5 truncate" title={project.title}>{project.title}</div>
-        {showProgress && <Progress approved={approvedVideos} total={project.videos.length} />}
-        {/* The ⋯ now sits at this row's right end, so the due pill keeps out of it. */}
-        <div className={`flex items-center gap-3 mt-2 text-muted-foreground text-[12px] flex-wrap min-h-[20px] ${isAdmin && !batchMode ? 'pr-7' : ''}`}>
-          <span className="inline-flex items-center gap-1"><Video className="w-3.5 h-3.5" />{project.videos.length}</span>
-          <span className="inline-flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5" />{project._count.comments}</span>
-          {showFolderChip && folderLabel && (
-            <span className="inline-flex items-center gap-1 min-w-0 max-w-[160px]" title={folderLabel}>
-              <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
-              <span className="truncate">{folderLabel}</span>
-            </span>
-          )}
-          <span className="ml-auto">
-            <DuePill project={project} />
-          </span>
-          {batchMode && <span className="text-[11px]">{formatDate(project.updatedAt)}</span>}
-        </div>
-      </Link>
       {isAdmin && contextMenuPoint && (
         <OverlayMenu
           open
@@ -438,13 +630,16 @@ function ProjectCard({
           placement={{ side: 'bottom', align: 'start', gap: 6, pointer: true }}
           returnFocusRef={cardLinkRef}
           menuRef={contextMenuRef}
+          className="shadow-none"
           onKeyDown={handleContextMenuKeyDown}
-          onClick={(event) => { if ((event.target as HTMLElement).closest('[role="menuitem"]')) onCloseContextMenu() }}
+          onClick={(event) => { if ((event.target as HTMLElement).closest('[role="menuitem"]:not([data-menu-keep-open])')) onCloseContextMenu() }}
         >
-          {menuItems}
+          <div style={{ '--folder-panel-inset': '4.75px' } as CSSProperties}>
+            {menuItems}
+          </div>
         </OverlayMenu>
       )}
-    </div>
+    </article>
   )
 }
 
@@ -460,10 +655,11 @@ interface ProjectsDashboardProps {
   onMutated: () => void
   onCreateProject?: () => void
   unreadProjectIds?: Set<string>
+  cardSize: 'large' | 'compact'
 }
 
 export default function ProjectsDashboard({
-  projects, isAdmin, folders, showFolderChip, emptyMessage, folderBreadcrumb, onMoveProjects, onMutated, onCreateProject, unreadProjectIds,
+  projects, isAdmin, folders, showFolderChip, emptyMessage, folderBreadcrumb, onMoveProjects, onMutated, onCreateProject, unreadProjectIds, cardSize,
 }: ProjectsDashboardProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -480,6 +676,7 @@ export default function ProjectsDashboard({
   const [archOpen, setArchOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ProjectListItem | null>(null)
+  const [settingsProject, setSettingsProject] = useState<ProjectListItem | null>(null)
   const [actionError, setActionError] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -745,20 +942,29 @@ export default function ProjectsDashboard({
     onDragStart: startDrag,
     onDragEnd: () => setDraggingId(null),
     onDeleteRequest: setDeleteTarget,
+    onOpenSettings: setSettingsProject,
   })
 
-  const gridClass = 'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]'
+  const gridClass = cardSize === 'compact'
+    ? 'grid gap-x-[16px] gap-y-[20px] [grid-template-columns:repeat(auto-fill,minmax(236px,1fr))]'
+    : 'grid gap-x-[20px] gap-y-[24px] [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]'
   const archivedSelected = [...selected].some((id) => projects.find((p) => p.id === id && p.status === 'ARCHIVED'))
   const createCard = isAdmin && onCreateProject && !batchMode ? (
     <button
       type="button"
       onClick={onCreateProject}
-      className="flex h-full min-h-[125px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-transparent p-3 text-muted-foreground transition-colors hover:border-primary hover:bg-accent/30 hover:text-foreground"
+      data-project-new
+      aria-label={t('newProject')}
     >
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
-        <Plus className="h-4 w-4" />
+      <span className="new-plus" aria-hidden />
+      <span className="new-face">
+        <span className="new-circ">
+          <span className="new-circ-bg" aria-hidden />
+          <Plus className="new-circ-icon h-[22px] w-[22px]" aria-hidden />
+        </span>
+        <span>{t('newProject')}</span>
       </span>
-      <span className="text-[13px] font-medium">{t('newProject')}</span>
+      <span className="new-pad" aria-hidden />
     </button>
   ) : null
 
@@ -771,7 +977,7 @@ export default function ProjectsDashboard({
             <p className="text-muted-foreground">{emptyMessage || t('noMatchingProjects')}</p>
           </CardContent>
         </Card>
-        {createCard && <div className={`${gridClass} mt-3`}>{createCard}</div>}
+        {createCard && <div className={`${gridClass} mt-3`} data-project-grid={cardSize}>{createCard}</div>}
       </div>
     )
   }
@@ -886,11 +1092,9 @@ export default function ProjectsDashboard({
               <span className="text-[12px] text-muted-foreground bg-secondary rounded-full px-2">{g.list.length} {t('projectsCount')}</span>
             </div>
           )}
-          <div className={gridClass}>
+          <div className={gridClass} data-project-grid={cardSize}>
             {g.list.map((p) => (
-              <div key={p.id} className="group/card">
-                <ProjectCard {...cardProps(p)} />
-              </div>
+              <ProjectCard key={p.id} {...cardProps(p)} />
             ))}
             {index === groups.length - 1 && createCard}
           </div>
@@ -898,7 +1102,7 @@ export default function ProjectsDashboard({
       ))}
 
       {groups.length === 0 && createCard && (
-        <div className={`${gridClass} mb-5`}>{createCard}</div>
+        <div className={`${gridClass} mb-5`} data-project-grid={cardSize}>{createCard}</div>
       )}
 
       {/* Archived (collapsed) */}
@@ -917,11 +1121,9 @@ export default function ProjectsDashboard({
             <span className="ml-auto text-[12px] font-normal">{archOpen ? t('clickToCollapse') : t('clickToExpand')}</span>
           </button>
           {archOpen && (
-            <div className={`${gridClass} pb-2 opacity-90`}>
+            <div className={`${gridClass} pb-2 opacity-90`} data-project-grid={cardSize}>
               {archived.map((p) => (
-                <div key={p.id} className="group/card">
-                  <ProjectCard {...cardProps(p)} />
-                </div>
+                <ProjectCard key={p.id} {...cardProps(p)} />
               ))}
             </div>
           )}
@@ -974,6 +1176,16 @@ export default function ProjectsDashboard({
           <span className="w-px h-4 bg-background/30" aria-hidden />
           <button type="button" onClick={selectAllActive} className="px-3 py-1.5 rounded-lg text-background/70 hover:text-background">{t('selectAllProjects')}</button>
         </div>
+      )}
+
+      {settingsProject && (
+        <ProjectSettingsDialog
+          project={settingsProject}
+          art={cardArtFor(settingsProject)}
+          open
+          onOpenChange={(open) => { if (!open) setSettingsProject(null) }}
+          onSaved={() => { setSettingsProject(null); onMutated() }}
+        />
       )}
 
       {/* Delete confirm */}

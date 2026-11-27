@@ -16,6 +16,8 @@ interface ProjectsToolbarProps {
   yearOptions: string[]
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
+  cardSize: 'large' | 'compact'
+  onCardSizeChange: (size: 'large' | 'compact') => void
 }
 
 export default function ProjectsToolbar({
@@ -25,6 +27,8 @@ export default function ProjectsToolbar({
   yearOptions,
   viewMode,
   onViewModeChange,
+  cardSize,
+  onCardSizeChange,
 }: ProjectsToolbarProps) {
   const t = useTranslations('projects')
   const tc = useTranslations('common')
@@ -91,6 +95,29 @@ export default function ProjectsToolbar({
         <ProjectsSortMenu value={filters.sort} onChange={(sort) => setField('sort', sort)} />
 
         <ViewModeToggle value={viewMode} onChange={onViewModeChange} />
+
+        {viewMode === 'grid' && (
+          <div
+            role="group"
+            aria-label={t('cardSize')}
+            className="inline-flex max-[720px]:hidden items-center rounded-lg border bg-card p-0.5"
+          >
+            {(['large', 'compact'] as const).map((size) => (
+              <button
+                key={size}
+                type="button"
+                aria-pressed={cardSize === size}
+                title={size === 'large' ? t('cardSizeLarge') : t('cardSizeCompact')}
+                onClick={() => onCardSizeChange(size)}
+                className={`h-[30px] rounded-md px-2.5 text-[12.5px] font-medium ${
+                  cardSize === size ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {size === 'large' ? t('cardSizeLarge') : t('cardSizeCompact')}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

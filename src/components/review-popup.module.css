@@ -150,3 +150,12 @@
     .surface[data-state='open'] { transform: none; }
   }
 }
+
+/* 卡片菜单主面板需要和文件夹子菜单一样扁平，不投影。 */
+.surface.flat {
+  box-shadow: none;
+}
+
+:global(.dark) .surface.flat {
+  box-shadow: none;
+}
