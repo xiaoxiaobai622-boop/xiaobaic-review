@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_COMMENT } from '@/lib/db'
 import { getCurrentUserFromRequest } from '@/lib/auth'
 import { getRequestedTeamId } from '@/lib/team-access'
-import { projectAccessWhere } from '@/lib/project-access'
+import { projectAccessWhereWithFolders } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         parentId: { not: null },
         // 关掉反馈的项目在 /api/comments 里一律读不到正文，通知也不该把人送进空线程。
         project: {
-          ...projectAccessWhere(authResult, getRequestedTeamId(request)),
+          ...(await projectAccessWhereWithFolders(authResult, getRequestedTeamId(request))),
           hideFeedback: false,
         },
         parent: {

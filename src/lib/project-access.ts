@@ -40,6 +40,74 @@ export function projectAccessWhere(user: AuthUser, teamId?: string | null): Pris
   }
 }
 
+type FolderRestrictionRow = { id: string; parentId: string | null; restricted: boolean }
+
+function restrictedFolderIds(rows: FolderRestrictionRow[]): string[] {
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const ids = new Set<string>()
+  for (const row of rows) {
+    let cursor: FolderRestrictionRow | undefined = row
+    while (cursor) {
+      if (cursor.restricted) {
+        ids.add(row.id)
+        break
+      }
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
+    }
+  }
+  return [...ids]
+}
+
+async function loadFolderRestrictions(db: DbClient, teamId: string) {
+  return db.projectGroup.findMany({
+    where: { teamId },
+    select: { id: true, parentId: true, restricted: true },
+  })
+}
+
+/**
+ * Same visibility as projectAccessWhere, plus restricted project folders:
+ * a folder restriction is inherited by its subtree, and its projects stay
+ * visible only to their ProjectMembers and team OWNER/ADMIN.
+ */
+export async function projectAccessWhereWithFolders(user: AuthUser, teamId?: string | null): Promise<Prisma.ProjectWhereInput> {
+  const base = projectAccessWhere(user, teamId)
+  if (user.teamRole === 'OWNER' || user.teamRole === 'ADMIN') return base
+
+  const scopedTeamId = teamId || user.authorizedTeamId
+  if (!scopedTeamId) return base
+
+  const restrictedIds = restrictedFolderIds(await loadFolderRestrictions(prisma, scopedTeamId))
+  if (restrictedIds.length === 0) return base
+
+  return {
+    AND: [
+      base,
+      {
+        OR: [
+          { groupId: null },
+          { groupId: { notIn: restrictedIds } },
+          { members: { some: { userId: user.id } } },
+        ],
+      },
+    ],
+  }
+}
+
+/** True when the project sits in a restricted folder and this user is neither a member nor a team admin. */
+export async function projectFolderAccessDenied(
+  db: DbClient,
+  user: Pick<AuthUser, 'id' | 'teamRole'>,
+  project: { id: string; teamId: string; groupId: string | null },
+  hasProjectMembership: boolean,
+): Promise<boolean> {
+  if (!project.groupId) return false
+  if (user.teamRole === 'OWNER' || user.teamRole === 'ADMIN') return false
+  if (hasProjectMembership) return false
+  const rows = await loadFolderRestrictions(db, project.teamId)
+  return restrictedFolderIds(rows).includes(project.groupId)
+}
+
 function projectAccessWhereForUser(user: AuthUser, projectId: string): Prisma.ProjectWhereInput {
   const assignmentAccess: Prisma.ProjectWhereInput = user.projectAccessScope === 'ASSIGNED_ONLY'
     ? {
@@ -186,9 +254,17 @@ export async function canAccessProject(db: DbClient, user: AuthUser, projectId: 
 
   const project = await db.project.findFirst({
     where: projectAccessWhereForUser(scopedUser, projectId),
-    select: { id: true },
+    select: { id: true, teamId: true, groupId: true },
   })
-  return Boolean(project)
+  if (!project) return false
+  if (!project.groupId || scopedUser.teamRole === 'OWNER' || scopedUser.teamRole === 'ADMIN') return true
+
+  const membership = await db.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId: scopedUser.id } },
+    select: { role: true },
+  })
+  if (membership) return true
+  return !(await projectFolderAccessDenied(db, scopedUser, project, false))
 }
 
 /**
@@ -207,7 +283,7 @@ export async function findAccessibleVideo(
   sourceQualityPath: string | null
   project: { watermarkEnabled: boolean; applyPreviewLut: boolean }
 } | null> {
-  return db.video.findFirst({
+  const video = await db.video.findFirst({
     where: {
       id: videoId,
       projectId,
@@ -217,9 +293,19 @@ export async function findAccessibleVideo(
       id: true,
       projectId: true,
       sourceQualityPath: true,
-      project: { select: { watermarkEnabled: true, applyPreviewLut: true } },
+      project: { select: { teamId: true, groupId: true, watermarkEnabled: true, applyPreviewLut: true } },
     },
   })
+  if (!video) return null
+  if (!video.project.groupId || user.teamRole === 'OWNER' || user.teamRole === 'ADMIN') return video
+
+  const membership = await db.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId: user.id } },
+    select: { role: true },
+  })
+  if (membership) return video
+  if (await projectFolderAccessDenied(db, user, { id: projectId, teamId: video.project.teamId, groupId: video.project.groupId }, false)) return null
+  return video
 }
 
 export async function canAdministerProject(db: DbClient, user: AuthUser, projectId: string) {

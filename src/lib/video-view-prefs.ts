@@ -1,14 +1,18 @@
 export type VideoCardSize = 'sm' | 'md' | 'lg'
-export type VideoThumbAspect = '16:9' | '4:3' | '1:1'
+export type VideoThumbAspect = '16:9' | '4:3' | '1:1' | '9:16'
 export type VideoTitleLines = 1 | 2
+export type VideoThumbFit = 'fit' | 'fill'
 export type VideoSortField = 'updated' | 'name' | 'status' | 'comments'
 export type VideoSortDir = 'asc' | 'desc'
 
 export interface VideoDisplayPrefs {
   size: VideoCardSize
   aspect: VideoThumbAspect
+  fit: VideoThumbFit
   showInfo: boolean
   titleLines: VideoTitleLines
+  flattenFolders: boolean
+  showStatusField: boolean
 }
 
 export interface VideoSortPrefs {
@@ -20,10 +24,13 @@ export const VIDEO_DISPLAY_STORAGE_KEY = 'vitransfer-admin-video-display'
 export const VIDEO_SORT_STORAGE_KEY = 'vitransfer-admin-video-sort'
 
 export const DEFAULT_VIDEO_DISPLAY: VideoDisplayPrefs = {
-  size: 'lg',
+  size: 'md',
   aspect: '16:9',
+  fit: 'fit',
   showInfo: true,
   titleLines: 1,
+  flattenFolders: false,
+  showStatusField: true,
 }
 
 export const DEFAULT_VIDEO_SORT: VideoSortPrefs = {
@@ -32,21 +39,22 @@ export const DEFAULT_VIDEO_SORT: VideoSortPrefs = {
 }
 
 export const VIDEO_GRID_TEMPLATE: Record<VideoCardSize, string> = {
-  sm: 'repeat(auto-fill, minmax(150px, 1fr))',
+  sm: 'repeat(auto-fill, minmax(130px, 1fr))',
   md: 'repeat(auto-fill, minmax(190px, 1fr))',
-  lg: 'repeat(auto-fill, minmax(240px, 1fr))',
+  lg: 'repeat(auto-fill, minmax(300px, 1fr))',
 }
 
 export const VIDEO_CARD_MAX_WIDTH: Record<VideoCardSize, string> = {
-  sm: '180px',
-  md: '220px',
-  lg: '280px',
+  sm: '100%',
+  md: '100%',
+  lg: '100%',
 }
 
 export const VIDEO_THUMB_ASPECT_RATIO: Record<VideoThumbAspect, number> = {
   '16:9': 16 / 9,
   '4:3': 4 / 3,
   '1:1': 1,
+  '9:16': 9 / 16,
 }
 
 function readJson<T>(key: string): Partial<T> | null {
@@ -69,9 +77,12 @@ export function loadVideoDisplayPrefs(): VideoDisplayPrefs {
   }
   return {
     size: stored.size === 'sm' || stored.size === 'md' || stored.size === 'lg' ? stored.size : DEFAULT_VIDEO_DISPLAY.size,
-    aspect: stored.aspect === '16:9' || stored.aspect === '4:3' || stored.aspect === '1:1' ? stored.aspect : DEFAULT_VIDEO_DISPLAY.aspect,
+    aspect: stored.aspect === '16:9' || stored.aspect === '1:1' || stored.aspect === '9:16' ? stored.aspect : DEFAULT_VIDEO_DISPLAY.aspect,
+    fit: stored.fit === 'fill' ? 'fill' : 'fit',
     showInfo: typeof stored.showInfo === 'boolean' ? stored.showInfo : DEFAULT_VIDEO_DISPLAY.showInfo,
     titleLines: stored.titleLines === 2 ? 2 : 1,
+    flattenFolders: stored.flattenFolders === true,
+    showStatusField: stored.showStatusField !== false,
   }
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
-import { projectAccessWhere } from '@/lib/project-access'
+import { projectAccessWhereWithFolders } from '@/lib/project-access'
 import { getRequestedTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       where: {
         dueDate: { not: null, lte: thirtyDaysFromNow },
         status: { not: 'ARCHIVED' },
-        ...projectAccessWhere(authResult, getRequestedTeamId(request)),
+        ...(await projectAccessWhereWithFolders(authResult, getRequestedTeamId(request))),
       },
       select: {
         id: true,

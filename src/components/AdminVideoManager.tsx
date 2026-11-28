@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, MoreVertical, Play, ExternalLink, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff, Download } from 'lucide-react'
+import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, Play, ExternalLink, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff, Download } from 'lucide-react'
 import VideoUpload from './VideoUpload'
 import VideoList from './VideoList'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -30,9 +30,10 @@ import { pickQuickPreviewSource, type QuickPreviewSource } from '@/lib/video-pla
 import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
 import { VideoReviewStatusControl } from './VideoReviewStatusSelect'
+import ProjectGroupHeader from '@/components/projects/ProjectGroupHeader'
+import videoGridStyles from './VideoGridCard.module.css'
 import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
 import {
-  VIDEO_CARD_MAX_WIDTH,
   VIDEO_GRID_TEMPLATE,
   VIDEO_THUMB_ASPECT_RATIO,
   type VideoCardSize,
@@ -40,6 +41,7 @@ import {
   type VideoSortField,
   type VideoThumbAspect,
   type VideoTitleLines,
+  type VideoThumbFit,
 } from '@/lib/video-view-prefs'
 import type { SharePreset, ShareTarget } from '@/components/CreateShareDialog'
 
@@ -65,14 +67,14 @@ function formatVideoUploadTime(...candidates: unknown[]): string {
   const parts = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
     year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    month: 'numeric',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
   }).formatToParts(date)
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value || ''
-  return `${value('year')}-${value('month')}-${value('day')} ${value('hour')}:${value('minute')}`
+  return `${value('year')}年${value('month')}月${value('day')}日 ${value('hour')}:${value('minute')}`
 }
 
 function QuickPreviewPlayer({
@@ -121,6 +123,8 @@ interface AdminVideoManagerProps {
   sortDir?: VideoSortDir
   cardSize?: VideoCardSize
   thumbAspect?: VideoThumbAspect
+  thumbFit?: VideoThumbFit
+  showStatusField?: boolean
   showCardInfo?: boolean
   titleLines?: VideoTitleLines
   emptyMessage?: string
@@ -149,6 +153,17 @@ interface CollectedUpload {
   createdAt: string
 }
 
+
+function formatVideoTimecode(duration?: number): string {
+  const total = Math.max(0, Math.round(Number(duration) || 0))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
 export default function AdminVideoManager({
   projectId,
   videos,
@@ -161,6 +176,8 @@ export default function AdminVideoManager({
   sortDir = 'desc',
   cardSize = 'sm',
   thumbAspect = '16:9',
+  thumbFit = 'fit',
+  showStatusField = true,
   showCardInfo = true,
   titleLines = 1,
   emptyMessage,
@@ -225,6 +242,7 @@ export default function AdminVideoManager({
 
   // Only allow one video expanded at a time - default collapsed
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
+  const [videosSectionCollapsed, setVideosSectionCollapsed] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
   const localVersionInputRef = useRef<HTMLInputElement>(null)
@@ -1039,6 +1057,11 @@ export default function AdminVideoManager({
     return sortDir === 'asc' ? comparison : -comparison
   })
 
+  const assetsFileSize = Object.values(videoGroups).reduce((sum, group) => (
+    sum + group.reduce((groupSum, video: any) => groupSum + Number(video.originalFileSize || video.fileSize || 0), 0)
+  ), 0)
+  const allGroupsSelected = sortedGroupNames.length > 0 && sortedGroupNames.every((name) => selectedGroups.has(name))
+  const someGroupsSelected = sortedGroupNames.some((name) => selectedGroups.has(name))
   const selectedLatestVideos = [...selectedGroups]
     .map(name => getLatestVideo(videoGroups[name] || []))
     .filter((video): video is any => Boolean(video))
@@ -1298,8 +1321,23 @@ export default function AdminVideoManager({
         </Card>
       )}
 
+      {sortedGroupNames.length > 0 && (
+        <ProjectGroupHeader
+          countLabel={`${sortedGroupNames.length} 个资产`}
+          sizeLabel={formatFileSize(assetsFileSize).replace(' KB', ' kB')}
+          collapsed={videosSectionCollapsed}
+          onToggleCollapsed={() => setVideosSectionCollapsed((current) => !current)}
+          checked={allGroupsSelected}
+          indeterminate={!allGroupsSelected && someGroupsSelected}
+          onToggleChecked={() => setSelectedGroups(allGroupsSelected ? new Set() : new Set(sortedGroupNames))}
+          selectAllLabel="选择全部资产"
+          collapseLabel={videosSectionCollapsed ? `展开 ${sortedGroupNames.length} 个资产` : `折叠 ${sortedGroupNames.length} 个资产`}
+        />
+      )}
+
+      {!videosSectionCollapsed && (
       <div
-        className={viewMode === 'grid' ? 'grid content-start items-start gap-3' : 'space-y-4'}
+        className={viewMode === 'grid' ? 'grid content-start items-start gap-[16px]' : 'space-y-4'}
         style={viewMode === 'grid' ? { gridTemplateColumns: VIDEO_GRID_TEMPLATE[cardSize] } : undefined}
       >
       {sortedGroupNames.map((groupName) => {
@@ -1314,49 +1352,14 @@ export default function AdminVideoManager({
         const hasErrorVideos = errorCount > 0
         const feedbackCount = comments.filter(comment => comment.videoId === latestVideo.id).length
         const uploadTimeLabel = formatVideoUploadTime(latestVideo.createdAt, latestVideo.updatedAt, latestVideo.created_at, latestVideo.uploadedAt)
+        const uploaderName = displayLatestVideo.uploadedByName || latestVideo.uploadedByName || ''
         const isGridCard = viewMode === 'grid' && !isExpanded
         const titleClass = cn(
           'min-w-0',
           isGridCard
-            ? titleLines === 2
-              ? 'line-clamp-2 pr-7 text-sm leading-5'
-              : 'truncate pr-7 text-sm leading-5'
+            ? cn(videoGridStyles.name, titleLines === 2 && videoGridStyles.nameClamp2)
             : 'text-lg'
         )
-        const renderQuickActions = () => isGridCard ? (
-          <>
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/75 via-black/25 to-transparent opacity-0 transition-opacity group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100" aria-hidden />
-            <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100">
-              <button
-                type="button"
-                onClick={(event) => { event.stopPropagation(); void handlePreview(groupName, event) }}
-                disabled={previewingGroup === groupName}
-                aria-busy={previewingGroup === groupName}
-                className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded bg-background/90 px-1.5 text-[10px] font-medium text-foreground shadow-sm hover:bg-background disabled:cursor-wait disabled:opacity-80"
-                aria-label={tu('hoverPreview')}
-              >
-                {previewingGroup === groupName ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}{tu('hoverPreview')}
-              </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onCreateShare?.('REVIEW', {
-                    scopeType: 'VIDEO',
-                    scopeId: latestVideo.id,
-                    name: groupName,
-                    versions: groupVideos.map((video) => ({ id: video.id, version: video.version, versionLabel: video.versionLabel })),
-                  })
-                }}
-                className="pointer-events-auto inline-flex h-6 items-center gap-1 rounded bg-background/90 px-1.5 text-[10px] font-medium text-foreground shadow-sm hover:bg-background"
-                aria-label={tu('hoverShare')}
-              >
-                <Share2 className="h-3 w-3" />{tu('hoverShare')}
-              </button>
-            </div>
-          </>
-        ) : null
-
         const renderActionMenuItems = (submenuSide: 'left' | 'right') => (
           <>
             <div className="relative" onMouseEnter={() => { cancelActionSubmenuClose(); setVersionSourceMenuGroup(null); setReviewStatusMenuGroup(null); setShareTypeMenuGroup(groupName) }} onMouseLeave={scheduleActionSubmenuClose}>
@@ -1552,18 +1555,19 @@ export default function AdminVideoManager({
             onDrop={(event) => void handleVersionDrop(event, groupName)}
             className={cn(
               'group relative',
+              isGridCard && videoGridStyles.card,
+              isGridCard && isSelected && videoGridStyles.cardSelected,
               viewMode === 'grid' && isExpanded && 'col-span-full',
-              isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg',
+              !isGridCard && isSelected && 'border-primary ring-1 ring-primary shadow-elevation-lg',
               dropTargetGroup === groupName && 'border-primary ring-2 ring-primary/50'
             )}
-            style={isGridCard ? { maxWidth: VIDEO_CARD_MAX_WIDTH[cardSize] } : undefined}
           >
             <CardHeader
               className={cn(
-                'relative cursor-pointer hover:bg-accent/50 active:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
+                'relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
                 isGridCard
-                  ? 'block space-y-0 p-2.5'
-                  : 'flex flex-row items-center justify-between space-y-0 py-3 px-3 sm:px-6'
+                  ? videoGridStyles.header
+                  : 'flex flex-row items-center justify-between space-y-0 py-3 px-3 sm:px-6 hover:bg-accent/50 active:bg-accent transition-colors'
               )}
               data-selected={isSelected || undefined}
               role="button"
@@ -1576,12 +1580,18 @@ export default function AdminVideoManager({
               <button
                 type="button"
                 className={cn(
-                  'absolute left-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border-2 bg-background/90 text-primary shadow-elevation-sm transition-[opacity,background-color,border-color,color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                  isSelected
+                  'absolute z-20 flex items-center justify-center text-white transition-[opacity,background-color,border-color,color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                  isGridCard
+                    ? videoGridStyles.checkbox
+                    : 'left-3 top-3 h-5 w-5 rounded-[4px] border border-white/80 bg-black/25 shadow-sm',
+                  !isGridCard && isSelected
                     ? 'scale-100 border-primary bg-primary text-primary-foreground opacity-100'
-                    : selectionMode
+                    : !isGridCard && selectionMode
                       ? 'scale-100 border-muted-foreground/55 text-transparent opacity-100'
-                      : 'scale-95 border-white/90 text-transparent opacity-0 group-hover:scale-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100'
+                      : !isGridCard
+                        ? 'scale-100 border-white/80 bg-black/25 text-transparent opacity-100'
+                        : null,
+                  isGridCard && isSelected && videoGridStyles.checkboxSelected
                 )}
                 onClick={(event) => {
                   event.stopPropagation()
@@ -1590,12 +1600,17 @@ export default function AdminVideoManager({
                 aria-label={isSelected ? t('deselectVideo') : t('selectVideo')}
                 aria-pressed={isSelected}
               >
-                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                <Check className={cn(isGridCard ? 'h-3 w-3' : 'h-3.5 w-3.5')} strokeWidth={3} />
               </button>
-              <div className={cn('relative flex gap-3 flex-1 min-w-0', isGridCard ? 'flex-col items-stretch' : 'items-center')}>
+              <div className={cn('relative flex flex-1 min-w-0', isGridCard ? 'flex-col items-stretch' : 'items-center gap-3')}>
                 {thumbnails[groupName] ? (
                   <div
-                    className={cn('relative flex-shrink-0 cursor-pointer overflow-hidden rounded-md border border-border bg-black', isGridCard && 'w-full')}
+                    className={cn(
+                      'relative flex-shrink-0 cursor-pointer',
+                      isGridCard
+                        ? videoGridStyles.thumb
+                        : 'overflow-hidden rounded-md border border-border bg-black'
+                    )}
                     style={isGridCard ? { aspectRatio: String(gridThumbAspect) } : undefined}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1606,32 +1621,52 @@ export default function AdminVideoManager({
                       alt={groupName}
                       loading="lazy"
                       className={cn(
-                        'bg-black',
                         isGridCard
-                          ? cn('absolute inset-0 h-full w-full object-center', thumbAspect === '4:3' ? 'object-cover' : 'object-contain')
-                          : 'w-20 h-12 rounded-md object-contain'
+                          ? cn('absolute inset-0 h-full w-full object-center', thumbFit === 'fill' ? 'object-cover' : 'object-contain')
+                          : thumbFit === 'fill' ? 'w-20 h-12 rounded-md object-cover' : 'w-20 h-12 rounded-md object-contain'
                       )}
                     />
-                    {isGridCard && (
-                      <>
-                        <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
-                        {renderQuickActions()}
-                      </>
-                    )}
+                    {isGridCard && feedbackCount > 0 ? (
+                      <span className={videoGridStyles.commentCount}>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" focusable="false" aria-hidden="true">
+                          <path d="M8 2.667a5.333 5.333 0 0 0-4.659 7.925l-.663 2.375a.288.288 0 0 0 .355.355l2.376-.663A5.333 5.333 0 1 0 8 2.666Z" stroke="currentColor" strokeMiterlimit="10" strokeLinejoin="round" />
+                          <circle cx="5.833" cy="8" r=".667" fill="currentColor" />
+                          <circle cx="8" cy="8" r=".667" fill="currentColor" />
+                          <circle cx="10.167" cy="8" r=".667" fill="currentColor" />
+                        </svg>
+                        {feedbackCount}
+                      </span>
+                    ) : null}
+                    {isGridCard && displayLatestVideo.duration ? (
+                      <span className={videoGridStyles.duration}>
+                        {formatVideoTimecode(displayLatestVideo.duration)}
+                      </span>
+                    ) : null}
                   </div>
                 ) : (
-                  <div draggable={displayLatestVideo.status === 'READY'} onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)} className={cn('relative rounded-md border border-border bg-black flex items-center justify-center flex-shrink-0', isGridCard ? 'w-full' : 'w-20 h-12')} style={isGridCard ? { aspectRatio: String(gridThumbAspect) } : undefined}>
-                    <Video className="w-5 h-5 text-muted-foreground" />
-                    {isGridCard && (
-                      <>
-                        <VideoReviewStatusBadge video={displayLatestVideo} className="absolute right-2 top-2 max-w-[calc(100%-3.5rem)]" />
-                        {renderQuickActions()}
-                      </>
-                    )}
+                  <div draggable={displayLatestVideo.status === 'READY'} onDragStart={(event) => handleVersionDragStart(event, displayLatestVideo)} className={cn('relative flex flex-shrink-0 items-center justify-center', isGridCard ? videoGridStyles.thumb : 'w-20 h-12 rounded-md border border-border bg-black')} style={isGridCard ? { aspectRatio: String(gridThumbAspect) } : undefined}>
+                    <Video className={cn('text-muted-foreground', isGridCard ? 'h-6 w-6' : 'h-5 w-5')} />
+                    {isGridCard && feedbackCount > 0 ? (
+                      <span className={videoGridStyles.commentCount}>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" focusable="false" aria-hidden="true">
+                          <path d="M8 2.667a5.333 5.333 0 0 0-4.659 7.925l-.663 2.375a.288.288 0 0 0 .355.355l2.376-.663A5.333 5.333 0 1 0 8 2.666Z" stroke="currentColor" strokeMiterlimit="10" strokeLinejoin="round" />
+                          <circle cx="5.833" cy="8" r=".667" fill="currentColor" />
+                          <circle cx="8" cy="8" r=".667" fill="currentColor" />
+                          <circle cx="10.167" cy="8" r=".667" fill="currentColor" />
+                        </svg>
+                        {feedbackCount}
+                      </span>
+                    ) : null}
+                    {isGridCard && displayLatestVideo.duration ? (
+                      <span className={videoGridStyles.duration}>
+                        {formatVideoTimecode(displayLatestVideo.duration)}
+                      </span>
+                    ) : null}
                   </div>
                 )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
+                {(!isGridCard || showCardInfo) && (
+                <div className={cn('min-w-0', isGridCard ? videoGridStyles.details : 'flex-1')} data-lines={isGridCard ? titleLines : undefined}>
+                  <div className={cn(isGridCard ? videoGridStyles.nameRow : 'flex items-center gap-2 flex-wrap')}>
                     {editingGroupName === groupName ? (
                       <CardTitle className={titleClass}>{groupName}</CardTitle>
                     ) : (
@@ -1683,13 +1718,13 @@ export default function AdminVideoManager({
                             {t('compareVersions')}
                           </Button>
                         )}
-                        {hasProcessingVideos && (
+                        {!isGridCard && hasProcessingVideos && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary-visible text-primary border border-primary-visible flex-shrink-0">
                             <div className="animate-spin rounded-full h-2.5 w-2.5 border-b border-primary"></div>
                             {processingCount} {t('processing')}
                           </span>
                         )}
-                        {hasErrorVideos && (
+                        {!isGridCard && hasErrorVideos && (
                           latestVideo.status === 'ERROR' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-destructive-visible text-destructive border border-destructive-visible flex-shrink-0">
                               {errorCount} {t('error')}
@@ -1704,17 +1739,29 @@ export default function AdminVideoManager({
                     )}
                   </div>
                   {showCardInfo && editingGroupName !== groupName && (
-                    <p className={cn('mt-1 flex w-full min-w-0 items-center gap-2 text-muted-foreground', isGridCard ? '-translate-y-0.5 overflow-hidden pr-10 text-xs' : 'gap-4 text-sm')}>
-                      <span className="min-w-0 truncate tabular-nums" title={uploadTimeLabel}>{uploadTimeLabel}</span>
-                      <span className="shrink-0 whitespace-nowrap font-medium">{latestVideo.versionLabel || `v${latestVideo.version}`}</span>
-                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums" title={t('feedbackCount', { count: feedbackCount })}>
-                        <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>{feedbackCount}</span>
-                      </span>
-                    </p>
+                    isGridCard ? (
+                      <div className={videoGridStyles.metaRow}>
+                        <span className={videoGridStyles.meta} title={`${uploaderName ? `${uploaderName}  •  ` : ''}${t('uploadedAt', { date: uploadTimeLabel })}`}>
+                          {uploaderName ? `${uploaderName}  •  ` : ''}
+                          {t('uploadedAt', { date: uploadTimeLabel })}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className={cn('mt-1 flex w-full min-w-0 items-center gap-2 text-muted-foreground', 'gap-4 text-sm')}>
+                        {uploaderName && <span className="min-w-0 truncate">{uploaderName}</span>}
+                        {uploaderName && <span className="shrink-0" aria-hidden="true">·</span>}
+                        <span className="min-w-0 truncate tabular-nums" title={uploadTimeLabel}>{t('uploadedAt', { date: uploadTimeLabel })}</span>
+                        <span className="shrink-0 whitespace-nowrap font-medium">{latestVideo.versionLabel || `v${latestVideo.version}`}</span>
+                        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums" title={t('feedbackCount', { count: feedbackCount })}>
+                          <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                          <span>{feedbackCount}</span>
+                        </span>
+                      </p>
+                    )
                   )}
                 </div>
-                {editingGroupName !== groupName && (
+                )}
+                {editingGroupName !== groupName && (!isGridCard || showCardInfo) && (
                   isExpanded ? (
                     <button
                       type="button"
@@ -1733,12 +1780,15 @@ export default function AdminVideoManager({
                       className={cn(
                         'relative flex-shrink-0',
                         actionMenuGroup === groupName ? 'z-[70]' : 'z-10',
-                        isGridCard && 'absolute bottom-0 right-0'
+                        isGridCard && videoGridStyles.action
                       )}
                     >
                       <button
                         type="button"
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                        className={cn(
+                          'flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground',
+                          isGridCard ? 'h-6 w-6' : 'h-7 w-7'
+                        )}
                         onClick={(e) => {
                           e.stopPropagation()
                           actionMenuTriggerRef.current = e.currentTarget
@@ -1763,7 +1813,9 @@ export default function AdminVideoManager({
                         aria-haspopup="menu"
                         aria-expanded={actionMenuGroup === groupName}
                       >
-                        <MoreVertical className="h-4 w-4" />
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" focusable="false" aria-hidden="true">
+                          <path fillRule="evenodd" clipRule="evenodd" d="M13 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM9.5 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm-5 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" fill="currentColor" />
+                        </svg>
                       </button>
                       {actionMenuRenderedGroup === groupName && actionMenuPoint === null && (
                         <DialogPrimitive.Root
@@ -1844,6 +1896,37 @@ export default function AdminVideoManager({
               </div>
             </CardHeader>
 
+            {isGridCard && !isExpanded && showStatusField && (
+              <div className={videoGridStyles.statusField} onClick={(event) => event.stopPropagation()}>
+                <div className={videoGridStyles.statusBox}>
+                  <svg className={videoGridStyles.statusIcon} width="16" height="16" viewBox="0 0 16 16" fill="none" focusable="false" aria-hidden="true">
+                    <path d="M10.807 7.251A.75.75 0 0 0 10.249 6H5.751a.75.75 0 0 0-.557 1.252l2.252 2.5a.75.75 0 0 0 1.115 0l2.246-2.5Z" fill="currentColor" />
+                    <path fillRule="evenodd" clipRule="evenodd" d="M2 3.75C2 2.784 2.784 2 3.75 2h8.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5Zm1.75-.25a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25h-8.5Z" fill="currentColor" />
+                  </svg>
+                  <div className={videoGridStyles.statusLabel}>{tc('status')}</div>
+                  <div className={videoGridStyles.statusContent}>
+                    {(() => {
+                      const currentStatus = getEffectiveVideoReviewStatus(displayLatestVideo)
+                      const option = VIDEO_REVIEW_STATUS_OPTIONS.find((item) => item.value === currentStatus)
+                      return option ? (
+                        <span className="flex min-w-0 items-center gap-1 text-[13px] font-[420] leading-5 text-[#181b29]">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: option.dotColor }} aria-hidden="true" />
+                          <span className="truncate">{t(option.labelKey)}</span>
+                        </span>
+                      ) : null
+                    })()}
+                    <VideoReviewStatusControl
+                      value={getEffectiveVideoReviewStatus(displayLatestVideo)}
+                      loading={reviewStatusUpdatingVideoId === latestVideo.id}
+                      hideEmptyLabel
+                      overlay
+                      onValueChange={(status) => void handleVideoReviewStatus(latestVideo, status)}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {isExpanded && (
               <CardContent className="border-t border-border pt-0 px-3 sm:px-6 space-y-4">
                 {/* Upload new version for this video */}
@@ -1874,6 +1957,7 @@ export default function AdminVideoManager({
         )
       })}
       </div>
+      )}
 
       <Dialog
         open={!!editingGroupName}

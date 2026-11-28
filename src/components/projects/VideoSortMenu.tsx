@@ -1,10 +1,10 @@
 'use client'
 
 import { useId, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, Check } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { Button } from '@/components/ui/button'
 import ReviewPopup from '@/components/ReviewPopup'
+import FrameioMenuSelect from './FrameioMenuSelect'
+import toolbarStyles from './ProjectToolbar.module.css'
 import styles from '@/components/review-popup.module.css'
 import type { VideoSortField, VideoSortPrefs } from '@/lib/video-view-prefs'
 
@@ -30,57 +30,56 @@ export default function VideoSortMenu({ value, onChange }: VideoSortMenuProps) {
 
   return (
     <div className="relative">
-      <Button
+      <button
         ref={triggerRef}
         type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8 px-2 text-muted-foreground hover:text-foreground"
+        className={toolbarStyles.menuButton}
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        title={t('sort')}
+        aria-label={`${t('sortBy')}: ${labelFor(value.field)}`}
       >
-        <ArrowUpDown className="mr-1.5 h-3.5 w-3.5" />
-        <span className="hidden md:inline">{labelFor(value.field)}</span>
-      </Button>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" focusable="false" aria-hidden="true">
+          <path
+            d="M6.75 5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H6.75Zm0 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H6.75ZM6 13.75a.75.75 0 0 1 .75-.75h8.5a.75.75 0 0 1 0 1.5h-8.5a.75.75 0 0 1-.75-.75ZM6.75 17a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z"
+            fill="currentColor"
+          />
+        </svg>
+        <span className={toolbarStyles.menuButtonText}>
+          <span>{t('sortBy')}</span>
+          <span className={toolbarStyles.menuButtonSecondary}>{labelFor(value.field)}</span>
+        </span>
+      </button>
 
-      <ReviewPopup id={id} open={open} onOpenChange={setOpen} anchor={triggerRef} label={t('sort')} side="bottom" align="end" width={210}>
-        <p className={styles.heading}>{t('sort')}</p>
-        {FIELDS.map((field) => (
-          <button
-            key={field}
-            type="button"
-            aria-pressed={value.field === field}
-            onClick={() => onChange({ ...value, field })}
-            className={styles.item}
-          >
-            <span className="min-w-0 flex-1 truncate">{labelFor(field)}</span>
-            {value.field === field && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />}
-          </button>
-        ))}
-        <div className="mt-1 flex items-center gap-1 border-t border-border/70 px-1 pt-2">
-          <button
-            type="button"
-            onClick={() => onChange({ ...value, dir: 'asc' })}
-            aria-pressed={value.dir === 'asc'}
-            className={`inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border text-[11px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-              value.dir === 'asc' ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <ArrowUp className="h-3 w-3" />{t('asc')}
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange({ ...value, dir: 'desc' })}
-            aria-pressed={value.dir === 'desc'}
-            className={`inline-flex h-7 flex-1 items-center justify-center gap-1 rounded border text-[11px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-              value.dir === 'desc' ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <ArrowDown className="h-3 w-3" />{t('desc')}
-          </button>
+      <ReviewPopup id={id} open={open} onOpenChange={setOpen} anchor={triggerRef} label={t('sort')} side="bottom" align="end" width={286} menuSurface keepOpenOnOutside="[data-frameio-select-layer]">
+        <div className="px-2 py-3">
+          <div className="pb-2 pl-1 text-[12px] font-[420] leading-4 text-[#63677d]">{t('sortBy')}</div>
+          <div className="flex flex-col gap-2">
+            <FrameioMenuSelect
+              value={value.field}
+              options={FIELDS.map((field) => ({ value: field, label: labelFor(field) }))}
+              onChange={(field) => onChange({ ...value, field: field as VideoSortField })}
+              ariaLabel={t('sortBy')}
+              variant="field"
+              align="start"
+            />
+            <div className="flex items-center gap-2">
+              <span className="pl-1 pr-2 text-[12px] font-[420] leading-4 text-[#63677d]">从</span>
+              <FrameioMenuSelect
+                value={value.dir}
+                options={[
+                  { value: 'asc', label: t('asc') },
+                  { value: 'desc', label: t('desc') },
+                ]}
+                onChange={(dir) => onChange({ ...value, dir: dir === 'asc' ? 'asc' : 'desc' })}
+                ariaLabel={t('sort')}
+                variant="field"
+                align="start"
+                className="flex-1"
+              />
+            </div>
+          </div>
         </div>
       </ReviewPopup>
     </div>

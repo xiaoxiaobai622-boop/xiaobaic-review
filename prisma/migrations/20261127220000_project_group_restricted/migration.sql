@@ -1,0 +1,1 @@
+ALTER TABLE "ProjectGroup" ADD COLUMN IF NOT EXISTS "restricted" BOOLEAN NOT NULL DEFAULT false;

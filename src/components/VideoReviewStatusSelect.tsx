@@ -31,6 +31,8 @@ interface VideoReviewStatusControlProps {
   loading?: boolean
   disabled?: boolean
   indeterminate?: boolean
+  hideEmptyLabel?: boolean
+  overlay?: boolean
   onValueChange: (value: VideoReviewStatus | null) => void
   className?: string
 }
@@ -40,12 +42,14 @@ export function VideoReviewStatusControl({
   loading = false,
   disabled = false,
   indeterminate = false,
+  hideEmptyLabel = false,
+  overlay = false,
   onValueChange,
   className,
 }: VideoReviewStatusControlProps) {
   const t = useTranslations('videos')
   const currentOption = VIDEO_REVIEW_STATUS_OPTIONS.find(option => option.value === value)
-  const triggerLabel = (
+  const triggerLabel = !currentOption && hideEmptyLabel ? null : (
     <span className="flex min-w-0 items-center gap-2">
       <span
         aria-hidden="true"
@@ -72,10 +76,14 @@ export function VideoReviewStatusControl({
         data-tutorial="approve-btn"
         aria-label={t('setReviewStatus')}
         title={loading ? t('updatingReviewStatus') : t('setReviewStatus')}
-        className={cn(
-          'relative h-[28px] w-auto min-w-[132px] shrink-0 justify-center gap-2 border-0 bg-muted px-10 py-0 text-xs font-medium text-foreground shadow-none transition-colors hover:bg-accent focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 [&>svg]:absolute [&>svg]:right-2.5 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2 sm:min-w-[132px] sm:rounded-[8px] sm:gap-2 sm:px-10 sm:text-[13px]',
-          className
-        )}
+        className={
+          overlay
+            ? cn('absolute inset-0 z-[1] h-full w-full cursor-pointer rounded-[6px] border-0 bg-transparent p-0 opacity-0 focus:outline-none', className)
+            : cn(
+                'relative h-[28px] w-auto min-w-[132px] shrink-0 justify-center gap-2 border-0 bg-muted px-10 py-0 text-xs font-medium text-foreground shadow-none transition-colors hover:bg-accent focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 [&>svg]:absolute [&>svg]:right-2.5 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2 sm:min-w-[132px] sm:rounded-[8px] sm:gap-2 sm:px-10 sm:text-[13px]',
+                className
+              )
+        }
       >
         <SelectValue placeholder={triggerLabel}>
           {triggerLabel}

@@ -8,6 +8,7 @@ export interface FolderNode {
   id: string
   name: string
   parentId: string | null
+  restricted?: boolean
 }
 
 // Past this the indentation stops being readable, and one member could otherwise

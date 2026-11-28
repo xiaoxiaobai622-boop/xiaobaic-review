@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 // Counts are deliberately not returned here: the console derives them from the
 // project list it already loaded, which is scoped per member. A server-side count
 // would publish "how many projects a colleague has" to MEMBER accounts.
-const GROUP_SELECT = { id: true, name: true, parentId: true } as const
+const GROUP_SELECT = { id: true, name: true, parentId: true, restricted: true } as const
 
 // Past this point the bar stops being scannable, and one member could otherwise
 // fill the team's list with junk names.

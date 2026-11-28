@@ -23,10 +23,10 @@ import { ProjectMembersPanel } from '@/components/ProjectMembersPanel'
 import CreateShareDialog, { type SharePreset, type ShareTarget } from '@/components/CreateShareDialog'
 import VideoDisplayMenu from '@/components/projects/VideoDisplayMenu'
 import VideoSortMenu from '@/components/projects/VideoSortMenu'
+import VideoFieldsMenu from '@/components/projects/VideoFieldsMenu'
 import ProjectSwitcher from '@/components/projects/ProjectSwitcher'
 import { ProjectWorkspaceSkeleton } from '@/components/projects/ProjectWorkspaceSkeleton'
 import { ProjectDocsWorkspace } from '@/components/projects/ProjectDocsWorkspace'
-import FilterDropdown from '@/components/FilterDropdown'
 import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
 import { groupBy } from '@/lib/array-compat'
 import {
@@ -36,8 +36,10 @@ import {
   saveVideoSortPrefs,
   type VideoDisplayPrefs,
   type VideoSortPrefs,
+  VIDEO_GRID_TEMPLATE,
+  VIDEO_CARD_MAX_WIDTH,
 } from '@/lib/video-view-prefs'
-import { ArrowLeft, ArrowUpDown, Settings, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, MoreVertical, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck, PanelRight, MonitorPlay, Search, FileText } from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, Settings, Video, FolderUp, Images, Trash2, Check, ExternalLink, Upload, Clock3, Layers3, X, RotateCcw, Loader2, TriangleAlert, Plus, Users, Link2, Share2, Download, Package, Pencil, ChevronRight, MessageSquare, PackageCheck, PanelRight, MonitorPlay, Search, FileText } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useTranslations } from 'next-intl'
 import { logError } from '@/lib/logging'
@@ -50,7 +52,9 @@ import { useAuth } from '@/components/AuthProvider'
 import { getActiveTeamId } from '@/lib/team-store'
 import { STUDIO_HEADER_SHELL_CLASS, STUDIO_SIDEBAR_TRACK_PX } from '@/app/studio/shell'
 import { useStudioTitle } from '@/lib/use-studio-title'
-import FolderInteraction from '@/components/ui/folder-interaction'
+import ProjectFolderCard from '@/components/projects/ProjectFolderCard'
+import ProjectGroupHeader from '@/components/projects/ProjectGroupHeader'
+import toolbarStyles from '@/components/projects/ProjectToolbar.module.css'
 import { appAlert, appConfirm, appPrompt } from '@/components/AppDialogProvider'
 
 // Force dynamic rendering (no static pre-rendering)
@@ -209,21 +213,6 @@ function formatFileSize(value: string | number | null | undefined): string {
   return `${size >= 100 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(2)} ${units[unitIndex]}`
 }
 
-function formatFolderCreatedAt(createdAt?: string): string {
-  if (!createdAt) return '--'
-  const date = new Date(createdAt)
-  if (Number.isNaN(date.getTime())) return '--'
-  return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(date).replace(/\//g, '-')
-}
-
 function greatestCommonDivisor(a: number, b: number): number {
   let x = Math.abs(Math.round(a))
   let y = Math.abs(Math.round(b))
@@ -370,6 +359,7 @@ export default function ProjectPage() {
   const [videoDisplay, setVideoDisplay] = useState<VideoDisplayPrefs>(() => loadVideoDisplayPrefs())
   const [videoSort, setVideoSort] = useState<VideoSortPrefs>(() => loadVideoSortPrefs())
   const [videoQuery, setVideoQuery] = useState('')
+  const [videoSearchOpen, setVideoSearchOpen] = useState(false)
   const [videoStatuses, setVideoStatuses] = useState<Set<VideoReviewStatus>>(new Set())
   const [albumSortMode, setAlbumSortMode] = useState<'date' | 'alphabetical'>('date')
   const [activeWorkspace, setActiveWorkspace] = useState<'videos' | 'documents' | 'photos' | 'uploads' | 'shares' | 'trash'>('videos')
@@ -437,6 +427,8 @@ export default function ProjectPage() {
   const openMembers = () => setOverlay({ kind: 'members' })
   const closeOverlay = () => setOverlay(null)
   const [projectFolders, setProjectFolders] = useState<Array<{ id: string; name: string; createdAt?: string; _count?: { videos: number } }>>([])
+  const [folderSectionCollapsed, setFolderSectionCollapsed] = useState(false)
+  const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(() => new Set())
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
   const [folderMenu, setFolderMenu] = useState<{ id: string } | null>(null)
   const [folderMenuOpen, setFolderMenuOpen] = useState(false)
@@ -575,6 +567,13 @@ export default function ProjectPage() {
     try { localStorage.setItem(VIDEO_VIEW_MODE_KEY, mode) } catch {}
   }
 
+  const openVideoUpload = () => {
+    setUploadRequestFiles(undefined)
+    setUploadRequestFolderId(activeFolderId)
+    changeWorkspace('videos')
+    setUploadRequestKey((key) => key + 1)
+  }
+
   useEffect(() => { saveVideoDisplayPrefs(videoDisplay) }, [videoDisplay])
   useEffect(() => { saveVideoSortPrefs(videoSort) }, [videoSort])
 
@@ -672,7 +671,6 @@ export default function ProjectPage() {
         .join(',')}`)
       .join('|')
     if (signature === folderCoverSignatureRef.current) return
-    folderCoverSignatureRef.current = signature
 
     let cancelled = false
     const loadFolderCovers = async () => {
@@ -700,6 +698,7 @@ export default function ProjectPage() {
 
       if (cancelled) return
       setFolderCoverUrls(Object.fromEntries(coverGroups.map(group => [group.folderId, group.urls])))
+      folderCoverSignatureRef.current = signature
     }
     void loadFolderCovers()
     return () => { cancelled = true }
@@ -791,9 +790,11 @@ export default function ProjectPage() {
     const videos = (project?.videos as any[] | undefined) || []
     return videos.filter((video: any) =>
       !(video.status === 'PROCESSING' && video.sourceUpload?.id)
-      && (activeFolderId ? video.folderId === activeFolderId : !video.folderId)
+      && (activeFolderId
+        ? video.folderId === activeFolderId
+        : (videoDisplay.flattenFolders ? true : !video.folderId))
     )
-  }, [project?.videos, activeFolderId])
+  }, [project?.videos, activeFolderId, videoDisplay.flattenFolders])
 
   const videoGroupNames = useMemo(
     () => Array.from(new Set(workspaceVideos.map((v: any) => v.name))) as string[],
@@ -829,11 +830,6 @@ export default function ProjectPage() {
     () => workspaceVideos.filter((video: any) => visibleGroupSet.has(video.name)),
     [visibleGroupSet, workspaceVideos]
   )
-
-  const clearVideoFilters = () => {
-    setVideoQuery('')
-    setVideoStatuses(new Set())
-  }
 
   // 播放器只吃选中素材的 READY 版本：一次点卡签一份，不铺满整项目（令牌有分钟级有效期，也有签发配额）。
   const reviewVersions = useMemo(() => {
@@ -1124,6 +1120,24 @@ export default function ProjectPage() {
   const canEdit = Boolean(capabilities.canEdit)
   const canDeleteContent = Boolean(capabilities.canDeleteContent)
   const canManageSettings = Boolean(capabilities.canManageSettings)
+  const folderGroupSize = (project?.videos || []).reduce((sum: number, video: any) => (
+    video?.folderId && projectFolders.some((folder) => folder.id === video.folderId)
+      ? sum + Number(video.originalFileSize || 0)
+      : sum
+  ), 0)
+  const allFoldersSelected = projectFolders.length > 0 && projectFolders.every((folder) => selectedFolderIds.has(folder.id))
+  const someFoldersSelected = projectFolders.some((folder) => selectedFolderIds.has(folder.id))
+  const toggleFolderSelected = (folderId: string) => {
+    setSelectedFolderIds((current) => {
+      const next = new Set(current)
+      if (next.has(folderId)) next.delete(folderId)
+      else next.add(folderId)
+      return next
+    })
+  }
+  const toggleAllFoldersSelected = () => {
+    setSelectedFolderIds(allFoldersSelected ? new Set() : new Set(projectFolders.map((folder) => folder.id)))
+  }
   const canShare = Boolean(capabilities.canShare)
   const canApprove = Boolean(capabilities.canApprove)
   const canViewStats = Boolean(capabilities.canViewStats)
@@ -1798,17 +1812,27 @@ export default function ProjectPage() {
                   只有 16px 同色留白，读起来是一整片；补一条和顶栏/栏面之间同款的画布带，才分成两块。
                   跟着吸顶条一起走，滚过的卡片被这条线切齐。 */}
               <div className="sticky top-0 z-30 -mx-3 mb-4 flex flex-wrap items-center gap-2 bg-popover px-3 py-2 before:pointer-events-none before:absolute before:inset-x-0 before:-top-4 before:h-4 before:bg-popover before:content-[''] lg:-mt-4 lg:-top-4 lg:before:hidden after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-[2px] after:h-[2px] after:bg-background after:content-[''] sm:-mx-4 sm:px-4">
-                <h2 className="flex shrink-0 items-center gap-2 text-lg font-semibold">
-                  <span className={iconBadgeClassName}><Video className={iconBadgeIconClassName} /></span>
-                  {t('videos')}
-                  <span className={countBadgeClassName}>{visibleGroupNames.length}</span>
-                </h2>
-                <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:flex-1">
-                  <div className="relative w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-[190px]">
+                <VideoDisplayMenu
+                  value={videoDisplay}
+                  onChange={setVideoDisplay}
+                  viewMode={videoViewMode}
+                  onViewModeChange={changeVideoViewMode}
+                />
+                <VideoFieldsMenu
+                  showStatusField={videoDisplay.showStatusField}
+                  onChange={(showStatusField) => setVideoDisplay((current) => ({ ...current, showStatusField }))}
+                />
+                <VideoSortMenu value={videoSort} onChange={setVideoSort} />
+                <span className={toolbarStyles.separator} aria-hidden="true" />
+                {videoSearchOpen || videoQuery ? (
+                  <div className="relative w-44">
                     <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
                     <input
+                      autoFocus
                       value={videoQuery}
                       onChange={(event) => setVideoQuery(event.target.value)}
+                      onBlur={() => { if (!videoQuery) setVideoSearchOpen(false) }}
+                      onKeyDown={(event) => { if (event.key === 'Escape') { setVideoQuery(''); setVideoSearchOpen(false) } }}
                       placeholder={tu('searchAssets')}
                       aria-label={tu('searchAssets')}
                       className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-7 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -1816,7 +1840,7 @@ export default function ProjectPage() {
                     {videoQuery && (
                       <button
                         type="button"
-                        onClick={() => setVideoQuery('')}
+                        onClick={() => { setVideoQuery(''); setVideoSearchOpen(false) }}
                         aria-label={tu('clearSearch')}
                         className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                       >
@@ -1824,45 +1848,38 @@ export default function ProjectPage() {
                       </button>
                     )}
                   </div>
-                  <div className="flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:flex-nowrap">
-                    <FilterDropdown
-                      width={220}
-                      groups={[{
-                        key: 'reviewStatus',
-                        label: tu('sortStatus'),
-                        options: VIDEO_REVIEW_STATUS_OPTIONS.map((option) => ({
-                          value: option.value,
-                          label: tv(option.labelKey),
-                        })),
-                        selected: videoStatuses as Set<string>,
-                        onChange: (selected) => setVideoStatuses(new Set(selected as Set<VideoReviewStatus>)),
-                      }]}
+                ) : (
+                  <button
+                    type="button"
+                    className={toolbarStyles.iconButton}
+                    onClick={() => setVideoSearchOpen(true)}
+                    aria-label={tu('searchAssets')}
+                    title={tu('searchAssets')}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" focusable="false" aria-hidden="true">
+                      <path
+                        fillRule="evenodd"
+                        clipRule="evenodd"
+                        d="M15.596 14.535a6.5 6.5 0 1 0-1.06 1.06l4.184 4.185a.75.75 0 1 0 1.06-1.06l-4.184-4.185ZM15.5 10.5a5 5 0 1 1-10 0 5 5 0 0 1 10 0Z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={toolbarStyles.iconButton}
+                  onClick={openVideoUpload}
+                  aria-label={tu('upload')}
+                  title={tu('upload')}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" focusable="false" aria-hidden="true">
+                    <path
+                      d="M12.75 6.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z"
+                      fill="currentColor"
                     />
-                    {videoFiltersActive && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2 text-muted-foreground hover:text-foreground"
-                        onClick={clearVideoFilters}
-                        title={tu('clearFilters')}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        <span className="hidden lg:inline">{tu('clearFilters')}</span>
-                      </Button>
-                    )}
-                    <VideoSortMenu value={videoSort} onChange={setVideoSort} />
-                    <VideoDisplayMenu
-                      value={videoDisplay}
-                      onChange={setVideoDisplay}
-                      viewMode={videoViewMode}
-                      onViewModeChange={changeVideoViewMode}
-                    />
-                  </div>
-                  <span className="ml-1 hidden shrink-0 text-xs text-muted-foreground xl:inline">
-                    {t('materialSummary', { materials: visibleGroupNames.length, versions: visibleWorkspaceVideos.length })}
-                  </span>
-                </div>
+                  </svg>
+                </button>
               </div>
               {activeFolderId && (
                 <button
@@ -1877,52 +1894,55 @@ export default function ProjectPage() {
                   <ArrowLeft className="h-3.5 w-3.5" />项目根目录
                 </button>
               )}
-              {!activeFolderId && projectFolders.length > 0 && (
-                <div className="mb-4 grid content-start gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => void moveVideoToFolder(event, null)}>
+              {!activeFolderId && !videoDisplay.flattenFolders && projectFolders.length > 0 && (
+                <section className="mb-4">
+                  <ProjectGroupHeader
+                    countLabel={`${projectFolders.length} 个文件夹`}
+                    sizeLabel={formatFileSize(folderGroupSize).replace(' KB', ' kB')}
+                    collapsed={folderSectionCollapsed}
+                    onToggleCollapsed={() => setFolderSectionCollapsed((current) => !current)}
+                    checked={allFoldersSelected}
+                    indeterminate={!allFoldersSelected && someFoldersSelected}
+                    onToggleChecked={toggleAllFoldersSelected}
+                    selectAllLabel="选择全部文件夹"
+                    collapseLabel={folderSectionCollapsed ? `展开 ${projectFolders.length} 个文件夹` : `折叠 ${projectFolders.length} 个文件夹`}
+                  />
+                  {!folderSectionCollapsed && (
+                  <div className="grid content-start gap-[16px]" style={{ gridTemplateColumns: VIDEO_GRID_TEMPLATE[videoDisplay.size] }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => void moveVideoToFolder(event, null)}>
                   {projectFolders.map((folder) => {
                     const count = new Set(project.videos.filter((video: any) => video.folderId === folder.id).map((video: any) => video.name)).size
                     return (
-                      <div
+                      <ProjectFolderCard
                         key={folder.id}
-                        className={cn('group relative overflow-hidden bg-card transition-[filter]', folderDropTargetId === folder.id ? 'drop-shadow-sm' : 'hover:drop-shadow-sm')}
-                        style={{ clipPath: 'polygon(0 4%, 1% 2%, 3% 0.5%, 5% 0, 27% 0, 29% 0.5%, 31% 2%, 39% 7.5%, 41% 8.5%, 96% 8.5%, 98% 9.5%, 99.5% 11.5%, 100% 14%, 100% 96%, 99.5% 98%, 98% 99.5%, 96% 100%, 4% 100%, 2% 99.5%, 0.5% 98%, 0 96%)' }}
-                        onDoubleClick={() => setActiveFolderId(folder.id)}
-                        onDragEnter={(event) => { event.preventDefault(); setFolderDropTargetId(folder.id) }}
-                        onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setFolderDropTargetId(folder.id) }}
-                        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFolderDropTargetId(undefined) }}
-                        onDrop={(event) => void moveVideoToFolder(event, folder.id)}
-                      >
-                        <div role="button" tabIndex={0} className="block w-full text-left focus-visible:outline-none" onClick={() => setActiveFolderId(folder.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveFolderId(folder.id) } }}>
-                          <div className="flex aspect-video items-center justify-center overflow-hidden bg-muted/40">
-                            <FolderInteraction coverUrls={folderCoverUrls[folder.id] || []} itemCount={count} />
-                          </div>
-                          <div className="flex items-start gap-1.5 border-t border-border px-2.5 py-2.5 pr-11">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium leading-5 text-foreground">{folder.name}</p>
-                              <p className="mt-1 flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
-                                <span className="tabular-nums">{formatFolderCreatedAt(folder.createdAt)}</span>
-                                <span aria-hidden="true">·</span>
-                                <span>{count} 个视频</span>
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <button type="button" className="absolute bottom-2.5 right-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="文件夹操作" title="文件夹操作" aria-haspopup="menu" aria-expanded={folderMenu?.id === folder.id} onClick={(event) => {
+                        folder={folder}
+                        coverUrls={folderCoverUrls[folder.id] || []}
+                        count={count}
+                        showInfo={videoDisplay.showInfo}
+                        titleLines={videoDisplay.titleLines}
+                        maxWidth={VIDEO_CARD_MAX_WIDTH[videoDisplay.size]}
+                        menuOpen={folderMenu?.id === folder.id}
+                        menuButtonRef={folderMenuTriggerRef}
+                        dropTarget={folderDropTargetId === folder.id}
+                        selected={selectedFolderIds.has(folder.id)}
+                        onToggleSelected={() => toggleFolderSelected(folder.id)}
+                        onOpen={() => setActiveFolderId(folder.id)}
+                        onMenuClick={(event) => {
                           event.stopPropagation()
                           folderMenuTriggerRef.current = event.currentTarget
                           setFolderShareMenuId(null)
                           setFolderMenu((current) => current?.id === folder.id ? current : { id: folder.id })
                           setFolderMenuOpen((current) => !(current && folderMenu?.id === folder.id))
-                        }}>
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                        <svg className={cn('pointer-events-none absolute inset-0 z-30 h-full w-full transition-colors group-focus-within:text-primary', folderDropTargetId === folder.id || folderMenu?.id === folder.id ? 'text-primary' : 'text-border group-hover:text-primary/60')} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                          <path d="M0.5 8 V5 Q0.5 0.5 5 0.5 H27 Q29 0.5 31 2 L39 7.5 Q40.5 8.5 43 8.5 H96 Q99.5 8.5 99.5 12 V96 Q99.5 99.5 96 99.5 H4 Q0.5 99.5 0.5 96 Z" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-                        </svg>
-                      </div>
+                        }}
+                        onDragEnter={(event) => { event.preventDefault(); setFolderDropTargetId(folder.id) }}
+                        onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setFolderDropTargetId(folder.id) }}
+                        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFolderDropTargetId(undefined) }}
+                        onDrop={(event) => void moveVideoToFolder(event, folder.id)}
+                      />
                     )
                   })}
-                </div>
+                  </div>
+                  )}
+                </section>
               )}
               {folderMenu && (() => {
                 const folder = projectFolders.find((item) => item.id === folderMenu.id)
@@ -1995,7 +2015,9 @@ export default function ProjectPage() {
                 sortDir={videoSort.dir}
                 cardSize={videoDisplay.size}
                 thumbAspect={videoDisplay.aspect}
+                thumbFit={videoDisplay.fit}
                 showCardInfo={videoDisplay.showInfo}
+                showStatusField={videoDisplay.showStatusField}
                 titleLines={videoDisplay.titleLines}
                 viewMode={videoViewMode}
                 maxRevisions={project.maxRevisions}

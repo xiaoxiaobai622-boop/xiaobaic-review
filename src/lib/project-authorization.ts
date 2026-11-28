@@ -4,6 +4,7 @@ import type { ProjectRole } from '@prisma/client'
 import { prisma } from './db'
 import { requireApiUser, type AuthUser } from './auth'
 import { canProject, resolveProjectRole, type ProjectAction } from './project-policy'
+import { projectFolderAccessDenied } from './project-access'
 
 export type ProjectAccessContext = {
   id: string
@@ -23,6 +24,7 @@ export async function getProjectAccessContext(userId: string, projectId: string)
     select: {
       id: true,
       teamId: true,
+      groupId: true,
       restricted: true,
       team: { select: { status: true } },
     },
@@ -44,6 +46,16 @@ export async function getProjectAccessContext(userId: string, projectId: string)
     where: { projectId_userId: { projectId, userId } },
     select: { role: true },
   })
+
+  if (!projectMember && project.groupId && membership.role === 'MEMBER') {
+    const folderDenied = await projectFolderAccessDenied(
+      prisma,
+      { id: userId, teamRole: membership.role },
+      { id: project.id, teamId: project.teamId, groupId: project.groupId },
+      false,
+    )
+    if (folderDenied) return null
+  }
 
   const role = resolveProjectRole({
     teamRole: membership.role,

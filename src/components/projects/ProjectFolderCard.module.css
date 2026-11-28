@@ -1,0 +1,260 @@
+.card {
+  --folder-header: #e7e8f2;
+  --folder-body: #f2f3f6;
+  --folder-thumb: #ecedf4;
+  --folder-border: #e7e8f2;
+  --folder-name: #181b29;
+  --folder-meta: #63677d;
+  --folder-more: #32374c;
+  --folder-shadow: 0 -4px 9px rgba(0, 0, 0, .05), 0 -4px 8px 1px rgba(0, 0, 0, .08);
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+.face {
+  display: block;
+  width: 100%;
+  outline: none;
+  text-align: left;
+}
+
+.face:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.svg path {
+  fill: var(--folder-header);
+}
+
+.card:hover .svg path {
+  stroke: #c9cbde;
+  stroke-width: 4px;
+  vector-effect: non-scaling-stroke;
+}
+
+.body {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 16px);
+  box-sizing: border-box;
+  border: 1px solid var(--folder-border);
+  border-radius: 8px;
+  background: var(--folder-body);
+  box-shadow: var(--folder-shadow);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.contents {
+  position: relative;
+  margin-top: 16px;
+  z-index: 2;
+}
+
+.thumbs {
+  display: grid;
+  gap: 4px;
+  aspect-ratio: 16 / 9;
+  padding: 6px 6px 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.thumbs[data-count='1'] {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.thumbs[data-count='2'] {
+  grid-template-columns: 65.5% 32.5%;
+  grid-template-rows: 1fr;
+}
+
+.thumbs[data-count='3'] {
+  grid-template-columns: 65.5% 32.5%;
+  grid-template-rows: repeat(2, 1fr);
+}
+
+.thumbs[data-count='3'] > :first-child {
+  grid-row: 1 / 3;
+}
+
+.thumb {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--folder-thumb);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.footer {
+  height: 68px;
+  box-sizing: border-box;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.footerTall {
+  height: 88px;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+  padding-bottom: 4px;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--folder-name);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 520;
+  line-height: 20px;
+}
+
+.nameClamp2 {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.footerTall .nameRow {
+  min-height: 40px;
+  align-items: flex-start;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+
+.count {
+  color: var(--folder-meta);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 420;
+  line-height: 16px;
+}
+
+.more {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--folder-more);
+  outline: none;
+}
+
+.more:hover {
+  background: rgba(15, 20, 35, .06);
+}
+
+.more:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+
+.card[data-drop-target='true'] .svg path {
+  stroke: #5b53ff;
+  stroke-width: 4px;
+  vector-effect: non-scaling-stroke;
+}
+
+.card[data-drop-target='true'] .body {
+  outline: 2px solid rgba(91, 83, 255, .35);
+  outline-offset: 2px;
+}
+
+
+.checkbox {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 5;
+  display: flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: #ffffff26;
+  box-shadow: 0 0 0 1.5px #00000026;
+  color: transparent;
+  opacity: 0;
+  outline: none;
+  cursor: pointer;
+  transition: opacity .15s cubic-bezier(.2, .4, .1, 1);
+}
+
+.card:hover .checkbox,
+.checkboxSelected {
+  opacity: 1;
+}
+
+.checkbox:hover {
+  box-shadow: inset 0 0 0 1.5px #2c3041;
+}
+
+.checkboxSelected {
+  background: #5b53ff;
+  box-shadow: none;
+  color: #fff;
+}
+
+.card[data-selected='true'] .svg path {
+  stroke: #5b53ff;
+  stroke-width: 4px;
+  vector-effect: non-scaling-stroke;
+}
+
+:global(.dark) .card {
+  --folder-header: hsl(var(--muted));
+  --folder-body: hsl(var(--card));
+  --folder-thumb: hsl(var(--secondary));
+  --folder-border: hsl(var(--border));
+  --folder-name: hsl(var(--foreground));
+  --folder-meta: hsl(var(--muted-foreground));
+  --folder-more: hsl(var(--foreground));
+  --folder-shadow: 0 -4px 9px rgba(0, 0, 0, .35), 0 -4px 8px 1px rgba(0, 0, 0, .3);
+}

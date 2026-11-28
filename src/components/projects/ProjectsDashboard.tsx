@@ -1,6 +1,8 @@
 'use client'
 /* eslint-disable @next/next/no-img-element -- 封面已由服务端转成 WebP，按 16:9 固定裁切，不需要 next/image 再优化 */
 
+import { cardArtFor } from '@/lib/project-art'
+
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
@@ -243,27 +245,6 @@ function FolderPickList({
       </div>
     </>
   )
-}
-
-const CARD_ART_PALETTES = [
-  { a: '#3b2a8f', b: '#7c5cf0' },
-  { a: '#e0566b', b: '#ff8a6b' },
-  { a: '#0f5c73', b: '#1fa0a0' },
-  { a: '#1f3f8f', b: '#3f7be0' },
-  { a: '#5a2d6e', b: '#b0527f' },
-  { a: '#274a3a', b: '#3f8f6a' },
-]
-
-const CARD_ART_BY_CODE: Record<string, number> = {
-  '001': 0, '006': 1, '004': 2, '005': 3, '003': 4, '002': 5,
-}
-
-function cardArtFor(project: ProjectListItem) {
-  const known = CARD_ART_BY_CODE[project.projectCode]
-  if (known !== undefined) return CARD_ART_PALETTES[known]
-  let hash = 0
-  for (let i = 0; i < project.id.length; i += 1) hash = (hash * 31 + project.id.charCodeAt(i)) >>> 0
-  return CARD_ART_PALETTES[hash % CARD_ART_PALETTES.length]
 }
 
 interface ProjectCardProps {
@@ -669,6 +650,8 @@ export default function ProjectsDashboard({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [cardContextMenu, setCardContextMenu] = useState<{ id: string; point: ContextMenuPoint } | null>(null)
+  const [emptyGridMenuPoint, setEmptyGridMenuPoint] = useState<ContextMenuPoint | null>(null)
+  const [emptyGridMenuOpen, setEmptyGridMenuOpen] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [batchFolderMenu, setBatchFolderMenu] = useState(false)
   const batchFolderTriggerRef = useRef<HTMLButtonElement>(null)
@@ -715,6 +698,11 @@ export default function ProjectsDashboard({
     if (!cardContextMenu) return
     if (!projects.some((p) => p.id === cardContextMenu.id)) setCardContextMenu(null)
   }, [projects, cardContextMenu])
+
+  const closeEmptyGridMenu = () => {
+    setEmptyGridMenuOpen(false)
+    window.setTimeout(() => setEmptyGridMenuPoint(null), 160)
+  }
 
   const openCardContextMenu = (project: ProjectListItem, point: ContextMenuPoint) => {
     setMenuOpen(null)
@@ -983,7 +971,17 @@ export default function ProjectsDashboard({
   }
 
   return (
-    <div ref={rootRef} className={batchMode ? 'batch-on' : ''}>
+    <div
+      ref={rootRef}
+      className={batchMode ? 'batch-on' : ''}
+      onContextMenu={isAdmin && !batchMode && onCreateProject ? (event) => {
+        const target = event.target as HTMLElement
+        if (target.closest('[data-project-card], [data-card-menu], [data-review-popup], [role="menu"], button, a, input, textarea, select, [contenteditable="true"]')) return
+        event.preventDefault()
+        setEmptyGridMenuPoint({ x: event.clientX, y: event.clientY })
+        setEmptyGridMenuOpen(true)
+      } : undefined}
+    >
       {/* Controls: group-by + batch toggle */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex min-w-0 items-center gap-2">
@@ -1176,6 +1174,30 @@ export default function ProjectsDashboard({
           <span className="w-px h-4 bg-background/30" aria-hidden />
           <button type="button" onClick={selectAllActive} className="px-3 py-1.5 rounded-lg text-background/70 hover:text-background">{t('selectAllProjects')}</button>
         </div>
+      )}
+
+      {emptyGridMenuPoint && (
+        <OverlayMenu
+          open={emptyGridMenuOpen}
+          onOpenChange={(open) => { if (!open) closeEmptyGridMenu() }}
+          label={t('newProject')}
+          width={200}
+          anchorPoint={emptyGridMenuPoint}
+          className="rounded-[8px] p-1.5 shadow-xl"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeEmptyGridMenu()
+              onCreateProject?.()
+            }}
+            className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+          >
+            <Plus className="h-4 w-4" />
+            {t('newProject')}
+          </button>
+        </OverlayMenu>
       )}
 
       {settingsProject && (

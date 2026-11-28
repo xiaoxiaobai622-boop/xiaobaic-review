@@ -19,6 +19,7 @@ import ProjectsSavedViews, { type SavedView } from '@/components/projects/Projec
 import ProjectsSearchBar from '@/components/projects/ProjectsSearchBar'
 import ProjectsDashboard, { ProjectsStats } from '@/components/projects/ProjectsDashboard'
 import ProjectsFolderTree from '@/components/projects/ProjectsFolderTree'
+import OverlayMenu from '@/components/OverlayMenu'
 import TeamAvatarStack from '@/components/projects/TeamAvatarStack'
 import TeamInviteButton from '@/components/projects/TeamInviteButton'
 import { apiFetch, apiPatch, apiPost, apiDelete } from '@/lib/api-client'
@@ -118,6 +119,8 @@ export default function AdminPage() {
     () => typeof window !== 'undefined' && localStorage.getItem(FOLDER_RAIL_STORAGE_KEY) === '1'
   )
   const [folderCreateRequest, setFolderCreateRequest] = useState(0)
+  const [folderSidebarMenuPoint, setFolderSidebarMenuPoint] = useState<{ x: number; y: number } | null>(null)
+  const [folderSidebarMenuOpen, setFolderSidebarMenuOpen] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>(loadInitialViewMode)
   const [cardSize, setCardSize] = useState<'large' | 'compact'>(loadInitialCardSize)
 
@@ -342,6 +345,11 @@ export default function AdminPage() {
 
   const handleMoveFolder = async (id: string, parentId: string | null) => {
     await apiPatch(`/api/studio/project-groups/${id}`, { parentId })
+    await loadFolders()
+  }
+
+  const handleSetFolderRestricted = async (id: string, restricted: boolean) => {
+    await apiPatch(`/api/studio/project-groups/${id}`, { restricted })
     await loadFolders()
   }
 
@@ -787,6 +795,11 @@ export default function AdminPage() {
     setFolderCreateRequest((key) => key + 1)
   }
 
+  const closeFolderSidebarMenu = () => {
+    setFolderSidebarMenuOpen(false)
+    window.setTimeout(() => setFolderSidebarMenuPoint(null), 160)
+  }
+
   const renderFolderTree = (withCollapseRail: boolean) => (
     <ProjectsFolderTree
       folders={folders}
@@ -799,6 +812,7 @@ export default function AdminPage() {
       onRename={handleRenameFolder}
       onMoveFolder={handleMoveFolder}
       onDeleteFolder={handleDeleteFolder}
+      onSetRestricted={handleSetFolderRestricted}
       onDropProjects={handleMoveProjects}
       createRequestKey={folderCreateRequest}
       onCollapseRail={withCollapseRail ? () => setFolderRailCollapsed(true) : undefined}
@@ -828,7 +842,10 @@ export default function AdminPage() {
             <span key={folder.id} className="flex items-center gap-1 min-w-0">
               <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" aria-hidden />
               {i === breadcrumbs.length - 1 ? (
-                <span className="font-semibold truncate max-w-[200px]" title={folder.name}>{folder.name}</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                  {folder.restricted && <Lock className="h-3.5 w-3.5 shrink-0 text-warning" aria-label={t('folderRestricted')} />}
+                  <span className="truncate max-w-[200px]" title={folder.name}>{folder.name}</span>
+                </span>
               ) : (
                 <button
                   type="button"
@@ -868,7 +885,16 @@ export default function AdminPage() {
         </div>
 
         <div className="flex items-start gap-4 lg:min-h-0 lg:flex-1 lg:items-stretch lg:gap-[var(--studio-shell-gap)]">
-          <aside className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 overflow-y-auto px-2 pb-4 lg:block lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14' : 'lg:w-[var(--studio-sidebar-width)]'}`}>
+          <aside
+            className={`scrollbar-hidden hidden h-full min-h-0 flex-shrink-0 overflow-y-auto px-2 pb-4 lg:block lg:rounded-[8px] lg:bg-popover ${folderRailCollapsed ? 'w-14' : 'lg:w-[var(--studio-sidebar-width)]'}`}
+            onContextMenu={isAdmin ? (event) => {
+              const target = event.target as HTMLElement
+              if (target.closest('[data-card-context], button, a, input, textarea, select, [contenteditable="true"], [role="menu"]')) return
+              event.preventDefault()
+              setFolderSidebarMenuPoint({ x: event.clientX, y: event.clientY })
+              setFolderSidebarMenuOpen(true)
+            } : undefined}
+          >
             {/* 收缩时树只隐藏、不卸载：行内编辑器与折叠集合都活在组件里，
                 卸载再挂就等于给「新建文件夹」写第二套实现。 */}
             <div className={folderRailCollapsed ? 'hidden' : undefined}>{renderFolderTree(true)}</div>
@@ -988,6 +1014,30 @@ export default function AdminPage() {
           {folderTree}
         </DialogContent>
       </Dialog>
+
+      {folderSidebarMenuPoint && (
+        <OverlayMenu
+          open={folderSidebarMenuOpen}
+          onOpenChange={(open) => { if (!open) closeFolderSidebarMenu() }}
+          label={t('folderNew')}
+          width={200}
+          anchorPoint={folderSidebarMenuPoint}
+          className="rounded-[8px] p-1.5 shadow-xl"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeFolderSidebarMenu()
+              requestFolderCreate()
+            }}
+            className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+          >
+            <FolderPlus className="h-4 w-4" />
+            {t('folderNew')}
+          </button>
+        </OverlayMenu>
+      )}
 
       {renderNewProjectModal()}
     </div>

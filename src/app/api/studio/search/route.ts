@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiUser } from '@/lib/auth'
 import { getRequestedTeamId } from '@/lib/team-access'
-import { projectAccessWhere } from '@/lib/project-access'
+import { projectAccessWhereWithFolders } from '@/lib/project-access'
 import { rateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
   const sort = params.get('sort') || 'relevance'
   if (!query) return NextResponse.json({ query: '', type, sort, total: 0, projects: [], assets: [], truncated: false })
 
-  const access = projectAccessWhere(authResult, getRequestedTeamId(request))
+  const access = await projectAccessWhereWithFolders(authResult, getRequestedTeamId(request))
   const contains = { contains: query, mode: 'insensitive' as const }
 
   try {
@@ -79,8 +79,7 @@ export async function GET(request: NextRequest) {
         // 命中的那枚 OR 塞进 AND 数组：projectAccessWhere 自己带一枚「受限项目」的 OR，
         // 摊在同一层里后写的会顶掉前面那枚，受限项目就从搜索结果里漏出来（同 project-access 那处修复）。
         where: {
-          ...access,
-          AND: [{ OR: [{ title: contains }, { projectCode: contains }, { description: contains }] }],
+          AND: [access, { OR: [{ title: contains }, { projectCode: contains }, { description: contains }] }],
         },
         orderBy: { updatedAt: 'desc' },
         take: MAX_PER_KIND,

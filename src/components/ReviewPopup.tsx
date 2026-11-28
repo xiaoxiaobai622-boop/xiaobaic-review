@@ -20,6 +20,8 @@ interface ReviewPopupProps {
   overflowVisible?: boolean
   /** 卡片菜单与文件夹子菜单需要去掉阴影，保持扁平。 */
   flat?: boolean
+  menuSurface?: boolean
+  keepOpenOnOutside?: string
 }
 
 export default function ReviewPopup(props: ReviewPopupProps) {
@@ -30,7 +32,7 @@ export default function ReviewPopup(props: ReviewPopupProps) {
   )
 }
 
-function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', side = 'top', align = 'start', width, children, returnFocus, overflowVisible = false, flat = false }: ReviewPopupProps) {
+function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', side = 'top', align = 'start', width, children, returnFocus, overflowVisible = false, flat = false, menuSurface = false, keepOpenOnOutside }: ReviewPopupProps) {
   const [content, setContent] = useState<HTMLDivElement | null>(null)
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
   const outside = useRef(false)
@@ -124,7 +126,7 @@ function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', 
       role={role}
       aria-label={label}
       aria-describedby={undefined}
-      className={`${styles.surface}${flat ? ` ${styles.flat}` : ''}`}
+      className={`${styles.surface}${flat ? ` ${styles.flat}` : ''}${menuSurface ? ` ${styles.menuSurface}` : ''}`}
       style={position}
       inert={!open ? true : undefined}
       aria-hidden={!open ? true : undefined}
@@ -136,6 +138,10 @@ function PopupContent({ id, open, onOpenChange, anchor, label, role = 'dialog', 
         if (!outside.current && ownsFocus) (escaped.current ? anchor.current : returnFocus?.current ?? anchor.current)?.focus({ preventScroll: true })
       }}
       onInteractOutside={(event) => {
+        if (keepOpenOnOutside && (event.target as Element)?.closest?.(keepOpenOnOutside)) {
+          event.preventDefault()
+          return
+        }
         if (anchor.current?.contains(event.target as Node)) {
           escaped.current = true
           event.preventDefault()

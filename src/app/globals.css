@@ -1367,16 +1367,14 @@ html.no-scrollbar::-webkit-scrollbar {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 6px;
-  border: 1px solid hsl(var(--border));
+  padding: 7px;
   border-radius: 18px;
   background-color: hsl(var(--card));
-  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  transition: transform .18s ease, box-shadow .18s ease;
 }
 [data-project-card]:hover:not([data-dragging='true']) {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(15, 20, 35, .10);
-  border-color: hsl(var(--border));
 }
 [data-project-card][aria-selected='true'] {
   background-color: hsl(var(--primary-visible));

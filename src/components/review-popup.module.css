@@ -159,3 +159,12 @@
 :global(.dark) .surface.flat {
   box-shadow: none;
 }
+
+.menuSurface {
+  padding: 0;
+  border-color: #e7e8f2;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1.54px 2.52px 2px #0b0d1708, 0 7.31px 9.87px 2px #0b0d170a, 0 19px 31px 2px #0b0d1712;
+  z-index: 1500;
+}

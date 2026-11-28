@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import {
   ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, Home,
-  MoreHorizontal, MoveRight, PanelLeftClose, Pencil, Trash2, X, Check,
+  MoreHorizontal, MoveRight, PanelLeftClose, Pencil, Trash2, X, Check, Lock, LockOpen,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -49,6 +49,7 @@ interface ProjectsFolderTreeProps {
   onRename: (id: string, name: string) => Promise<void>
   onMoveFolder: (id: string, parentId: string | null) => Promise<void>
   onDeleteFolder: (id: string) => Promise<void>
+  onSetRestricted?: (id: string, restricted: boolean) => Promise<void> | void
   onDropProjects: (projectIds: string[], folderId: string | null) => Promise<void>
   /**
    * Bumped by the collapsed icon rail's 新建文件夹 button: the inline editor lives here,
@@ -61,7 +62,7 @@ interface ProjectsFolderTreeProps {
 
 export default function ProjectsFolderTree({
   folders, counts, total, openFolderId, isAdmin,
-  onOpen, onCreate, onRename, onMoveFolder, onDeleteFolder, onDropProjects,
+  onOpen, onCreate, onRename, onMoveFolder, onDeleteFolder, onSetRestricted, onDropProjects,
   createRequestKey, onCollapseRail,
 }: ProjectsFolderTreeProps) {
   const t = useTranslations('projects')
@@ -358,6 +359,17 @@ export default function ProjectsFolderTree({
     },
   })
 
+  const folderById = new Map(folders.map((folder) => [folder.id, folder]))
+  const restrictedByAncestor = (folderId: string): boolean => {
+    let parentId = folderById.get(folderId)?.parentId ?? null
+    while (parentId) {
+      const parent = folderById.get(parentId)
+      if (parent?.restricted) return true
+      parentId = parent?.parentId ?? null
+    }
+    return false
+  }
+
   const rowClass = (active: boolean, isDropTarget: boolean, contextActive = false) => [
     'group/row w-full flex items-center gap-1 pr-1.5 h-9 rounded-lg text-sm transition-colors',
     active || contextActive ? 'bg-primary-visible text-foreground border-2 border-primary-visible font-semibold' : 'hover:bg-accent/60 border-2 border-transparent text-foreground',
@@ -451,6 +463,11 @@ export default function ProjectsFolderTree({
                 <button type="button" onClick={() => onOpen(folder.id)} className="flex-1 min-w-0 flex items-center gap-1.5 text-left h-full rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {active ? <FolderOpen className="w-4 h-4 flex-shrink-0" aria-hidden /> : <Folder className="w-4 h-4 flex-shrink-0" aria-hidden />}
                   <span className="truncate">{folder.name}</span>
+                  {(folder.restricted || restrictedByAncestor(folder.id)) && (
+                    <span className="flex-shrink-0 text-warning" title={t('folderRestricted')} aria-label={t('folderRestricted')}>
+                      <Lock className="w-3.5 h-3.5" aria-hidden="true" />
+                    </span>
+                  )}
                   <CountBadge value={count} className="ml-auto" onActive={active} />
                 </button>
                 {isAdmin && (
@@ -518,6 +535,18 @@ export default function ProjectsFolderTree({
               icon={MoveRight}
               onClick={() => { closeMenu(false); setMoveFolder(folder); setMoveParent(folder.parentId || null) }}
             />
+            {onSetRestricted && !restrictedByAncestor(folder.id) && (
+              <MenuButton
+                label={folder.restricted ? t('folderUnsetRestricted') : t('folderSetRestricted')}
+                icon={folder.restricted ? LockOpen : Lock}
+                onClick={() => {
+                  closeMenu(false)
+                  void Promise.resolve(onSetRestricted(folder.id, !folder.restricted)).catch((err) => {
+                    setActionError(err instanceof Error ? err.message : t('operationFailed'))
+                  })
+                }}
+              />
+            )}
             <div className="mt-1 pt-1 border-t border-border">
               <MenuButton
                 label={t('folderDelete')}

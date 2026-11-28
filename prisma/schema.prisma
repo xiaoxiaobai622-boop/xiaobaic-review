@@ -634,6 +634,8 @@ model ProjectGroup {
   teamId    String
   name      String
   parentId  String?
+  // 受限文件夹：只对项目成员与团队 OWNER/ADMIN 展示其中的项目。
+  restricted Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

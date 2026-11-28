@@ -14,6 +14,7 @@ import { UnapproveModal } from './UnapproveModal'
 import { FeishuPushButton } from './FeishuPushButton'
 import { apiPost, apiPatch, apiDelete, apiFetch } from '@/lib/api-client'
 import { groupBy } from '@/lib/array-compat'
+import { cardArtFor } from '@/lib/project-art'
 
 interface ProjectCapabilities {
   canManageSettings: boolean
@@ -28,19 +29,6 @@ interface Video {
   versionLabel: string
   status: string
   approved: boolean
-}
-
-/** 项目默认头像：frame.io 的三张预设渐变图原样搬来（@2x），按项目 id 稳定轮换。 */
-const PROJECT_AVATAR_GRADIENTS = [
-  '/avatars/project-card-10@2x.jpg',
-  '/avatars/project-card-11@2x.jpg',
-  '/avatars/project-card-12@2x.jpg',
-]
-
-function projectAvatarGradient(id: string): string {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
-  return PROJECT_AVATAR_GRADIENTS[Math.abs(hash) % PROJECT_AVATAR_GRADIENTS.length]
 }
 
 interface ProjectActionsProps {
@@ -292,10 +280,21 @@ export default function ProjectActions({ project, videos, onRefresh, bare = fals
               onClick={() => setProjectMenuOpen((open) => !open)}
               className="flex w-full min-w-0 items-center gap-[16px] rounded-[8px] text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span
-                className="h-[48px] w-[48px] shrink-0 rounded-[8px] bg-cover bg-center"
-                style={{ backgroundImage: `url(${projectAvatarGradient(project.id)})` }}
-              />
+              <span className="relative h-[48px] w-[48px] shrink-0 overflow-hidden rounded-[8px]">
+                <span
+                  data-project-art
+                  aria-hidden="true"
+                  style={{ '--art-a': cardArtFor(project).a, '--art-b': cardArtFor(project).b } as React.CSSProperties}
+                >
+                  <i className="art-l1" />
+                  <i className="art-l2" />
+                  <i className="art-l3" />
+                </span>
+                {project.coverImageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element -- same cover layer as the project card.
+                  <img src={project.coverImageUrl} alt="" className="absolute inset-0 z-[4] h-full w-full object-cover" />
+                )}
+              </span>
               <span className="flex min-w-0 flex-1 flex-col">
                 <ShellTitle className={titleClass}>{project.title}</ShellTitle>
                 {/* 第二行只报人数。取不到数字就不画，宁缺一个也别把「0 人」当成事实显示出去。 */}

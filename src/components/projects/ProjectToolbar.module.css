@@ -1,0 +1,67 @@
+.menuButton {
+  display: inline-flex;
+  min-width: 0;
+  height: 32px;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0 8px 0 4px;
+  color: #181b29;
+  font-size: 13px;
+  font-weight: 420;
+  line-height: 20px;
+  isolation: isolate;
+  outline: none;
+  user-select: none;
+  cursor: pointer;
+}
+
+.menuButton > svg {
+  flex-shrink: 0;
+}
+
+.menuButton:focus-visible {
+  outline: 1px solid #63677d;
+}
+
+.menuButtonText {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.menuButtonSecondary {
+  color: #63677d;
+}
+
+.iconButton {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #181b29;
+  outline: none;
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: rgba(44, 48, 65, .05);
+}
+
+.iconButton:focus-visible {
+  outline: 1px solid #63677d;
+}
+
+.separator {
+  width: 1px;
+  height: 16px;
+  flex-shrink: 0;
+  background: var(--colors-border-primary, rgba(0, 0, 0, .04));
+}

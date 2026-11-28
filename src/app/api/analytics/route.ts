@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, LIVE_VIDEO } from '@/lib/db'
 import { requireApiAdmin } from '@/lib/auth'
-import { projectAccessWhere } from '@/lib/project-access'
+import { projectAccessWhereWithFolders } from '@/lib/project-access'
 import { getRequestedTeamId } from '@/lib/team-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const projects = await prisma.project.findMany({
-      where: projectAccessWhere(authResult, getRequestedTeamId(request)),
+      where: await projectAccessWhereWithFolders(authResult, getRequestedTeamId(request)),
       include: {
         videos: {
           where: { ...LIVE_VIDEO, status: 'READY' },

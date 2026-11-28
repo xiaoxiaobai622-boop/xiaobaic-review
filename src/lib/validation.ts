@@ -580,7 +580,8 @@ export const createProjectGroupSchema = z.object({
 export const updateProjectGroupSchema = z.object({
   name: projectGroupNameSchema.optional(),
   parentId: cuidSchema.nullable().optional(),
-}).refine((data) => data.name !== undefined || data.parentId !== undefined, {
+  restricted: z.boolean().optional(),
+}).refine((data) => data.name !== undefined || data.parentId !== undefined || data.restricted !== undefined, {
   message: 'Nothing to update',
 })
 

@@ -5,7 +5,7 @@ import { getProjectDefaults } from '@/lib/settings'
 import { getTeamQuota, getTeamUsage } from '@/lib/platform-access'
 import { requireTeamWritable } from '@/lib/team-writeable'
 import { requireApiAdmin, requireApiUser } from '@/lib/auth'
-import { nextProjectCode, projectAccessWhere } from '@/lib/project-access'
+import { nextProjectCode, projectAccessWhereWithFolders } from '@/lib/project-access'
 import { encrypt } from '@/lib/encryption'
 import { rateLimit } from '@/lib/rate-limit'
 import { createProjectSchema, validateRequest } from '@/lib/validation'
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   try {
     // Optimized query: only fetch essential fields + minimal video data for list view
     const projects = await prisma.project.findMany({
-      where: projectAccessWhere(authResult, getRequestedTeamId(request)),
+      where: await projectAccessWhereWithFolders(authResult, getRequestedTeamId(request)),
       select: {
         id: true,
         projectCode: true,

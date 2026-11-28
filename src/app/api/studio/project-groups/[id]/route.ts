@@ -11,7 +11,7 @@ import { logError } from '@/lib/logging'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const GROUP_SELECT = { id: true, name: true, parentId: true } as const
+const GROUP_SELECT = { id: true, name: true, parentId: true, restricted: true } as const
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -66,8 +66,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: projectMessages.folderNotFound }, { status: 404 })
     }
 
-    const data: { name?: string; parentId?: string | null } = {}
+    const data: { name?: string; parentId?: string | null; restricted?: boolean } = {}
     if (name !== undefined) data.name = name
+    if (validation.data.restricted !== undefined) data.restricted = validation.data.restricted
 
     if (validation.data.parentId !== undefined) {
       const nextParentId = validation.data.parentId
