@@ -2,12 +2,12 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import BrandLogo from '@/components/BrandLogo'
-import { formatWhatsNewDay } from '@/components/announcements/WhatsNewCard'
 import { JsonLd } from '@/components/marketing/JsonLd'
 import {
   getPublicReleaseArticle,
   hasStudioOnlyReleaseArticle,
 } from '@/lib/announcements/public-whats-new'
+import { formatWhatsNewDay } from '@/lib/announcements/time'
 import { isExternalUrl } from '@/lib/announcements/url'
 import { BRAND } from '@/lib/marketing/brand'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'

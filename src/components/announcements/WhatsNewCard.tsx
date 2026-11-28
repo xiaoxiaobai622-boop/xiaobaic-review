@@ -3,15 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { ImageOff, Loader2 } from 'lucide-react'
 import { whatsNewCardSummary } from '@/lib/announcements/card-summary'
+import { formatWhatsNewDay } from '@/lib/announcements/time'
 import { isExternalUrl } from '@/lib/announcements/url'
 import { cn } from '@/lib/utils'
-
-export function formatWhatsNewDay(value: string | Date | null | undefined): string {
-  if (!value) return ''
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
-}
 
 function CardCover({
   src,

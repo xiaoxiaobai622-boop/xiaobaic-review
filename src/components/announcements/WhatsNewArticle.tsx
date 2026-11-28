@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ImageOff } from 'lucide-react'
-import { formatWhatsNewDay } from './WhatsNewCard'
 import { sanitizeAnnouncementHtml } from '@/lib/announcements/rich-text'
+import { formatWhatsNewDay } from '@/lib/announcements/time'
 import { isExternalUrl } from '@/lib/announcements/url'
 import { cn } from '@/lib/utils'
 import styles from './rich-text.module.css'
