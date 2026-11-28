@@ -65,3 +65,31 @@
   flex-shrink: 0;
   background: var(--colors-border-primary, rgba(0, 0, 0, .04));
 }
+
+:global(.dark) .menuButton {
+  color: hsl(var(--foreground));
+}
+
+:global(.dark) .menuButton:focus-visible {
+  outline-color: hsl(var(--muted-foreground));
+}
+
+:global(.dark) .menuButtonSecondary {
+  color: hsl(var(--muted-foreground));
+}
+
+:global(.dark) .iconButton {
+  color: hsl(var(--foreground));
+}
+
+:global(.dark) .iconButton:hover {
+  background: hsl(var(--foreground) / 0.08);
+}
+
+:global(.dark) .iconButton:focus-visible {
+  outline-color: hsl(var(--muted-foreground));
+}
+
+:global(.dark) .separator {
+  background: hsl(var(--foreground) / 0.12);
+}

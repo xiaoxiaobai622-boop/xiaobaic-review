@@ -881,6 +881,8 @@
     "approve": "Approve",
     "setReviewStatus": "Set review status",
     "selectionCount": "{count} selected",
+    "selectionBarAssets": "{count} assets selected",
+    "selectionBarRuntime": "Runtime: {time}",
     "selectVideo": "Select video",
     "deselectVideo": "Deselect video",
     "pendingReview": "Pending review",

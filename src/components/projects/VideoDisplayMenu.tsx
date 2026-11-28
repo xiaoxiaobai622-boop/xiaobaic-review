@@ -27,7 +27,7 @@ interface VideoDisplayMenuProps {
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-h-[36px] items-center justify-between gap-1 px-4 py-1.5">
-      <span className="truncate text-[13px] font-[420] leading-5 text-[#181b29]">{label}</span>
+      <span className="truncate text-[13px] font-[420] leading-5 text-[#181b29] dark:text-foreground">{label}</span>
       {children}
     </div>
   )
@@ -35,7 +35,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function ChoiceGroup({ children }: { children: ReactNode }) {
   return (
-    <div className="inline-flex h-[24px] w-[124px] shrink-0 items-center gap-0 rounded-[6px] p-[2px]" style={{ background: '#e6e8f1cc' }}>
+    <div className="inline-flex h-[24px] w-[124px] shrink-0 items-center gap-0 rounded-[6px] bg-[#e6e8f1cc] p-[2px] dark:bg-secondary">
       {children}
     </div>
   )
@@ -43,7 +43,7 @@ function ChoiceGroup({ children }: { children: ReactNode }) {
 
 const choiceClass = (active: boolean) =>
   `inline-flex h-[20px] flex-1 items-center justify-center rounded-[4px] px-1 text-[12px] font-[520] leading-5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-    active ? 'bg-[#5b53ff] text-white shadow-[0px_.16px_.81px_0px_#00000008,0px_.77px_3.18px_0px_#0000000a,0px_2px_10px_0px_#00000012]' : 'text-[#63677d] hover:text-[#181b29]'
+    active ? 'bg-[#5b53ff] text-white shadow-[0px_.16px_.81px_0px_#00000008,0px_.77px_3.18px_0px_#0000000a,0px_2px_10px_0px_#00000012]' : 'text-[#63677d] hover:text-[#181b29] dark:text-muted-foreground dark:hover:text-foreground'
   }`
 
 

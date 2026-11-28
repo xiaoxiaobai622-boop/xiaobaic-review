@@ -397,6 +397,7 @@ export default function ProjectPage() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const workspaceRef = useRef<HTMLElement | null>(null)
+  const selectionBarHostRef = useRef<HTMLDivElement | null>(null)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
 
   const closeContextMenu = (restoreFocus = true) => {
@@ -421,6 +422,32 @@ export default function ProjectPage() {
     else if (event.key === 'End') next = items.length - 1
     items[next]?.focus()
   }
+
+  useEffect(() => {
+    const workspace = workspaceRef.current
+    const host = selectionBarHostRef.current
+    if (!workspace || !host) return
+    const update = () => {
+      if (window.innerWidth < 1024) {
+        host.style.left = '0px'
+        host.style.width = '100vw'
+        host.style.bottom = '0px'
+        return
+      }
+      const rect = workspace.getBoundingClientRect()
+      host.style.left = `${rect.left}px`
+      host.style.width = `${rect.width}px`
+      host.style.bottom = `${Math.max(0, window.innerHeight - rect.bottom)}px`
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(workspace)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [loading, project?.id, sidebarCollapsed, infoAreaCollapsed, reviewPaneVisible, reviewCommentsVisible, shellCols.player, shellCols.comments])
   // 项目设置与项目成员不再是另一条路由：null＝没开，开了记着开的是哪一扇、设置窗要落在哪一节。
   const [overlay, setOverlay] = useState<ProjectOverlayState>(null)
   const openSettings = (section: ProjectSettingsSection) => setOverlay({ kind: 'settings', section })
@@ -2211,7 +2238,7 @@ export default function ProjectPage() {
           onMembersChange={fetchProject}
         />
       )}
-      <div id="video-selection-toolbar" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 empty:hidden" />
+      <div ref={selectionBarHostRef} id="video-selection-toolbar" className="pointer-events-none fixed z-50 empty:hidden" />
     </div>
   )
 }

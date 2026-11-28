@@ -54,7 +54,7 @@ export default function VideoSortMenu({ value, onChange }: VideoSortMenuProps) {
 
       <ReviewPopup id={id} open={open} onOpenChange={setOpen} anchor={triggerRef} label={t('sort')} side="bottom" align="end" width={286} menuSurface keepOpenOnOutside="[data-frameio-select-layer]">
         <div className="px-2 py-3">
-          <div className="pb-2 pl-1 text-[12px] font-[420] leading-4 text-[#63677d]">{t('sortBy')}</div>
+          <div className="pb-2 pl-1 text-[12px] font-[420] leading-4 text-[#63677d] dark:text-muted-foreground">{t('sortBy')}</div>
           <div className="flex flex-col gap-2">
             <FrameioMenuSelect
               value={value.field}
@@ -65,7 +65,7 @@ export default function VideoSortMenu({ value, onChange }: VideoSortMenuProps) {
               align="start"
             />
             <div className="flex items-center gap-2">
-              <span className="pl-1 pr-2 text-[12px] font-[420] leading-4 text-[#63677d]">从</span>
+              <span className="pl-1 pr-2 text-[12px] font-[420] leading-4 text-[#63677d] dark:text-muted-foreground">从</span>
               <FrameioMenuSelect
                 value={value.dir}
                 options={[

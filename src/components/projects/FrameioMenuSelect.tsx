@@ -41,9 +41,9 @@ export default function FrameioMenuSelect({
         ref={triggerRef}
         type="button"
         className={cn(
-          'flex items-center gap-1 rounded-[4px] text-[13px] font-[420] leading-5 text-[#181b29] outline-none transition-colors hover:bg-[#2c30410d] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#63677d]',
+          'flex items-center gap-1 rounded-[4px] text-[13px] font-[420] leading-5 text-[#181b29] outline-none transition-colors hover:bg-[#2c30410d] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#63677d] dark:text-foreground dark:hover:bg-foreground/10 dark:focus-visible:outline-muted-foreground',
           field
-            ? 'h-8 w-full justify-between rounded-[6px] border border-[#dee0ed] bg-white px-2'
+            ? 'h-8 w-full justify-between rounded-[6px] border border-[#dee0ed] bg-white px-2 dark:border-border dark:bg-secondary'
             : 'h-6 justify-end px-2'
         )}
         onClick={() => setOpen((current) => !current)}
@@ -53,7 +53,7 @@ export default function FrameioMenuSelect({
         aria-label={ariaLabel}
       >
         <span className="truncate">{selected?.label ?? ''}</span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-[#4c5067]" aria-hidden="true" />
+        <ChevronDown className="h-4 w-4 shrink-0 text-[#4c5067] dark:text-muted-foreground" aria-hidden="true" />
       </button>
 
       <ReviewPopup
@@ -77,7 +77,7 @@ export default function FrameioMenuSelect({
                 type="button"
                 role="menuitemradio"
                 aria-checked={active}
-                className="flex min-h-[34px] w-full items-center gap-2 px-4 text-left text-[13px] font-[420] leading-5 text-[#181b29] outline-none hover:bg-[#2c30410d] focus-visible:bg-[#2c30410d]"
+                className="flex min-h-[34px] w-full items-center gap-2 px-4 text-left text-[13px] font-[420] leading-5 text-[#181b29] outline-none hover:bg-[#2c30410d] focus-visible:bg-[#2c30410d] dark:text-foreground dark:hover:bg-foreground/10 dark:focus-visible:bg-foreground/10"
                 onClick={() => {
                   onChange(option.value)
                   setOpen(false)
@@ -85,7 +85,7 @@ export default function FrameioMenuSelect({
                 }}
               >
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                {active && <Check className="h-4 w-4 shrink-0 text-[#181b29]" aria-hidden="true" />}
+                {active && <Check className="h-4 w-4 shrink-0 text-[#181b29] dark:text-foreground" aria-hidden="true" />}
               </button>
             )
           })}

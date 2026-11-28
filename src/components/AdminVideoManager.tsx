@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
-import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, Play, ExternalLink, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff, Download } from 'lucide-react'
+import { ChevronRight, ChevronUp, Video, Check, CheckCircle2, Loader2, Pencil, Trash2, Upload, GitCompareArrows, MessageSquare, Play, ExternalLink, Layers3, FolderInput, Clock3, Share2, ListChecks, CircleOff } from 'lucide-react'
 import VideoUpload from './VideoUpload'
 import VideoList from './VideoList'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -31,6 +31,14 @@ import { getLatestVideo } from '@/lib/video-comment-counts'
 import VideoReviewStatusBadge from './VideoReviewStatusBadge'
 import { VideoReviewStatusControl } from './VideoReviewStatusSelect'
 import ProjectGroupHeader from '@/components/projects/ProjectGroupHeader'
+import selectionBarStyles from './projects/VideoSelectionBar.module.css'
+import {
+  SelectionIconDownload,
+  SelectionIconFolder,
+  SelectionIconMore,
+  SelectionIconTrash,
+  SelectionIconX,
+} from './projects/FrameioSelectionIcons'
 import videoGridStyles from './VideoGridCard.module.css'
 import { VIDEO_REVIEW_STATUS_OPTIONS, getEffectiveVideoReviewStatus, type VideoReviewStatus } from '@/lib/video-review-status'
 import {
@@ -302,7 +310,9 @@ export default function AdminVideoManager({
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkMoving, setBulkMoving] = useState(false)
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
+  const [selectionOverflowOpen, setSelectionOverflowOpen] = useState(false)
   const bulkMoveTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const selectionOverflowTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [selectionToolbarTarget, setSelectionToolbarTarget] = useState<HTMLElement | null>(null)
 
   const closeActionMenus = useCallback((restoreFocus = true) => {
@@ -483,6 +493,38 @@ export default function AdminVideoManager({
       selectionToolbarTargetId ? document.getElementById(selectionToolbarTargetId) : null
     )
   }, [selectionToolbarTargetId])
+
+  useEffect(() => {
+    if (!selectionOverflowOpen && !bulkMoveOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      if (selectionOverflowOpen) {
+        setSelectionOverflowOpen(false)
+        selectionOverflowTriggerRef.current?.focus()
+      }
+      if (bulkMoveOpen) {
+        setBulkMoveOpen(false)
+        bulkMoveTriggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [selectionOverflowOpen, bulkMoveOpen])
+
+  useEffect(() => {
+    if (selectedGroups.size > 0) return
+    setSelectionOverflowOpen(false)
+    setBulkMoveOpen(false)
+  }, [selectedGroups.size])
+
+  useEffect(() => {
+    if (!selectionOverflowOpen) return
+    const frame = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-selection-overflow-menu] [role^="menuitem"]')?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [selectionOverflowOpen])
 
   // Fetch a thumbnail per video group (latest version that has one)
   useEffect(() => {
@@ -1071,6 +1113,18 @@ export default function AdminVideoManager({
   const bulkStatusValue = selectedStatusesAreUniform
     ? selectedStatuses[0]
     : null
+  const selectedFileSize = selectedLatestVideos.reduce(
+    (sum, video: any) => sum + Number(video.originalFileSize || video.fileSize || 0),
+    0
+  )
+  const selectedDuration = selectedLatestVideos.reduce(
+    (sum, video: any) => sum + Number(video.duration || 0),
+    0
+  )
+  const selectedMetaText = [
+    selectedFileSize > 0 ? formatFileSize(selectedFileSize).replace(' KB', ' kB') : null,
+    selectedDuration > 0 ? t('selectionBarRuntime', { time: formatVideoTimecode(selectedDuration) }) : null,
+  ].filter(Boolean).join(' • ')
   const selectionMode = selectedGroups.size > 0
   const handleDownloadSelection = async () => {
     const targets = selectedLatestVideos
@@ -1166,95 +1220,188 @@ export default function AdminVideoManager({
   }
 
   const selectionToolbar = selectedGroups.size > 0 ? (
-    <div className="pointer-events-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 rounded-xl border border-border bg-popover px-4 py-2.5 text-popover-foreground shadow-elevation-lg">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-8"
-        onClick={() => setSelectedGroups(new Set(sortedGroupNames))}
-        disabled={selectedGroups.size === sortedGroupNames.length}
-      >
-        {tc('selectAll')}
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8"
-        onClick={() => setSelectedGroups(new Set())}
-      >
-        {tu('clearSelection')}
-      </Button>
-      <span className="text-xs tabular-nums text-muted-foreground">
-        {t('selectionCount', { count: selectedGroups.size })}
-      </span>
-      <div className="min-w-2 flex-1" />
-      <VideoReviewStatusControl
-        value={bulkStatusValue}
-        indeterminate={!selectedStatusesAreUniform}
-        loading={bulkStatusLoading}
-        onValueChange={handleBulkReviewStatus}
-        className="bg-background"
-      />
-      {onMoveSelection && (
-        <div className="relative">
-          <Button
+    <section className={selectionBarStyles.bar} data-selection-bar aria-atomic="true" aria-live="polite">
+      <div className={selectionBarStyles.info}>
+        <button
+          type="button"
+          className={selectionBarStyles.dismiss}
+          aria-label={tu('clearSelection')}
+          title={tu('clearSelection')}
+          onClick={() => {
+            setSelectionOverflowOpen(false)
+            setBulkMoveOpen(false)
+            setSelectedGroups(new Set())
+          }}
+        >
+          <SelectionIconX />
+        </button>
+        <div className={selectionBarStyles.text}>
+          <span className={selectionBarStyles.primary}>
+            {t('selectionBarAssets', { count: selectedGroups.size })}
+          </span>
+          {selectedMetaText && (
+            <span className={selectionBarStyles.secondary}>&nbsp; • {selectedMetaText}</span>
+          )}
+        </div>
+      </div>
+      <div className={selectionBarStyles.actions}>
+        <div className={selectionBarStyles.menuWrap}>
+          <button
+            ref={selectionOverflowTriggerRef}
             type="button"
-            variant="outline"
-            size="sm"
-            className="h-8"
-            ref={bulkMoveTriggerRef}
-            onClick={() => setBulkMoveOpen((current) => !current)}
-            disabled={bulkMoving}
-            aria-expanded={bulkMoveOpen}
+            className={selectionBarStyles.iconAction}
+            aria-label={tu('more')}
+            title={tu('more')}
+            aria-expanded={selectionOverflowOpen}
             aria-haspopup="menu"
+            onClick={() => {
+              setBulkMoveOpen(false)
+              setSelectionOverflowOpen((current) => !current)
+            }}
           >
-            {bulkMoving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderInput className="h-4 w-4" />}
-            {tu('moveTo')}
-          </Button>
-          {bulkMoveOpen && (
+            {bulkStatusLoading
+              ? <Loader2 className={selectionBarStyles.spinner} />
+              : <SelectionIconMore />}
+          </button>
+          {selectionOverflowOpen && (
             <>
-              {/* 点外关闭的捕获面：铺满整屏，所以不进 Tab 顺序、也不报给读屏
-                  （原先那枚 <button aria-label="取消"> 是个 1440×900 的隐形焦点目标）。
-                  键盘出口在 bulkMoveOpen 那条文档级 Esc 上。 */}
-              <div aria-hidden className="fixed inset-0 z-[80] cursor-default" onClick={() => setBulkMoveOpen(false)} />
-              <div role="menu" data-bulk-move-menu className="absolute bottom-full right-0 z-[90] mb-2 max-h-64 w-52 origin-bottom overflow-y-auto rounded-[8px] border border-border bg-popover p-1 text-popover-foreground animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-1 duration-150">
-                <button type="button" role="menuitem" onClick={() => void handleBulkMove(null)} className="flex w-full items-center rounded-sm px-3 py-2 text-left text-sm transition-colors hover:bg-accent focus-visible:bg-accent">{tu('rootFolder')}</button>
-                {folders.map((folder) => (
-                  <button key={folder.id} type="button" role="menuitem" onClick={() => void handleBulkMove(folder.id)} className="flex w-full items-center rounded-sm px-3 py-2 text-left text-sm transition-colors hover:bg-accent focus-visible:bg-accent">{folder.name}</button>
-                ))}
+              <div aria-hidden className="fixed inset-0 z-[80] cursor-default" onClick={() => setSelectionOverflowOpen(false)} />
+              <div role="menu" data-selection-overflow-menu className={selectionBarStyles.menu}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={selectionBarStyles.menuItem}
+                  disabled={allGroupsSelected}
+                  onClick={() => {
+                    setSelectionOverflowOpen(false)
+                    setSelectedGroups(new Set(sortedGroupNames))
+                  }}
+                >
+                  {tc('selectAll')}
+                  {allGroupsSelected && <Check className={selectionBarStyles.menuCheck} />}
+                </button>
+                <div className={selectionBarStyles.menuSeparator} />
+                <div className={selectionBarStyles.menuLabel}>{tc('status')}</div>
+                {VIDEO_REVIEW_STATUS_OPTIONS.map((option) => {
+                  const checked = selectedStatusesAreUniform && bulkStatusValue === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={checked}
+                      className={selectionBarStyles.menuItem}
+                      disabled={bulkStatusLoading}
+                      onClick={() => {
+                        setSelectionOverflowOpen(false)
+                        void handleBulkReviewStatus(option.value)
+                      }}
+                    >
+                      <span
+                        className={selectionBarStyles.statusDot}
+                        style={{ backgroundColor: option.dotColor }}
+                        aria-hidden="true"
+                      />
+                      <span>{t(option.labelKey)}</span>
+                      {checked && <Check className={selectionBarStyles.menuCheck} />}
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selectedStatusesAreUniform && bulkStatusValue === null}
+                  className={selectionBarStyles.menuItem}
+                  disabled={bulkStatusLoading}
+                  onClick={() => {
+                    setSelectionOverflowOpen(false)
+                    void handleBulkReviewStatus(null)
+                  }}
+                >
+                  <span
+                    className={`${selectionBarStyles.statusDot} ${selectionBarStyles.statusDotEmpty}`}
+                    aria-hidden="true"
+                  />
+                  <span>{t('removeReviewStatus')}</span>
+                  {selectedStatusesAreUniform && bulkStatusValue === null && (
+                    <Check className={selectionBarStyles.menuCheck} />
+                  )}
+                </button>
+                {canDelete && (
+                  <>
+                    <div className={selectionBarStyles.menuSeparator} />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={`${selectionBarStyles.menuItem} ${selectionBarStyles.menuItemDanger}`}
+                      disabled={bulkDeleting || downloadingSelection}
+                      onClick={() => {
+                        setSelectionOverflowOpen(false)
+                        void handleBulkDelete()
+                      }}
+                    >
+                      {bulkDeleting
+                        ? <Loader2 className={selectionBarStyles.spinner} />
+                        : <SelectionIconTrash />}
+                      <span>{tc('delete')}</span>
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}
         </div>
-      )}
-      <Button
-        type="button"
-        size="sm"
-        className="h-8"
-        onClick={handleDownloadSelection}
-        disabled={downloadingSelection || selectedLatestVideos.length === 0}
-      >
-        {downloadingSelection
-          ? <Loader2 className="h-4 w-4 animate-spin" />
-          : <Download className="h-4 w-4" />}
-        {tc('download')}
-      </Button>
-      {canDelete && (
-        <Button
+        {onMoveSelection && (
+          <div className={selectionBarStyles.menuWrap}>
+            <button
+              type="button"
+              className={selectionBarStyles.actionButton}
+              ref={bulkMoveTriggerRef}
+              onClick={() => {
+                setSelectionOverflowOpen(false)
+                setBulkMoveOpen((current) => !current)
+              }}
+              disabled={bulkMoving}
+              aria-expanded={bulkMoveOpen}
+              aria-haspopup="menu"
+              aria-label={tu('moveTo')}
+              title={tu('moveTo')}
+            >
+              {bulkMoving
+                ? <Loader2 className={selectionBarStyles.spinner} />
+                : <SelectionIconFolder />}
+              <span className={selectionBarStyles.actionText}>{tu('moveTo')}</span>
+            </button>
+            {bulkMoveOpen && (
+              <>
+                {/* 点外关闭的捕获面：铺满整屏，所以不进 Tab 顺序、也不报给读屏。
+                    键盘出口在 bulkMoveOpen 那条文档级 Esc 上。 */}
+                <div aria-hidden className="fixed inset-0 z-[80] cursor-default" onClick={() => setBulkMoveOpen(false)} />
+                <div role="menu" data-bulk-move-menu className={selectionBarStyles.menu}>
+                  <button type="button" role="menuitem" onClick={() => void handleBulkMove(null)} className={selectionBarStyles.menuItem}>{tu('rootFolder')}</button>
+                  {folders.map((folder) => (
+                    <button key={folder.id} type="button" role="menuitem" onClick={() => void handleBulkMove(folder.id)} className={selectionBarStyles.menuItem}>{folder.name}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 text-destructive hover:text-destructive"
-          onClick={() => void handleBulkDelete()}
-          disabled={bulkDeleting || downloadingSelection}
+          className={selectionBarStyles.actionButton}
+          onClick={handleDownloadSelection}
+          disabled={downloadingSelection || selectedLatestVideos.length === 0}
+          aria-label={tc('download')}
+          title={tc('download')}
         >
-          {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-          {tc('delete')}
-        </Button>
-      )}
-    </div>
+          {downloadingSelection
+            ? <Loader2 className={selectionBarStyles.spinner} />
+            : <SelectionIconDownload />}
+          <span className={selectionBarStyles.actionText}>{tc('download')}</span>
+        </button>
+      </div>
+    </section>
   ) : null
 
   // 4:3 下统一采用项目里最高封面的比例，保证所有卡片同形；横版封面居中留边。
@@ -1909,7 +2056,7 @@ export default function AdminVideoManager({
                       const currentStatus = getEffectiveVideoReviewStatus(displayLatestVideo)
                       const option = VIDEO_REVIEW_STATUS_OPTIONS.find((item) => item.value === currentStatus)
                       return option ? (
-                        <span className="flex min-w-0 items-center gap-1 text-[13px] font-[420] leading-5 text-[#181b29]">
+                        <span className="flex min-w-0 items-center gap-1 text-[13px] font-[420] leading-5 text-foreground">
                           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: option.dotColor }} aria-hidden="true" />
                           <span className="truncate">{t(option.labelKey)}</span>
                         </span>
@@ -2134,6 +2281,8 @@ export default function AdminVideoManager({
           }}
         />
       )}
+
+      {selectionMode && <div aria-hidden className="h-12" />}
 
     </div>
   )

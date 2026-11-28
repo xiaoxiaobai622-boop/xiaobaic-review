@@ -856,6 +856,8 @@
     "approve": "Goedkeuren",
     "setReviewStatus": "Beoordelingsstatus instellen",
     "selectionCount": "{count} geselecteerd",
+    "selectionBarAssets": "{count} assets geselecteerd",
+    "selectionBarRuntime": "Looptijd: {time}",
     "selectVideo": "Video selecteren",
     "deselectVideo": "Videoselectie opheffen",
     "pendingReview": "Wacht op beoordeling",

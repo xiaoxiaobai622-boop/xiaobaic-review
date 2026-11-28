@@ -44,7 +44,7 @@ export default function VideoFieldsMenu({ showStatusField, onChange }: VideoFiel
       <ReviewPopup id={id} open={open} onOpenChange={setOpen} anchor={triggerRef} label={t('fields')} side="bottom" align="end" width={286} menuSurface>
         <div className="py-2">
           <div className="flex min-h-[34px] items-center justify-between gap-1 px-4">
-            <span className="truncate text-[13px] font-[420] leading-5 text-[#181b29]">{t('statusField')}</span>
+            <span className="truncate text-[13px] font-[420] leading-5 text-[#181b29] dark:text-foreground">{t('statusField')}</span>
             <Switch
               checked={showStatusField}
               onCheckedChange={onChange}

@@ -168,3 +168,9 @@
   box-shadow: 0 1.54px 2.52px 2px #0b0d1708, 0 7.31px 9.87px 2px #0b0d170a, 0 19px 31px 2px #0b0d1712;
   z-index: 1500;
 }
+
+:global(.dark) .menuSurface {
+  border-color: hsl(var(--foreground) / .06);
+  background: color-mix(in srgb, hsl(var(--popover)) 85%, hsl(var(--foreground)));
+  box-shadow: 0 1px 20px rgb(0 0 0 / .16), 0 12px 16px rgb(0 0 0 / .2), 0 6px 12px rgb(0 0 0 / .24);
+}

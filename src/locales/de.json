@@ -857,6 +857,8 @@
     "approve": "Freigeben",
     "setReviewStatus": "Prüfstatus festlegen",
     "selectionCount": "{count} ausgewählt",
+    "selectionBarAssets": "{count} Assets ausgewählt",
+    "selectionBarRuntime": "Laufzeit: {time}",
     "selectVideo": "Video auswählen",
     "deselectVideo": "Video abwählen",
     "pendingReview": "Prüfung ausstehend",

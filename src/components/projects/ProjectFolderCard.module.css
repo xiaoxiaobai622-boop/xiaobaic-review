@@ -258,3 +258,7 @@
   --folder-more: hsl(var(--foreground));
   --folder-shadow: 0 -4px 9px rgba(0, 0, 0, .35), 0 -4px 8px 1px rgba(0, 0, 0, .3);
 }
+
+:global(.dark) .card:hover .svg path {
+  stroke: #9195ae8c;
+}

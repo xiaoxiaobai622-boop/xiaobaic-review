@@ -851,6 +851,8 @@
     "approve": "通过",
     "setReviewStatus": "设置审阅状态",
     "selectionCount": "已选 {count} 项",
+    "selectionBarAssets": "已选择 {count} 项资产",
+    "selectionBarRuntime": "运行时间：{time}",
     "selectVideo": "选择视频",
     "deselectVideo": "取消选择视频",
     "pendingReview": "待审阅",
