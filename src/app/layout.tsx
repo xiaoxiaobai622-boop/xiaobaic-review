@@ -7,7 +7,7 @@ import DesktopBridge from "@/components/DesktopBridge";
 import { StorageConfigProvider, type StorageProvider } from "@/components/StorageConfigProvider";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
-import { prisma } from "@/lib/db";
+import { getConfiguredFaviconPath } from "@/lib/favicon-cache";
 import { headers } from "next/headers";
 import { AppDialogProvider } from "@/components/AppDialogProvider";
 import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/theme'
@@ -24,16 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
   // Resolve the admin's custom favicon (if any). When set, it overrides all
   // built-in icon entries so the browser uses the operator's branding.
   // When not set, fall back to the built-in /brand/icon.svg endpoints.
-  let customFavicon: string | null = null
-  try {
-    const row = await prisma.settings.findUnique({
-      where: { id: 'default' },
-      select: { brandingFaviconPath: true },
-    })
-    customFavicon = row?.brandingFaviconPath || null
-  } catch {
-    customFavicon = null
-  }
+  const customFavicon = await getConfiguredFaviconPath()
 
   // 静态 ICO 始终在列，管理端上传的那枚（多为 SVG）跟在它后面。
   // 依据是 10-21 的生产日志全窗口：Googlebot-Image 10-15/10-17、Baiduspider 10-20 都取到了
@@ -78,7 +69,7 @@ export async function generateMetadata(): Promise<Metadata> {
     appleWebApp: {
       capable: true,
       statusBarStyle: 'black-translucent',
-      title: '逐帧审阅',
+      title: BRAND.zh,
     },
   }
 }

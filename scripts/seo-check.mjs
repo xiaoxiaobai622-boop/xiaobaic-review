@@ -19,18 +19,34 @@ const PAGES = [
     h2: ['链接会过期，文件会被限', '意见对不上画面', '版本靠文件名', '一条链接替掉这一整套', '客户这边什么都不用装', '几个常见顾虑'] },
   { path: '/compare/frame-io', h1: 'Frame.io 在国内用起来别扭的地方',
     h2: ['访问与上传', '登录方式', '中文界面与中文通知', '批注落点', '什么时候仍然该选 Frame.io', '数据放在哪'] },
-  { path: '/compare/fenzhen', h1: '逐帧审阅与分秒帧：数据归属与席位口径的差别',
+  { path: '/compare/fenzhen', h1: '与分秒帧的差异对照：数据归属与席位口径',
     h2: ['计费模型', '数据归属', '功能对照', '什么时候选分秒帧', '迁移要动什么'] },
-  { path: '/features/frame-comments', h1: '意见挂在第几帧，不是"大概三分钟"',
+  { path: '/features/frame-comments', h1: '逐帧批注：按帧号和时间码精确提修改意见',
     h2: ['逐帧落点', '画笔圈画', '回复与解决状态', '客户不注册也能评论', '邮件汇总与留档', '手机上批注'] },
-  { path: '/features/versions', h1: '每一次修改都有版本记录',
+  { path: '/features/versions', h1: '视频版本管理：每次修改都有记录与对比',
     h2: ['自动成版本', '意见挂在具体版本上', '通过与定稿留痕', '旧版本不会静默消失', '只放行已批准版本'] },
-  { path: '/features/share-link', h1: '带密码和有效期的审片链接',
-    h2: ['密码与有效期', '一次性验证码', '谁打开过有记录', '客户顺着链接回传原片', '微信里打开的效果'] },
-  { path: '/features/review-workflow', h1: '从传第一版到定稿，一条片子怎么走完',
-    h2: ['传第一版', '发审片链接', '客户写意见', '处理意见、重传下一版', '点通过、交付原片', '让客户回传素材'] },
+  { path: '/features/share-link', h1: '审片链接与视频交付：密码、有效期和权限',
+    h2: ['密码与有效期', '一次性验证码', '谁打开过有记录', '客户顺着链接回传原片', '微信里打开的效果', '用视频交付平台交片，先核对四项权限', '密码和撤销链接不等于 DRM', '说明依据与核稿日期'] },
+  { path: '/features/review-workflow', h1: '视频团队协作：从第一版审片到定稿交付',
+    h2: ['传第一版', '发审片链接', '客户写意见', '处理意见、重传下一版', '点通过、交付原片', '让客户回传素材', '把责任和检查点串起来', '流程的边界与说明依据'] },
+  { path: '/guides/client-no-signup-review', h1: '客户免注册审片：先分清进入方式与权限',
+    h2: ['免注册指的是看片与反馈', '客户会遇到哪一种入口', '发给甲方之前，项目方检查五件事', '为什么客户能看却不能操作', '收录回传与安全边界', '说明依据与核稿日期'] },
+  { path: '/guides/client-review-feedback', h1: '甲方审片意见怎么回：四步走完回复与定稿',
+    h2: ['先归类：三种意见三种回法', '第一步：逐帧定位，逐条回复', '第二步：重传新版，对着旧批注核对', '第三步：版本级通过，再放行原片', '第四步：留下记录，收口这一轮', '几个常见卡点'] },
+  { path: '/guides/online-video-review-tools', h1: '在线审片工具：先对照能力，再试一轮审片',
+    h2: ['这份对照回答什么问题', '五种工具的官方能力对照', '从必需能力缩小候选范围', '哪个能免费试用，怎么排序', '用相同素材跑一轮对照', '内容依据与更新方式'] },
+  { path: '/guides/video-review-software', h1: '视频审片软件怎么选：用团队流程验收',
+    h2: ['先把采购问题写成一张交接单', '不同团队先验哪些环节', '版本管理和定稿要分别验收', '交付权限与费用模型怎么问', '试用结束时记录接受与不接受的取舍', '依据与核稿日期'] },
+  { path: '/guides/short-drama-episode-review', h1: '短剧与多集剧集审片：几十集同时改，怎么不乱版',
+    h2: ['短剧多集审片为什么容易乱版', '按剧集建项目，分集文件自动排版本', '多集同步收意见：时间码落点与分类标签', '从待审阅到通过：看清全剧卡在哪一集', '几条实操边界提前说清'] },
+  { path: '/guides/video-version-comparison', h1: '视频多版本对比：核对修改前后差别，让定稿有据可查',
+    h2: ['为什么改到第三版就容易对不上账', '同名重传自动成版：不靠文件名后缀', '两版并排与叠加对比：一帧一格核对修改', '批注跟版本走：旧账不漂到新版上', '版本级通过与回收站容错边界'] },
+  { path: '/guides/secure-video-sharing', h1: '样片外发与审片链接权限：给客户看片，同时管住原片流出',
+    h2: ['未上线样片外发的四类常见风险', '按链接拆开设置：看片、留言、下载互不捆绑', '四道访问门禁：密码、邮箱验证码、有效期与次数', '通过才放行原片：别把下载门开在审阅阶段', '客观说清能防什么、不能防什么'] },
+  { path: '/guides/commercial-video-workflow', h1: '广告片与宣传片协作流程：从异地收原片到甲方免注册定稿',
+    h2: ['广告与宣传片项目卡在哪几个交接点', '第一步：用收录链接收齐异地原片与外包素材', '第二步：团队内部初审与多版本迭代', '第三步：发审片链接让甲方免注册逐帧批注', '第四步：汇总收口、点通过并交付原片'] },
 ]
-const HUBS = ['/features', '/compare']
+const HUBS = ['/features', '/compare', '/guides']
 
 let failed = 0
 const report = (ok, label) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'} ${label}`) }
@@ -90,13 +106,17 @@ const robots = await html('/robots.txt')
 // 断的是**裸** `/studio`：`Disallow: /studio/`（带尾斜杠）匹配不到裸路径，而裸路径是真能抓到 200 的。
 // 用 `$` 收尾，这样"写回带斜杠的旧形态"会直接红，不会静默放行。
 report(robots.status === 200 && /^Disallow: \/studio$/m.test(robots.body), 'robots.txt Disallow 覆盖裸 /studio')
+report(robots.status === 200 && /^Allow: \/api\/announcements\/images\/$/m.test(robots.body), 'robots.txt 放行产品更新配图接口')
+for (const blocked of ['/select-team', '/sso', '/handoff/', '/dl']) {
+  report(robots.status === 200 && new RegExp(`^Disallow: ${esc(blocked)}$`, 'm').test(robots.body), `robots.txt Disallow ${blocked}`)
+}
 // 负向断言必须自带 status 前置：`/robots.txt` 挂了时 body 是空串，"里面没有 X"会恒真空过。
 report(/Sitemap: https?:\/\//.test(robots.body), 'robots.txt 有绝对 Sitemap 行')
 
 const sm = await html('/sitemap.xml')
 report(sm.status === 200 && /<urlset/.test(sm.body), 'sitemap.xml 是合法 XML')
 report(sm.body.includes(`<loc>${SITE}</loc>`), 'sitemap 首页那条与 canonical 同形（不带尾斜杠）')
-for (const p of [...PAGES.map(x => x.path), ...HUBS]) {
+for (const p of [...PAGES.map(x => x.path), ...HUBS, '/whats-new']) {
   report(sm.body.includes(`<loc>${SITE}${p}</loc>`), `sitemap 含 ${p}`)
 }
 
@@ -108,7 +128,7 @@ report(llms.status === 200, '/llms.txt 返回 200')
 report((llms.res?.headers.get('content-type') ?? '').startsWith('text/plain'), '/llms.txt 是 text/plain')
 report(llms.body.startsWith('# 逐帧审阅（FrameReview）'), '/llms.txt 首行是品牌名')
 report(!/<\/?[a-z][a-z0-9]*>/i.test(llms.body), '/llms.txt 里没有 HTML 标记')
-for (const p of [...PAGES.map(x => x.path), ...HUBS, '/', '/terms', '/privacy']) {
+for (const p of [...PAGES.map(x => x.path), ...HUBS, '/', '/terms', '/privacy', '/whats-new']) {
   // 首页那条现在不带尾斜杠（与 canonical 同形），用 `${SITE}${p}` 会退化成 `${SITE}/`
   // 这种被任何一条子页链接都满足的弱判据，所以单独按 markdown 链接的形判。
   report(p === '/' ? llms.body.includes(`](${SITE})`) : llms.body.includes(`${SITE}${p}`), `/llms.txt 收录 ${p}`)
@@ -131,6 +151,8 @@ for (const p of ['/terms', '/privacy']) {
 
 const home = await html('/')
 report(home.status === 200 && /"@type":"Organization"/.test(home.body), '首页有 Organization 节点')
+const homeTitle = home.body.match(/<title>([^<]*)<\/title>/)?.[1] ?? ''
+report(homeTitle.startsWith('在线视频审片'), `首页 title 品类词前置（实测「${homeTitle}」）`)
 // 首页此前整页没有 canonical 也没有 og:*（www 与 apex 两份 200 同内容，没有主 URL 信号）。
 // 根路径 canonical 被 Next 归一成**不带尾斜杠**（线上实测 `https://vidx.cn`），断言就按这个形判；
 // sitemap 的首页那条必须跟它一模一样，差一个斜号等于给同一个页面两个地址。
@@ -176,6 +198,14 @@ for (const p of PAGES) {
 report(sm.body.includes(`<loc>${SITE}/news/beta</loc>`), 'sitemap 含 /news/beta')
 report(llms.body.includes('## 一句话介绍') && llms.body.includes('## 核心能力'), '/llms.txt 有可直接转述的介绍与能力清单')
 report(llms.body.includes(`${SITE}/news/beta`), '/llms.txt 收录 /news/beta')
+
+const whatsNew = await html('/whats-new')
+report(whatsNew.status === 200, '/whats-new 返回 200')
+report(new RegExp(`<link rel="canonical" href="${esc(SITE)}/whats-new"\\/?>`).test(whatsNew.body), '/whats-new 有自指 canonical')
+report(/<h1[^>]*>产品更新与版本说明<\/h1>/.test(whatsNew.body), '/whats-new 有正确 H1')
+report(/"@type":"BreadcrumbList"/.test(whatsNew.body), '/whats-new 有 BreadcrumbList 节点')
+const { status: wnNf } = await html('/whats-new/nonexistent-id-check')
+report(wnNf === 404, '/whats-new 未知 id 返回 404')
 for (const p of ['/privacy', '/terms']) {
   const { body } = await html(p)
   const d = body.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? ''

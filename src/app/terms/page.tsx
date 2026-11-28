@@ -4,9 +4,10 @@ import { BrandLd } from '@/components/marketing/BrandLd'
 
 import type { Metadata } from 'next'
 import { JsonLd } from '@/components/marketing/JsonLd'
+import { BRAND } from '@/lib/marketing/brand'
 
-const TITLE = '用户服务协议：账号、内容与服务责任 | 逐帧审阅'
-const DESCRIPTION = '逐帧审阅用户服务协议：说明账号注册与登录、上传内容的权利与责任、审片链接与分享权限的使用规则、知识产权归属、服务变更与终止条件。继续使用平台即表示同意本协议与隐私政策；注销请求会在 30 日内处理并答复，重要变更提前公示，并附个人信息保护与免责声明。'
+const TITLE = `用户服务协议：账号、内容与服务责任 | ${BRAND.zh}`
+const DESCRIPTION = `${BRAND.zh}用户服务协议：说明账号注册与登录、上传内容的权利与责任、审片链接与分享权限的使用规则、知识产权归属、服务变更与终止条件。继续使用平台即表示同意本协议与隐私政策；注销请求会在 30 日内处理并答复，重要变更提前公示，并附个人信息保护与免责声明。`
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
@@ -22,8 +23,8 @@ export async function generateMetadata(): Promise<Metadata> {
       url,
       type: 'website',
       locale: 'zh_CN',
-      siteName: '逐帧审阅',
-      images: [{ url: `${site}/og/brand-1200x630.png`, width: 1200, height: 630, alt: '逐帧审阅' }],
+      siteName: BRAND.zh,
+      images: [{ url: `${site}/og/brand-1200x630.png`, width: 1200, height: 630, alt: BRAND.zh }],
     },
   }
 }
@@ -42,12 +43,12 @@ export default async function TermsPage() {
         name: TITLE,
         description: DESCRIPTION,
         inLanguage: 'zh-CN',
-        isPartOf: { '@type': 'WebSite', '@id': `${site}/#website`, url: site, name: '逐帧审阅' },
+        isPartOf: { '@type': 'WebSite', '@id': `${site}/#website`, url: site, name: BRAND.zh },
       }} />
     <LegalDoc
       title="用户服务协议"
       updatedAt="2026年10月4日"
-      intro="欢迎使用逐帧审阅平台（vidx.cn）。在使用本平台前，请仔细阅读本协议。您通过微信、手机号等方式登录或注册并使用本平台服务，即表示您已阅读并同意本协议及《隐私政策》。"
+      intro={`欢迎使用${BRAND.zh}平台（vidx.cn）。在使用本平台前，请仔细阅读本协议。您通过微信、手机号等方式登录或注册并使用本平台服务，即表示您已阅读并同意本协议及《隐私政策》。`}
       sections={[
         {
           heading: '一、账号注册与登录',

@@ -42,6 +42,7 @@ export default function MarketingLayout({ children }: Readonly<{ children: React
             <Link href="/features" className="hover:text-[#171a20]">功能</Link>
             <Link href="/compare" className="hover:text-[#171a20]">对比</Link>
             <Link href="/guides" className="hover:text-[#171a20]">指南</Link>
+            <Link href="/whats-new" className="hover:text-[#171a20]">产品更新</Link>
             <Link href="/news/beta" className="hover:text-[#171a20]">内测公告</Link>
             <Link href="/" className="hover:text-[#171a20]">返回首页</Link>
           </nav>
@@ -57,7 +58,7 @@ export default function MarketingLayout({ children }: Readonly<{ children: React
             <Link href="/privacy" className="hover:text-[#171a20]">隐私政策</Link>
             <Link href="/terms" className="hover:text-[#171a20]">服务条款</Link>
             <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer" className="hover:text-[#171a20]">
-              桂ICP备2026022852号-1
+              {BRAND.icpNumber}
             </a>
             <BeianPolice className="hover:text-[#171a20]" />
           </nav>

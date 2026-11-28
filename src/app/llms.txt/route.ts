@@ -1,3 +1,4 @@
+import { listPublicReleaseArticles } from '@/lib/announcements/public-whats-new'
 import { loadDocs } from '@/lib/marketing/content'
 import { HUBS, type HubGroup } from '@/lib/marketing/hubs'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
@@ -14,7 +15,10 @@ export const dynamic = 'force-dynamic'
  * 和 `/login`、`/features` 同一套匹配规则。
  */
 export async function GET() {
-  const site = await getSiteUrlFromRequest()
+  const [site, releaseItems] = await Promise.all([
+    getSiteUrlFromRequest(),
+    listPublicReleaseArticles({ limit: 30 }),
+  ])
   const docs = [...loadDocs().values()]
   const groups: HubGroup[] = ['features', 'compare', 'guides']
   const latest = docs.map((d) => d.updatedOn).sort().at(-1) ?? ''
@@ -56,6 +60,8 @@ export async function GET() {
     `- [服务条款](${site}/terms): 使用平台前需要同意的条款全文。`,
     `- [隐私政策](${site}/privacy): 收集哪些信息、用来做什么、留多久。`,
     `- [内测公告](${site}/news/beta): 成长计划内测于 2026 年 10 月 1 日开始，当前内测额度与额度不够时怎么申请。`,
+    `- [产品更新与版本说明](${site}/whats-new): 公开的产品更新与功能迭代日志。`,
+    ...releaseItems.map((item) => `  - [${item.title}](${site}/whats-new/${item.id}): ${item.summary}`),
     '',
     '## 各页回答的问题',
     '',

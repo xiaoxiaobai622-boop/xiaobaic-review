@@ -14,6 +14,7 @@
   "related": [
     "guides/video-review-software",
     "guides/client-no-signup-review",
+    "guides/short-drama-episode-review",
     "features/review-workflow",
     "compare/frame-io",
     "compare/fenzhen"

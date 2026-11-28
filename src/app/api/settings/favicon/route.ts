@@ -4,6 +4,7 @@ import { initStorage, uploadFile, deleteFile } from '@/lib/storage'
 import { rateLimit } from '@/lib/rate-limit'
 import { prisma } from '@/lib/db'
 import { getConfiguredLocale, loadLocaleMessages } from '@/i18n/locale'
+import { invalidateConfiguredFaviconCache } from '@/lib/favicon-cache'
 import { logError } from '@/lib/logging'
 import DOMPurify from 'isomorphic-dompurify'
 
@@ -149,6 +150,7 @@ export async function POST(request: NextRequest) {
         update: { brandingFaviconPath: '/api/branding/favicon' },
         create: { id: 'default', brandingFaviconPath: '/api/branding/favicon' },
       })
+      invalidateConfiguredFaviconCache()
     } catch (dbError) {
       // DB write failed — clean up the orphaned file we just stored.
       await deleteFile(targetPath).catch((cleanupError) => {
@@ -189,6 +191,7 @@ export async function DELETE(request: NextRequest) {
       where: { id: 'default' },
       data: { brandingFaviconPath: null },
     })
+    invalidateConfiguredFaviconCache()
     return new NextResponse(null, { status: 204 })
   } catch (error) {
     logError('[SETTINGS:FAVICON] Delete failed', error)

@@ -279,7 +279,7 @@ function parseDoc(file: string): MarketingDoc {
 /** key = `${group}/${slug}`。进程内缓存：根 layout 的 `force-dynamic` 让每请求都跑到这里，
  *  没有这层缓存每请求都要重读重解析六个文件。dev 下改完 `.md` 要重启进程才生效，这是缓存在进程内的代价。 */
 export function loadDocs(): Map<string, MarketingDoc> {
-  if (cache) return cache
+  if (cache && process.env.NODE_ENV === 'production') return cache
   const map = new Map<string, MarketingDoc>()
   for (const file of readdirSync(DIR).filter((f) => f.endsWith('.md')).sort()) {
     const doc = parseDoc(file)

@@ -14,6 +14,7 @@
   "related": [
     "guides/online-video-review-tools",
     "guides/client-no-signup-review",
+    "guides/commercial-video-workflow",
     "features/review-workflow",
     "features/versions",
     "compare/netdisk-wechat"

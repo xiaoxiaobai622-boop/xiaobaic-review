@@ -24,7 +24,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
    * 胜出靠的是「最长前缀匹配」（RFC 9309 §2.3.1.3，Google/Bing/百度实现一致），不是行序；
    * Next 会把整组 `allow` 印在 `disallow` 之前，两行谁在前都不改变判定。
    */
-  const allow = ['/', '/api/branding/favicon']
+  const allow = ['/', '/api/branding/favicon', '/api/announcements/images/']
 
   /**
    * `/login` 故意不在下面这张表里。`Disallow` 和 `<meta name="robots" content="noindex">` 会互相
@@ -44,6 +44,10 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     '/studio',
     '/platform',
     '/device',
+    '/select-team',
+    '/sso',
+    '/handoff/',
+    '/dl',
     '/forgot-password',
     '/reset-password',
     '/wechat-mini-login',

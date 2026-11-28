@@ -4,9 +4,10 @@ import { BrandLd } from '@/components/marketing/BrandLd'
 
 import type { Metadata } from 'next'
 import { JsonLd } from '@/components/marketing/JsonLd'
+import { BRAND } from '@/lib/marketing/brand'
 
-const TITLE = '隐私政策：个人信息收集、使用与保护 | 逐帧审阅'
-const DESCRIPTION = '逐帧审阅隐私政策：说明平台收集的账号信息、上传内容、设备与日志信息，用于登录验证、视频转码与审片协作、安全防护和服务改进；数据存储于中国大陆服务器，您可查询、更正、删除个人信息或申请注销账号，我们会在 30 日内答复。政策同时说明 Cookie 用途、未成年人保护与更新方式。'
+const TITLE = `隐私政策：个人信息收集、使用与保护 | ${BRAND.zh}`
+const DESCRIPTION = `${BRAND.zh}隐私政策：说明平台收集的账号信息、上传内容、设备与日志信息，用于登录验证、视频转码与审片协作、安全防护和服务改进；数据存储于中国大陆服务器，您可查询、更正、删除个人信息或申请注销账号，我们会在 30 日内答复。政策同时说明 Cookie 用途、未成年人保护与更新方式。`
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getSiteUrlFromRequest()
@@ -22,8 +23,8 @@ export async function generateMetadata(): Promise<Metadata> {
       url,
       type: 'website',
       locale: 'zh_CN',
-      siteName: '逐帧审阅',
-      images: [{ url: `${site}/og/brand-1200x630.png`, width: 1200, height: 630, alt: '逐帧审阅' }],
+      siteName: BRAND.zh,
+      images: [{ url: `${site}/og/brand-1200x630.png`, width: 1200, height: 630, alt: BRAND.zh }],
     },
   }
 }
@@ -42,12 +43,12 @@ export default async function PrivacyPage() {
         name: TITLE,
         description: DESCRIPTION,
         inLanguage: 'zh-CN',
-        isPartOf: { '@type': 'WebSite', '@id': `${site}/#website`, url: site, name: '逐帧审阅' },
+        isPartOf: { '@type': 'WebSite', '@id': `${site}/#website`, url: site, name: BRAND.zh },
       }} />
     <LegalDoc
       title="隐私政策"
       updatedAt="2026年10月4日"
-      intro="逐帧审阅平台（vidx.cn）重视您的个人信息保护。本政策说明我们在您使用平台服务时如何收集、使用、存储和保护您的个人信息。"
+      intro={`${BRAND.zh}平台（vidx.cn）重视您的个人信息保护。本政策说明我们在您使用平台服务时如何收集、使用、存储和保护您的个人信息。`}
       sections={[
         {
           heading: '一、我们收集的信息',
@@ -117,7 +118,7 @@ export default async function PrivacyPage() {
         },
       ]}
       related={[
-        { href: '/features', label: '了解逐帧审阅的在线审片功能' },
+        { href: '/features', label: '了解在线审片功能总览' },
         { href: '/guides', label: '阅读在线审片指南：选工具、跑流程、交付给客户' },
       ]}
     />

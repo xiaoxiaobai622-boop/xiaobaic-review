@@ -17,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
     // 根 layout 没有 metadataBase（那里取基址一抛就是全站 500），所以相对路径的分享图
     // 必须在这一段自己带上基座——10-08 线上实测首页 og:image 曾渲染成 http://localhost:4321/…
     metadataBase: new URL(site),
-    title: { absolute: '逐帧审阅：在线审片与视频批注协作平台' },
+    title: { absolute: BRAND.homeTitle },
     description: BRAND.homeDescription,
     keywords: [...BRAND.keywords],
     alternates: { canonical: site },
@@ -25,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
       type: 'website',
       siteName: BRAND.zh,
       locale: 'zh_CN',
-      title: '逐帧审阅：在线审片与视频批注协作平台',
+      title: BRAND.homeTitle,
       description: BRAND.homeDescription,
       url: site,
       // 与 `(marketing)/layout.tsx` 同一张图；换成 1200×630 的分享卡片图要另做一张素材。
@@ -50,7 +50,7 @@ export default async function HomePage() {
           '@context': 'https://schema.org',
           '@type': 'VideoObject',
           '@id': `${site}/#product-demo`,
-          name: '逐帧审阅产品演示：逐帧批注与版本对比',
+          name: '在线视频审片演示：逐帧批注与版本对比',
           description: '演示在时间轴上按帧号定位批注、圈画画面、切换版本并生成审片链接的操作过程。',
           thumbnailUrl: `${site}/home/hero-poster.jpg`,
           contentUrl: 'https://media.vidx.cn/home/hero-b6cc37fa.mp4',

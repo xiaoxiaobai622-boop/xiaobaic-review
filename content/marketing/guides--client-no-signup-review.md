@@ -15,6 +15,7 @@
     "features/share-link",
     "features/frame-comments",
     "features/review-workflow",
+    "guides/secure-video-sharing",
     "guides/online-video-review-tools",
     "guides/video-review-software"
   ],

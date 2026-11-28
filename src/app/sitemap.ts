@@ -1,9 +1,10 @@
 import type { MetadataRoute } from 'next'
+import { listPublicReleaseArticles } from '@/lib/announcements/public-whats-new'
 import { loadDocs } from '@/lib/marketing/content'
 import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
 
 /**
- * 只收 200 打得开、并且允许索引的 URL：首页 + 两个枢纽 + 隐私/条款 + 六篇文稿 + 内测公告。
+ * 只收 200 打得开、并且允许索引的 URL：首页 + 三个枢纽 + 更新日志 + 隐私/条款 + 营销文稿 + 内测公告 + 公开产品更新。
  * `/login`（noindex）、`/studio`、`/share`、`/[shareCode]` 短链一律不进——进了就等于邀请
  * 搜索引擎去索引 robots 里已经 Disallow 的东西。
  *
@@ -11,9 +12,12 @@ import { getSiteUrlFromRequest } from '@/lib/marketing/site-url'
  * `loadDocs()` 是同步的（返回 `Map`，进程内缓存），别 `await`。
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const site = await getSiteUrlFromRequest()
+  const [site, releaseItems] = await Promise.all([
+    getSiteUrlFromRequest(),
+    listPublicReleaseArticles(),
+  ])
   // 固定核稿日；不得把每次请求/构建时间冒充内容更新。
-  const reviewedOn = '2026-11-11'
+  const reviewedOn = '2026-11-27'
 
   // 首页这条**不带尾斜杠**：Next 渲染根路径 canonical 时会把 `https://vidx.cn/` 归一成
   // `https://vidx.cn`（10-09 线上实测），两边不一致就等于给同一个页面两个地址。
@@ -22,6 +26,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${site}/features`, lastModified: reviewedOn },
     { url: `${site}/compare`, lastModified: reviewedOn },
     { url: `${site}/guides`, lastModified: reviewedOn },
+    { url: `${site}/whats-new`, lastModified: releaseItems[0]?.updatedAt ?? reviewedOn },
     { url: `${site}/privacy`, lastModified: reviewedOn },
     { url: `${site}/terms`, lastModified: reviewedOn },
   ]
@@ -37,5 +42,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 日期与页内 `<time>` / `article:modified_time` 同值（`news/beta/page.tsx`）。
   const news: MetadataRoute.Sitemap = [{ url: `${site}/news/beta`, lastModified: new Date('2026-11-07') }]
 
-  return [...statics, ...docs, ...news]
+  const releases: MetadataRoute.Sitemap = releaseItems.map((item) => ({
+    url: `${site}/whats-new/${item.id}`,
+    lastModified: item.updatedAt,
+    images: item.imageUrl
+      ? [item.imageUrl.startsWith('http') ? item.imageUrl : `${site}${item.imageUrl}`]
+      : undefined,
+  }))
+
+  return [...statics, ...docs, ...news, ...releases]
 }

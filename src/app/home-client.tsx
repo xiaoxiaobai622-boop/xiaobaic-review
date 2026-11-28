@@ -11,6 +11,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import LightMist from '@/components/LightMist'
 import BeianPolice from '@/components/BeianPolice'
+import { BRAND } from '@/lib/marketing/brand'
 import { HOME_HERO_VIDEO_URL } from '@/lib/public-media'
 import styles from './home.module.css'
 
@@ -106,11 +107,15 @@ const footerGroups = [
       { href: '/features/frame-comments', label: '逐帧批注' },
       { href: '/features/versions', label: '版本记录' },
       { href: '/features/share-link', label: '审片链接' },
+      { href: '/features/review-workflow', label: '审片完整流程' },
+      { href: '/whats-new', label: '产品更新' },
     ],
   },
   {
     title: '怎么选',
     links: [
+      { href: '/guides', label: '审片指南' },
+      { href: '/guides/short-drama-episode-review', label: '短剧多集审片' },
       { href: '/compare', label: '对比总览' },
       { href: '/compare/frame-io', label: '对比 Frame.io' },
       { href: '/compare/fenzhen', label: '对比分秒帧' },
@@ -379,9 +384,9 @@ export default function HomeClient() {
 
         <header className={`${styles.header} ${stuck ? styles.headerStuck : ''}`}>
           <div className={styles.headerInner}>
-            <Link className={styles.brand} href="/" aria-label="逐帧审阅首页">
+            <Link className={styles.brand} href="/" aria-label={`${BRAND.zh}首页`}>
               <span className={styles.brandMark}><Image src="/brand/logo.png" alt="" width={26} height={26} loading="eager" /></span>
-              <span>逐帧审阅</span>
+              <span>{BRAND.zh}</span>
             </Link>
             <nav className={styles.headerNav} aria-label="页面导航">
               <div className={styles.navItem} data-open={openNav === 'features'}>
@@ -400,6 +405,7 @@ export default function HomeClient() {
                 <div className={styles.navDrop} id="home-drop-compare">
                   <Link href="/compare">对比总览</Link>
                   <Link href="/guides">审片选型指南</Link>
+                  <Link href="/guides/short-drama-episode-review">短剧多集审片</Link>
                   <Link href="/compare/frame-io">对比 Frame.io</Link>
                   <Link href="/compare/fenzhen">对比分秒帧</Link>
                   <Link href="/compare/netdisk-wechat">对比网盘加微信</Link>
@@ -408,6 +414,8 @@ export default function HomeClient() {
               <div className={styles.navItem} data-open={openNav === 'resources'}>
                 <button className={styles.navBtn} type="button" aria-haspopup="true" aria-expanded={openNav === 'resources'} aria-controls="home-drop-resources" onClick={navToggle('resources')}>资源 <ChevronDown size={13} strokeWidth={2} /></button>
                 <div className={styles.navDrop} id="home-drop-resources">
+                  <Link href="/whats-new">产品更新</Link>
+                  <Link href="/news/beta">内测公告</Link>
                   <a href={HELP_URL} target="_blank" rel="noopener noreferrer">帮助文档</a>
                   <a href="#workflow">使用流程</a>
                   <Link href="/terms">服务条款</Link>
@@ -428,9 +436,9 @@ export default function HomeClient() {
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
             <span className={styles.betaBadge}><i aria-hidden="true" />内测中 · 免费开放</span>
-            <h1>逐帧审阅，<br />让意见落在画面上。</h1>
+            <h1>在线视频审片，<br />让意见落在画面上。</h1>
             <p>
-              逐帧审阅是面向影视团队的在线审片平台：上传素材、逐帧批注、管理版本、安全交付，
+              {BRAND.zh}是面向影视团队的在线视频审片平台：上传素材、逐帧批注、管理版本、安全交付，
               全部在同一条时间轴上完成。内测期间所有功能免费使用。
             </p>
             <div className={styles.heroActions}>
@@ -453,7 +461,7 @@ export default function HomeClient() {
               playsInline
               preload="metadata"
               tabIndex={-1}
-              aria-label="逐帧审阅的审片界面：片子在放，时间轴上的批注钉挨个悬出那一帧的预览，点一下跳回那一帧"
+              aria-label="在线视频审片界面：片子在放，时间轴上的批注钉挨个悬出那一帧的预览，点一下跳回那一帧"
             />
           </div>
           <a className={styles.heroCue} href="#platform" aria-label="向下查看平台能力">
@@ -465,7 +473,7 @@ export default function HomeClient() {
           <p className={styles.eyebrow}>平台能力</p>
           <h2 className={styles.duoHead}>
             <span className={styles.muted}>无论拍什么，</span><br />
-            逐帧审阅帮你更快交付。
+            一套流程帮你更快交付。
           </h2>
           <p className={styles.sectionLead}>
             从素材回传到定稿交付，团队和客户始终看的是同一条时间轴。
@@ -629,25 +637,25 @@ export default function HomeClient() {
                 交给对方自己点。
               </h2>
               <p className={styles.sectionLead}>
-                发一条收录链接，摄影师、后期或客户点开就能上传；传回来的片子直接进项目。
+                发一条收录链接，摄影师、后期或客户登录后直接上传，断网也能续传；传回来的片子先进收件箱。
               </p>
             </div>
             <div className={`${styles.row} ${styles.rowFlip}`}>
               <div className={styles.rowCopy}>
-                <h3>不用开账号，传回来就进项目</h3>
-                <p>对方点链接就能传；同名自动排成下一版，不同名才新建，冲突时跳过不覆盖。</p>
+                <h3>一条链接收原片，确认后再入库</h3>
+                <p>对方打开收录链接登录后即可回传原片；文件先进项目收件箱，由你确认新建或覆盖为下一版，不会误顶现有成片。</p>
                 <TickList items={collectPoints} />
               </div>
               <figure className={styles.rowShot}>
                 <Image
                   src="/home/collect-upload.webp"
-                  alt="收录页：客户不注册也能上传原片，拖放区写着支持的文件类型"
+                  alt="收录页：打开收录链接上传原片素材，拖放区写明支持的文件类型与断点续传"
                   width={1600}
                   height={850}
                   sizes="(max-width: 900px) 100vw, 900px"
                   quality={90} className={styles.shotImg}
                 />
-                <figcaption>收录页：客户不注册也能传原片，传回来的直接进项目排版本</figcaption>
+                <figcaption>收录页：回传原片先进项目收件箱，确认后再排入版本</figcaption>
               </figure>
             </div>
           </div>
@@ -702,16 +710,21 @@ export default function HomeClient() {
                 <li><Link href="/features/versions">视频版本对比与定稿记录</Link></li>
                 <li><Link href="/features/share-link">审片链接与视频交付权限</Link></li>
                 <li><Link href="/features/review-workflow">视频团队协作的完整流程</Link></li>
+                <li><Link href="/guides/video-version-comparison">视频多版本对比与定稿留痕</Link></li>
+                <li><Link href="/guides/secure-video-sharing">样片外发防泄密与权限控制</Link></li>
               </ul>
             </nav>
             <nav aria-label="审片指南与工具对比">
               <h3>按场景选工具</h3>
               <ul>
+                <li><Link href="/guides/short-drama-episode-review">短剧与多集剧集审片管理</Link></li>
+                <li><Link href="/guides/commercial-video-workflow">广告片与企业宣传片审片交付流程</Link></li>
+                <li><Link href="/guides/client-review-feedback">甲方审片意见怎么回：四步定稿</Link></li>
                 <li><Link href="/guides/online-video-review-tools">在线审片工具：官方能力对照</Link></li>
                 <li><Link href="/guides/video-review-software">视频审片软件：团队选型与试用清单</Link></li>
                 <li><Link href="/guides/client-no-signup-review">客户免注册审片：入口与权限边界</Link></li>
-                <li><Link href="/compare/frame-io">Frame.io 与逐帧审阅的适用场景</Link></li>
-                <li><Link href="/compare/fenzhen">分秒帧与逐帧审阅的差异说明</Link></li>
+                <li><Link href="/compare/frame-io">Frame.io 替代方案与适用场景</Link></li>
+                <li><Link href="/compare/fenzhen">分秒帧差异对照：计费与数据归属</Link></li>
                 <li><Link href="/compare/netdisk-wechat">网盘微信审片的流程问题</Link></li>
               </ul>
             </nav>
@@ -724,7 +737,7 @@ export default function HomeClient() {
           <div className={styles.ctaArcs} aria-hidden="true">
             <GlassArcs variant="dome" />
           </div>
-          <h2>开始使用逐帧审阅</h2>
+          <h2>开始在线审片协作</h2>
           <p>内测期间免费开放。登录后按引导建一个团队，传一条片子，就能走完全流程。</p>
           <div className={styles.heroActions}>
             <Link className={styles.pillPrimary} href={dashboardHref}>{primaryCtaLabel}</Link>
@@ -739,7 +752,7 @@ export default function HomeClient() {
             <div className={styles.footerBrandCol}>
               <span className={styles.footerBrand}>
                 <Image src="/brand/logo.png" alt="" width={22} height={22} />
-                逐帧审阅
+                {BRAND.zh}
               </span>
               <p className={styles.footerDesc}>
                 面向影视团队的在线审片、版本管理、素材收录与安全交付平台。
@@ -757,14 +770,14 @@ export default function HomeClient() {
             ))}
           </div>
           <div className={styles.footerBottom}>
-            <span className={styles.footerCopy}>© 2026 南宁轻创社科技有限公司</span>
+            <span className={styles.footerCopy}>© 2026 {BRAND.legalName}</span>
             <a
               className={styles.footerIcp}
               href="https://beian.miit.gov.cn"
               target="_blank"
               rel="noopener noreferrer"
             >
-              桂ICP备2026022852号-1
+              {BRAND.icpNumber}
             </a>
             <BeianPolice className={styles.footerPolice} />
           </div>

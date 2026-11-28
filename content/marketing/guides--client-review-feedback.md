@@ -23,7 +23,8 @@
     "features/share-link",
     "features/versions",
     "features/frame-comments",
-    "guides/client-no-signup-review"
+    "guides/client-no-signup-review",
+    "guides/video-version-comparison"
   ],
   "faq": [
     {

@@ -9,6 +9,7 @@ import { isValidAccentColor } from '@/lib/accent'
 import { flushPendingAdminNotifications } from '@/lib/notifications'
 import { invalidateEmailSettingsCache } from '@/lib/email'
 import { getConfiguredLocale, invalidateConfiguredLocaleCache, loadLocaleMessages } from '@/i18n/locale'
+import { invalidateConfiguredFaviconCache } from '@/lib/favicon-cache'
 import { SUPPORTED_LOCALES } from '@/i18n/supported-locales'
 import { logError, logMessage } from '@/lib/logging'
 
@@ -506,6 +507,7 @@ export async function PATCH(request: NextRequest) {
     })
 
     if (language !== undefined) invalidateConfiguredLocaleCache()
+    if (brandingFaviconPath !== undefined) invalidateConfiguredFaviconCache()
 
     invalidateSourceQualitySettingsCache()
     invalidateEmailSettingsCache()

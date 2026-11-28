@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import BeianPolice from '@/components/BeianPolice'
+import { BRAND } from '@/lib/marketing/brand'
 
 type LegalSection = {
   heading: string
@@ -25,7 +26,7 @@ export function LegalDoc({
     <div className="min-h-dvh bg-[#f4f5f7] text-[#171a20]">
       <header className="border-b border-[#dfe2e7] bg-white">
         <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-5">
-          <Link href="/" className="font-semibold text-[15px]">逐帧审阅</Link>
+          <Link href="/" className="font-semibold text-[15px]">{BRAND.zh}</Link>
           <Link href="/" className="text-sm text-[#6f7580] hover:text-[#171a20]">返回首页</Link>
         </div>
       </header>
@@ -67,10 +68,10 @@ export function LegalDoc({
 
       <footer className="border-t border-[#dfe2e7] bg-white">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-5 text-xs text-[#8b919b]">
-          <span>逐帧审阅</span>
+          <span>{BRAND.zh}</span>
           <div className="flex items-center gap-4">
             <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">
-              桂ICP备2026022852号-1
+              {BRAND.icpNumber}
             </a>
             <BeianPolice />
           </div>
